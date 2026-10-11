@@ -423,6 +423,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         const engineId = options.engineId;
         if (!engineId) {
           stopAnalysis();
+          analysis.cancelFreshSearch();
           missingEngineKey = key;
           analysis.setStatus("idle");
           analysis.setError("Configure an engine to start live analysis.");
@@ -441,7 +442,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         // show at once; only this search's own lines are remembered.
         analysis.startSearch(
           `${subject.fen}|${engineId}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}`,
-          searchId
+          searchId,
+          subject.fen
         );
         engines
           .startAnalysis({
@@ -460,6 +462,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       } else {
         missingEngineKey = null;
         stopAnalysis();
+        // Nothing searches now: a Restart pending since doesn't carry over to a later search.
+        useAnalysisStore.getState().cancelFreshSearch();
       }
     };
 
@@ -471,8 +475,17 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     };
     const unsubscribe = useGameStore.subscribe((state, previous) => {
       // A new board (reset / load replaces headers and tree together) is a new match.
-      if (state.headers !== previous.headers && state.moveTree !== previous.moveTree)
-        gameKey = newSearchId();
+      const newBoard = state.headers !== previous.headers && state.moveTree !== previous.moveTree;
+      if (newBoard) gameKey = newSearchId();
+      // A pause belongs to its board and move: it ends when the board is replaced (by any path)
+      // or the paused move is deleted.
+      const { paused } = useAnalysisStore.getState();
+      if (
+        paused &&
+        state.moveTree !== previous.moveTree &&
+        (newBoard || !state.moveTree.some((node) => node.id === paused.nodeId))
+      )
+        useAnalysisStore.getState().endPause();
       schedule();
     });
     // A requested restart (restartSearch) re-runs the analysis for the same position; a target set,

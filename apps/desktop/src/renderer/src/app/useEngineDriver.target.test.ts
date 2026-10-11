@@ -296,6 +296,31 @@ describe("useEngineDriver with live analysis paused (the switch off)", () => {
     });
   });
 
+  it("ends the pause when its board is replaced", async () => {
+    await pausedAtDepth12();
+    useGameStore.getState().reset();
+    expect(useAnalysisStore.getState().paused).toBeNull();
+  });
+
+  it("ends the pause when its move is deleted", async () => {
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    await pausedAtDepth12();
+    const { paused } = useAnalysisStore.getState();
+    expect(paused?.move).toBe("1. e4");
+    useGameStore.getState().deleteLineFromNode(paused!.nodeId);
+    expect(useAnalysisStore.getState().paused).toBeNull();
+  });
+
+  it("drops a Restart no search followed: the next search carries on", async () => {
+    await pausedAtDepth12();
+    // Restart pressed, then analysis stays off: nothing searches.
+    useAnalysisStore.getState().restartFresh();
+    await settle();
+    expect(useAnalysisStore.getState().freshSearch).toBe(false);
+    await switchOn();
+    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ fresh: false });
+  });
+
   it("resumes on the paused position with its lines shown at once", async () => {
     await pausedAtDepth12();
     await switchOn();

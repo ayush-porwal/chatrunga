@@ -18,9 +18,11 @@ type AnalysisStore = {
    * search replaces each one only when it gets as deep (stopping and starting again, or coming back
    * to a position, carries on from there instead of counting up from depth 1).
    */
-  startSearch: (resultKey?: string | null, searchId?: string | null) => void;
+  startSearch: (resultKey?: string | null, searchId?: string | null, fen?: string | null) => void;
   /** The key the running search's lines are remembered under (see startSearch). */
   resultKey: string | null;
+  /** The position (FEN) the running search's lines belong to; null when not known. */
+  resultFen: string | null;
   /** The analysis search whose lines are remembered (an engine game's never are). */
   resultSearchId: string | null;
   /**
@@ -42,6 +44,10 @@ type AnalysisStore = {
    * the lines shown are that position's.
    */
   pause: (position: PausedAnalysis) => void;
+  /** The pause ends with its lines left as they are (its board replaced, its move gone, no engine). */
+  endPause: () => void;
+  /** A Restart no search followed (analysis off, or no engine to search with) is dropped. */
+  cancelFreshSearch: () => void;
   /**
    * Bumped to make live analysis search again even though the position didn't change (the
    * search was stopped while away, e.g. Back to an analysis board, or Analyze on the same position).
@@ -128,7 +134,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   error: null,
   setActiveEngine: (activeEngineId) => set({ activeEngineId }),
   setStatus: (status) => set({ status }),
-  startSearch: (resultKey = null, searchId = null) =>
+  startSearch: (resultKey = null, searchId = null, fen = null) =>
     set((state) => {
       if (state.freshSearch && resultKey) results.delete(resultKey);
       return {
@@ -137,12 +143,14 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         topLines: resultKey ? (results.get(resultKey) ?? []) : [],
         bestMove: null,
         resultKey,
+        resultFen: fen,
         resultSearchId: searchId,
         freshSearch: false,
         paused: null
       };
     }),
   resultKey: null,
+  resultFen: null,
   resultSearchId: null,
   searchEpoch: 0,
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
@@ -166,15 +174,15 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   pause: (position) =>
     set((state) => ({
       status: "idle",
-      // The search's key starts with its position (see startSearch): lines left over from another
-      // one (a finished position isn't searched) aren't kept.
+      // Only lines of that position are kept: not ones left over from another position (a
+      // finished position isn't searched).
       paused:
-        state.topLines.length &&
-        state.status !== "error" &&
-        state.resultKey?.split("|")[0] === position.fen
+        state.topLines.length && state.status !== "error" && state.resultFen === position.fen
           ? position
           : null
     })),
+  endPause: () => set({ paused: null }),
+  cancelFreshSearch: () => set({ freshSearch: false }),
   setInfo: (latestInfo) =>
     set((state) => {
       const next = mergeInfos(state.topLines, [latestInfo]);
@@ -190,8 +198,8 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     });
   },
   setBestMove: (bestMove) => set({ bestMove, status: "ready" }),
-  setError: (error) =>
-    set(error ? { error, status: "error", paused: null } : { error, status: "error" }),
+  // An error ends a pause; clearing one (a search starting) leaves that to startSearch.
+  setError: (error) => set({ error, status: "error", ...(error ? { paused: null } : {}) }),
   target: null,
   setTarget: (target) => set({ target }),
   reset: () =>
@@ -203,6 +211,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       bestMove: null,
       error: null,
       resultKey: null,
+      resultFen: null,
       resultSearchId: null,
       freshSearch: false,
       paused: null

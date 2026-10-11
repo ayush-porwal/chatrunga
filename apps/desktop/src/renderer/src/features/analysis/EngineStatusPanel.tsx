@@ -811,13 +811,15 @@ function BoardEngine({
       ? analysisSettings.analysisDepth
       : null;
   const score = primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–";
-  // Restart while paused searches the board's position from scratch, analysis on again.
+  // Restart while paused searches the board's position from scratch, analysis on again. Both
+  // store updates land before the engine driver's next sync (it runs once, after the current
+  // task), so it starts one fresh search whatever their order.
   const restart = analysing
     ? restartFresh
     : paused && onStartAnalysis
       ? () => {
-          restartFresh();
           onStartAnalysis();
+          restartFresh();
         }
       : null;
 

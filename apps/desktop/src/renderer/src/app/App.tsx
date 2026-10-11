@@ -345,6 +345,12 @@ export function App() {
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
+  // No engine left (the last one removed in Settings): a paused analysis can't resume, so it ends
+  // rather than coming back with a later engine.
+  const noEngines = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
+  useEffect(() => {
+    if (noEngines) useAnalysisStore.getState().endPause();
+  }, [noEngines]);
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
   const settings = useMemo(
