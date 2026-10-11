@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { analysisEngineFor, analysisLimitLabel } from "./analysis-engine";
+import { onPausedPosition, pausedStatusLabel, type PausedAnalysis } from "./live-analysis";
 import { EngineAvatar } from "./EngineAvatar";
 import { Notice } from "@/components/ui/notice";
 import { IconButton } from "@/components/ui/icon-button";
@@ -675,9 +676,10 @@ function EngineStatusPanelContent({
 /**
  * The Moves tab's engine block, fixed above the move tree: the engine row (its image, name and
  * status, Restart and the Analysis switch: live analysis on and off, the only Start / Stop for the
- * board's engine), then while it's on the Depth / Score / Best strip and the lines. Off, only the
- * row shows, so the tree gets the space. With no engine installed, or during a Lichess game, one
- * compact row says so in the engine row's place.
+ * board's engine), then while it's on the Depth / Score / Best strip and the lines. Switched off
+ * with lines found, it's paused: they stay as they were. Off, only the row shows, so the tree gets
+ * the space. With no engine installed, or during a Lichess game, one compact row says so in the
+ * engine row's place.
  */
 export function EngineStatusPanel({
   onOpenSettings,
@@ -755,7 +757,21 @@ function EngineNoticeRow({
   );
 }
 
-/** The board's engine row and, while it runs, its stats and lines. */
+/**
+ * The position the engine block's lines belong to: the board's, or while paused the paused one
+ * (the board may have moved on since): their moves, previews and picks are read from there.
+ */
+function useLinesPosition(
+  board: EnginePanelPosition,
+  paused: PausedAnalysis | null
+): EnginePanelPosition {
+  return useMemo(
+    () => (paused ? { ...board, fen: paused.fen, nodeId: paused.nodeId } : board),
+    [board, paused]
+  );
+}
+
+/** The board's engine row and, while it runs or is paused, its stats and lines. */
 function BoardEngine({
   onStartAnalysis,
   onStopAnalysis
@@ -763,16 +779,20 @@ function BoardEngine({
   onStartAnalysis?: () => void;
   onStopAnalysis?: () => void;
 }) {
-  const position = useBoardEnginePosition();
+  const board = useBoardEnginePosition();
   const readout = useEngineReadout();
   const { status, topLines, error, activeEngineId } = readout;
-  const { fen, analysing, engineGame } = position;
+  const { analysing, engineGame } = board;
+  // Switched off with lines found: they stay, frozen (see the analysis store's paused).
+  const paused = useAnalysisStore((state) => (analysing || engineGame ? null : state.paused));
+  const position = useLinesPosition(board, paused);
+  const { fen } = position;
   const settings = useSettingsQuery();
   const analysisSettings = { ...defaultSettings, ...settings.data };
   const engines = useEnginesQuery();
-  // Off, the engine the switch would start; on (or in an engine game), the one searching.
+  // Off, the engine the switch would start; on, paused (or in an engine game), the one searching.
   const engineId =
-    ((analysing || engineGame) && activeEngineId) ||
+    ((analysing || engineGame || paused) && activeEngineId) ||
     analysisEngineFor(engines.data, analysisSettings.analysisEngineId);
   const engine = engines.data?.find((item) => item.id === engineId);
   const restartFresh = useAnalysisStore((state) => state.restartFresh);
@@ -782,13 +802,24 @@ function BoardEngine({
   // A depth- or time-limited search that reached its limit: no search runs (Restart searches again).
   const finished = status === "ready";
   const failed = status === "error";
-  // The switch is off and no engine game holds the engine: only the row shows.
-  const off = !analysing && !engineGame;
+  // The switch is off with nothing paused and no engine game holds the engine: only the row shows.
+  const off = !analysing && !engineGame && !paused;
   // An engine game asks for one line; live analysis for as many as its settings say.
   const reservedLines = engineGame ? 1 : analysisSettings.analysisLines;
   const depthTarget =
-    analysing && analysisSettings.analysisLimit === "depth" ? analysisSettings.analysisDepth : null;
+    (analysing || paused) && analysisSettings.analysisLimit === "depth"
+      ? analysisSettings.analysisDepth
+      : null;
   const score = primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–";
+  // Restart while paused searches the board's position from scratch, analysis on again.
+  const restart = analysing
+    ? restartFresh
+    : paused && onStartAnalysis
+      ? () => {
+          restartFresh();
+          onStartAnalysis();
+        }
+      : null;
 
   return (
     <>
@@ -809,6 +840,12 @@ function BoardEngine({
                 <CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
                 <span className="truncate">The engine stopped with an error</span>
               </>
+            ) : paused ? (
+              pausedStatusLabel(
+                paused,
+                onPausedPosition(paused, { currentNodeId: board.nodeId, currentFen: board.fen }),
+                primary?.depth
+              )
             ) : off ? (
               "Off"
             ) : analysing && finished ? (
@@ -832,12 +869,12 @@ function BoardEngine({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/* An engine that stopped with an error runs no search: Restart is the way on. */}
-          {analysing ? (
+          {restart ? (
             <IconButton
               label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
               icon={<RotateCcw />}
               size="icon-xs"
-              onClick={restartFresh}
+              onClick={restart}
             />
           ) : null}
           <AnalysisSwitch onStart={onStartAnalysis} onStop={onStopAnalysis} />

@@ -44,6 +44,7 @@ import {
 import { repertoireKeys } from "../queries/repertoire";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analysis-engine";
+import { pausedAnalysisAt } from "../features/analysis/live-analysis";
 import { useGameStore } from "../stores/game-store";
 import {
   selectDisplayedMoves,
@@ -685,11 +686,15 @@ export function App() {
     showGame("notation");
   }
 
-  /** The Analysis switch turned off: leave live analysis but keep the position and moves (not a step of its own). */
+  /**
+   * The Analysis switch turned off: leave live analysis but keep the position and moves (not a step
+   * of its own). Its search stops, paused: the lines found stay (the switch on again resumes).
+   */
   function stopLiveAnalysis() {
     latestNavigation.current += 1;
+    const { moveTree, currentNodeId, currentFen } = currentGame();
+    useAnalysisStore.getState().pause(pausedAnalysisAt(moveTree, currentNodeId, currentFen));
     currentGame().setMode("freeplay");
-    useAnalysisStore.getState().setStatus("idle");
     record("replace", historyEntry("game"));
   }
 

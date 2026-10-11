@@ -156,6 +156,102 @@ describe("analysis store", () => {
     expect(useAnalysisStore.getState()).toMatchObject({ error: "failed", status: "error" });
   });
 
+  describe("pausing (the Analysis switch off)", () => {
+    const FEN = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    const KEY = `${FEN}|sf|3||`;
+    const position = { nodeId: "n1", fen: FEN, move: "1. e4" };
+    const line = (searchId: string, depth: number, multipv = 1): EngineInfo => ({
+      engineId: "sf",
+      searchId,
+      multipv,
+      depth,
+      score: { type: "cp", value: 20 },
+      pv: ["e7e5"],
+      raw: "info",
+      receivedAt: depth
+    });
+    const searchedTo = (depth: number) => {
+      clearAnalysisResults();
+      useAnalysisStore.getState().startSearch(KEY, "s1");
+      useAnalysisStore.getState().setInfos([line("s1", depth), line("s1", depth, 2)]);
+      useAnalysisStore.getState().setBestMove("e7e5");
+    };
+
+    it("keeps the lines, best move and score of the position searched, with no search running", () => {
+      searchedTo(18);
+      const { topLines, latestInfo } = useAnalysisStore.getState();
+      useAnalysisStore.getState().pause(position);
+      expect(useAnalysisStore.getState()).toMatchObject({
+        paused: position,
+        status: "idle",
+        topLines,
+        latestInfo,
+        bestMove: "e7e5"
+      });
+    });
+
+    it("pauses nothing without lines, after an error, or for lines of another position", () => {
+      clearAnalysisResults();
+      useAnalysisStore.getState().startSearch(KEY, "s1");
+      useAnalysisStore.getState().pause(position);
+      expect(useAnalysisStore.getState()).toMatchObject({ paused: null, status: "idle" });
+
+      searchedTo(18);
+      useAnalysisStore.getState().pause({ ...position, fen: "another" });
+      expect(useAnalysisStore.getState().paused).toBeNull();
+
+      searchedTo(18);
+      useAnalysisStore.getState().setError("sf quit");
+      useAnalysisStore.getState().pause(position);
+      expect(useAnalysisStore.getState().paused).toBeNull();
+    });
+
+    it("resumes from the paused lines, replaced only once the new search gets as deep", () => {
+      searchedTo(18);
+      useAnalysisStore.getState().pause(position);
+      useAnalysisStore.getState().startSearch(KEY, "s2");
+      const resumed = useAnalysisStore.getState();
+      expect(resumed.paused).toBeNull();
+      expect(resumed.topLines.map((info) => info.depth)).toEqual([18, 18]);
+      useAnalysisStore.getState().setInfos([line("s2", 4)]);
+      expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(18);
+      useAnalysisStore.getState().setInfos([line("s2", 19)]);
+      expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(19);
+    });
+
+    it("Restart clears the lines and ends the pause; the next search starts from scratch", () => {
+      searchedTo(18);
+      useAnalysisStore.getState().pause(position);
+      const epoch = useAnalysisStore.getState().searchEpoch;
+      useAnalysisStore.getState().restartFresh();
+      expect(useAnalysisStore.getState()).toMatchObject({
+        paused: null,
+        topLines: [],
+        bestMove: null,
+        freshSearch: true,
+        searchEpoch: epoch + 1
+      });
+      useAnalysisStore.getState().startSearch(KEY, "s2");
+      expect(useAnalysisStore.getState()).toMatchObject({ topLines: [], freshSearch: false });
+      // Only that one search: the one after it carries on from its lines again.
+      useAnalysisStore.getState().setInfos([line("s2", 6)]);
+      useAnalysisStore.getState().startSearch(KEY, "s3");
+      expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(6);
+    });
+
+    it("ends with the board's engine work (reset) or an engine error", () => {
+      searchedTo(18);
+      useAnalysisStore.getState().pause(position);
+      useAnalysisStore.getState().reset();
+      expect(useAnalysisStore.getState()).toMatchObject({ paused: null, topLines: [] });
+
+      searchedTo(18);
+      useAnalysisStore.getState().pause(position);
+      useAnalysisStore.getState().setError("The engine quit.");
+      expect(useAnalysisStore.getState().paused).toBeNull();
+    });
+  });
+
   it("keeps the analysis target through a reset: only its owner clears it", () => {
     const target = { owner: "chapter", nodeId: "root", rootFen: "fen", moves: [], fen: "fen" };
     useAnalysisStore.getState().setTarget(target);

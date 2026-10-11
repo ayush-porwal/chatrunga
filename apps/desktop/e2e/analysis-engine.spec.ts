@@ -77,6 +77,62 @@ test("the Analyze board shows an imported castled game's depth, score and lines 
   expect(engineCommands(log)).not.toContain("exit");
 });
 
+test("the Analysis switch off pauses: the lines stay, on another move too, and on again resumes from them", async ({
+  launch,
+  profile
+}) => {
+  const log = join(profile, "fake-engine.log");
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "stockfish");
+  await importPgnFile(app, page, writePgn(profile, "castled.pgn", CASTLED_PGN));
+  const moves = page.getByRole("tree", { name: "Game moves" });
+  await expect(moves.getByRole("button", { name: "O-O-O", exact: true })).toBeVisible();
+
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  const panel = page.getByRole("region", { name: "Engine" });
+  // White to move after 8... O-O-O: the fake's first line is Rb1.
+  const rb1 = panel.getByRole("button", { name: "Go to Rb1 position" });
+  await analysis.click();
+  await expect(rb1).toBeVisible({ timeout: 15_000 });
+
+  // Off: paused, the lines and the Depth / Score / Best strip stay as they were.
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
+  await expect(panel).toContainText(/Paused at depth \d+/);
+  await expect(rb1).toBeVisible();
+  await expect(panel).toContainText(/Best\s*Rb1/);
+  await expect(panel).toContainText(/Score\s*\+0\.35/);
+  // The engine was stopped (its process stays warm for the switch on again).
+  await expect.poll(() => engineCommands(log).at(-1)).toBe("stop");
+
+  // Another move: still paused, with the paused position's lines.
+  await moves.getByRole("button", { name: "hxg4", exact: true }).click();
+  await expect(panel).toContainText("Paused · after 8… O-O-O");
+  await expect(rb1).toBeVisible();
+  await expect(panel).toContainText(/Best\s*Rb1/);
+
+  // Back on it and switched on: the search resumes from its lines, which never go meanwhile.
+  await moves.getByRole("button", { name: "O-O-O", exact: true }).click();
+  await expect(panel).toContainText(/Paused at depth \d+/);
+  await page.evaluate(() => {
+    const flags = window as unknown as { linesEmptied?: boolean };
+    flags.linesEmptied = false;
+    const region = document.querySelector('[aria-label="Engine"]')!;
+    new MutationObserver(() => {
+      if (!region.querySelector('[aria-label="Go to Rb1 position"]')) flags.linesEmptied = true;
+    }).observe(region, { subtree: true, childList: true, characterData: true });
+  });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
+  await expect(panel).toContainText("Analysing");
+  await expect(rb1).toBeVisible();
+  await expect(panel).toContainText(/Depth\s*\d+/);
+  expect(
+    await page.evaluate(() => (window as unknown as { linesEmptied?: boolean }).linesEmptied)
+  ).toBe(false);
+});
+
 test("an engine that dies during live analysis ends the search, and Restart searches again", async ({
   launch,
   profile

@@ -26,6 +26,7 @@ import { EvalBar } from "./EvalBar";
 import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
+import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
 import { boardClocksAt, timeControlLabel } from "./board-clocks";
@@ -149,14 +150,14 @@ export function BoardView() {
     };
   }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, engineSide, hasLiveClock]);
 
-  // Live analysis (never an engine or Lichess game): the start of the engine's top line from this
-  // position, as many moves as the arrows draw (a string, so the board only redraws when they
-  // change, not on every engine update). Only moves legal here are drawn (lines of the previous
-  // position are dropped as a search starts, but never trusted).
+  // Live analysis (never an engine or Lichess game), running or paused on this position: the start
+  // of the engine's top line from this position, as many moves as the arrows draw (a string, so
+  // the board only redraws when they change, not on every engine update). Only moves legal here
+  // are drawn (lines of the previous position are dropped as a search starts, but never trusted).
   const showBestArrow = appearance.analysisBestMoveArrow;
   const planArrows = appearance.analysisPlanArrows;
   const liveLine = useAnalysisStore((state) => {
-    if (mode !== "analysis") return "";
+    if (!boardShowsLiveAnalysis({ mode, currentNodeId, currentFen }, state.paused)) return "";
     const pv = state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv;
     const line = pv?.length ? pv : state.bestMove ? [state.bestMove] : [];
     return line.slice(0, Math.max(1, planArrows)).join(" ");

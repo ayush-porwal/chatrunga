@@ -79,6 +79,8 @@ export type StartLiveAnalysisInput = {
   depth?: number | null;
   /** Search for this long (ms), then stop. */
   moveTimeMs?: number | null;
+  /** Restart from scratch: the engine forgets what it found (`ucinewgame`, its hash) before searching. */
+  fresh?: boolean;
 };
 
 /** Clock snapshot passed to UCI `go` for timed games. */

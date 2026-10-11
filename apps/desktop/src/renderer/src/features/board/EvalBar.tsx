@@ -7,6 +7,7 @@ import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine } from "../game/best-line-cursor";
+import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -115,9 +116,10 @@ export function useLiveAnalysisScore(): EngineScore | null {
 }
 
 /**
- * The evaluation for the position on the board: live analysis while the engine runs, else the
- * game review's evaluation of this move. Null when there is none, and always during a match that
- * is still being played (an engine game or a live Lichess game) or a puzzle not yet solved or failed.
+ * The evaluation for the position on the board: live analysis while the engine runs (or its
+ * frozen score while it's paused on this position), else the game review's evaluation of this
+ * move. Null when there is none, and always during a match that is still being played (an engine
+ * game or a live Lichess game) or a puzzle not yet solved or failed.
  */
 export function useBoardEval(): BoardEval | null {
   const game = useGameStore(
@@ -135,6 +137,7 @@ export function useBoardEval(): BoardEval | null {
   );
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const liveScore = useLiveAnalysisScore();
+  const paused = useAnalysisStore((state) => state.paused);
   // A puzzle still being solved: any evaluation would give the answer away.
   const puzzleOpen = usePuzzleStore(
     (state) => Boolean(state.activePuzzle) && state.outcome === "pending"
@@ -142,7 +145,13 @@ export function useBoardEval(): BoardEval | null {
   const reviewMoves = useDisplayedReviewMoves();
   if (game.matchOn || onlineGameLive || (game.mode === "puzzle" && puzzleOpen)) return null;
 
-  if (game.mode === "analysis") return liveAnalysisEval(game.fen, liveScore);
+  if (
+    boardShowsLiveAnalysis(
+      { mode: game.mode, currentNodeId: game.nodeId, currentFen: game.fen },
+      paused
+    )
+  )
+    return liveAnalysisEval(game.fen, liveScore);
 
   if (!reviewMoves.length || game.bestLine) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
