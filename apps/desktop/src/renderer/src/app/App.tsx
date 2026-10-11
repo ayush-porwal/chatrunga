@@ -76,7 +76,8 @@ import {
   PageTitle,
   ReviewTitlebar
 } from "./AppTitlebar";
-import type { SideTab } from "./side-tabs";
+import { showsEngine, type SideTab } from "./side-tabs";
+import { usePuzzleTabs } from "./use-puzzle-tabs";
 import {
   AddToRepertoireDialog,
   AppPages,
@@ -288,6 +289,9 @@ export function App() {
   const addToRepertoire = useAddToRepertoireStore((state) => state.request);
   const closeAddToRepertoire = useAddToRepertoireStore((state) => state.close);
   const focused = focusMode && onBoardView;
+  // The Moves tab's engine block shows an analysis error itself; while a puzzle hides the block,
+  // the titlebar shows it instead.
+  const engineBlockShown = showsEngine(usePuzzleTabs());
   // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
   const sidebarExpanded = actionRailOpen && !focused;
   useEffect(() => {
@@ -1632,7 +1636,7 @@ export function App() {
           ) : appView === "game" ? (
             <GameTitlebar
               engines={engines.data}
-              showAnalysisError={sideTab !== "notation" || focused}
+              showAnalysisError={!engineBlockShown || sideTab !== "notation" || focused}
               onAnalyze={on.analyzePosition}
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}

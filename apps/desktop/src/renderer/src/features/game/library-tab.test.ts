@@ -4,6 +4,7 @@ import {
   DEFAULT_LIBRARY_FILTER,
   libraryFilterApplies,
   libraryFilterState,
+  libraryListState,
   loadLibraryTab,
   saveLibraryTab,
   sourceLabel
@@ -108,5 +109,19 @@ describe("library tab", () => {
       expect(empty.options).toEqual([{ tab: null, label: "All games", count: 0 }]);
       expect([empty.total, empty.reviewed]).toEqual([0, 0]);
     });
+  });
+
+  it("shows a failed first read of the counts as the list's error, not loading forever", () => {
+    const games = { pending: true, failed: false };
+    expect(libraryListState({ read: false, failed: false }, games)).toBe("loading");
+    expect(libraryListState({ read: false, failed: true }, games)).toBe("counts-error");
+    // Counts read once: a failed re-read keeps them, and the list's own state shows.
+    expect(libraryListState({ read: true, failed: true }, games)).toBe("loading");
+    expect(libraryListState({ read: true, failed: true }, { pending: false, failed: false })).toBe(
+      "ready"
+    );
+    expect(libraryListState({ read: true, failed: false }, { pending: false, failed: true })).toBe(
+      "error"
+    );
   });
 });

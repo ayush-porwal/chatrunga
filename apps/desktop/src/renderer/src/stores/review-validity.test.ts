@@ -69,6 +69,17 @@ describe("review validity", () => {
     expect(outdatedFullMoves(moves, tree())).toBe(2);
   });
 
+  it("numbers the outdated moves like the counter in a game from a Black-to-move position", () => {
+    const { game } = importPgnText(
+      '[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n[SetUp "1"]\n\n1... e5 2. Nf3 Nc6 3. Bb5 *'
+    );
+    useGameStore.getState().loadGame({ ...game, id: "g" });
+    const moves = reviewOfMainline();
+    // 2… Nc6 3. Bb5 go: plies 3 and 4, which are moves 2 and 3 when Black moves first.
+    useGameStore.getState().deleteLineFromNode(nodeBySan("Nc6").id);
+    expect(outdatedFullMoves(moves, tree())).toBe(2);
+  });
+
   it("drops a reviewed move replaced by another one", () => {
     const moves = reviewOfMainline();
     useGameStore.getState().deleteLineFromNode(nodeBySan("e5").id);

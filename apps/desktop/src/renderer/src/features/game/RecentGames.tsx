@@ -35,6 +35,7 @@ import {
   DEFAULT_LIBRARY_FILTER,
   libraryFilterApplies,
   libraryFilterState,
+  libraryListState,
   useLibraryTabStore,
   type LibraryFilter
 } from "./library-tab";
@@ -49,6 +50,10 @@ export type LibraryView = {
   total: number | null;
   /** The library's counts are read (`applied` is real). */
   ready: boolean;
+  /** The first read of the counts failed (the list can't be filtered yet): its error, else null. */
+  countsError: unknown;
+  /** Reads the counts again (the list's Try again after `countsError`). */
+  retryCounts: () => void;
   /** Any game in the library. */
   hasGames: boolean;
   /** The filter as it applies (a chosen source with no games left lists every game). */
@@ -83,10 +88,14 @@ export function useLibraryView(): LibraryView {
   );
   // Read once (a failed re-read keeps the last counts).
   const ready = counts !== undefined;
+  const countsError = !ready && facets.isError ? facets.error : null;
+  const { refetch: refetchCounts } = facets;
   return useMemo(
     () => ({
       total: ready ? applied.total : null,
       ready,
+      countsError,
+      retryCounts: () => void refetchCounts(),
       hasGames: ready && applied.options[0].count > 0,
       applied,
       choose: (filter: LibraryFilter) => {
@@ -106,7 +115,7 @@ export function useLibraryView(): LibraryView {
         setSearchOpen(false);
       }
     }),
-    [applied, query, ready, searchFocus, searchOpen]
+    [applied, countsError, query, ready, refetchCounts, searchFocus, searchOpen]
   );
 }
 
@@ -180,6 +189,10 @@ export function RecentGames({
     { enabled: view.ready }
   );
   const list = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
+  const listState = libraryListState(
+    { read: view.ready, failed: view.countsError !== null },
+    { pending: games.isPending, failed: games.isError }
+  );
   const actions = useSavedGameActions();
   const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
   const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
@@ -235,13 +248,13 @@ export function RecentGames({
             {actions.error}
           </Notice>
         ) : null}
-        {games.isPending ? (
+        {listState === "loading" ? (
           <div aria-busy="true" aria-label="Loading games">
             {Array.from({ length: skeletonRows }, (_, index) => (
               <SkeletonRow key={index} />
             ))}
           </div>
-        ) : games.isError ? (
+        ) : listState !== "ready" ? (
           // A failed read is not an empty library.
           <div className="p-3">
             <Notice
@@ -252,14 +265,17 @@ export function RecentGames({
                   type="button"
                   variant="outline"
                   size="xs"
-                  onClick={() => void games.refetch()}
+                  onClick={() =>
+                    listState === "counts-error" ? view.retryCounts() : void games.refetch()
+                  }
                 >
                   <RotateCcw />
                   Try again
                 </Button>
               }
             >
-              {ipcErrorMessage(games.error) || "The library couldn't be read."}
+              {ipcErrorMessage(listState === "counts-error" ? view.countsError : games.error) ||
+                "The library couldn't be read."}
             </Notice>
           </div>
         ) : list.length ? (
@@ -377,7 +393,8 @@ function GameRow({
         "group/row relative mx-1.5 flex h-17 cursor-pointer items-center gap-3 rounded-[10px] border border-transparent pl-2.5 pr-2 transition-colors duration-micro hover:border-line-strong hover:bg-control focus-within:border-line-strong focus-within:bg-control has-[[aria-expanded=true]]:z-20"
       )}
     >
-      <span className="relative shrink-0">
+      {/* Isolated: the source badge stays above the thumbnail, under the row's open overlay. */}
+      <span className="relative isolate shrink-0">
         <BoardThumbnail
           fen={game.currentFen}
           orientation={orientation}
@@ -396,7 +413,7 @@ function GameRow({
         {player("white", white)}
         {player("black", black)}
       </button>
-      <span className="relative z-10 grid w-4 shrink-0 place-items-center text-accent">
+      <span className="grid w-4 shrink-0 place-items-center text-accent">
         {game.reviewCount > 0 ? (
           <span role="img" aria-label="Reviewed" title="Reviewed">
             <ChessboardIcon className="size-3.5" />

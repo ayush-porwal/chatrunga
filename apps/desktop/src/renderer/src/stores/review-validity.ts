@@ -67,6 +67,8 @@ export function useDisplayedReviewMoves(): MoveReview[] {
 export function outdatedFullMoves(moves: MoveReview[], moveTree: readonly MoveNode[]): number {
   const kept = new Set(compatibleReviewMoves(moves, moveTree));
   const numbers = new Set<number>();
+  // A ply counts from the game's real start (a Black-to-move position opens on an even ply), so
+  // half of it, rounded up, is the move's own number.
   for (const move of moves) if (!kept.has(move)) numbers.add(Math.ceil(move.ply / 2));
   return numbers.size;
 }

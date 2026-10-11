@@ -32,10 +32,26 @@ export function resultBadgeLabel(
 ): string | null {
   const decided = decidedResult(result);
   if (!decided) return null;
-  const how = termination?.trim() ?? "";
+  const how = terminationReason(termination?.trim() ?? "");
   if (!how || UNINFORMATIVE_TERMINATIONS.has(how.toLowerCase())) return decided;
   const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0]!.toUpperCase() + how.slice(1);
   return `${decided} · ${label}`;
+}
+
+/** Chess.com's sentence: "{player} won by checkmate", "… won on time", "Game drawn by repetition". */
+const RESULT_SENTENCE = /\b(?:won|drawn)\b(?:\s+(by|on)\s+(.+))?$/i;
+
+/**
+ * Just how the game ended, from a termination that may be a whole sentence: Chess.com's names the
+ * winner and restates the result ("pawnstorm99 won by checkmate" → "checkmate", "… won on time" →
+ * "on time"); a sentence without the reason gives "".
+ */
+function terminationReason(termination: string): string {
+  const sentence = RESULT_SENTENCE.exec(termination);
+  if (!sentence) return termination;
+  const [, preposition, reason] = sentence;
+  if (!reason) return "";
+  return preposition?.toLowerCase() === "on" ? `on ${reason}` : reason;
 }
 
 export function gameModeLabel(
