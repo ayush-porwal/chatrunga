@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { applyUserMove } from "@chaturanga/shared/chess/position";
 import { userMoveFromUci } from "@/lib/uci";
+import { playSound } from "../../sounds/sounds";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 
@@ -11,8 +12,10 @@ const PUZZLE_REPLY_DELAY_MS = 320;
 function advancePuzzle(feedback: string): void {
   const store = usePuzzleStore.getState();
   if (!store.activePuzzle) return;
-  if (store.solutionIndex + 1 >= store.activePuzzle.solutionMoves.length) store.markComplete();
-  else store.advanceSolution(1, feedback);
+  if (store.solutionIndex + 1 >= store.activePuzzle.solutionMoves.length) {
+    store.markComplete();
+    playSound("correct");
+  } else store.advanceSolution(1, feedback);
 }
 
 /**
@@ -33,6 +36,7 @@ export function submitPuzzleMove(
   if (!expected || feedbackKind === "broken") return false;
   if (uci !== expected) {
     markWrongMove({ uci, san: sanOf(fenBefore, uci), fen: fenBefore, expected });
+    playSound("error");
     return false;
   }
   if (!play()) return false;

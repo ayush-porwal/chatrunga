@@ -34,6 +34,8 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("playOpponent", null)).toBeNull();
     expect(parseSettingValue("playEngineId", "engine-1")).toBe("engine-1");
     expect(parseSettingValue("playEngineId", null)).toBeNull();
+    expect(parseSettingValue("soundSet", "pychess")).toBe("pychess");
+    expect(parseSettingValue("soundSilentCheck", true)).toBe(true);
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -56,6 +58,10 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("ratingsAccount", "fide")).toThrow(/setting ratingsAccount/);
     expect(() => parseSettingValue("playOpponent", "home")).toThrow(/setting playOpponent/);
     expect(() => parseSettingValue("playEngineId", 7)).toThrow(/setting playEngineId/);
+    // Only the sets the app ships: never Lichess's non-free standard or robot sets.
+    expect(() => parseSettingValue("soundSet", "standard")).toThrow(/setting soundSet/);
+    expect(() => parseSettingValue("soundSet", "robot")).toThrow(/setting soundSet/);
+    expect(() => parseSettingValue("soundSilentCheck", "on")).toThrow(/setting soundSilentCheck/);
     // One rating per mode: not the single number older builds stored, nor a mode short or damaged.
     expect(() => parseSettingValue("playerRatings", 1500)).toThrow(/setting playerRatings/);
     const { correspondence: _missing, ...fourModes } = uniformRatings(1500);

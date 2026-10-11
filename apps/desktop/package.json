@@ -51,6 +51,10 @@
       {
         "from": "../../scripts/piece-svg-sources/licenses",
         "to": "piece-set-licenses"
+      },
+      {
+        "from": "src/renderer/src/assets/sounds/SOUND_CREDITS.md",
+        "to": "sound-credits.md"
       }
     ],
     "mac": {

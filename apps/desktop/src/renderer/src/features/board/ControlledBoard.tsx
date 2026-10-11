@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
+import { useBoardStepSound } from "./useBoardStepSound";
 import {
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
@@ -67,8 +68,8 @@ const PROMOTION_PIECES = [
 /**
  * An interactive Chessground board driven entirely by props: it shows `fen`, lets the movable side
  * play legal moves and reports them through `onMove` without applying them. No store access, so it
- * suits any feature that owns its own position (repertoire study and practice). Looks and moves like
- * the main board (same appearance settings, motion and polish).
+ * suits any feature that owns its own position (repertoire study and practice). Looks, moves and
+ * sounds like the main board (same appearance settings, motion, polish and move sounds).
  */
 export function ControlledBoard({
   fen,
@@ -95,6 +96,7 @@ export function ControlledBoard({
   // Only real squares reach Chessground (a stored move could be anything).
   const lastFrom = lastMove && isSquare(lastMove[0]) ? lastMove[0] : undefined;
   const lastTo = lastMove && isSquare(lastMove[1]) ? lastMove[1] : undefined;
+  useBoardStepSound(fen, lastMove);
   const shapes = useMemo(() => shapesFromAnnotations(arrows, highlights), [arrows, highlights]);
   const drawingEnabled = Boolean(onShapesChange);
   const interactive = movable !== "none";

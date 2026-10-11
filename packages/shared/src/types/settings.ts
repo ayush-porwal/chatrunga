@@ -322,6 +322,21 @@ export const pieceSizesOptions: Array<{ id: PieceSizes; label: string }> = [
   { id: "uniform", label: "Uniform" }
 ];
 
+/**
+ * The board's sound set (Settings → Sound). Each is a set of recordings shipped with the app; the
+ * authors and licences are in assets/sounds/SOUND_CREDITS.md.
+ */
+export const SOUND_SETS = ["sfx", "piano", "nes", "futuristic", "pychess"] as const;
+export type SoundSet = (typeof SOUND_SETS)[number];
+
+export const soundSetOptions: ReadonlyArray<{ id: SoundSet; label: string }> = [
+  { id: "sfx", label: "Lichess SFX" },
+  { id: "piano", label: "Lichess Piano" },
+  { id: "nes", label: "Lichess NES" },
+  { id: "futuristic", label: "Lichess Futuristic" },
+  { id: "pychess", label: "PyChess" }
+];
+
 /** How much the AI commentary says about each move. */
 export type CommentaryDetail = "concise" | "balanced" | "detailed";
 export const COMMENTARY_DETAILS: readonly CommentaryDetail[] = ["concise", "balanced", "detailed"];
@@ -347,6 +362,10 @@ export type AppSettings = {
   boardAnimation: boolean;
   soundEnabled: boolean;
   soundVolume: number;
+  /** The recordings the board's sounds play (Settings → Sound). */
+  soundSet: SoundSet;
+  /** A check sounds like the move that gave it (Lichess's standard set has no check sound either). */
+  soundSilentCheck: boolean;
   defaultEngineId: string | null;
   lastEngineMoveTimeMs: number;
   lastEngineDepth: number | null;
@@ -497,6 +516,8 @@ export const defaultSettings: AppSettings = {
   boardAnimation: true,
   soundEnabled: true,
   soundVolume: 0.7,
+  soundSet: "sfx",
+  soundSilentCheck: false,
   defaultEngineId: null,
   lastEngineMoveTimeMs: 1000,
   lastEngineDepth: null,
@@ -614,6 +635,18 @@ export function normalizePlaySettings(settings: AppSettings): AppSettings {
     ...settings,
     playOpponent: isOneOf(PLAY_OPPONENTS, opponent) ? opponent : null,
     playEngineId: typeof engineId === "string" && engineId.length > 0 ? engineId : null
+  };
+}
+
+/** Validates the sound settings, falling back to defaults for bad values. Idempotent. */
+export function normalizeSoundSettings(settings: AppSettings): AppSettings {
+  const set: unknown = settings.soundSet;
+  const silentCheck: unknown = settings.soundSilentCheck;
+  return {
+    ...settings,
+    soundSet: isOneOf(SOUND_SETS, set) ? set : defaultSettings.soundSet,
+    soundSilentCheck:
+      typeof silentCheck === "boolean" ? silentCheck : defaultSettings.soundSilentCheck
   };
 }
 

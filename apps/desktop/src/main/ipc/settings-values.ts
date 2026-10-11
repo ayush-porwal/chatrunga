@@ -14,6 +14,7 @@ import {
   PLAY_OPPONENTS,
   PRACTICE_AUTO_ADVANCE_MS,
   REVIEW_MAIA_LEVELS,
+  SOUND_SETS,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import { isOneOf } from "@chaturanga/shared/types/guards";
@@ -69,6 +70,8 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   boardAnimation: bool,
   soundEnabled: bool,
   soundVolume: number(0, 1),
+  soundSet: oneOf(...SOUND_SETS),
+  soundSilentCheck: bool,
   defaultEngineId: nullable(text(200)),
   lastEngineMoveTimeMs: number(1, 3_600_000),
   lastEngineDepth: nullable(number(1, 200, true)),
