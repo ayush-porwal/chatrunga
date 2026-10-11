@@ -5,12 +5,12 @@ import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/c
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
+import { formatEngineScore, scoreToCentipawns } from "@chaturanga/shared/chess/review";
 import {
-  formatEngineScore,
-  scoreFromWhitePerspective,
-  scoreToCentipawns
-} from "@chaturanga/shared/chess/review";
-import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/review-insight";
+  MAIA_BUCKETS,
+  REVIEW_INSIGHT_PAYLOAD_VERSION,
+  type MaiaRatingBucket
+} from "@chaturanga/shared/schemas/constants";
 import type {
   CuratorReason,
   EngineSignal,
@@ -30,7 +30,6 @@ import type {
   Wdl
 } from "@chaturanga/shared/types/engine";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
-import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/rating-curve";
 
 type ReviewMoveInput = ReviewGameInput["moves"][number];
 export type ReviewTab = "summary" | "commentary" | "moves" | "engine";
@@ -182,9 +181,8 @@ export function buildTacticalFacts(move: MoveReview): TacticalFact[] {
 
 export function buildEngineSignals(move: MoveReview): EngineSignal[] {
   const lines = [...move.topLines].sort((a, b) => a.multipv - b.multipv);
-  if (lines.length < 2) return [];
-  const best = lines[0];
-  const second = lines[1];
+  const best = lines.at(0);
+  const second = lines.at(1);
   if (!best || !second) return [];
   const gap = Math.abs(scoreToCentipawns(best.score) - scoreToCentipawns(second.score));
   const signals: EngineSignal[] = [];
@@ -332,19 +330,18 @@ function resolveEvalLoss(
   return Math.max(0, Math.min(1000, moverCp(reference, mover) - moverCp(evalAfter, mover)));
 }
 
-function buildAlternatives(move: MoveReview, mover: Side) {
+function buildAlternatives(move: MoveReview) {
   const lines = [...move.topLines].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
   const alternatives: NonNullable<ReviewInsightPayload["engines"]["stockfish"]["alternatives"]> =
     [];
   lines.forEach((line, index) => {
     const san = uciToSan(move.fenBefore, line.pv[0]);
     if (!isSanToken(san)) return;
-    const score = line.scoreWhite ?? scoreFromWhitePerspective(line.score, mover);
     alternatives.push(
       defined({
         rank: index + 1,
         san,
-        eval: formatEngineScore(score),
+        eval: formatEngineScore(line.scoreWhite),
         lineSan: uciLineToSan(move.fenBefore, line.pv).slice(0, 6),
         isPlayed: line.pv[0] === move.playedMove ? true : undefined
       })
@@ -408,6 +405,68 @@ function evalTrend(points: readonly number[]): PayloadContextFields["trend"] {
   return "stable";
 }
 
+/** The errors each side made before the move, by severity. */
+function mistakesBefore(previous: readonly MoveReview[], sideForPly: (ply: number) => Side) {
+  const emptyCount = () => ({ inaccuracies: 0, mistakes: 0, blunders: 0 });
+  const mistakesSoFar = { white: emptyCount(), black: emptyCount() };
+  for (const item of previous) {
+    const bucket = mistakesSoFar[sideForPly(item.ply)];
+    switch (item.assessment?.severity ?? null) {
+      case "inaccuracy":
+        bucket.inaccuracies += 1;
+        break;
+      case "mistake":
+        bucket.mistakes += 1;
+        break;
+      case "blunder":
+        bucket.blunders += 1;
+        break;
+      case null:
+        break;
+    }
+  }
+  return mistakesSoFar;
+}
+
+/** What was actually played after the move (in the game, from its position), if anything. */
+function actualReplyTo(move: MoveReview, ordered: readonly MoveReview[]) {
+  const next = findPly(ordered, move.ply + 1);
+  if (!next || next.fenBefore !== move.fenAfter || !isSanToken(next.san)) return undefined;
+  return defined({
+    moveNumberSan: moveNumberSanForPly(next.ply),
+    san: next.san,
+    annotation: next.assessment?.annotation ?? undefined,
+    matchesEngine: Boolean(next.bestMove && next.playedMove === next.bestMove)
+  });
+}
+
+/**
+ * The game's metadata from its PGN headers; the result is the headers', else the final position's.
+ */
+function gameHeaderFields(
+  input: InsightPayloadHeaders | null | undefined,
+  ordered: readonly MoveReview[]
+) {
+  const headers = input ?? {};
+  const white = cleanHeader(headers.white, 60);
+  const black = cleanHeader(headers.black, 60);
+  const eco = cleanHeader(headers.eco, 10);
+  const openingName = cleanHeader(headers.opening, 90);
+  const last = ordered.at(-1);
+  const finalResult = last ? safeStatus(last.fenAfter)?.result : undefined;
+  const result = [cleanHeader(headers.result, 10), finalResult].find(
+    (value): value is "1-0" | "0-1" | "1/2-1/2" =>
+      value === "1-0" || value === "0-1" || value === "1/2-1/2"
+  );
+  return {
+    players: white || black ? defined({ white, black }) : undefined,
+    event: cleanHeader(headers.event, 80),
+    opening: [eco, openingName].filter(Boolean).join(" ").slice(0, 100) || undefined,
+    timeControl: cleanHeader(headers.timeControl, 20),
+    result
+  };
+}
+
 function buildGameContext(
   move: MoveReview,
   mover: Side,
@@ -435,61 +494,13 @@ function buildGameContext(
     ...recent.flatMap((item) => (item.evalAfter ? [whiteCp(item.evalAfter)] : []))
   ];
 
-  const emptyCount = () => ({ inaccuracies: 0, mistakes: 0, blunders: 0 });
-  const mistakesSoFar = { white: emptyCount(), black: emptyCount() };
-  for (const item of previous) {
-    const bucket = mistakesSoFar[sideForPly(item.ply)];
-    switch (item.assessment?.severity ?? null) {
-      case "inaccuracy":
-        bucket.inaccuracies += 1;
-        break;
-      case "mistake":
-        bucket.mistakes += 1;
-        break;
-      case "blunder":
-        bucket.blunders += 1;
-        break;
-      case null:
-        break;
-    }
-  }
-
-  const next = findPly(ordered, move.ply + 1);
-  const actualReply =
-    next && next.fenBefore === move.fenAfter && isSanToken(next.san)
-      ? defined({
-          moveNumberSan: moveNumberSanForPly(next.ply),
-          san: next.san,
-          annotation: next.assessment?.annotation ?? undefined,
-          matchesEngine: Boolean(next.bestMove && next.playedMove === next.bestMove)
-        })
-      : undefined;
-
-  const headers = context.headers ?? {};
-  const white = cleanHeader(headers.white, 60);
-  const black = cleanHeader(headers.black, 60);
-  const eco = cleanHeader(headers.eco, 10);
-  const openingName = cleanHeader(headers.opening, 90);
-  const opening = [eco, openingName].filter(Boolean).join(" ").slice(0, 100) || undefined;
-  const headerResult = cleanHeader(headers.result, 10);
-  const last = ordered[ordered.length - 1];
-  const finalResult = last ? safeStatus(last.fenAfter)?.result : undefined;
-  const result = [headerResult, finalResult].find(
-    (value): value is "1-0" | "0-1" | "1/2-1/2" =>
-      value === "1-0" || value === "0-1" || value === "1/2-1/2"
-  );
-
   return defined({
-    players: white || black ? defined({ white, black }) : undefined,
-    event: cleanHeader(headers.event, 80),
-    opening,
-    timeControl: cleanHeader(headers.timeControl, 20),
-    result,
+    ...gameHeaderFields(context.headers, ordered),
     totalPlies: ordered.length > 0 ? Math.min(1200, ordered.length) : undefined,
     recentMoves: recentMoves.length ? recentMoves : undefined,
     trend: evalTrend(trendPoints),
-    mistakesSoFar,
-    actualReply
+    mistakesSoFar: mistakesBefore(previous, sideForPly),
+    actualReply: actualReplyTo(move, ordered)
   });
 }
 
@@ -533,20 +544,32 @@ function toWinChance(wdl: Wdl | null | undefined, flip: boolean): WinChance | un
   return { win, draw: Math.max(0, 100 - win - loss), loss };
 }
 
-function engineMeta(move: MoveReview, review: InsightReviewMeta | null | undefined) {
-  const bestLine = [...move.topLines].sort((a, b) => a.multipv - b.multipv)[0];
+/** The engine and its search: its name, the depth the best line reached, the time per move. */
+function searchMeta(
+  bestLine: AnalysisLine | undefined,
+  review: InsightReviewMeta | null | undefined
+) {
   const depth =
     bestLine?.depth && bestLine.depth > 0 ? Math.min(250, Math.round(bestLine.depth)) : undefined;
   const moveTimeMs = review?.engineSettings?.moveTimeMs ?? review?.moveTimeMs ?? undefined;
-  const before = toWinChance(move.wdlBefore ?? bestLine?.wdl, false);
-  // wdlAfter is from the opponent's side (to move after the played move).
-  const after = toWinChance(move.wdlAfter, true);
   return {
     engineName: review?.engineName?.trim().slice(0, 60) || undefined,
     depth,
-    moveTimeMs: moveTimeMs && moveTimeMs > 0 ? Math.round(moveTimeMs) : undefined,
-    winChance: before || after ? defined({ before, after }) : undefined
+    moveTimeMs: moveTimeMs && moveTimeMs > 0 ? Math.round(moveTimeMs) : undefined
   };
+}
+
+/** The mover's winning chances before the move (best play) and after it. */
+function winChanceAround(move: MoveReview, bestLine: AnalysisLine | undefined) {
+  const before = toWinChance(move.wdlBefore ?? bestLine?.wdl, false);
+  // wdlAfter is from the opponent's side (to move after the played move).
+  const after = toWinChance(move.wdlAfter, true);
+  return before || after ? defined({ before, after }) : undefined;
+}
+
+function engineMeta(move: MoveReview, review: InsightReviewMeta | null | undefined) {
+  const bestLine = [...move.topLines].sort((a, b) => a.multipv - b.multipv).at(0);
+  return { ...searchMeta(bestLine, review), winChance: winChanceAround(move, bestLine) };
 }
 
 type HumanLikelihood = "most_likely" | "common" | "plausible" | "unusual" | "rare";
@@ -633,6 +656,147 @@ function buildMaiaEvidence(move: MoveReview, userRating: number, trusted: boolea
 }
 
 /**
+ * What the coach payload is grounded on: the engine's best move and line, the scores before and
+ * after the move, and what it lost. Null when the engine produced no usable best move / evaluation
+ * for the position.
+ */
+function insightGrounds(move: MoveReview) {
+  const bestMoveSan = uciToSan(move.fenBefore, move.bestMove);
+  const bestLineSan = uciLineToSan(move.fenBefore, move.bestLine).slice(0, 8);
+  const evalBefore = move.evalBefore;
+  if (!bestMoveSan || bestLineSan.length === 0 || !evalBefore || !isSanToken(move.san)) return null;
+  const mover = statusForFen(move.fenBefore).turn;
+  const terminal = storedTerminal(move) ?? terminalFor(move.fenAfter);
+  const evalAfter = move.evalAfter ?? terminalEval(terminal);
+  if (!evalAfter) return null;
+  const evalLoss = resolveEvalLoss(move, evalAfter, terminal, mover);
+  if (evalLoss === null) return null;
+  return { bestMoveSan, bestLineSan, evalBefore, evalAfter, evalLoss, mover, terminal };
+}
+
+type InsightGrounds = NonNullable<ReturnType<typeof insightGrounds>>;
+
+/**
+ * A finished game has no engine search after the move (no PV), so the review stores no evalAfter.
+ * Synthesize it from the terminal state instead of dropping the move: M0 = side to move is mated,
+ * 0.00 = drawn.
+ */
+function terminalEval(terminal: TerminalState | undefined): EngineScore | null {
+  if (terminal === "checkmate") return { type: "mate", value: 0 };
+  return terminal ? { type: "cp", value: 0 } : null;
+}
+
+/**
+ * The review's own verdict on the move, which the coach explains and never invents: an unmarked
+ * move is sent with no mark, an error with its severity, a verified find as one.
+ */
+function insightVerdict(assessment: MoveReview["assessment"]) {
+  const annotation = assessment?.annotation ?? null;
+  const severity = assessment?.severity ?? undefined;
+  const curatorReason: CuratorReason = severity
+    ? "mistake"
+    : annotation && VERIFIED_FINDS.has(annotation)
+      ? "difficult_find"
+      : "move_review";
+  return {
+    annotation,
+    severity,
+    assessmentTags: assessment?.tags.length ? assessment.tags : undefined,
+    curatorReason
+  };
+}
+
+/** The game facts about the move: where it was played, by whom, and how the game stands after. */
+function insightGame(
+  move: MoveReview,
+  grounds: InsightGrounds,
+  phase: ReturnType<typeof phaseFor>
+): ReviewInsightPayload["game"] {
+  return defined({
+    ply: move.ply,
+    moveNumberSan: moveNumberSanForPly(move.ply),
+    san: move.san,
+    mover: grounds.mover,
+    fenBefore: move.fenBefore,
+    fenAfter: move.fenAfter,
+    phase,
+    givesCheck: safeStatus(move.fenAfter)?.isCheck ? true : undefined,
+    terminal: grounds.terminal
+  });
+}
+
+/** Stockfish's evidence: the evals around the move, its best line, the alternatives and reply. */
+function stockfishEvidence(
+  move: MoveReview,
+  grounds: InsightGrounds,
+  replyLineSan: string[] | undefined,
+  review: InsightReviewMeta | null | undefined
+): ReviewInsightPayload["engines"]["stockfish"] {
+  const { mover, terminal, evalAfter } = grounds;
+  const bestTerminal = move.bestMove
+    ? terminalFor(fenAfterUci(move.fenBefore, move.bestMove))
+    : undefined;
+  const assessmentBefore = assessScore(grounds.evalBefore);
+  const assessmentAfter = terminal ? terminalAssessment(terminal, mover) : assessScore(evalAfter);
+  const assessmentAfterBest = bestTerminal
+    ? terminalAssessment(bestTerminal, mover)
+    : assessScore(move.bestEvalAfter);
+  const { alternatives, playedMoveRank } = buildAlternatives(move);
+  return defined({
+    evalBefore: formatEngineScore(grounds.evalBefore),
+    evalAfter: formatEngineScore(evalAfter),
+    evalLossCp: Math.max(0, Math.round(grounds.evalLoss)),
+    bestMoveSan: grounds.bestMoveSan,
+    bestLineSan: grounds.bestLineSan,
+    evalPerspective: "white" as const,
+    bestEvalAfter: move.bestEvalAfter ? formatEngineScore(move.bestEvalAfter) : undefined,
+    assessment:
+      assessmentBefore && assessmentAfter
+        ? defined({
+            before: assessmentBefore,
+            after: assessmentAfter,
+            afterBest: assessmentAfterBest
+          })
+        : undefined,
+    alternatives,
+    playedMoveRank: move.playedRank ?? playedMoveRank,
+    replyLineSan,
+    ...engineMeta(move, review)
+  });
+}
+
+/**
+ * Maia's evidence: the rating curve (read as neutral without trusted, usable Maia data), the moves
+ * humans at the player's level play, and the per-level probabilities. Maia probabilities are only
+ * trusted for reviews with `schemaVersion >= 2` (older reviews carry fake uniform policies).
+ */
+function maiaEvidence(
+  move: MoveReview,
+  userRating: number,
+  review: InsightReviewMeta | null | undefined
+) {
+  const curve = buildRatingCurveForMove(move, userRating);
+  const trusted = (review?.schemaVersion ?? 0) >= 2;
+  if (!trusted || !hasUsableMaiaData(move)) curve.interpretation = { label: "neutral" };
+  const maia = buildMaiaEvidence(move, userRating, trusted);
+  return {
+    maiaCurve: curve,
+    humanTopMoves: trusted
+      ? buildHumanTopMoves(move, maia?.playerLevel ?? curve.userRatingBucket)
+      : undefined,
+    maia
+  };
+}
+
+/** Who the coach writes for, how long, and (optionally) the whole game around the move. */
+type InsightPayloadOptions = {
+  userRating: number;
+  commentaryDetail?: CommentaryDetail;
+  playerColor?: Side;
+  context?: InsightPayloadContext;
+};
+
+/**
  * Build the grounded coach payload for one reviewed move.
  *
  * Pass `context` (the whole review's moves + PGN headers) so the coach also
@@ -642,57 +806,20 @@ function buildMaiaEvidence(move: MoveReview, userRating: number, trusted: boolea
  */
 export function buildInsightPayload(
   move: MoveReview,
-  userRating: number,
-  commentaryDetail: CommentaryDetail = "balanced",
-  playerColor: Side = "white",
-  context?: InsightPayloadContext
+  {
+    userRating,
+    commentaryDetail = "balanced",
+    playerColor = "white",
+    context
+  }: InsightPayloadOptions
 ): ReviewInsightPayload | null {
-  const bestMoveSan = uciToSan(move.fenBefore, move.bestMove);
-  const bestLineSan = uciLineToSan(move.fenBefore, move.bestLine).slice(0, 8);
-  if (!bestMoveSan || bestLineSan.length === 0 || !move.evalBefore || !isSanToken(move.san))
-    return null;
-  const mover = statusForFen(move.fenBefore).turn;
-  const afterStatus = safeStatus(move.fenAfter);
-  const terminal = storedTerminal(move) ?? terminalFor(move.fenAfter);
-  // A finished game has no engine search after the move (no PV), so the review
-  // stores no evalAfter. Synthesize it from the terminal state instead of
-  // dropping the move: M0 = side to move is mated, 0.00 = drawn.
-  const evalAfter: EngineScore | null =
-    move.evalAfter ??
-    (terminal === "checkmate"
-      ? { type: "mate", value: 0 }
-      : terminal
-        ? { type: "cp", value: 0 }
-        : null);
-  if (!evalAfter) return null;
-  const evalLoss = resolveEvalLoss(move, evalAfter, terminal, mover);
-  if (evalLoss === null) return null;
-
-  const curve = buildRatingCurveForMove(move, userRating);
-  const trustedMaia = (context?.review?.schemaVersion ?? 0) >= 2;
-  const usableMaia = trustedMaia && hasUsableMaiaData(move);
-  if (!usableMaia) curve.interpretation = { label: "neutral" };
-  // The coach explains the review's own verdict and never invents one: an unmarked move is sent
-  // with no mark, an error with its severity, a verified find as one.
-  const annotation = move.assessment?.annotation ?? null;
-  const severity = move.assessment?.severity ?? undefined;
-  const reason: CuratorReason = severity
-    ? "mistake"
-    : annotation && VERIFIED_FINDS.has(annotation)
-      ? "difficult_find"
-      : "move_review";
-
-  const bestTerminal = move.bestMove
-    ? terminalFor(fenAfterUci(move.fenBefore, move.bestMove))
-    : undefined;
-  const assessmentBefore = assessScore(move.evalBefore);
-  const assessmentAfter = terminal ? terminalAssessment(terminal, mover) : assessScore(evalAfter);
-  const assessmentAfterBest = bestTerminal
-    ? terminalAssessment(bestTerminal, mover)
-    : assessScore(move.bestEvalAfter);
-  const { alternatives, playedMoveRank } = buildAlternatives(move, mover);
+  const grounds = insightGrounds(move);
+  if (!grounds) return null;
+  const maia = maiaEvidence(move, userRating, context?.review);
   const replyLineSan =
-    move.playedMove !== move.bestMove && !terminal ? replyLineFor(move, context) : undefined;
+    move.playedMove !== move.bestMove && !grounds.terminal
+      ? replyLineFor(move, context)
+      : undefined;
   const motifs = move.motifs.filter((motif) => motif.length > 0 && motif.length <= 30).slice(0, 6);
   const clock = buildClock(move, context);
   const phase = phaseFor(move.ply, move.fenBefore);
@@ -704,63 +831,25 @@ export function buildInsightPayload(
     replyLine: replyLineSan ? replyUciFor(move, context) : undefined,
     early: phase === "opening" || move.ply <= 30
   });
-  const maia = buildMaiaEvidence(move, userRating, trustedMaia);
 
   return defined({
     schemaVersion: REVIEW_INSIGHT_PAYLOAD_VERSION,
     player: {
       rating: userRating,
       color: playerColor,
-      ratingBucket: curve.userRatingBucket
+      ratingBucket: maia.maiaCurve.userRatingBucket
     },
-    game: defined({
-      ply: move.ply,
-      moveNumberSan: moveNumberSanForPly(move.ply),
-      san: move.san,
-      mover,
-      fenBefore: move.fenBefore,
-      fenAfter: move.fenAfter,
-      phase,
-      givesCheck: afterStatus?.isCheck ? true : undefined,
-      terminal
-    }),
+    game: insightGame(move, grounds, phase),
     engines: defined({
-      stockfish: defined({
-        evalBefore: formatEngineScore(move.evalBefore),
-        evalAfter: formatEngineScore(evalAfter),
-        evalLossCp: Math.max(0, Math.round(evalLoss)),
-        bestMoveSan,
-        bestLineSan,
-        evalPerspective: "white" as const,
-        bestEvalAfter: move.bestEvalAfter ? formatEngineScore(move.bestEvalAfter) : undefined,
-        assessment:
-          assessmentBefore && assessmentAfter
-            ? defined({
-                before: assessmentBefore,
-                after: assessmentAfter,
-                afterBest: assessmentAfterBest
-              })
-            : undefined,
-        alternatives,
-        playedMoveRank: move.playedRank ?? playedMoveRank,
-        replyLineSan,
-        ...engineMeta(move, context?.review)
-      }),
-      maiaCurve: curve,
-      humanTopMoves: trustedMaia
-        ? buildHumanTopMoves(move, maia?.playerLevel ?? curve.userRatingBucket)
-        : undefined,
-      maia
+      stockfish: stockfishEvidence(move, grounds, replyLineSan, context?.review),
+      ...maia
     }),
-    annotation,
-    severity,
-    assessmentTags: move.assessment?.tags.length ? move.assessment.tags : undefined,
-    curatorReason: reason,
+    ...insightVerdict(move.assessment),
     tacticalFacts: buildTacticalFacts(move),
     engineSignals: buildEngineSignals(move),
     bestMoveMotifs: motifs.length ? motifs : undefined,
     clock: clock && Object.keys(clock).length ? clock : undefined,
-    context: context ? buildGameContext(move, mover, context) : undefined,
+    context: context ? buildGameContext(move, grounds.mover, context) : undefined,
     ideas: ideas ?? undefined,
     commentaryDetail
   });

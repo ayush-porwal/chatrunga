@@ -63,7 +63,7 @@ describe("AccountRatings", () => {
     state.chesscom = CHESSCOM;
     expect(await accounts.inCharge()).toBe("chesscom");
     await accounts.apply();
-    expect(state.ratings).toEqual({
+    expect(state.ratings).toStrictEqual({
       bullet: { source: "chesscom", rating: 1490, syncedAt: NOW },
       blitz: { source: "chesscom", rating: 1662, syncedAt: NOW },
       rapid: { source: "chesscom", rating: 1684, syncedAt: NOW },
@@ -78,15 +78,19 @@ describe("AccountRatings", () => {
     state.lichess = LICHESS;
     state.chesscom = CHESSCOM;
     await accounts.apply();
-    expect(state.ratings.classical).toEqual({ source: "lichess", rating: 1900, syncedAt: NOW });
-    expect(state.ratings.rapid).toEqual({ source: "lichess", rating: 1820, syncedAt: NOW });
+    expect(state.ratings.classical).toStrictEqual({
+      source: "lichess",
+      rating: 1900,
+      syncedAt: NOW
+    });
+    expect(state.ratings.rapid).toStrictEqual({ source: "lichess", rating: 1820, syncedAt: NOW });
 
     state.picked = "chesscom";
     expect(await accounts.inCharge()).toBe("chesscom");
     await accounts.apply();
-    expect(state.ratings.rapid).toEqual({ source: "chesscom", rating: 1684, syncedAt: NOW });
+    expect(state.ratings.rapid).toStrictEqual({ source: "chesscom", rating: 1684, syncedAt: NOW });
     // Lichess's classical rating stays, typed-in: chess.com has none to give.
-    expect(state.ratings.classical).toEqual({ source: "manual", rating: 1900 });
+    expect(state.ratings.classical).toStrictEqual({ source: "manual", rating: 1900 });
   });
 
   it("falls back to the other account when the picked one isn't connected", async () => {
@@ -95,7 +99,7 @@ describe("AccountRatings", () => {
     state.lichess = LICHESS;
     expect(await accounts.inCharge()).toBe("lichess");
     await accounts.apply();
-    expect(state.ratings.blitz).toEqual({ source: "lichess", rating: 1741, syncedAt: NOW });
+    expect(state.ratings.blitz).toStrictEqual({ source: "lichess", rating: 1741, syncedAt: NOW });
   });
 
   it("keeps the last values as typed-in ones once no account is connected", async () => {
@@ -105,8 +109,8 @@ describe("AccountRatings", () => {
     state.chesscom = null;
     expect(await accounts.inCharge()).toBeNull();
     await accounts.apply();
-    expect(state.ratings.rapid).toEqual({ source: "manual", rating: 1684 });
-    expect(state.ratings.correspondence).toEqual({ source: "manual", rating: 1550 });
+    expect(state.ratings.rapid).toStrictEqual({ source: "manual", rating: 1684 });
+    expect(state.ratings.correspondence).toStrictEqual({ source: "manual", rating: 1550 });
   });
 
   it("hands a signed-out Lichess account's ratings to chess.com, else keeps them", async () => {
@@ -117,13 +121,13 @@ describe("AccountRatings", () => {
     state.lichessSignedOut = true;
     expect(await accounts.inCharge()).toBeNull();
     await accounts.apply();
-    expect(state.ratings.rapid).toEqual({ source: "lichess", rating: 1820, syncedAt: NOW });
+    expect(state.ratings.rapid).toStrictEqual({ source: "lichess", rating: 1820, syncedAt: NOW });
     // Chess.com connected meanwhile: it takes over, though Lichess is the one picked.
     state.chesscom = CHESSCOM;
     expect(await accounts.inCharge()).toBe("chesscom");
     await accounts.apply();
-    expect(state.ratings.rapid).toEqual({ source: "chesscom", rating: 1684, syncedAt: NOW });
-    expect(state.ratings.classical).toEqual({ source: "manual", rating: 1900 });
+    expect(state.ratings.rapid).toStrictEqual({ source: "chesscom", rating: 1684, syncedAt: NOW });
+    expect(state.ratings.classical).toStrictEqual({ source: "manual", rating: 1900 });
   });
 
   it("doesn't write when nothing changes", async () => {

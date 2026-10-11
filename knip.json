@@ -1,0 +1,37 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.{mjs,cjs}", "devtools/*/server.mjs", "devtools/*/app.js"],
+      "project": ["scripts/**/*.{mjs,cjs}", "devtools/**/*.{js,mjs}"]
+    },
+    "apps/desktop": {
+      "entry": [
+        "electron.vite.config.ts",
+        "src/main/index.ts",
+        "src/main/databases/puzzle-scan-worker.ts",
+        "src/main/repertoire/*-worker.ts",
+        "src/main/engine/__fixtures__/*.mjs",
+        "src/preload/index.ts",
+        "src/renderer/src/main.tsx",
+        "src/renderer/vite.config.ts",
+        "build/*.cjs",
+        "e2e/**/*.spec.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx,mjs,css}", "e2e/**/*.ts", "build/*.cjs", "*.config.ts"],
+      "vite": false,
+      "vitest": {
+        "config": ["vitest.config.ts"]
+      },
+      "electron-vite": false
+    },
+    "apps/marketing": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignoreBinaries": ["typecheck"]
+}

@@ -80,7 +80,7 @@ export function resolveReviewSide(input: ReviewSideInput): ReviewSide {
 /** The side picked for a board (the game store's `board` count), kept for this session. */
 type ChosenSide = { board: number; side: Color };
 
-export const useReviewSideStore = create<{
+const useReviewSideStore = create<{
   chosen: ChosenSide | null;
   choose: (board: number, side: Color) => void;
 }>((set) => ({
@@ -89,7 +89,7 @@ export const useReviewSideStore = create<{
 }));
 
 /** The side picked for `board`, or null when none was (or it was for another board). */
-export function chosenSideFor(chosen: ChosenSide | null, board: number): Color | null {
+function chosenSideFor(chosen: ChosenSide | null, board: number): Color | null {
   return chosen && chosen.board === board ? chosen.side : null;
 }
 

@@ -79,12 +79,12 @@ describe("key moments", () => {
       [2, assessment("book", { winLoss: 40 })],
       [3, assessment("inaccuracy", { winLoss: 6 })]
     ]);
-    expect(keyMoments(game).map((moment) => moment.ply)).toEqual([3]);
+    expect(keyMoments(game).map((moment) => moment.ply)).toStrictEqual([3]);
   });
 
   it("leads the trap game with its blunders, the critical reply and the mate allowed", () => {
     const game = trapGame();
-    expect(keyMoments(game).map((moment) => [moment.ply, moment.annotation])).toEqual([
+    expect(keyMoments(game).map((moment) => [moment.ply, moment.annotation])).toStrictEqual([
       [7, "blunder"],
       [8, "great"],
       [9, "blunder"],
@@ -99,21 +99,23 @@ describe("key moments", () => {
       [12, assessment("mistake", { winLoss: 11 })],
       [20, assessment("mistake", { winLoss: 12 })]
     ]);
-    expect(keyMoments(game).map((moment) => moment.ply)).toEqual([10, 12, 20]);
+    expect(keyMoments(game).map((moment) => moment.ply)).toStrictEqual([10, 12, 20]);
   });
 
   it("starts with three and grows to five only with that many strong moments", () => {
     const strong = moves(
       [2, 6, 10, 14, 18, 22, 26].map((ply) => [ply, assessment("blunder", { winLoss: 20 + ply })])
     );
-    expect(keyMoments(strong).map((moment) => moment.ply)).toEqual([10, 14, 18, 22, 26]);
+    expect(keyMoments(strong).map((moment) => moment.ply)).toStrictEqual([10, 14, 18, 22, 26]);
     const weak = moves(
       [2, 6, 10, 14].map((ply) => [ply, assessment("inaccuracy", { winLoss: 5 + ply / 10 })])
     );
-    expect(keyMoments(weak).map((moment) => moment.ply)).toEqual([6, 10, 14]);
+    expect(keyMoments(weak).map((moment) => moment.ply)).toStrictEqual([6, 10, 14]);
     expect(keyMoments(moves([[4, assessment("mistake", { winLoss: 12 })]]))).toHaveLength(1);
-    expect(keyMoments(moves([[4, assessment(null)]]))).toEqual([]);
-    expect(keyMoments(strong, { min: 1, max: 2 }).map((moment) => moment.ply)).toEqual([22, 26]);
+    expect(keyMoments(moves([[4, assessment(null)]]))).toStrictEqual([]);
+    expect(keyMoments(strong, { min: 1, max: 2 }).map((moment) => moment.ply)).toStrictEqual([
+      22, 26
+    ]);
   });
 
   it("keeps the best success even when errors fill the summary", () => {
@@ -137,6 +139,6 @@ describe("key moments", () => {
       [3, assessment("mistake", { winLoss: 12 })],
       [9, assessment("blunder", { winLoss: 40 })]
     ]);
-    expect(rankedMoments(game).map((moment) => moment.ply)).toEqual([9, 3, 5]);
+    expect(rankedMoments(game).map((moment) => moment.ply)).toStrictEqual([9, 3, 5]);
   });
 });

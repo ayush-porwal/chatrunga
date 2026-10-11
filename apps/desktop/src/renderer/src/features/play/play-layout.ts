@@ -1,7 +1,7 @@
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 
 /** Columns of the Play page's top row (Play card + board cards) and of the row under it. */
-export const PLAY_COLUMNS = 4;
+const PLAY_COLUMNS = 4;
 
 /**
  * How many of the newest games the page reads: the Recent games table's rows (10) plus the one the

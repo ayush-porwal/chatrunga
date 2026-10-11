@@ -32,7 +32,7 @@ async function resizeWindow(app: ElectronApplication, page: Page, width: number,
         Math.min(width, area.width - margin),
         Math.min(height, area.height - margin)
       ] as const;
-      BrowserWindow.getAllWindows()[0]!.setContentSize(...fitted);
+      BrowserWindow.getAllWindows()[0].setContentSize(...fitted);
       return fitted;
     },
     [width, height] as const
@@ -385,7 +385,7 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
   from = engineCommands(log).length;
   const pid = enginePid(log);
   expect(isRunning(pid), "the panel's engine runs").toBe(true);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
   await expect.poll(() => isRunning(pid)).toBe(false);
   if (process.platform !== "win32") expect(engineCommands(log).slice(from)).toContain("exit");
 });

@@ -19,10 +19,7 @@ import {
 } from "./import-job";
 
 /** The worker bundled next to the main entry (electron.vite.config.ts). */
-export const IMPORT_WORKER = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "repertoire-import-worker.js"
-);
+const IMPORT_WORKER = join(dirname(fileURLToPath(import.meta.url)), "repertoire-import-worker.js");
 
 /** How long a cancelled worker may take to stop by itself before it is terminated. */
 const CANCEL_GRACE_MS = 200;

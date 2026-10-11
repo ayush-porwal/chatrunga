@@ -78,9 +78,9 @@ describe("settings not written yet", () => {
     // A read after some other write still shows the dragged value.
     expect(withPendingSettings({ ...defaultSettings, soundVolume: 0.7 }).soundVolume).toBe(0.2);
     batch.flush();
-    expect(pendingSettings()).toEqual({ soundVolume: 0.2 });
+    expect(pendingSettings()).toStrictEqual({ soundVolume: 0.2 });
     finish();
-    await vi.waitFor(() => expect(pendingSettings()).toEqual({}));
+    await vi.waitFor(() => expect(pendingSettings()).toStrictEqual({}));
     expect(withPendingSettings({ ...defaultSettings, soundVolume: 0.7 }).soundVolume).toBe(0.7);
   });
 });
@@ -126,7 +126,7 @@ describe("flushSettingsBatches (the window closing)", () => {
     flushSettingsBatches(now);
     expect(own).not.toHaveBeenCalled();
     expect(now).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(pendingSettings()).toEqual({}));
+    await vi.waitFor(() => expect(pendingSettings()).toStrictEqual({}));
   });
 });
 
@@ -156,7 +156,7 @@ describe("a failed drag write", () => {
     await vi.waitFor(() => {
       expect(client.isMutating()).toBe(0);
       expect(client.isFetching()).toBe(0);
-      expect(pendingSettings()).toEqual({});
+      expect(pendingSettings()).toStrictEqual({});
     });
     expect(settings.getCurrentResult().data?.soundVolume).toBe(0.7);
     unsubscribe();

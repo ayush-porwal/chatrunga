@@ -24,7 +24,7 @@ function progress(patch: Partial<RepertoireSchedule> = {}): RepertoireSchedule {
 
 describe("scheduleAfterOutcome", () => {
   it("puts a new unaided card on stage 1, due in a day", () => {
-    expect(scheduleAfterOutcome(null, "unaided", NOW)).toEqual({
+    expect(scheduleAfterOutcome(null, "unaided", NOW)).toStrictEqual({
       stage: 1,
       dueAt: NOW + DAY,
       lastAttemptAt: NOW,
@@ -44,7 +44,7 @@ describe("scheduleAfterOutcome", () => {
       at = current.dueAt!;
     }
     // The spec's ladder in days, capped at 60.
-    expect(intervals).toEqual([1, 3, 7, 14, 30, 60, 60, 60]);
+    expect(intervals).toStrictEqual([1, 3, 7, 14, 30, 60, 60, 60]);
     expect(current).toMatchObject({ stage: 6, unaidedSuccesses: 8 });
   });
 
@@ -62,7 +62,7 @@ describe("scheduleAfterOutcome", () => {
 
   it("changes nothing for no-change", () => {
     const stored = progress({ stage: 2, dueAt: NOW - 5 });
-    expect(scheduleAfterOutcome(stored, "no-change", NOW)).toEqual(stored);
+    expect(scheduleAfterOutcome(stored, "no-change", NOW)).toStrictEqual(stored);
     expect(scheduleAfterOutcome(null, "no-change", NOW)).toBeNull();
   });
 
@@ -127,7 +127,7 @@ describe("orderQueue", () => {
       { id: "due-early", dueAt: NOW - 3 * DAY, ply: 7, chapterOrder: 2 },
       { id: "unseen-ch0-tie", dueAt: null, ply: 3, chapterOrder: 0 }
     ];
-    expect(orderQueue(cards).map((card) => card.id)).toEqual([
+    expect(orderQueue(cards).map((card) => card.id)).toStrictEqual([
       "due-early",
       "due-late",
       "unseen-ch0",
@@ -144,7 +144,7 @@ describe("orderQueue", () => {
       { id: "unseen", dueAt: null, ply: 1, chapterOrder: 0 },
       { id: "due", dueAt: NOW, ply: 1, chapterOrder: 0 }
     ];
-    expect(orderQueue(cards, NOW).map((card) => card.id)).toEqual([
+    expect(orderQueue(cards, NOW).map((card) => card.id)).toStrictEqual([
       "due",
       "unseen",
       "future-near",

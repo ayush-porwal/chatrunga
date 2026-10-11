@@ -38,8 +38,11 @@ describe("clock text", () => {
   it("gives the engine game's clock in ms, Custom at least 30 seconds", () => {
     const custom = { minutes: 0.2, incrementSec: 2 };
     expect(engineClockMs("infinite", custom)).toBeNull();
-    expect(engineClockMs("blitz5_3", custom)).toEqual({ initialMs: 300_000, incrementMs: 3000 });
-    expect(engineClockMs("custom", custom)).toEqual({ initialMs: 30_000, incrementMs: 2000 });
+    expect(engineClockMs("blitz5_3", custom)).toStrictEqual({
+      initialMs: 300_000,
+      incrementMs: 3000
+    });
+    expect(engineClockMs("custom", custom)).toStrictEqual({ initialMs: 30_000, incrementMs: 2000 });
   });
 });
 
@@ -64,7 +67,7 @@ describe("time control slider", () => {
   });
 
   it("puts a Lichess clock on its preset's stop, matched by value, else on the first", () => {
-    expect(presetIndex(SEEK_PRESETS, { ...SEEK_PRESETS[2]! })).toBe(2);
+    expect(presetIndex(SEEK_PRESETS, { ...SEEK_PRESETS[2] })).toBe(2);
     expect(presetIndex(SEEK_PRESETS, { minutes: 7, incrementSec: 7 })).toBe(0);
   });
 

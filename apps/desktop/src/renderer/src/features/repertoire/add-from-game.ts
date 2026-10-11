@@ -290,7 +290,7 @@ export function policyFor(state: PolicyState, baseKey: string): ConfirmedPolicy 
 /* ------------------------------------------------------------------ hashing */
 
 /** FNV-1a (32-bit) of a string, base 36. */
-export function fnv1a(text: string): string {
+function fnv1a(text: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);

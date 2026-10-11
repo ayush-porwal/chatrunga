@@ -21,17 +21,17 @@ type State = { error: Error | null };
  * credential into the UI or developer logs.
  */
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  override state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  override componentDidCatch(error: Error) {
     console.error(`[${this.props.scope}] renderer error`, error.name);
   }
 
-  render() {
+  override render() {
     const { error } = this.state;
     if (!error) return this.props.children;
     const fullWindow = this.props.layout === "window";

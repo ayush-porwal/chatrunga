@@ -98,7 +98,8 @@ async function badgeSquare(page: Page, flipped = false) {
  * or dragged ("dragging") piece on the piece there first.
  */
 async function onTopAtBadge(page: Page, piece?: "anim" | "dragging") {
-  return board(page).evaluate((region, pieceClass) => {
+  // Typed here: an optional `arg` drops `undefined` from the type Playwright infers for it.
+  return board(page).evaluate((region, pieceClass: typeof piece) => {
     const badge = region.querySelector<HTMLElement>("[data-square]");
     if (!badge) throw new Error("no badge");
     const box = badge.getBoundingClientRect();

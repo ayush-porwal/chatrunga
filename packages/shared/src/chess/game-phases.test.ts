@@ -39,7 +39,7 @@ describe("game phases", () => {
 
   it("ends the opening with the book and starts the endgame at the first move from six pieces", () => {
     const phases = gamePhases(game(80, 61), opening(7));
-    expect(phases).toEqual({ openingEnd: 7, endgameStart: 61 });
+    expect(phases).toStrictEqual({ openingEnd: 7, endgameStart: 61 });
     expect(phaseOfPly(1, phases)).toBe("opening");
     expect(phaseOfPly(7, phases)).toBe("opening");
     expect(phaseOfPly(8, phases)).toBe("middlegame");
@@ -49,18 +49,18 @@ describe("game phases", () => {
   });
 
   it("takes the first 20 plies as the opening without book data, and none without a named position", () => {
-    expect(gamePhases(game(40, null), undefined)).toEqual({
+    expect(gamePhases(game(40, null), undefined)).toStrictEqual({
       openingEnd: OPENING_PLIES_WITHOUT_BOOK,
       endgameStart: null
     });
     const setUp = gamePhases(game(10, 1), null);
-    expect(setUp).toEqual({ openingEnd: 0, endgameStart: 1 });
+    expect(setUp).toStrictEqual({ openingEnd: 0, endgameStart: 1 });
     expect(phaseOfPly(1, setUp)).toBe("endgame");
   });
 
   it("starts an endgame reached inside the book only after the book", () => {
     const phases = gamePhases(game(20, 3), opening(6));
-    expect(phases).toEqual({ openingEnd: 6, endgameStart: 7 });
+    expect(phases).toStrictEqual({ openingEnd: 6, endgameStart: 7 });
     expect(phaseOfPly(6, phases)).toBe("opening");
     expect(phaseOfPly(7, phases)).toBe("endgame");
   });

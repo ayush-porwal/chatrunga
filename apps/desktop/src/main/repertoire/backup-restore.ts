@@ -24,6 +24,8 @@ import {
   type RepertoireBackupDocument,
   type RepertoireBackupEntry,
   type RepertoireChapter,
+  type RepertoireGameLink,
+  type RepertoireWorkspaceState,
   type RestoreBackupResult,
   type RestoreBackupSelection
 } from "@chaturanga/shared/types/repertoire";
@@ -52,20 +54,18 @@ import {
   type ReindexPlan
 } from "./core";
 import {
-  attemptRepository,
   chapterRepository,
   compareChaptersAsListed,
   decisionRepository,
-  gameLinkRepository,
-  libraryGameExists,
   progressRepository,
   repertoireRepository,
-  sessionRepository,
   transaction,
-  workspaceRepository,
   type RepertoireRecord,
   type StoredDecision
 } from "./repository";
+import { workspaceRepository } from "./workspace-repository";
+import { attemptRepository, sessionRepository } from "./practice-repository";
+import { gameLinkRepository, libraryGameExists } from "./game-link-repository";
 import { errorCode } from "../system-error";
 
 /** The directory under userData that keeps replaced repertoires' own backups. */
@@ -262,29 +262,45 @@ function insertBackupContent(
     }
   }
   if (entry.workspace) {
-    const known = chapters.some((chapter) => chapter.id === entry.workspace!.lastChapterId);
-    workspaceRepository.save(
-      repertoireId,
-      {
-        lastChapterId: known ? entry.workspace.lastChapterId : null,
-        lastNodeId: known ? entry.workspace.lastNodeId : null,
-        orientation: entry.workspace.orientation,
-        practiceDraft: null
-      },
-      now
-    );
+    workspaceRepository.save(repertoireId, restoredWorkspace(entry.workspace, chapters), now);
   }
   for (const link of entry.gameLinks) {
-    gameLinkRepository.insert({
-      ...link,
-      id: keepLinkIds && !gameLinkRepository.get(link.id) ? link.id : nanoid(),
-      repertoireId,
-      gameId: link.gameId && libraryGameExists(link.gameId) ? link.gameId : null,
-      headers: sanitizeHeaders(link.headers),
-      capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
-    });
+    gameLinkRepository.insert(restoredGameLink(link, repertoireId, keepLinkIds));
   }
   applyReindex(requireRepertoire(repertoireId), plan, now);
+}
+
+/** The backup's study place, kept only when its chapter is restored with it. */
+function restoredWorkspace(
+  workspace: NonNullable<RepertoireBackupEntry["workspace"]>,
+  chapters: readonly RepertoireChapter[]
+): RepertoireWorkspaceState {
+  const known = chapters.some((chapter) => chapter.id === workspace.lastChapterId);
+  return {
+    lastChapterId: known ? workspace.lastChapterId : null,
+    lastNodeId: known ? workspace.lastNodeId : null,
+    orientation: workspace.orientation,
+    practiceDraft: null
+  };
+}
+
+/**
+ * A backed-up provenance link under `repertoireId`: its id kept when asked and still free, its
+ * game only when the library still has it, its copied fields bounded.
+ */
+function restoredGameLink(
+  link: RepertoireGameLink,
+  repertoireId: string,
+  keepLinkIds: boolean
+): RepertoireGameLink {
+  return {
+    ...link,
+    id: keepLinkIds && !gameLinkRepository.get(link.id) ? link.id : nanoid(),
+    repertoireId,
+    gameId: link.gameId && libraryGameExists(link.gameId) ? link.gameId : null,
+    headers: sanitizeHeaders(link.headers),
+    capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
+  };
 }
 
 /** A file-name-safe form of a repertoire id. */

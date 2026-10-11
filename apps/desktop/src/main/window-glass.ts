@@ -48,7 +48,7 @@ export function windowGlassConstructorOptions(): Pick<
 }
 
 /** Re-derives the state and, when it changed, updates every window and tells its renderer. */
-export function refreshWindowGlass(): void {
+function refreshWindowGlass(): void {
   const next = computeState();
   if (lastState && sameGlassState(lastState, next)) return;
   lastState = next;

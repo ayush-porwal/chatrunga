@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import {
   REVIEW_MAIA_LEVELS,
   type AppSettings,
-  type ReviewMaiaLevel
+  type ReviewMaiaLevel,
+  COMMENTARY_DETAILS
 } from "@chaturanga/shared/types/settings";
 import {
   useEnginesQuery,
@@ -25,7 +26,6 @@ import { Switch } from "@/components/ui/switch";
 import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
 import { divider, fieldHint, fieldLabel } from "@/lib/ui";
 import { isOneOf } from "@chaturanga/shared/types/guards";
-import { COMMENTARY_DETAILS } from "@chaturanga/shared/types/settings";
 
 const searchTimeOptions = [
   { value: 100, label: "Blitz · 0.1s" },
@@ -205,56 +205,14 @@ export function ReviewSettingsPanel({
             />
           }
         />
-        <div className="grid gap-2">
-          <SettingRow
-            label="Use Maia models"
-            description="Rating-aware human move predictions."
-            className="py-0"
-            control={
-              <>
-                {installedMaiaLevels.length ? null : (
-                  <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
-                )}
-                <Switch
-                  checked={settings.reviewUseMaia}
-                  onCheckedChange={(value) => set("reviewUseMaia", value)}
-                  aria-label="Use Maia models"
-                />
-              </>
-            }
-          />
-          {installedMaiaLevels.length ? (
-            <div role="group" aria-label="Maia rating levels" className="grid gap-1.5">
-              <span className={fieldLabel}>Rating levels</span>
-              <div className="flex flex-wrap gap-1.5">
-                {installedMaiaLevels.map((level) => {
-                  const selected = selectedMaiaLevels.includes(level);
-                  const onlyOne = selected && selectedMaiaLevels.length === 1;
-                  return (
-                    <ChipButton
-                      key={level}
-                      selected={settings.reviewUseMaia && selected}
-                      disabled={!settings.reviewUseMaia}
-                      aria-disabled={onlyOne || undefined}
-                      title={
-                        onlyOne
-                          ? "At least one level runs. Turn Maia off instead."
-                          : `Maia ${level}`
-                      }
-                      aria-label={`Maia ${level}`}
-                      onClick={() => {
-                        if (!onlyOne) toggleMaiaLevel(level);
-                      }}
-                      className="tabular-nums"
-                    >
-                      {level}
-                    </ChipButton>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <MaiaSetting
+          enabled={settings.reviewUseMaia}
+          installedLevels={installedMaiaLevels}
+          selectedLevels={selectedMaiaLevels}
+          needsLc0={needsLc0}
+          onEnabledChange={(value) => set("reviewUseMaia", value)}
+          onToggleLevel={toggleMaiaLevel}
+        />
       </CollapsibleSection>
 
       <div className={divider} />
@@ -290,42 +248,11 @@ export function ReviewSettingsPanel({
             <option value="detailed">Detailed</option>
           </Select>
         </Field>
-        {reviewSide ? (
-          <Field label="Review as">
-            <SegmentedControl
-              ariaLabel="Review as"
-              fullWidth
-              value={reviewSide.side}
-              onChange={reviewSide.onChange}
-              options={[
-                {
-                  value: "white",
-                  label: `White · ${reviewSide.whiteName}`,
-                  icon: <SideDot color="white" />
-                },
-                {
-                  value: "black",
-                  label: `Black · ${reviewSide.blackName}`,
-                  icon: <SideDot color="black" />
-                }
-              ]}
-            />
-            <p className={fieldHint}>Rating {reviewSide.ratingLabel}</p>
-          </Field>
-        ) : (
-          <Field label="Reviewing side">
-            <SegmentedControl
-              ariaLabel="Reviewing side"
-              fullWidth
-              value={settings.reviewPlayerColor}
-              onChange={(value) => set("reviewPlayerColor", value)}
-              options={[
-                { value: "white", label: "White", icon: <SideDot color="white" /> },
-                { value: "black", label: "Black", icon: <SideDot color="black" /> }
-              ]}
-            />
-          </Field>
-        )}
+        <ReviewSideField
+          reviewSide={reviewSide}
+          settingsSide={settings.reviewPlayerColor}
+          onSettingsSideChange={(value) => set("reviewPlayerColor", value)}
+        />
         <SettingRow
           label="Rating"
           // A game's dialog already says it under Review as (the rating its review is made for).
@@ -340,13 +267,7 @@ export function ReviewSettingsPanel({
         />
         <SettingRow
           label="Model and API key"
-          description={
-            openRouter.isLoading
-              ? undefined
-              : hasApiKey
-                ? "Shared by every AI feature. A key is saved."
-                : "Shared by every AI feature. No key saved yet."
-          }
+          description={aiSettingsDescription(openRouter.isLoading, hasApiKey)}
           control={
             openSettings ? (
               <Button variant="link" size="sm" onClick={() => openSettings("ai")}>
@@ -357,5 +278,137 @@ export function ReviewSettingsPanel({
         />
       </CollapsibleSection>
     </div>
+  );
+}
+
+/** Whether an OpenRouter key is saved for every AI feature (nothing while that is read). */
+function aiSettingsDescription(loading: boolean, hasApiKey: boolean): string | undefined {
+  if (loading) return undefined;
+  return hasApiKey
+    ? "Shared by every AI feature. A key is saved."
+    : "Shared by every AI feature. No key saved yet.";
+}
+
+/**
+ * Use Maia models, with the rating levels installed to pick from (all of them when none was
+ * picked); at least one runs while Maia is on. Without one installed, it says what's missing.
+ */
+function MaiaSetting({
+  enabled,
+  installedLevels,
+  selectedLevels,
+  needsLc0,
+  onEnabledChange,
+  onToggleLevel
+}: {
+  enabled: boolean;
+  installedLevels: readonly ReviewMaiaLevel[];
+  selectedLevels: readonly ReviewMaiaLevel[];
+  needsLc0: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onToggleLevel: (level: ReviewMaiaLevel) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <SettingRow
+        label="Use Maia models"
+        description="Rating-aware human move predictions."
+        className="py-0"
+        control={
+          <>
+            {installedLevels.length ? null : (
+              <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
+            )}
+            <Switch
+              checked={enabled}
+              onCheckedChange={onEnabledChange}
+              aria-label="Use Maia models"
+            />
+          </>
+        }
+      />
+      {installedLevels.length ? (
+        <div role="group" aria-label="Maia rating levels" className="grid gap-1.5">
+          <span className={fieldLabel}>Rating levels</span>
+          <div className="flex flex-wrap gap-1.5">
+            {installedLevels.map((level) => {
+              const selected = selectedLevels.includes(level);
+              const onlyOne = selected && selectedLevels.length === 1;
+              return (
+                <ChipButton
+                  key={level}
+                  selected={enabled && selected}
+                  disabled={!enabled}
+                  aria-disabled={onlyOne || undefined}
+                  title={
+                    onlyOne ? "At least one level runs. Turn Maia off instead." : `Maia ${level}`
+                  }
+                  aria-label={`Maia ${level}`}
+                  onClick={() => {
+                    if (!onlyOne) onToggleLevel(level);
+                  }}
+                  className="tabular-nums"
+                >
+                  {level}
+                </ChipButton>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The side reviewed: in a game's dialog, the game's own (Review as, with the players' names and
+ * the rating its review is made for); elsewhere, the Settings side.
+ */
+function ReviewSideField({
+  reviewSide,
+  settingsSide,
+  onSettingsSideChange
+}: {
+  reviewSide: ReviewSideSetting | undefined;
+  settingsSide: "white" | "black";
+  onSettingsSideChange: (side: "white" | "black") => void;
+}) {
+  if (!reviewSide)
+    return (
+      <Field label="Reviewing side">
+        <SegmentedControl
+          ariaLabel="Reviewing side"
+          fullWidth
+          value={settingsSide}
+          onChange={onSettingsSideChange}
+          options={[
+            { value: "white", label: "White", icon: <SideDot color="white" /> },
+            { value: "black", label: "Black", icon: <SideDot color="black" /> }
+          ]}
+        />
+      </Field>
+    );
+  return (
+    <Field label="Review as">
+      <SegmentedControl
+        ariaLabel="Review as"
+        fullWidth
+        value={reviewSide.side}
+        onChange={reviewSide.onChange}
+        options={[
+          {
+            value: "white",
+            label: `White · ${reviewSide.whiteName}`,
+            icon: <SideDot color="white" />
+          },
+          {
+            value: "black",
+            label: `Black · ${reviewSide.blackName}`,
+            icon: <SideDot color="black" />
+          }
+        ]}
+      />
+      <p className={fieldHint}>Rating {reviewSide.ratingLabel}</p>
+    </Field>
   );
 }

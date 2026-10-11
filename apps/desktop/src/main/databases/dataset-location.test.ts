@@ -11,51 +11,53 @@ function userData(): string {
   return root;
 }
 
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-describe("rescueLegacyDatasets", () => {
-  it("moves dataset files (and partial downloads) out of Chromium's folder, leaving Chromium's own files", () => {
-    const root = userData();
-    const legacy = join(root, "databases");
-    mkdirSync(legacy);
-    writeFileSync(join(legacy, "lichess-puzzles-lichess_db_puzzle.csv.zst"), "data");
-    writeFileSync(
-      join(legacy, "chess-position-analysis-results-chess-positions.csv.part"),
-      "partial"
-    );
-    writeFileSync(join(legacy, "Databases.db"), "chromium");
-
-    expect(rescueLegacyDatasets(root).sort()).toEqual([
-      "chess-position-analysis-results-chess-positions.csv.part",
-      "lichess-puzzles-lichess_db_puzzle.csv.zst"
-    ]);
-    expect(readdirSync(datasetDir(root)).sort()).toEqual([
-      "chess-position-analysis-results-chess-positions.csv.part",
-      "lichess-puzzles-lichess_db_puzzle.csv.zst"
-    ]);
-    expect(readdirSync(legacy)).toEqual(["Databases.db"]);
+describe("dataset location", () => {
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   });
 
-  it("does nothing without the old folder, and never overwrites a file already moved", () => {
-    const root = userData();
-    expect(rescueLegacyDatasets(root)).toEqual([]);
-    mkdirSync(join(root, "databases"));
-    mkdirSync(datasetDir(root));
-    writeFileSync(join(root, "databases", "lichess-puzzles-a.csv.zst"), "old");
-    writeFileSync(join(datasetDir(root), "lichess-puzzles-a.csv.zst"), "new");
-    expect(rescueLegacyDatasets(root)).toEqual([]);
-    expect(existsSync(join(root, "databases", "lichess-puzzles-a.csv.zst"))).toBe(true);
-  });
-});
+  describe("rescueLegacyDatasets", () => {
+    it("moves dataset files (and partial downloads) out of Chromium's folder, leaving Chromium's own files", () => {
+      const root = userData();
+      const legacy = join(root, "databases");
+      mkdirSync(legacy);
+      writeFileSync(join(legacy, "lichess-puzzles-lichess_db_puzzle.csv.zst"), "data");
+      writeFileSync(
+        join(legacy, "chess-position-analysis-results-chess-positions.csv.part"),
+        "partial"
+      );
+      writeFileSync(join(legacy, "Databases.db"), "chromium");
 
-describe("relocatedDatasetPath", () => {
-  it("maps a path registered in the old folder to the new one", () => {
-    const root = "/data";
-    expect(relocatedDatasetPath("/data/databases/lichess-puzzles-a.csv.zst", root)).toBe(
-      join(datasetDir(root), "lichess-puzzles-a.csv.zst")
-    );
-    expect(relocatedDatasetPath("/elsewhere/a.csv", root)).toBeNull();
+      expect(rescueLegacyDatasets(root).sort()).toStrictEqual([
+        "chess-position-analysis-results-chess-positions.csv.part",
+        "lichess-puzzles-lichess_db_puzzle.csv.zst"
+      ]);
+      expect(readdirSync(datasetDir(root)).sort()).toStrictEqual([
+        "chess-position-analysis-results-chess-positions.csv.part",
+        "lichess-puzzles-lichess_db_puzzle.csv.zst"
+      ]);
+      expect(readdirSync(legacy)).toStrictEqual(["Databases.db"]);
+    });
+
+    it("does nothing without the old folder, and never overwrites a file already moved", () => {
+      const root = userData();
+      expect(rescueLegacyDatasets(root)).toStrictEqual([]);
+      mkdirSync(join(root, "databases"));
+      mkdirSync(datasetDir(root));
+      writeFileSync(join(root, "databases", "lichess-puzzles-a.csv.zst"), "old");
+      writeFileSync(join(datasetDir(root), "lichess-puzzles-a.csv.zst"), "new");
+      expect(rescueLegacyDatasets(root)).toStrictEqual([]);
+      expect(existsSync(join(root, "databases", "lichess-puzzles-a.csv.zst"))).toBe(true);
+    });
+  });
+
+  describe("relocatedDatasetPath", () => {
+    it("maps a path registered in the old folder to the new one", () => {
+      const root = "/data";
+      expect(relocatedDatasetPath("/data/databases/lichess-puzzles-a.csv.zst", root)).toBe(
+        join(datasetDir(root), "lichess-puzzles-a.csv.zst")
+      );
+      expect(relocatedDatasetPath("/elsewhere/a.csv", root)).toBeNull();
+    });
   });
 });

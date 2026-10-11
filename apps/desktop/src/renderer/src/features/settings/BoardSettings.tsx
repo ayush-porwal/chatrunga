@@ -72,21 +72,44 @@ function boardColorsForHue(hue: number): { light: string; dark: string } {
   };
 }
 
+/** Square colors set while a color or the hue is dragged, before the write lands. */
+type LiveBoardColors = { light?: string; dark?: string };
+
+/**
+ * The square colors on show: the one being dragged, else the saved custom one, else the theme's;
+ * and whether custom colors are in use.
+ */
+function shownBoardColors(appearance: AppSettings, liveBoardColors: LiveBoardColors) {
+  const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
+  const customLight = liveBoardColors.light ?? appearance.boardSquareLight;
+  const customDark = liveBoardColors.dark ?? appearance.boardSquareDark;
+  return {
+    presetBoardColors,
+    previewBoardLight: customLight ?? presetBoardColors.light,
+    previewBoardDark: customDark ?? presetBoardColors.dark,
+    customLight: Boolean(customLight),
+    customDark: Boolean(customDark),
+    customBoardSelected: Boolean(
+      liveBoardColors.light ||
+      liveBoardColors.dark ||
+      appearance.boardSquareLight ||
+      appearance.boardSquareDark
+    )
+  };
+}
+
 export function BoardSection({ appearance }: { appearance: AppSettings }) {
   const { set: setSetting, setMany: setSettings } = useSettingsWriter();
-  const [liveBoardColors, setLiveBoardColors] = useState<{ light?: string; dark?: string }>({});
+  const [liveBoardColors, setLiveBoardColors] = useState<LiveBoardColors>({});
   const [hoverTheme, setHoverTheme] = useState<BoardTheme | null>(null);
-  const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
-  const previewBoardLight =
-    liveBoardColors.light ?? appearance.boardSquareLight ?? presetBoardColors.light;
-  const previewBoardDark =
-    liveBoardColors.dark ?? appearance.boardSquareDark ?? presetBoardColors.dark;
-  const customBoardSelected = Boolean(
-    liveBoardColors.light ||
-    liveBoardColors.dark ||
-    appearance.boardSquareLight ||
-    appearance.boardSquareDark
-  );
+  const {
+    presetBoardColors,
+    previewBoardLight,
+    previewBoardDark,
+    customLight,
+    customDark,
+    customBoardSelected
+  } = shownBoardColors(appearance, liveBoardColors);
   const selectedPieceStyle = appearance.pieceStyle;
 
   // A theme and its square colors are one write (never half-applied); dragging a color or the hue
@@ -231,14 +254,14 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
             <BoardSquareColorPicker
               label="Light squares"
               color={previewBoardLight}
-              custom={Boolean(liveBoardColors.light ?? appearance.boardSquareLight)}
+              custom={customLight}
               fallback={presetBoardColors.light}
               onChange={(value) => setBoardSquareColor("boardSquareLight", value)}
             />
             <BoardSquareColorPicker
               label="Dark squares"
               color={previewBoardDark}
-              custom={Boolean(liveBoardColors.dark ?? appearance.boardSquareDark)}
+              custom={customDark}
               fallback={presetBoardColors.dark}
               onChange={(value) => setBoardSquareColor("boardSquareDark", value)}
             />

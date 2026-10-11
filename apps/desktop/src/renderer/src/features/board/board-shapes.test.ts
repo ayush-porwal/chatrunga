@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import type { Key } from "@lichess-org/chessground/types";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import {
   annotationsFromShapes,
@@ -20,7 +19,7 @@ describe("shapesFromAnnotations", () => {
         [{ orig: "e2", dest: "e4", color: "green" }],
         [{ square: "d5", color: "red" }]
       )
-    ).toEqual([
+    ).toStrictEqual([
       { orig: "e2", dest: "e4", brush: "green" },
       { orig: "d5", brush: "red" }
     ]);
@@ -30,10 +29,10 @@ describe("shapesFromAnnotations", () => {
 describe("annotationsFromShapes", () => {
   it("splits shapes into arrows and highlights", () => {
     const shapes: DrawShape[] = [
-      { orig: "g1" as Key, dest: "f3" as Key, brush: "blue" },
-      { orig: "e5" as Key, brush: "yellow" }
+      { orig: "g1", dest: "f3", brush: "blue" },
+      { orig: "e5", brush: "yellow" }
     ];
-    expect(annotationsFromShapes(shapes)).toEqual({
+    expect(annotationsFromShapes(shapes)).toStrictEqual({
       arrows: [{ orig: "g1", dest: "f3", color: "blue" }],
       highlights: [{ square: "e5", color: "yellow" }]
     });
@@ -41,12 +40,12 @@ describe("annotationsFromShapes", () => {
 
   it("falls back to green for unknown brushes and drops off-board squares", () => {
     const shapes: DrawShape[] = [
-      { orig: "a1" as Key, dest: "a2" as Key, brush: "paleGreen" },
-      { orig: "a0" as Key, brush: "red" },
-      { orig: "b1" as Key, dest: "a0" as Key, brush: "red" },
-      { orig: "c3" as Key }
+      { orig: "a1", dest: "a2", brush: "paleGreen" },
+      { orig: "a0", brush: "red" },
+      { orig: "b1", dest: "a0", brush: "red" },
+      { orig: "c3" }
     ];
-    expect(annotationsFromShapes(shapes)).toEqual({
+    expect(annotationsFromShapes(shapes)).toStrictEqual({
       arrows: [{ orig: "a1", dest: "a2", color: "green" }],
       highlights: [{ square: "c3", color: "green" }]
     });
@@ -55,7 +54,7 @@ describe("annotationsFromShapes", () => {
   it("round-trips stored annotations", () => {
     const arrows = [{ orig: "e2", dest: "e4", color: "red" }] as const;
     const highlights = [{ square: "h7", color: "blue" }] as const;
-    expect(annotationsFromShapes(shapesFromAnnotations(arrows, highlights))).toEqual({
+    expect(annotationsFromShapes(shapesFromAnnotations(arrows, highlights))).toStrictEqual({
       arrows,
       highlights
     });
@@ -65,9 +64,9 @@ describe("annotationsFromShapes", () => {
 describe("movableDests", () => {
   it("offers every legal move when the side to move may move", () => {
     const dests = movableDests(START_FEN, "white");
-    expect(dests.get("e2" as Key)).toEqual(["e3", "e4"]);
+    expect(dests.get("e2")).toStrictEqual(["e3", "e4"]);
     expect(dests.size).toBe(10);
-    expect(movableDests(BLACK_TO_MOVE, "black").get("g8" as Key)).toEqual(["f6", "h6"]);
+    expect(movableDests(BLACK_TO_MOVE, "black").get("g8")).toStrictEqual(["f6", "h6"]);
     expect(movableDests(START_FEN, "both").size).toBe(10);
   });
 
@@ -104,44 +103,43 @@ describe("liveAnalysisShapes", () => {
     shapes.map(({ orig, dest, brush }) => `${orig}${dest}:${brush}`);
 
   it("draws the single best-move arrow with plan arrows off, and nothing with it off too", () => {
-    expect(liveAnalysisShapes(START_FEN, RUY, white)).toEqual([
+    expect(liveAnalysisShapes(START_FEN, RUY, white)).toStrictEqual([
       { orig: "e2", dest: "e4", brush: "blue" }
     ]);
-    expect(liveAnalysisShapes(START_FEN, RUY, { ...white, bestMoveArrow: false })).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, RUY, { ...white, bestMoveArrow: false })).toStrictEqual(
+      []
+    );
   });
 
   it("draws that many moves of the line, numbered, in the default arrow colour", () => {
     const shapes = liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 3 });
-    expect(arrows(shapes)).toEqual(["e2e4:blue", "e7e5:blue", "g1f3:blue"]);
-    expect(shapes.map((shape) => shape.label?.text)).toEqual(["1", "2", "3"]);
+    expect(arrows(shapes)).toStrictEqual(["e2e4:blue", "e7e5:blue", "g1f3:blue"]);
+    expect(shapes.map((shape) => shape.label?.text)).toStrictEqual(["1", "2", "3"]);
     // Engine arrows off hides them too: the plan count only says which arrows show.
     expect(
       liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 2, bestMoveArrow: false })
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("starts with Black's move when Black is to move, and draws castling and at most four moves", () => {
     const line = ["e7e5", "g1f3", "b8c6", "f1c4", "g8f6"];
-    expect(arrows(liveAnalysisShapes(BLACK_TO_MOVE, line, { ...white, planArrows: 4 }))).toEqual([
-      "e7e5:blue",
-      "g1f3:blue",
-      "b8c6:blue",
-      "f1c4:blue"
-    ]);
+    expect(
+      arrows(liveAnalysisShapes(BLACK_TO_MOVE, line, { ...white, planArrows: 4 }))
+    ).toStrictEqual(["e7e5:blue", "g1f3:blue", "b8c6:blue", "f1c4:blue"]);
     const castles = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
     expect(
       arrows(liveAnalysisShapes(castles, ["e1g1", "g8f6"], { ...white, planArrows: 9 }))
-    ).toEqual(["e1g1:blue", "g8f6:blue"]);
+    ).toStrictEqual(["e1g1:blue", "g8f6:blue"]);
   });
 
   it("stops at the first move that isn't legal in turn (a line of another position)", () => {
     const plan = { ...white, planArrows: 4 };
-    expect(arrows(liveAnalysisShapes(START_FEN, ["e2e4", "e2e4", "g1f3"], plan))).toEqual([
+    expect(arrows(liveAnalysisShapes(START_FEN, ["e2e4", "e2e4", "g1f3"], plan))).toStrictEqual([
       "e2e4:blue"
     ]);
-    expect(liveAnalysisShapes(START_FEN, ["e7e5", "g1f3"], plan)).toEqual([]);
-    expect(liveAnalysisShapes(START_FEN, ["e7e5"], white)).toEqual([]);
-    expect(liveAnalysisShapes(START_FEN, ["zz"], plan)).toEqual([]);
-    expect(liveAnalysisShapes("not a fen", RUY, plan)).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5", "g1f3"], plan)).toStrictEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5"], white)).toStrictEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["zz"], plan)).toStrictEqual([]);
+    expect(liveAnalysisShapes("not a fen", RUY, plan)).toStrictEqual([]);
   });
 });

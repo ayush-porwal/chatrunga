@@ -4,7 +4,11 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import type { AnalysePositionsResult, EngineConfig } from "@chaturanga/shared/types/engine";
 import { usePuzzleStore } from "../../stores/puzzle-store";
-import { explanationKey, puzzleIdentity } from "./puzzle-explanation";
+import {
+  buildPuzzleExplanationPayload,
+  explanationKey,
+  puzzleIdentity
+} from "./puzzle-explanation";
 import {
   NO_ENGINE_ERROR,
   cancelPuzzleExplanations,
@@ -15,6 +19,12 @@ import {
   type ExplainEntry,
   type ExplainRequest
 } from "./puzzle-explanation-store";
+
+// The real builder, spied on: one test makes its lazily loaded schema fail.
+vi.mock("./puzzle-explanation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./puzzle-explanation")>();
+  return { ...actual, buildPuzzleExplanationPayload: vi.fn(actual.buildPuzzleExplanationPayload) };
+});
 
 const START = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
 const puzzle: PuzzleSample = {
@@ -116,9 +126,8 @@ describe("requestPuzzleExplanation", () => {
       positions: [{ fen: START, multipv: 3 }]
     });
 
-    searches[0]!.resolve(analysis);
-    await flush();
-    expect(entry()?.phase).toBe("writing");
+    searches[0].resolve(analysis);
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
     const sent = deps.explainPuzzle.mock.calls[0] as unknown as [
       { requestId: string; payload: { outcome: string; commentaryDetail: string } }
     ];
@@ -127,9 +136,23 @@ describe("requestPuzzleExplanation", () => {
       payload: { outcome: "solved", commentaryDetail: "balanced" }
     });
 
-    answers[0]!.resolve({ explanation, error: null });
+    answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry()).toMatchObject({ phase: "ready", requestId: null, explanation, otherSan: [] });
+  });
+
+  it("a schema that can't load ends on the error with Retry, not a spinner", async () => {
+    vi.mocked(buildPuzzleExplanationPayload).mockRejectedValueOnce(new Error("chunk missing"));
+    const { deps, searches } = fakeDeps();
+    const running = requestPuzzleExplanation(request, deps);
+    searches[0].resolve(analysis);
+    await running;
+    expect(entry()).toMatchObject({
+      phase: "error",
+      requestId: null,
+      error: "The explanation couldn't be requested. Try again in a moment."
+    });
+    expect(deps.explainPuzzle).not.toHaveBeenCalled();
   });
 
   it("doesn't ask twice while one is running; Regenerate replaces a finished one", async () => {
@@ -137,9 +160,9 @@ describe("requestPuzzleExplanation", () => {
     const first = requestPuzzleExplanation(request, deps);
     void requestPuzzleExplanation(request, deps);
     expect(deps.analysePositions).toHaveBeenCalledTimes(1);
-    searches[0]!.resolve(analysis);
-    await flush();
-    answers[0]!.resolve({ explanation, error: null });
+    searches[0].resolve(analysis);
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
+    answers[0].resolve({ explanation, error: null });
     await first;
 
     void requestPuzzleExplanation(request, deps);
@@ -156,7 +179,7 @@ describe("requestPuzzleExplanation", () => {
     expect(deps.cancelWriting).not.toHaveBeenCalled();
     expect(entry()).toBeUndefined();
 
-    searches[0]!.resolve(analysis);
+    searches[0].resolve(analysis);
     await running;
     expect(deps.explainPuzzle).not.toHaveBeenCalled();
     expect(entry()).toBeUndefined();
@@ -178,9 +201,9 @@ describe("requestPuzzleExplanation", () => {
       requestId: "r2",
       puzzle: puzzleIdentity(other)
     });
-    searches[1]!.resolve(analysis);
-    await flush();
-    answers[0]!.resolve({ explanation, error: null });
+    searches[1].resolve(analysis);
+    await vi.waitFor(() => expect(entry(otherRequest.key)?.phase).toBe("writing"));
+    answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry(otherRequest.key)?.phase).toBe("ready");
     expect(entry()).toBeUndefined();
@@ -190,9 +213,8 @@ describe("requestPuzzleExplanation", () => {
     const { deps, searches } = fakeDeps();
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     void requestPuzzleExplanation(request, deps);
-    searches[0]!.resolve(analysis);
-    await flush();
-    expect(entry()?.phase).toBe("writing");
+    searches[0].resolve(analysis);
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, id: "p2" });
     expect(deps.cancelWriting).toHaveBeenCalledWith("r1");
     expect(deps.cancelSearch).not.toHaveBeenCalled();
@@ -225,7 +247,7 @@ describe("requestPuzzleExplanation", () => {
   it("reports an engine failure, a provider error and a missing engine, each with a way forward", async () => {
     const { deps, searches, answers } = fakeDeps();
     const failing = requestPuzzleExplanation(request, deps);
-    searches[0]!.reject(
+    searches[0].reject(
       new Error("Error invoking remote method 'engines:analysePositions': Error: Engine not found")
     );
     await failing;
@@ -236,9 +258,9 @@ describe("requestPuzzleExplanation", () => {
     });
 
     const refused = requestPuzzleExplanation(request, deps);
-    searches[1]!.resolve(analysis);
+    searches[1].resolve(analysis);
     await flush();
-    answers[0]!.resolve({ explanation: null, error: "OpenRouter rejected the API key." });
+    answers[0].resolve({ explanation: null, error: "OpenRouter rejected the API key." });
     await refused;
     expect(entry()).toMatchObject({ phase: "error", error: "OpenRouter rejected the API key." });
 
@@ -249,7 +271,7 @@ describe("requestPuzzleExplanation", () => {
   it("says so when the engine's lines can't ground an explanation", async () => {
     const { deps, searches } = fakeDeps();
     const running = requestPuzzleExplanation(request, deps);
-    searches[0]!.resolve({ engineName: "SF", lines: [[]] });
+    searches[0].resolve({ engineName: "SF", lines: [[]] });
     await running;
     expect(entry()?.error).toMatch(/didn't return enough/);
     expect(deps.explainPuzzle).not.toHaveBeenCalled();
@@ -270,13 +292,16 @@ describe("explainView", () => {
   const base = { entry: undefined, configReady: true, commentaryEnabled: true, hasApiKey: true };
 
   it("offers the button once the configuration is known", () => {
-    expect(explainView({ ...base, configReady: false })).toEqual({ kind: "idle", disabled: true });
-    expect(explainView(base)).toEqual({ kind: "idle", disabled: false });
+    expect(explainView({ ...base, configReady: false })).toStrictEqual({
+      kind: "idle",
+      disabled: true
+    });
+    expect(explainView(base)).toStrictEqual({ kind: "idle", disabled: false });
   });
 
   it("says when commentary is off or the key is missing, like Game review", () => {
-    expect(explainView({ ...base, commentaryEnabled: false })).toEqual({ kind: "off" });
-    expect(explainView({ ...base, hasApiKey: false })).toEqual({ kind: "no-key" });
+    expect(explainView({ ...base, commentaryEnabled: false })).toStrictEqual({ kind: "off" });
+    expect(explainView({ ...base, hasApiKey: false })).toStrictEqual({ kind: "no-key" });
   });
 
   it("keeps showing progress and a finished explanation whatever the settings", () => {
@@ -286,8 +311,8 @@ describe("explainView", () => {
         hasApiKey: false,
         entry: { ...ready, phase: "writing", explanation: null }
       })
-    ).toEqual({ kind: "writing" });
-    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toEqual({
+    ).toStrictEqual({ kind: "writing" });
+    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toStrictEqual({
       kind: "ready",
       explanation
     });
@@ -301,7 +326,7 @@ describe("explainView", () => {
       error: NO_ENGINE_ERROR,
       needsSettings: true
     };
-    expect(explainView({ ...base, entry: error })).toEqual({
+    expect(explainView({ ...base, entry: error })).toStrictEqual({
       kind: "error",
       message: NO_ENGINE_ERROR,
       needsSettings: true

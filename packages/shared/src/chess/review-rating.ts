@@ -90,7 +90,7 @@ export function ratingModeForTimeControl(
   const period = tag.split(":")[0] ?? "";
   const clock = /^(\d+)(?:\+(\d+(?:\.\d+)?))?$/.exec(period);
   if (clock)
-    return ratingModeForSpeed(lichessSpeedForClock(Number(clock[1]), Number(clock[2] ?? 0)));
+    return ratingModeForSpeed(lichessSpeedForClock(Number(clock[1]), Number(clock.at(2) ?? 0)));
   const sandclock = /^\*(\d+)$/.exec(period);
   if (sandclock) return ratingModeForSpeed(lichessSpeedForClock(Number(sandclock[1]), 0));
   const moves = /^(\d+)\/(\d+)$/.exec(period);

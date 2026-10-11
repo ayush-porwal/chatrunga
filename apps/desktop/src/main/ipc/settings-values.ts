@@ -128,8 +128,8 @@ export function parseSettingValue<K extends keyof AppSettings>(
 }
 
 /** What writing `value` to `key` stores: the setting alone, in its canonical form. */
-export function parseSettingWrite<K extends keyof AppSettings>(
-  key: K,
+export function parseSettingWrite(
+  key: keyof AppSettings,
   value: unknown
 ): Partial<Record<keyof AppSettings, unknown>> {
   return { [key]: parseSettingValue(key, value) };

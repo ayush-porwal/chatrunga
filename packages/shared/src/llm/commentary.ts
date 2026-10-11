@@ -231,28 +231,39 @@ export function ideaFactTexts(ideas: IdeaFactsPayload | undefined): string[] {
 
 /** Every SAN token the payload grounds, i.e. that the prose may mention. */
 export function groundedSanTokens(payload: ReviewInsightPayload): Set<string> {
-  const stockfish = payload.engines.stockfish;
-  const tokens = new Set<string>([
+  const context = payload.context;
+  return new Set<string>([
     payload.game.san,
-    stockfish.bestMoveSan,
-    ...stockfish.bestLineSan
+    ...stockfishSans(payload.engines.stockfish),
+    ...(context?.recentMoves ?? []).map((recent) => recent.san),
+    ...(context?.actualReply ? [context.actualReply.san] : []),
+    ...humanSans(payload.engines),
+    ...payload.engineSignals.flatMap((signal) =>
+      signal.kind === "quiet_threat" ? [signal.threatSan] : []
+    ),
+    ...sanTokensInTexts(ideaFactTexts(payload.ideas))
   ]);
-  for (const alternative of stockfish.alternatives ?? []) {
-    tokens.add(alternative.san);
-    for (const san of alternative.lineSan) tokens.add(san);
-  }
-  for (const san of stockfish.replyLineSan ?? []) tokens.add(san);
-  for (const recent of payload.context?.recentMoves ?? []) tokens.add(recent.san);
-  if (payload.context?.actualReply) tokens.add(payload.context.actualReply.san);
-  for (const human of payload.engines.humanTopMoves?.moves ?? []) tokens.add(human.san);
-  for (const level of payload.engines.maia?.levels ?? []) {
-    for (const top of level.top) tokens.add(top.san);
-  }
-  for (const signal of payload.engineSignals ?? []) {
-    if (signal.kind === "quiet_threat") tokens.add(signal.threatSan);
-  }
-  for (const token of sanTokensInTexts(ideaFactTexts(payload.ideas))) tokens.add(token);
-  return tokens;
+}
+
+/** The moves of Stockfish's lines: the best move and line, the alternatives' and the reply's. */
+function stockfishSans(stockfish: ReviewInsightPayload["engines"]["stockfish"]): string[] {
+  return [
+    stockfish.bestMoveSan,
+    ...stockfish.bestLineSan,
+    ...(stockfish.alternatives ?? []).flatMap((alternative) => [
+      alternative.san,
+      ...alternative.lineSan
+    ]),
+    ...(stockfish.replyLineSan ?? [])
+  ];
+}
+
+/** The moves the human-play evidence names: likely moves at the player's level, Maia's per level. */
+function humanSans(engines: ReviewInsightPayload["engines"]): string[] {
+  return [
+    ...(engines.humanTopMoves?.moves ?? []).map((human) => human.san),
+    ...(engines.maia?.levels ?? []).flatMap((level) => level.top.map((top) => top.san))
+  ];
 }
 
 /** Unambiguous SAN moves (pieces, captures, castling, promotions) named inside fact sentences. */
@@ -260,7 +271,7 @@ export function sanTokensInTexts(texts: Iterable<string>): string[] {
   const tokens: string[] = [];
   for (const text of texts) {
     for (const match of text.matchAll(SAN_TOKEN_REGEX)) {
-      const token = stripPunctuation(match[1] ?? match[0]);
+      const token = stripPunctuation(match[1]);
       if (/[KQRBN]|O-O|x|=/.test(token)) tokens.push(token);
     }
   }
@@ -315,7 +326,7 @@ export function groundingFrom(input: {
   fens: readonly string[];
 }): CommentaryGrounding {
   const san = new Set(Array.from(input.san, normalizeSan));
-  const squares = new Set<string>(input.squares ?? []);
+  const squares = new Set<string>(input.squares);
   for (const token of san) for (const square of squaresIn(token)) squares.add(square);
   for (const text of input.texts ?? []) for (const square of squaresIn(text)) squares.add(square);
   const boards = input.fens.map(boardFromFen);
@@ -327,7 +338,7 @@ function grounding(payload: ReviewInsightPayload): CommentaryGrounding {
   return groundingFrom({
     san: groundedSanTokens(payload),
     texts: ideaFactTexts(payload.ideas),
-    squares: (payload.tacticalFacts ?? []).flatMap(extractFactSquares),
+    squares: payload.tacticalFacts.flatMap(extractFactSquares),
     fens: [payload.game.fenBefore, payload.game.fenAfter]
   });
 }
@@ -337,7 +348,7 @@ function isPieceReference(token: string, boards: Map<string, string>[]): boolean
   const match = /^([KQRBN])([a-h][1-8])$/.exec(token);
   if (!match) return false;
   const [, letter, square] = match;
-  return boards.some((board) => board.get(square ?? "")?.toUpperCase() === letter);
+  return boards.some((board) => board.get(square)?.toUpperCase() === letter);
 }
 
 function sentenceCount(text: string): number {
@@ -360,7 +371,7 @@ function checkText(
     const match = pattern.exec(text);
     if (match) return { ok: false, reason: "RAW_EVAL", details: match[0], part };
   }
-  const sanMatches = Array.from(text.matchAll(SAN_TOKEN_REGEX), (match) => match[1] ?? match[0]);
+  const sanMatches = Array.from(text.matchAll(SAN_TOKEN_REGEX), (match) => match[1]);
   const sanTokens = sanMatches
     .map(stripPunctuation)
     .filter((token) => /[KQRBN]|O-O|x|=/.test(token));
@@ -387,25 +398,31 @@ function cleanText(value: unknown): string | undefined {
  * ```json fence or surrounded by stray text); anything else is taken as a
  * plain-text body.
  */
+/** The parts of the JSON object in `candidate` (null: none, or no body in it). */
+function coachPartsFromJson(candidate: string): CoachParts | null {
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed: unknown = JSON.parse(candidate.slice(start, end + 1));
+    if (!isRecord(parsed)) return null;
+    const body = cleanText(parsed.body ?? parsed.prose ?? parsed.commentary ?? parsed.text);
+    if (!body) return null;
+    const headline = cleanText(parsed.headline ?? parsed.title)?.replace(/[.!]+$/, "");
+    return { body, ...(headline ? { headline } : {}) };
+  } catch {
+    // Not JSON; the caller falls back to plain text.
+    return null;
+  }
+}
+
 export function parseCoachResponse(raw: string): CoachParts {
   const text = raw.trim();
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
   const candidates = [fenced?.[1], text];
   for (const candidate of candidates) {
-    if (!candidate) continue;
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-    if (start < 0 || end <= start) continue;
-    try {
-      const parsed: unknown = JSON.parse(candidate.slice(start, end + 1));
-      if (!isRecord(parsed)) continue;
-      const body = cleanText(parsed.body ?? parsed.prose ?? parsed.commentary ?? parsed.text);
-      if (!body) continue;
-      const headline = cleanText(parsed.headline ?? parsed.title)?.replace(/[.!]+$/, "");
-      return { body, ...(headline ? { headline } : {}) };
-    } catch {
-      // Not JSON; fall through to plain text.
-    }
+    const parts = candidate ? coachPartsFromJson(candidate) : null;
+    if (parts) return parts;
   }
   const plain = (fenced?.[1] ?? text).replace(/^["']|["']$/g, "").trim();
   return { body: plain.replace(/\s+/g, " ") };

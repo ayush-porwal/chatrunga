@@ -14,13 +14,20 @@ const stockfish = { id: "sf", name: "Stockfish (managed)", isAvailable: true };
 const customStockfish = { id: "sf-custom", name: "Stockfish", isAvailable: true };
 const maia = { id: "m15", name: "Maia 1500 (managed)", isAvailable: false };
 
+/** `moveTree` with every move's clock left at `clock`, played at `playedAt`. */
+function withMoveClocks(moveTree: MoveNode[], clock: string, playedAt: number): MoveNode[] {
+  return moveTree.map((node) => (node.san ? { ...node, clockAfter: clock, playedAt } : node));
+}
+
 describe("rejoining a saved engine game", () => {
   it("plays on against the installed engine named in the game, as the side you had", () => {
-    expect(savedEngineMatch({ white: "You", black: "Stockfish" }, [maia, stockfish])).toEqual({
-      engine: stockfish,
-      engineSide: "black",
-      humanSide: "white"
-    });
+    expect(savedEngineMatch({ white: "You", black: "Stockfish" }, [maia, stockfish])).toStrictEqual(
+      {
+        engine: stockfish,
+        engineSide: "black",
+        humanSide: "white"
+      }
+    );
     // Saved by an older build with the managed marker in the name.
     expect(
       savedEngineMatch({ white: "Stockfish (managed)", black: "You" }, [stockfish])
@@ -70,7 +77,7 @@ function timedTree(times: { clock: string; playedAt?: number }[]): MoveNode[] {
   let move = 0;
   return moveTree.map((node) => {
     if (!node.san) return node;
-    const time = times[move++];
+    const time = times.at(move++);
     return time ? { ...node, clockAfter: time.clock, playedAt: time.playedAt } : node;
   });
 }
@@ -110,7 +117,7 @@ describe("savedEngineClock", () => {
       { clock: "0:01:58", playedAt: T + 2_000 },
       { clock: "0:01:00", playedAt: T + 60_000 }
     ]);
-    expect(savedEngineClock(tree, "120+1", T + 60_000 + 118_000)?.flagged).toEqual({
+    expect(savedEngineClock(tree, "120+1", T + 60_000 + 118_000)?.flagged).toStrictEqual({
       result: "1-0",
       termination: "Time forfeit"
     });
@@ -174,9 +181,7 @@ describe("planRejoin", () => {
     const { moveTree } = importPgnText(
       '[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/R3K3 b - - 0 1"]\n\n1... Kd7 *'
     ).game;
-    const tree = moveTree.map((node) =>
-      node.san ? { ...node, clockAfter: "0:00:30", playedAt: T } : node
-    );
+    const tree = withMoveClocks(moveTree, "0:00:30", T);
     expect(
       planRejoin({ headers: vsStockfish, moveTree: tree }, [stockfish], T + 120_000)
     ).toMatchObject({
@@ -190,7 +195,7 @@ describe("planRejoin", () => {
     for (const timeControl of ["-", "120+1"]) {
       expect(
         planRejoin({ headers: { ...vsStockfish, timeControl }, moveTree }, [stockfish], T)
-      ).toEqual({
+      ).toStrictEqual({
         kind: "resume",
         engine: stockfish,
         engineSide: "black",
@@ -205,16 +210,16 @@ describe("planRejoin", () => {
     const { moveTree } = importPgnText("1. f3 e5 2. g4 Qh4# *").game;
     expect(
       planRejoin({ headers: { ...vsStockfish, timeControl: "-" }, moveTree }, [stockfish], T)
-    ).toEqual({ kind: "finished", nodeId: moveTree.at(-1)!.id });
+    ).toStrictEqual({ kind: "finished", nodeId: moveTree.at(-1)!.id });
   });
 
   it("only opens a game whose engine is missing or unavailable, saying why", () => {
     const game = { headers: vsStockfish, moveTree: played };
-    expect(planRejoin(game, [maia], T)).toEqual({
+    expect(planRejoin(game, [maia], T)).toStrictEqual({
       kind: "open",
       notice: "Stockfish isn't installed, so the game opened on the board."
     });
-    expect(planRejoin(game, [{ ...stockfish, isAvailable: false }], T)).toEqual({
+    expect(planRejoin(game, [{ ...stockfish, isAvailable: false }], T)).toStrictEqual({
       kind: "open",
       notice: "Stockfish isn't available, so the game opened on the board."
     });

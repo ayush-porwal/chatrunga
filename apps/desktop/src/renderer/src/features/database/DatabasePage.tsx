@@ -29,7 +29,7 @@ export const DatabasePage = memo(function DatabasePage({
   const downloadProgress = useDownloadStore((state) => state.progress);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<InstalledDatabase | null>(null);
-  const installedBySource = new Map(databases.data?.map((item) => [item.sourceId, item]) ?? []);
+  const installedBySource = new Map(databases.data?.map((item) => [item.sourceId, item]));
 
   async function removeDatabase(database: InstalledDatabase) {
     if (!desktopApiAvailable) return;

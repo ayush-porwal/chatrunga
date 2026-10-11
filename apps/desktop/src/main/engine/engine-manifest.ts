@@ -74,7 +74,7 @@ export type EngineManifest = {
 /** CPU features a build may require (x86-64 only; detected at runtime, see ./cpu-features.ts). */
 export type CpuFeature = "avx2" | "bmi2" | "sse41" | "popcnt";
 
-export type AssetCandidate = {
+type AssetCandidate = {
   /** Matched against the release asset `name`. */
   pattern: RegExp;
   extract: ArchiveKind;

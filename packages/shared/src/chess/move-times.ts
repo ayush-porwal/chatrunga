@@ -22,7 +22,7 @@ export function parseTimeControl(
   if (!match) return null;
   return {
     baseMs: Math.round(Number(match[1]) * 1000),
-    incrementMs: Math.round(Number(match[2] ?? 0) * 1000)
+    incrementMs: Math.round(Number(match.at(2) ?? 0) * 1000)
   };
 }
 

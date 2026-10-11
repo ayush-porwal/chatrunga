@@ -10,7 +10,7 @@ describe("readHandshakeLine", () => {
       "option name MultiPV type spin default 1",
       "option name Hash type spin"
     ];
-    expect(lines.map((line) => readHandshakeLine(identity, line))).toEqual([
+    expect(lines.map((line) => readHandshakeLine(identity, line))).toStrictEqual([
       false,
       false,
       false,
@@ -18,7 +18,7 @@ describe("readHandshakeLine", () => {
     ]);
     expect(readHandshakeLine(identity, "uciok")).toBe(true);
     expect(identity).toMatchObject({ name: "Lc0 v0.31", author: "The LCZero Authors / Maia" });
-    expect([...identity.options]).toEqual(["MultiPV", "Hash"]);
+    expect([...identity.options]).toStrictEqual(["MultiPV", "Hash"]);
     expect(isHumanPredictionEngine(identity)).toBe(true);
     expect(isHumanPredictionEngine({ name: "Stockfish 17", options: new Set() })).toBe(false);
   });

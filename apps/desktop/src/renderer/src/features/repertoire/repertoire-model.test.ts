@@ -60,9 +60,9 @@ describe("deriveChoices", () => {
   it("names accepted, preferred and reference continuations at a player-to-move position", () => {
     const chapter = chapterOf(sampleChapter(), { d0: { edge: "reference" } });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", null);
+    const view = deriveChoices(chapter, lookup, { nodeId: "root", color: "white", decision: null });
     expect(view.side).toBe("player");
-    expect(view.rows.map((row) => [row.san, row.state])).toEqual([
+    expect(view.rows.map((row) => [row.san, row.state])).toStrictEqual([
       ["e4", "preferred"],
       ["d4", "reference"]
     ]);
@@ -71,32 +71,44 @@ describe("deriveChoices", () => {
   it("follows a stored preference while it is supported", () => {
     const chapter = chapterOf(sampleChapter());
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["e2e4", "d2d4"],
-      preferredUci: "d2d4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["e2e4", "d2d4"],
+        preferredUci: "d2d4"
+      }
     });
-    expect(view.rows.map((row) => row.state)).toEqual(["accepted", "preferred"]);
+    expect(view.rows.map((row) => row.state)).toStrictEqual(["accepted", "preferred"]);
   });
 
   it("falls back to the first accepted move when the stored preference is a reference", () => {
     const chapter = chapterOf(sampleChapter(), { d0: { edge: "reference" } });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["d2d4"],
-      preferredUci: "d2d4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["d2d4"],
+        preferredUci: "d2d4"
+      }
     });
-    expect(view.rows.map((row) => row.state)).toEqual(["preferred", "reference"]);
+    expect(view.rows.map((row) => row.state)).toStrictEqual(["preferred", "reference"]);
   });
 
   it("marks nothing preferred when the stored preference is played at another occurrence", () => {
     // The position is shared with another chapter, where 1. c4 is accepted and preferred.
     const chapter = chapterOf(sampleChapter());
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["c2c4", "e2e4", "d2d4"],
-      preferredUci: "c2c4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["c2c4", "e2e4", "d2d4"],
+        preferredUci: "c2c4"
+      }
     });
-    expect(view.rows.map((row) => row.state)).toEqual(["accepted", "accepted"]);
+    expect(view.rows.map((row) => row.state)).toStrictEqual(["accepted", "accepted"]);
   });
 
   it("names covered and reference replies at an opponent-to-move position", () => {
@@ -105,9 +117,9 @@ describe("deriveChoices", () => {
       s0: { edge: "reference" }
     });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "w0", "white", null);
+    const view = deriveChoices(chapter, lookup, { nodeId: "w0", color: "white", decision: null });
     expect(view.side).toBe("opponent");
-    expect(view.rows.map((row) => [row.san, row.state, row.disabled])).toEqual([
+    expect(view.rows.map((row) => [row.san, row.state, row.disabled])).toStrictEqual([
       ["e5", "covered", false],
       ["c5", "reference", false]
     ]);
@@ -116,13 +128,17 @@ describe("deriveChoices", () => {
   it("marks moves outside training scope as not trained here", () => {
     const tree = sampleChapter();
     const states = (chapter: ReturnType<typeof chapterOf>, nodeId: string) =>
-      deriveChoices(chapter, buildChapterLookup(chapter), nodeId, "white", {
-        acceptedUcis: ["e2e4"],
-        preferredUci: "e2e4"
+      deriveChoices(chapter, buildChapterLookup(chapter), {
+        nodeId,
+        color: "white",
+        decision: {
+          acceptedUcis: ["e2e4"],
+          preferredUci: "e2e4"
+        }
       }).rows.map((row) => [row.san, row.state, row.edge]);
 
     // A reference or disabled chapter trains nothing.
-    expect(states(chapterOf(tree, {}, { kind: "reference" }), "root")).toEqual([
+    expect(states(chapterOf(tree, {}, { kind: "reference" }), "root")).toStrictEqual([
       ["e4", "untrained", "included"],
       ["d4", "untrained", "included"]
     ]);
@@ -132,12 +148,14 @@ describe("deriveChoices", () => {
       states(chapterOf(tree, { w2: { edge: "included", trainingStart: true } }), "root")[0][1]
     ).toBe("untrained");
     // After a stop: the stop node's position is no card.
-    expect(states(chapterOf(tree, { w1: { edge: "covered", trainingStop: true } }), "w1")).toEqual([
-      ["Nf3", "untrained", "included"]
-    ]);
+    expect(
+      states(chapterOf(tree, { w1: { edge: "covered", trainingStop: true } }), "w1")
+    ).toStrictEqual([["Nf3", "untrained", "included"]]);
     // Under a reference branch, and a disabled move.
     expect(states(chapterOf(tree, { w0: { edge: "reference" } }), "w1")[0][1]).toBe("untrained");
-    expect(states(chapterOf(tree, { d0: { edge: "included", disabled: true } }), "root")).toEqual([
+    expect(
+      states(chapterOf(tree, { d0: { edge: "included", disabled: true } }), "root")
+    ).toStrictEqual([
       ["e4", "preferred", "included"],
       ["d4", "untrained", "included"]
     ]);
@@ -145,9 +163,13 @@ describe("deriveChoices", () => {
 
   it("returns nothing for an unknown node", () => {
     const chapter = chapterOf(sampleChapter());
-    expect(deriveChoices(chapter, buildChapterLookup(chapter), "nope", "white", null).rows).toEqual(
-      []
-    );
+    expect(
+      deriveChoices(chapter, buildChapterLookup(chapter), {
+        nodeId: "nope",
+        color: "white",
+        decision: null
+      }).rows
+    ).toStrictEqual([]);
   });
 });
 
@@ -156,33 +178,37 @@ describe("choiceActions", () => {
     choiceActions(row, side).map((action) => `${action.kind}:${action.variant}`);
 
   it("offers the player's moves accept, prefer and make reference by state", () => {
-    expect(kinds({ state: "preferred", edge: "included" }, "player")).toEqual([
+    expect(kinds({ state: "preferred", edge: "included" }, "player")).toStrictEqual([
       "make-reference:ghost"
     ]);
-    expect(kinds({ state: "accepted", edge: "included" }, "player")).toEqual([
+    expect(kinds({ state: "accepted", edge: "included" }, "player")).toStrictEqual([
       "prefer:outline",
       "make-reference:ghost"
     ]);
-    expect(kinds({ state: "reference", edge: "reference" }, "player")).toEqual([
+    expect(kinds({ state: "reference", edge: "reference" }, "player")).toStrictEqual([
       "accept:outline",
       "prefer:outline"
     ]);
   });
 
   it("toggles an opponent's reply between covered and reference", () => {
-    expect(kinds({ state: "covered", edge: "covered" }, "opponent")).toEqual([
+    expect(kinds({ state: "covered", edge: "covered" }, "opponent")).toStrictEqual([
       "make-reference:ghost"
     ]);
-    expect(kinds({ state: "reference", edge: "reference" }, "opponent")).toEqual(["cover:outline"]);
+    expect(kinds({ state: "reference", edge: "reference" }, "opponent")).toStrictEqual([
+      "cover:outline"
+    ]);
   });
 
   it("outside training scope only keeps a move as reference (or covers a reply again)", () => {
-    expect(kinds({ state: "untrained", edge: "included" }, "player")).toEqual([
+    expect(kinds({ state: "untrained", edge: "included" }, "player")).toStrictEqual([
       "make-reference:ghost"
     ]);
-    expect(kinds({ state: "untrained", edge: "reference" }, "player")).toEqual([]);
-    expect(kinds({ state: "untrained", edge: "reference" }, "opponent")).toEqual(["cover:ghost"]);
-    expect(kinds({ state: "untrained", edge: "covered" }, "opponent")).toEqual([
+    expect(kinds({ state: "untrained", edge: "reference" }, "player")).toStrictEqual([]);
+    expect(kinds({ state: "untrained", edge: "reference" }, "opponent")).toStrictEqual([
+      "cover:ghost"
+    ]);
+    expect(kinds({ state: "untrained", edge: "covered" }, "opponent")).toStrictEqual([
       "make-reference:ghost"
     ]);
   });
@@ -213,9 +239,9 @@ describe("positions and labels", () => {
     ({ tree } = addLine(tree, "root", ["g1f3", "g8f6", "b1c3"], "a"));
     ({ tree } = addLine(tree, "root", ["b1c3", "g8f6", "g1f3"], "b"));
     const lookup = buildChapterLookup({ tree });
-    expect(transpositionsOf(lookup, "a2")).toEqual(["b2"]);
-    expect(transpositionsOf(lookup, "a0")).toEqual([]);
-    expect(transpositionsOf(lookup, "missing")).toEqual([]);
+    expect(transpositionsOf(lookup, "a2")).toStrictEqual(["b2"]);
+    expect(transpositionsOf(lookup, "a0")).toStrictEqual([]);
+    expect(transpositionsOf(lookup, "missing")).toStrictEqual([]);
   });
 
   it("labels a path with move numbers", () => {
@@ -228,7 +254,7 @@ describe("positions and labels", () => {
   });
 
   it("splits a UCI move into squares", () => {
-    expect(lastMoveOf("e2e4")).toEqual(["e2", "e4"]);
+    expect(lastMoveOf("e2e4")).toStrictEqual(["e2", "e4"]);
     expect(lastMoveOf(null)).toBeNull();
   });
 });
@@ -346,27 +372,29 @@ describe("decision text drafts", () => {
   });
 
   it("writes text fields, the pause, and feedback merged into the stored map", () => {
-    expect(decisionDraftPatch(draftOf({ text: " Develop " }), null)).toEqual({
+    expect(decisionDraftPatch(draftOf({ text: " Develop " }), null)).toStrictEqual({
       prompt: "Develop"
     });
-    expect(decisionDraftPatch(draftOf({ field: "hint", text: " " }), null)).toEqual({
+    expect(decisionDraftPatch(draftOf({ field: "hint", text: " " }), null)).toStrictEqual({
       hint: null
     });
-    expect(decisionDraftPatch(draftOf({ field: "paused", text: "", paused: true }), null)).toEqual({
+    expect(
+      decisionDraftPatch(draftOf({ field: "paused", text: "", paused: true }), null)
+    ).toStrictEqual({
       paused: true
     });
     const stored = { wrongMoveFeedback: { c2c4: "Not the English", d2d4: "Old" } };
     expect(
       decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: " We play e4 " }), stored)
-    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play e4" } });
+    ).toStrictEqual({ wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play e4" } });
     // Blank text removes that move's feedback only.
     expect(
       decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: "" }), stored)
-    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English" } });
+    ).toStrictEqual({ wrongMoveFeedback: { c2c4: "Not the English" } });
     expect(stored.wrongMoveFeedback.d2d4).toBe("Old");
     expect(
       decisionDraftPatch(draftOf({ field: "feedback", uci: "g1f3", text: "No" }), null)
-    ).toEqual({ wrongMoveFeedback: { g1f3: "No" } });
+    ).toStrictEqual({ wrongMoveFeedback: { g1f3: "No" } });
   });
 
   it("tells when a draft holds what the decision stores", () => {
@@ -408,7 +436,7 @@ describe("decision text drafts", () => {
       b: draftOf({ field: "hint", status: "error", error: { message: "refused", stale: true } }),
       c: draftOf({ repertoireId: "r2", status: "error", error: { message: "x", stale: false } })
     };
-    expect(decisionTextStatus(drafts, "r1")).toEqual({
+    expect(decisionTextStatus(drafts, "r1")).toStrictEqual({
       dirty: true,
       saving: true,
       errorMessage: "refused",
@@ -416,7 +444,7 @@ describe("decision text drafts", () => {
       holdsBack: "stale"
     });
     expect(decisionTextStatus(drafts, "r2")).toMatchObject({ errorStale: false, saving: false });
-    expect(decisionTextStatus(drafts, "r3")).toEqual({
+    expect(decisionTextStatus(drafts, "r3")).toStrictEqual({
       dirty: false,
       saving: false,
       errorMessage: null,
@@ -445,14 +473,14 @@ describe("decision text drafts", () => {
 
     it("creates a draft on the first edit and keeps its state on later ones", () => {
       const created = nextDecisionDraft(undefined, { type: "edit", change }).draft!;
-      expect(created).toEqual({ ...change, generation: 1, status: "pending" });
+      expect(created).toStrictEqual({ ...change, generation: 1, status: "pending" });
       const failed = nextDecisionDraft(created, { type: "failed", error: failure }).draft!;
-      expect(nextDecisionDraft(failed, { type: "edit", change: { ...change, text: "B" } })).toEqual(
-        {
-          draft: { ...change, text: "B", generation: 2, status: "error", error: failure },
-          writeAgain: false
-        }
-      );
+      expect(
+        nextDecisionDraft(failed, { type: "edit", change: { ...change, text: "B" } })
+      ).toStrictEqual({
+        draft: { ...change, text: "B", generation: 2, status: "error", error: failure },
+        writeAgain: false
+      });
       const paused = nextDecisionDraft(undefined, {
         type: "edit",
         change: { ...change, field: "paused", text: "", paused: true }
@@ -465,12 +493,12 @@ describe("decision text drafts", () => {
     it("drops a draft saved as sent, and keeps one typed while it saved", () => {
       const saving = nextDecisionDraft(draftOf({}), { type: "saving" }).draft!;
       expect(saving.status).toBe("saving");
-      expect(nextDecisionDraft(saving, { type: "saved", generation: 1 })).toEqual({
+      expect(nextDecisionDraft(saving, { type: "saved", generation: 1 })).toStrictEqual({
         draft: null,
         writeAgain: false
       });
       const edited = { ...saving, generation: 2 };
-      expect(nextDecisionDraft(edited, { type: "saved", generation: 1 }).draft).toEqual({
+      expect(nextDecisionDraft(edited, { type: "saved", generation: 1 }).draft).toStrictEqual({
         ...draftOf({ generation: 2 })
       });
       expect(nextDecisionDraft(undefined, { type: "saved", generation: 1 }).draft).toBeNull();
@@ -482,17 +510,17 @@ describe("decision text drafts", () => {
       expect(marked).toMatchObject({ status: "saving", saveAgain: true });
       expect(
         nextDecisionDraft({ ...marked, generation: 2 }, { type: "saved", generation: 1 })
-      ).toEqual({ draft: draftOf({ generation: 2 }), writeAgain: true });
+      ).toStrictEqual({ draft: draftOf({ generation: 2 }), writeAgain: true });
       // Committed again but unchanged: saved as sent, nothing left to write.
       expect(nextDecisionDraft(marked, { type: "saved", generation: 1 }).writeAgain).toBe(false);
-      expect(nextDecisionDraft(marked, { type: "failed", error: failure })).toEqual({
+      expect(nextDecisionDraft(marked, { type: "failed", error: failure })).toStrictEqual({
         draft: draftOf({ status: "error", error: failure }),
         writeAgain: true
       });
       expect(nextDecisionDraft(marked, { type: "failed", error: stale }).writeAgain).toBe(false);
       // Only a running write takes the mark; a new write clears it.
-      expect(nextDecisionDraft(draftOf({}), { type: "commit" }).draft).toEqual(draftOf({}));
-      expect(nextDecisionDraft(marked, { type: "saving" }).draft).toEqual(
+      expect(nextDecisionDraft(draftOf({}), { type: "commit" }).draft).toStrictEqual(draftOf({}));
+      expect(nextDecisionDraft(marked, { type: "saving" }).draft).toStrictEqual(
         draftOf({ status: "saving" })
       );
     });
@@ -500,10 +528,12 @@ describe("decision text drafts", () => {
     it("retries a failure that isn't stale; Keep mine any failure", () => {
       const failed = draftOf({ status: "error", error: failure });
       const refused = draftOf({ status: "error", error: stale });
-      expect(nextDecisionDraft(failed, { type: "retry" }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(failed, { type: "retry" }).draft).toStrictEqual(draftOf({}));
       expect(nextDecisionDraft(refused, { type: "retry" }).draft).toBe(refused);
-      expect(nextDecisionDraft(refused, { type: "retry", stale: true }).draft).toEqual(draftOf({}));
-      expect(nextDecisionDraft(draftOf({}), { type: "retry", stale: true }).draft).toEqual(
+      expect(nextDecisionDraft(refused, { type: "retry", stale: true }).draft).toStrictEqual(
+        draftOf({})
+      );
+      expect(nextDecisionDraft(draftOf({}), { type: "retry", stale: true }).draft).toStrictEqual(
         draftOf({})
       );
     });
@@ -527,17 +557,22 @@ describe("decision text drafts", () => {
 
     it("reads a refused write's message in one place", () => {
       expect(decisionWriteFailure("Invalid repertoireId: not found")).toBe("repertoire-gone");
-      expect(decisionWriteFailure("Invalid positionKey: not found in this repertoire")).toEqual({
+      expect(
+        decisionWriteFailure("Invalid positionKey: not found in this repertoire")
+      ).toStrictEqual({
         message: "This position is no longer in the repertoire.",
         stale: false,
         missing: true
       });
-      expect(decisionWriteFailure("Invalid expectedRevision: repertoire changed")).toEqual({
+      expect(decisionWriteFailure("Invalid expectedRevision: repertoire changed")).toStrictEqual({
         message: "Invalid expectedRevision: repertoire changed",
         stale: true
       });
-      expect(decisionWriteFailure("disk full")).toEqual({ message: "disk full", stale: false });
-      expect(decisionWriteFailure("read failed", { stale: true })).toEqual({
+      expect(decisionWriteFailure("disk full")).toStrictEqual({
+        message: "disk full",
+        stale: false
+      });
+      expect(decisionWriteFailure("read failed", { stale: true })).toStrictEqual({
         message: "read failed",
         stale: true
       });
@@ -552,10 +587,10 @@ describe("wrongMoveOptions", () => {
     expect(options).toHaveLength(18);
     expect(options.map((option) => option.uci)).not.toContain("e2e4");
     expect(options).toContainEqual({ uci: "g1f3", san: "Nf3" });
-    expect(options.map((option) => option.san)).toEqual(
-      [...options.map((option) => option.san)].sort((a, b) => a.localeCompare(b))
+    expect(options.map((option) => option.san)).toStrictEqual(
+      options.map((option) => option.san).sort((a, b) => a.localeCompare(b))
     );
-    expect(wrongMoveOptions("not a fen", new Set())).toEqual([]);
+    expect(wrongMoveOptions("not a fen", new Set())).toStrictEqual([]);
   });
 
   it("lists castling king-two-squares and each promotion piece", () => {
@@ -563,11 +598,9 @@ describe("wrongMoveOptions", () => {
     expect(castling).toContainEqual({ uci: "e1g1", san: "O-O" });
     expect(castling.map((option) => option.uci)).not.toContain("e1h1");
     const promotion = wrongMoveOptions("8/P6k/8/8/8/8/8/K7 w - - 0 1", new Set(["a7a8q"]));
-    expect(promotion.filter((option) => option.uci.startsWith("a7a8")).map((o) => o.san)).toEqual([
-      "a8=B",
-      "a8=N",
-      "a8=R"
-    ]);
+    expect(
+      promotion.filter((option) => option.uci.startsWith("a7a8")).map((o) => o.san)
+    ).toStrictEqual(["a8=B", "a8=N", "a8=R"]);
   });
 });
 
@@ -580,7 +613,7 @@ describe("practice helpers", () => {
       cardOf("d", { state: "answered-wrong" }),
       cardOf("e")
     ]);
-    expect(totals).toEqual({
+    expect(totals).toStrictEqual({
       total: 5,
       answered: 4,
       correct: 1,
@@ -604,11 +637,11 @@ describe("practice helpers", () => {
   });
 
   it("marks hint stages and reveals on the board", () => {
-    expect(hintMarks(1, "g1f3")).toEqual({ arrows: [], highlights: [] });
-    expect(hintMarks(2, "g1f3").highlights).toEqual([{ square: "g1", color: "green" }]);
-    expect(hintMarks(3, "g1f3").arrows).toEqual([{ orig: "g1", dest: "f3", color: "green" }]);
-    expect(hintMarks(3, null)).toEqual({ arrows: [], highlights: [] });
-    expect(revealArrows(["e2e4", "d2d4"], "d2d4")).toEqual([
+    expect(hintMarks(1, "g1f3")).toStrictEqual({ arrows: [], highlights: [] });
+    expect(hintMarks(2, "g1f3").highlights).toStrictEqual([{ square: "g1", color: "green" }]);
+    expect(hintMarks(3, "g1f3").arrows).toStrictEqual([{ orig: "g1", dest: "f3", color: "green" }]);
+    expect(hintMarks(3, null)).toStrictEqual({ arrows: [], highlights: [] });
+    expect(revealArrows(["e2e4", "d2d4"], "d2d4")).toStrictEqual([
       { orig: "e2", dest: "e4", color: "blue" },
       { orig: "d2", dest: "d4", color: "green" }
     ]);
@@ -634,7 +667,7 @@ describe("cross-chapter occurrences", () => {
         ],
         "c1"
       ).map((item) => `${item.chapterId}:${item.nodeId}`)
-    ).toEqual(["c2:n4", "c3:n2"]);
+    ).toStrictEqual(["c2:n4", "c3:n2"]);
   });
 
   it("treats a deleted repertoire's refusal as a draft to drop", () => {
@@ -680,7 +713,7 @@ describe("practice text", () => {
       explanation: " The centre first. ",
       moveComments: { e2e4: "Open games.", c2c4: " ", g1f3: "Flexible." }
     };
-    expect(answerView(start, answer, "e2e4")).toEqual({
+    expect(answerView(start, answer, "e2e4")).toStrictEqual({
       answer: "You played e4.",
       alternatives: "Also accepted: Nf3 (preferred), c4",
       explanation: "The centre first.",
@@ -698,7 +731,7 @@ describe("practice text", () => {
       { ucis: ["e2e4", "g1f3"], preferredUci: null, explanation: null },
       null
     );
-    expect(view).toEqual({
+    expect(view).toStrictEqual({
       answer: "Preferred: e4 · also accepted: Nf3",
       alternatives: null,
       explanation: null,

@@ -49,14 +49,14 @@ describe("review validity", () => {
   it("drops reviewed moves whose line was deleted", () => {
     const moves = reviewOfMainline();
     useGameStore.getState().deleteLineFromNode(nodeBySan("e5").id);
-    expect(compatibleReviewMoves(moves, tree()).map((move) => move.san)).toEqual(["e4"]);
+    expect(compatibleReviewMoves(moves, tree()).map((move) => move.san)).toStrictEqual(["e4"]);
   });
 
   it("drops reviewed moves moved off the main line (a variation takes their place)", () => {
     const moves = reviewOfMainline();
     useGameStore.getState().deleteLineFromNode(nodeBySan("e4").id);
     // d4 d5 is the main line now; nothing of the analysis describes it.
-    expect(compatibleReviewMoves(moves, tree())).toEqual([]);
+    expect(compatibleReviewMoves(moves, tree())).toStrictEqual([]);
   });
 
   it("counts the moves the analysis no longer covers in full moves, not plies", () => {
@@ -75,7 +75,7 @@ describe("review validity", () => {
     );
     useGameStore.getState().loadGame({ ...game, id: "g" });
     const moves = reviewOfMainline();
-    // 2… Nc6 3. Bb5 go: plies 3 and 4, which are moves 2 and 3 when Black moves first.
+    // 2… Nc6 3. Bb5 go: plies 4 and 5 (1. e4 is ply 1, in the FEN), which are moves 2 and 3.
     useGameStore.getState().deleteLineFromNode(nodeBySan("Nc6").id);
     expect(outdatedFullMoves(moves, tree())).toBe(2);
   });
@@ -85,7 +85,7 @@ describe("review validity", () => {
     useGameStore.getState().deleteLineFromNode(nodeBySan("e5").id);
     useGameStore.getState().goToNode(nodeBySan("e4").id);
     useGameStore.getState().makeUciMove("d7d6");
-    expect(compatibleReviewMoves(moves, tree()).map((move) => move.san)).toEqual(["e4"]);
+    expect(compatibleReviewMoves(moves, tree()).map((move) => move.san)).toStrictEqual(["e4"]);
   });
 
   it("keeps the analysis of a line that was extended or got a new variation", () => {
@@ -103,11 +103,11 @@ describe("review validity", () => {
     );
     useGameStore.getState().loadGame({ ...game, id: "castles" });
     const castles = tree().filter((node) => node.san?.startsWith("O-O"));
-    expect(castles.map((node) => node.uci)).toEqual(["e1h1", "e8a8"]);
+    expect(castles.map((node) => node.uci)).toStrictEqual(["e1h1", "e8a8"]);
     const moves = reviewOfMainline();
     expect(
       moves.filter((move) => move.san.startsWith("O-O")).map((move) => move.playedMove)
-    ).toEqual(["e1g1", "e8c8"]);
+    ).toStrictEqual(["e1g1", "e8c8"]);
     expect(compatibleReviewMoves(moves, tree())).toBe(moves);
   });
 

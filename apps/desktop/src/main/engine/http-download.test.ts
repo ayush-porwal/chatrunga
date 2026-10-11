@@ -64,9 +64,9 @@ describe("downloadToFile", () => {
       fetchImpl,
       onProgress: (received, total) => progress.push([received, total])
     });
-    expect(result).toEqual({ bytes: 300, totalBytes: 300, resumed: false });
-    expect(readFileSync(dest)).toEqual(FILE);
-    expect(progress.at(-1)).toEqual([300, 300]);
+    expect(result).toStrictEqual({ bytes: 300, totalBytes: 300, resumed: false });
+    expect(readFileSync(dest)).toStrictEqual(FILE);
+    expect(progress.at(-1)).toStrictEqual([300, 300]);
     expect((fetchImpl.mock.calls[0][1] as RequestInit).redirect).toBe("manual");
   });
 
@@ -80,8 +80,8 @@ describe("downloadToFile", () => {
       expectedBytes: 100,
       fetchImpl
     });
-    expect(result).toEqual({ bytes: 300, totalBytes: 300, resumed: true });
-    expect(readFileSync(dest)).toEqual(FILE);
+    expect(result).toStrictEqual({ bytes: 300, totalBytes: 300, resumed: true });
+    expect(readFileSync(dest)).toStrictEqual(FILE);
     const headers = fetchImpl.mock.calls[0][1]!.headers as Record<string, string>;
     expect(headers.Range).toBe("bytes=150-");
     expect(headers["Accept-Encoding"]).toBe("identity");
@@ -96,7 +96,7 @@ describe("downloadToFile", () => {
       fetchImpl: githubLike()
     });
     expect(result).toMatchObject({ bytes: 300, totalBytes: 300 });
-    expect(readFileSync(dest)).toEqual(FILE);
+    expect(readFileSync(dest)).toStrictEqual(FILE);
   });
 
   it("starts over when the partial overshoots the real size", async () => {
@@ -108,7 +108,7 @@ describe("downloadToFile", () => {
       fetchImpl: githubLike()
     });
     expect(result).toMatchObject({ bytes: 300, resumed: false });
-    expect(readFileSync(dest)).toEqual(FILE);
+    expect(readFileSync(dest)).toStrictEqual(FILE);
   });
 
   it("starts over when the server ignores Range", async () => {
@@ -120,7 +120,7 @@ describe("downloadToFile", () => {
       fetchImpl: githubLike({ ignoreRange: true })
     });
     expect(result).toMatchObject({ bytes: 300, resumed: false });
-    expect(readFileSync(dest)).toEqual(FILE);
+    expect(readFileSync(dest)).toStrictEqual(FILE);
   });
 
   it("rejects a redirect to a host outside the allow-list before downloading", async () => {
@@ -163,13 +163,13 @@ describe("downloadToFile", () => {
         fetchImpl
       })
     ).rejects.toThrow("download incomplete: 120 of 300 bytes");
-    expect(readFileSync(dest).length).toBe(120);
+    expect(readFileSync(dest)).toHaveLength(120);
   });
 
   it("parses Content-Range", () => {
-    expect(parseContentRange("bytes 150-299/300")).toEqual({ start: 150, total: 300 });
-    expect(parseContentRange("bytes */300")).toEqual({ start: null, total: 300 });
-    expect(parseContentRange("bytes 0-9/*")).toEqual({ start: 0, total: null });
+    expect(parseContentRange("bytes 150-299/300")).toStrictEqual({ start: 150, total: 300 });
+    expect(parseContentRange("bytes */300")).toStrictEqual({ start: null, total: 300 });
+    expect(parseContentRange("bytes 0-9/*")).toStrictEqual({ start: 0, total: null });
     expect(parseContentRange("garbage")).toBeNull();
     expect(parseContentRange(null)).toBeNull();
   });

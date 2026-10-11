@@ -15,7 +15,7 @@ describe("history store", () => {
   beforeEach(() => useHistoryStore.setState({ entries: [START], index: 0 }));
 
   it("starts on Play", () => {
-    expect(initial.entries).toEqual([START]);
+    expect(initial.entries).toStrictEqual([START]);
     expect(initial.index).toBe(0);
   });
 
@@ -26,7 +26,7 @@ describe("history store", () => {
     history().moveTo(1);
     expect(selectCanGoBack(history())).toBe(true);
     expect(selectCanGoForward(history())).toBe(true);
-    expect(history().entries[history().index]).toEqual({ view: "play", opponent: "pool" });
+    expect(history().entries[history().index]).toStrictEqual({ view: "play", opponent: "pool" });
   });
 
   it("drops the screens ahead when a new one is pushed after going back, like a browser", () => {
@@ -34,7 +34,11 @@ describe("history store", () => {
     history().push({ view: "databases" });
     history().moveTo(1);
     history().push({ view: "puzzles" });
-    expect(history().entries.map((entry) => entry.view)).toEqual(["play", "settings", "puzzles"]);
+    expect(history().entries.map((entry) => entry.view)).toStrictEqual([
+      "play",
+      "settings",
+      "puzzles"
+    ]);
     expect(selectCanGoForward(history())).toBe(false);
   });
 
@@ -47,7 +51,7 @@ describe("history store", () => {
     history().push({ view: "settings", section: null });
     history().commitCurrent({ view: "settings", section: "engines" });
     history().replaceCurrent({ view: "settings", section: "lichess" });
-    expect(history().entries).toEqual([START, { view: "settings", section: "lichess" }]);
+    expect(history().entries).toStrictEqual([START, { view: "settings", section: "lichess" }]);
   });
 
   it("records repertoire screens, with node and tab changes replacing the study entry", () => {
@@ -65,7 +69,7 @@ describe("history store", () => {
     history().replaceCurrent({ ...study, nodeId: "n5", tab: "notes", orientation: "black" });
     history().push({ view: "repertoire-practice", repertoireId: "r1", sessionId: null });
     history().replaceCurrent({ view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" });
-    expect(history().entries).toEqual([
+    expect(history().entries).toStrictEqual([
       START,
       { view: "repertoire-hub" },
       { ...study, nodeId: "n5", tab: "notes", orientation: "black" },
@@ -102,7 +106,7 @@ describe("history store", () => {
     history().push({ view: "puzzles" });
     history().push({ view: "databases" });
     history().removeAt(1);
-    expect(history().entries.map((entry) => entry.view)).toEqual(["play", "databases"]);
+    expect(history().entries.map((entry) => entry.view)).toStrictEqual(["play", "databases"]);
     expect(history().index).toBe(1);
     history().removeAt(1);
     expect(history().entries).toHaveLength(2);

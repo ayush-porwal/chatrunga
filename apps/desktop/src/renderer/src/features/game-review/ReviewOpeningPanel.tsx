@@ -71,6 +71,34 @@ const noticeTone: Record<ComparisonTone, "info" | "warn" | "danger" | "success">
   neutral: "info"
 };
 
+/** The side the game's provenance suggests, and comparing as it when it isn't the chosen one. */
+function SideSuggestion({
+  suggestion,
+  color,
+  onColorChange
+}: {
+  suggestion: { color: RepertoireColor; hint: string };
+  color: RepertoireColor;
+  onColorChange: (color: RepertoireColor) => void;
+}) {
+  return (
+    <p className={cn(fieldHint, "flex flex-wrap items-center gap-x-2")}>
+      <span>{suggestion.hint}</span>
+      {suggestion.color !== color ? (
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="text-2xs"
+          onClick={() => onColorChange(suggestion.color)}
+        >
+          Compare as {COLOR_NAME[suggestion.color]}
+        </Button>
+      ) : null}
+    </p>
+  );
+}
+
 /**
  * The game against the user's repertoire for one side: the side (the one picked, else the
  * default), that side's repertoires and the one compared, and the comparison of the game's
@@ -239,20 +267,7 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
         ) : null}
       </div>
       {suggestion ? (
-        <p className={cn(fieldHint, "flex flex-wrap items-center gap-x-2")}>
-          <span>{suggestion.hint}</span>
-          {suggestion.color !== color ? (
-            <Button
-              type="button"
-              variant="link"
-              size="xs"
-              className="text-2xs"
-              onClick={() => onColorChange(suggestion.color)}
-            >
-              Compare as {COLOR_NAME[suggestion.color]}
-            </Button>
-          ) : null}
-        </p>
+        <SideSuggestion suggestion={suggestion} color={color} onColorChange={onColorChange} />
       ) : null}
     </div>
   );
@@ -498,7 +513,7 @@ function MoveStrip({
   // The cursor's token stays in view (scrolling only; focus stays where it is).
   useEffect(() => {
     const token = listRef.current?.querySelector<HTMLElement>('[aria-current="step"]');
-    token?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    token?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [selectedNodeId]);
 
   return (

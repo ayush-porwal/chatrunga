@@ -17,8 +17,8 @@ export type MergeIncoming = {
   rootFen: string;
   /** Root id `"root"`; moves in the stored UCI form (castling as `e1g1`). */
   tree: readonly MoveNode[];
-  /** Metadata of the incoming tree, keyed by incoming id. */
-  nodeMeta: Record<string, RepertoireNodeMeta>;
+  /** Metadata of the incoming tree, keyed by incoming id (a node without any is a reference). */
+  nodeMeta: Partial<Record<string, RepertoireNodeMeta>>;
   /**
    * Incoming ids whose edge may upgrade a matched existing edge (the confirmed policy and its
    * context). Omitted = every incoming node.
@@ -101,66 +101,25 @@ export function mergeIntoChapter(
 
   const nodeMeta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   for (const [id, meta] of Object.entries(existing.nodeMeta)) nodeMeta[id] = { ...meta };
-  const chapterHasStart = Object.values(existing.nodeMeta).some((meta) => meta.trainingStart);
-  const upgrades = incoming.upgradeNodeIds ? new Set(incoming.upgradeNodeIds) : null;
-  const nextId = idGenerator(tree);
-  const idMap: Record<string, string> = nullPrototypeRecord();
+  const state: MergeState = {
+    incoming,
+    incomingById,
+    tree,
+    byId,
+    nodeMeta,
+    chapterHasStart: Object.values(existing.nodeMeta).some((meta) => meta.trainingStart),
+    upgrades: incoming.upgradeNodeIds ? new Set(incoming.upgradeNodeIds) : null,
+    nextId: idGenerator(tree),
+    idMap: nullPrototypeRecord()
+  };
   let added = 0;
   let alreadyPresent = 0;
 
-  // Whether included moves follow an incoming node (itself included) on a route that no incoming
-  // start below it already covers.
-  const leadsToIncluded = (start: MoveNode): boolean => {
-    const pending = [start];
-    const seen = new Set<string>();
-    for (let item = pending.pop(); item; item = pending.pop()) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      const meta = incoming.nodeMeta[item.id];
-      if (item !== start && meta?.trainingStart) continue;
-      if (meta?.edge === "included") return true;
-      for (const id of item.children) {
-        const child = incomingById.get(id);
-        if (child?.uci) pending.push(child);
-      }
-    }
-    return false;
-  };
-
-  // Whether a start on `position` would also start asking an included move of the chapter (other
-  // than `accepted`) that isn't asked now: one before every start, or one that is itself a start
-  // (played from a position before it). Moves below a start are already asked.
-  const startsOtherMoves = (position: MoveNode, accepted: MoveNode): boolean => {
-    const pending = [...position.children];
-    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
-      const node = byId.get(id);
-      if (!node) continue;
-      if (node !== accepted && nodeMetaOf(nodeMeta, id).edge === "included") return true;
-      if (nodeMeta[id]?.trainingStart) continue;
-      pending.push(...node.children);
-    }
-    return false;
-  };
-
-  const fillEmpty = (target: MoveNode, source: MoveNode) => {
-    if (!target.comment?.trim() && source.comment?.trim()) target.comment = source.comment;
-    if (!target.nags.length && source.nags.length) target.nags = [...source.nags];
-    if (!target.arrows.length && source.arrows.length) {
-      target.arrows = source.arrows.map((arrow) => ({ ...arrow }));
-    }
-    if (!target.highlights.length && source.highlights.length) {
-      target.highlights = source.highlights.map((highlight) => ({ ...highlight }));
-    }
-  };
-
-  idMap[incomingRoot.id] = root.id;
+  state.idMap[incomingRoot.id] = root.id;
   fillEmpty(root, incomingRoot);
 
   // Pre-order over the incoming tree, so new ids follow authored order.
-  // `fresh`: the target is a node this merge appended; `underStart`: the target's route passes
-  // through an existing training start.
-  type Item = { child: MoveNode; target: MoveNode; fresh: boolean; underStart: boolean };
-  const stack: Item[] = [];
+  const stack: MergeItem[] = [];
   const visited = new Set<string>([incomingRoot.id]);
   const pushChildren = (
     source: MoveNode,
@@ -175,80 +134,188 @@ export function mergeIntoChapter(
   };
   pushChildren(incomingRoot, root, false, Boolean(nodeMeta[root.id]?.trainingStart));
   for (let item = stack.pop(); item; item = stack.pop()) {
-    const { child, target, fresh, underStart } = item;
+    const { child, target } = item;
     if (visited.has(child.id)) continue;
     visited.add(child.id);
-    const uci = child.uci!;
-    const match = target.children.map((id) => byId.get(id)).find((node) => node?.uci === uci);
+    const match = target.children.map((id) => byId.get(id)).find((node) => node?.uci === child.uci);
     if (match) {
       alreadyPresent += 1;
-      idMap[child.id] = match.id;
-      fillEmpty(match, child);
-      const incomingMeta = incoming.nodeMeta[child.id];
-      const current = nodeMeta[match.id] ?? { edge: "included" as const };
-      const upgrade =
-        incomingMeta !== undefined &&
-        ((current.edge === "reference" && incomingMeta.edge !== "reference") ||
-          (current.edge === "covered" && incomingMeta.edge === "included"));
-      let below = underStart;
-      if (upgrade && (!upgrades || upgrades.has(child.id))) {
-        nodeMeta[match.id] = { ...current, edge: incomingMeta.edge };
-        // A move accepted before the chapter's training start (covered context until now) trains
-        // only when the position it is played from does: that position becomes a start too,
-        // unless that would also start the chapter's other moves before its start.
-        if (
-          incomingMeta.edge === "included" &&
-          chapterHasStart &&
-          !underStart &&
-          !startsOtherMoves(target, match)
-        ) {
-          nodeMeta[target.id] = { ...nodeMetaOf(nodeMeta, target.id), trainingStart: true };
-          below = true;
-        }
-      }
-      pushChildren(child, match, false, below || Boolean(nodeMeta[match.id]?.trainingStart));
-      continue;
+      pushChildren(child, match, false, mergeIntoMatch(state, item, match));
+    } else {
+      added += 1;
+      const { node, underStart } = appendIncoming(state, item);
+      pushChildren(child, node, true, underStart);
     }
-    const node: MoveNode = {
-      id: nextId(),
-      parentId: target.id,
-      san: child.san,
-      uci,
-      fenBefore: target.fenAfter,
-      fenAfter: fenAfterUci(target.fenAfter, uci) ?? child.fenAfter,
-      ply: target.ply + 1,
-      nags: [...child.nags],
-      comment: child.comment,
-      clockAfter: null,
-      arrows: child.arrows.map((arrow) => ({ ...arrow })),
-      highlights: child.highlights.map((highlight) => ({ ...highlight })),
-      children: []
-    };
-    target.children.push(node.id);
-    tree.push(node);
-    byId.set(node.id, node);
-    idMap[child.id] = node.id;
-    added += 1;
-    // A new move without incoming metadata is study material, never a silent acceptance.
-    const meta: RepertoireNodeMeta = { ...(incoming.nodeMeta[child.id] ?? { edge: "reference" }) };
-    if (meta.trainingStart && !chapterHasStart) delete meta.trainingStart;
-    nodeMeta[node.id] = meta;
-    let below = underStart || Boolean(meta.trainingStart);
-    if (chapterHasStart && !fresh && !underStart && leadsToIncluded(child)) {
-      // An included first move trains only from a start on its position; else the start goes on
-      // the move itself and only what follows it trains (the preview warns about the move).
-      if (meta.edge === "included" && !startsOtherMoves(target, node)) {
-        nodeMeta[target.id] = { ...nodeMetaOf(nodeMeta, target.id), trainingStart: true };
-      } else meta.trainingStart = true;
-      below = true;
-    }
-    pushChildren(child, node, true, below);
   }
 
   return {
     chapter: { ...existing, tree, nodeMeta, nodeCount: tree.length - 1 },
     added,
     alreadyPresent,
-    idMap
+    idMap: state.idMap
   };
+}
+
+/** One merge: the incoming material, and the copy of the chapter it writes into. */
+type MergeState = {
+  incoming: MergeIncoming;
+  incomingById: Map<string, MoveNode>;
+  tree: MoveNode[];
+  byId: Map<string, MoveNode>;
+  nodeMeta: Record<string, RepertoireNodeMeta>;
+  chapterHasStart: boolean;
+  /** The incoming ids whose edge may upgrade a matched one (null: every one). */
+  upgrades: Set<string> | null;
+  nextId: () => string;
+  idMap: Record<string, string>;
+};
+
+/**
+ * An incoming move to merge under the chapter node `target`. `fresh`: the target is a node this
+ * merge appended; `underStart`: the target's route passes through an existing training start.
+ */
+type MergeItem = { child: MoveNode; target: MoveNode; fresh: boolean; underStart: boolean };
+
+function fillEmpty(target: MoveNode, source: MoveNode): void {
+  if (!target.comment?.trim() && source.comment?.trim()) target.comment = source.comment;
+  if (!target.nags.length && source.nags.length) target.nags = [...source.nags];
+  if (!target.arrows.length && source.arrows.length) {
+    target.arrows = source.arrows.map((arrow) => ({ ...arrow }));
+  }
+  if (!target.highlights.length && source.highlights.length) {
+    target.highlights = source.highlights.map((highlight) => ({ ...highlight }));
+  }
+}
+
+/** The incoming edge when it upgrades the existing one (an edge is never downgraded), else null. */
+function upgradedEdge(
+  current: RepertoireNodeMeta,
+  incomingMeta: RepertoireNodeMeta | undefined
+): RepertoireNodeMeta["edge"] | null {
+  if (!incomingMeta) return null;
+  const upgrades =
+    (current.edge === "reference" && incomingMeta.edge !== "reference") ||
+    (current.edge === "covered" && incomingMeta.edge === "included");
+  return upgrades ? incomingMeta.edge : null;
+}
+
+/**
+ * Merges an incoming move into the chapter's node for it (`match`); returns whether the moves
+ * below it are under a training start.
+ */
+function mergeIntoMatch(state: MergeState, item: MergeItem, match: MoveNode): boolean {
+  const { child, target, underStart } = item;
+  const { nodeMeta } = state;
+  state.idMap[child.id] = match.id;
+  fillEmpty(match, child);
+  const current = nodeMeta[match.id] ?? { edge: "included" as const };
+  const edge = upgradedEdge(current, state.incoming.nodeMeta[child.id]);
+  let below = underStart;
+  if (edge && (!state.upgrades || state.upgrades.has(child.id))) {
+    nodeMeta[match.id] = { ...current, edge };
+    // A move accepted before the chapter's training start (covered context until now) trains
+    // only when the position it is played from does: that position becomes a start too,
+    // unless that would also start the chapter's other moves before its start.
+    if (
+      edge === "included" &&
+      state.chapterHasStart &&
+      !underStart &&
+      !startsOtherMoves(state, target, match)
+    ) {
+      nodeMeta[target.id] = { ...nodeMetaOf(nodeMeta, target.id), trainingStart: true };
+      below = true;
+    }
+  }
+  return below || Boolean(nodeMeta[match.id]?.trainingStart);
+}
+
+/**
+ * Appends an incoming move the chapter doesn't have under `target`, with its metadata; returns
+ * the new node and whether the moves below it are under a training start.
+ */
+function appendIncoming(
+  state: MergeState,
+  { child, target, fresh, underStart }: MergeItem
+): { node: MoveNode; underStart: boolean } {
+  const uci = child.uci!;
+  const node: MoveNode = {
+    id: state.nextId(),
+    parentId: target.id,
+    san: child.san,
+    uci,
+    fenBefore: target.fenAfter,
+    fenAfter: fenAfterUci(target.fenAfter, uci) ?? child.fenAfter,
+    ply: target.ply + 1,
+    nags: [...child.nags],
+    comment: child.comment,
+    clockAfter: null,
+    arrows: child.arrows.map((arrow) => ({ ...arrow })),
+    highlights: child.highlights.map((highlight) => ({ ...highlight })),
+    children: []
+  };
+  target.children.push(node.id);
+  state.tree.push(node);
+  state.byId.set(node.id, node);
+  state.idMap[child.id] = node.id;
+  // A new move without incoming metadata is study material, never a silent acceptance.
+  const meta: RepertoireNodeMeta = {
+    ...(state.incoming.nodeMeta[child.id] ?? { edge: "reference" })
+  };
+  if (meta.trainingStart && !state.chapterHasStart) delete meta.trainingStart;
+  state.nodeMeta[node.id] = meta;
+  let below = underStart || Boolean(meta.trainingStart);
+  if (state.chapterHasStart && !fresh && !underStart && leadsToIncluded(state, child)) {
+    // An included first move trains only from a start on its position; else the start goes on
+    // the move itself and only what follows it trains (the preview warns about the move).
+    if (meta.edge === "included" && !startsOtherMoves(state, target, node)) {
+      state.nodeMeta[target.id] = {
+        ...nodeMetaOf(state.nodeMeta, target.id),
+        trainingStart: true
+      };
+    } else meta.trainingStart = true;
+    below = true;
+  }
+  return { node, underStart: below };
+}
+
+/**
+ * Whether included moves follow an incoming node (itself included) on a route that no incoming
+ * start below it already covers.
+ */
+function leadsToIncluded({ incoming, incomingById }: MergeState, start: MoveNode): boolean {
+  const pending = [start];
+  const seen = new Set<string>();
+  for (let item = pending.pop(); item; item = pending.pop()) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    const meta = incoming.nodeMeta[item.id];
+    if (item !== start && meta?.trainingStart) continue;
+    if (meta?.edge === "included") return true;
+    for (const id of item.children) {
+      const child = incomingById.get(id);
+      if (child?.uci) pending.push(child);
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a start on `position` would also start asking an included move of the chapter (other
+ * than `accepted`) that isn't asked now: one before every start, or one that is itself a start
+ * (played from a position before it). Moves below a start are already asked.
+ */
+function startsOtherMoves(
+  { byId, nodeMeta }: MergeState,
+  position: MoveNode,
+  accepted: MoveNode
+): boolean {
+  const pending = [...position.children];
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    const node = byId.get(id);
+    if (!node) continue;
+    if (node !== accepted && nodeMetaOf(nodeMeta, id).edge === "included") return true;
+    if (nodeMeta[id]?.trainingStart) continue;
+    pending.push(...node.children);
+  }
+  return false;
 }

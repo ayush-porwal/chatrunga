@@ -68,14 +68,14 @@ describe("engine assets", () => {
 
   it("lists only missing assets that can be downloaded on this platform", () => {
     const map = statusMap({ stockfish: { state: "installed" }, lc0: { autoDownload: false } });
-    expect(missingDownloads(map).map((entry) => entry.id)).toEqual([
+    expect(missingDownloads(map).map((entry) => entry.id)).toStrictEqual([
       "maia-1100",
       "maia-1300",
       "maia-1500",
       "maia-1700",
       "maia-1900"
     ]);
-    expect(missingDownloads(null)).toEqual([]);
+    expect(missingDownloads(null)).toStrictEqual([]);
   });
 
   it("formats sizes in whole megabytes", () => {
@@ -141,13 +141,25 @@ function engine(id: string, name: string): EngineConfig {
   };
 }
 
+type EngineListRow = ReturnType<typeof engineListRows>[number];
+
+/** A row's download id, or its engine's id for a user's own engine. */
+function rowId(row: EngineListRow): string {
+  return row.kind === "asset" ? row.id : row.engine.id;
+}
+
+/** The engine joined to download `id`'s row (null: none installed; undefined: no such row). */
+function assetEngine(rows: readonly EngineListRow[], id: EngineAssetId) {
+  return rows.find((row) => row.kind === "asset" && row.id === id)?.engine;
+}
+
 describe("Settings engines list", () => {
   it("lists Stockfish, the Maia networks, Lc0, then the user's engines, joining managed engines to their downloads", () => {
     const stockfish = engine("sf", "Stockfish (managed)");
     const maia = engine("m15", "Maia 1500 (managed)");
     const own = engine("own", "Komodo");
     const rows = engineListRows(statusMap({}), [own, maia, stockfish]);
-    expect(rows.map((row) => (row.kind === "asset" ? row.id : row.engine.id))).toEqual([
+    expect(rows.map(rowId)).toStrictEqual([
       "stockfish",
       "maia-1100",
       "maia-1300",
@@ -157,30 +169,30 @@ describe("Settings engines list", () => {
       "lc0",
       "own"
     ]);
-    const engineOf = (id: EngineAssetId) =>
-      rows.find((row) => row.kind === "asset" && row.id === id)?.engine;
-    expect(engineOf("stockfish")).toBe(stockfish);
-    expect(engineOf("maia-1500")).toBe(maia);
-    expect(engineOf("maia-1100")).toBeNull();
-    expect(engineOf("lc0")).toBeNull();
+    expect(assetEngine(rows, "stockfish")).toBe(stockfish);
+    expect(assetEngine(rows, "maia-1500")).toBe(maia);
+    expect(assetEngine(rows, "maia-1100")).toBeNull();
+    expect(assetEngine(rows, "lc0")).toBeNull();
   });
 
   it("lists a managed engine with no matching download as a plain engine", () => {
     const stray = engine("x", "Maia 2200 (managed)");
     const rows = engineListRows(statusMap({}), [stray]);
-    expect(rows.at(-1)).toEqual({ kind: "engine", engine: stray });
+    expect(rows.at(-1)).toStrictEqual({ kind: "engine", engine: stray });
   });
 
   it("lists only the engines without download status", () => {
     const stockfish = engine("sf", "Stockfish (managed)");
-    expect(engineListRows(null, [stockfish])).toEqual([{ kind: "engine", engine: stockfish }]);
+    expect(engineListRows(null, [stockfish])).toStrictEqual([
+      { kind: "engine", engine: stockfish }
+    ]);
   });
 });
 
 describe("first-run setup", () => {
   it("recommends missing Stockfish and Maia, with the Lc0 that Maia runs in", () => {
     const map = statusMap({ "maia-1900": { state: "installed" }, lc0: { autoDownload: true } });
-    expect(recommendedDownloads(map).map((asset) => asset.id)).toEqual([
+    expect(recommendedDownloads(map).map((asset) => asset.id)).toStrictEqual([
       "stockfish",
       "lc0",
       "maia-1100",
@@ -188,12 +200,12 @@ describe("first-run setup", () => {
       "maia-1500",
       "maia-1700"
     ]);
-    expect(recommendedDownloads(null)).toEqual([]);
+    expect(recommendedDownloads(null)).toStrictEqual([]);
   });
 
   it("leaves Lc0 out when it is installed or nothing needs it", () => {
     const installed = statusMap({ lc0: { state: "installed" } });
-    expect(recommendedDownloads(installed).map((asset) => asset.id)).toEqual([
+    expect(recommendedDownloads(installed).map((asset) => asset.id)).toStrictEqual([
       "stockfish",
       "maia-1100",
       "maia-1300",
@@ -208,12 +220,12 @@ describe("first-run setup", () => {
       "maia-1700": { autoDownload: false },
       "maia-1900": { autoDownload: false }
     });
-    expect(recommendedDownloads(noMaia).map((asset) => asset.id)).toEqual(["stockfish"]);
+    expect(recommendedDownloads(noMaia).map((asset) => asset.id)).toStrictEqual(["stockfish"]);
   });
 
   it("skips Maia where Lc0 has no download, and fetches Lc0 alone for installed networks", () => {
     const noLc0 = statusMap({ lc0: { autoDownload: false } });
-    expect(recommendedDownloads(noLc0).map((asset) => asset.id)).toEqual(["stockfish"]);
+    expect(recommendedDownloads(noLc0).map((asset) => asset.id)).toStrictEqual(["stockfish"]);
     const networksOnly = statusMap({
       stockfish: { state: "installed" },
       "maia-1100": { state: "installed" },
@@ -222,7 +234,7 @@ describe("first-run setup", () => {
       "maia-1700": { state: "installed" },
       "maia-1900": { state: "installed" }
     });
-    expect(recommendedDownloads(networksOnly).map((asset) => asset.id)).toEqual(["lc0"]);
+    expect(recommendedDownloads(networksOnly).map((asset) => asset.id)).toStrictEqual(["lc0"]);
   });
 
   it("counts Lc0 in the Maia row it is downloaded for", () => {
@@ -234,11 +246,11 @@ describe("first-run setup", () => {
       ],
       {}
     );
-    expect(rows.map((row) => [row.key, row.label, row.ids])).toEqual([
+    expect(rows.map((row) => [row.key, row.label, row.ids])).toStrictEqual([
       ["maia", "Maia 1100–1900 + Lc0", ["lc0", "maia-1100", "maia-1900"]]
     ]);
     expect(rows[0].bytesTotal).toBe(32_000_000);
-    expect(setupRows([status("lc0")], {}).map((row) => [row.key, row.label])).toEqual([
+    expect(setupRows([status("lc0")], {}).map((row) => [row.key, row.label])).toStrictEqual([
       ["lc0", "Lc0"]
     ]);
   });
@@ -253,7 +265,7 @@ describe("first-run setup", () => {
       stockfish: { bytesReceived: 20_000_000, bytesTotal: 80_000_000, status: "downloading" },
       "maia-1100": { bytesReceived: 400_000, bytesTotal: 1_000_000, status: "installing" }
     });
-    expect(rows.map((row) => [row.key, row.label, row.status])).toEqual([
+    expect(rows.map((row) => [row.key, row.label, row.status])).toStrictEqual([
       ["stockfish", "Stockfish", "downloading"],
       ["maia", "Maia 1100–1900", "installing"]
     ]);

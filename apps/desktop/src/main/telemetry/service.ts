@@ -26,7 +26,7 @@ export type TelemetryEventName =
   | "commentary_session_started";
 
 /** A JSON value (AI generations carry their messages as arrays of objects). */
-export type TelemetryValue =
+type TelemetryValue =
   | string
   | number
   | boolean
@@ -54,7 +54,7 @@ const DRAIN_DEBOUNCE_MS = 5_000;
 const DRAIN_INTERVAL_MS = 60_000;
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 60 * 60 * 1000;
-export const SHUTDOWN_DRAIN_MS = 1_500;
+const SHUTDOWN_DRAIN_MS = 1_500;
 
 export type TelemetryDeps = {
   config: TelemetryConfig;
@@ -138,7 +138,7 @@ export class TelemetryService {
     if (this.active) return;
     this.active = true;
     this.interval = setInterval(() => void this.drain(), DRAIN_INTERVAL_MS);
-    this.interval.unref?.();
+    this.interval.unref();
     this.scheduleDrain();
   }
 
@@ -311,15 +311,13 @@ export class TelemetryService {
       if (!events.length) return;
       this.inFlight = new AbortController();
       const result = await deliverBatch(
-        project,
-        distinctId,
-        events,
+        { project, distinctId, events },
         this.deps.fetchImpl,
         this.inFlight.signal
       );
       this.inFlight = null;
       // Shut down (or turned off, which purged the outbox) while the batch was out.
-      if (!this.active || this.closed) return;
+      if (!this.enabled) return;
       const uuids = events.map((event) => event.uuid);
       if (result.outcome === "accepted") {
         this.guard("removing delivered events", () => this.outbox.remove(uuids));
@@ -362,7 +360,7 @@ export class TelemetryService {
       this.debounce = null;
       void this.drain();
     }, DRAIN_DEBOUNCE_MS);
-    this.debounce.unref?.();
+    this.debounce.unref();
   }
 
   private stopTimers(): void {

@@ -64,8 +64,8 @@ export function resizeShift(gridLeft: number, workspaceLeft: number): number {
 }
 
 /**
- * The board's edge while its bottom-right grip is dragged `dx` across and `dy` down from where the
- * drag started at edge `start` (clampBoardEdge). The board is anchored at its cell's left edge and
+ * The board's edge while its bottom-right grip is dragged `dx` across and `dy` down (`drag`) from
+ * where the drag started at edge `start` (clampBoardEdge). The board is anchored at its cell's left edge and
  * centred down it, so an edge change of d moves the grip d across but only d/2 down. The edge
  * follows the axis the pointer moved most along, `dx` across or `2·dy` down, growing or shrinking
  * as a square: straight left or up shrinks it, straight right or down grows it, and the grip stays
@@ -74,8 +74,7 @@ export function resizeShift(gridLeft: number, workspaceLeft: number): number {
  */
 export function draggedBoardEdge(
   start: number,
-  dx: number,
-  dy: number,
+  { dx, dy }: { dx: number; dy: number },
   max: number,
   shift = 0
 ): number {
@@ -95,8 +94,8 @@ export function splitterBoardEdge(start: number, dx: number, max: number, shift 
 }
 
 /** The splitter's arrow-key step (CSS px), and with Shift held. */
-export const BOARD_SPLITTER_STEP = 16;
-export const BOARD_SPLITTER_STEP_LARGE = 64;
+const BOARD_SPLITTER_STEP = 16;
+const BOARD_SPLITTER_STEP_LARGE = 64;
 
 /**
  * What a key does on the splitter between the board and the side panel, from the board's current

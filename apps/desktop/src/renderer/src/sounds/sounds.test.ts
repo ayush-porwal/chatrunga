@@ -65,14 +65,14 @@ describe("keepAudioAwake", () => {
     expect(fake.context.resume).toHaveBeenCalledTimes(1);
 
     stop();
-    expect(fake.context.close).toHaveBeenCalled();
+    expect(fake.context.close).toHaveBeenCalledWith();
     expect(fake.listeners.size).toBe(0);
   });
 
   it("coming back while the output is still suspending resumes it once that settles", async () => {
     const fake = fakeEnvironment();
     let finishSuspend: () => void = () => undefined;
-    fake.context.suspend = vi.fn(
+    fake.context.suspend.mockImplementation(
       () =>
         new Promise<undefined>((resolve) => {
           finishSuspend = () => {

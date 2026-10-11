@@ -4,7 +4,7 @@ import type { ReviewGameInput } from "@chaturanga/shared/types/engine";
 export const DEFAULT_REVIEW_MOVETIME_MS = 250;
 
 /** Legacy default when callers request depth-only mode. */
-export const DEFAULT_REVIEW_DEPTH = 14;
+const DEFAULT_REVIEW_DEPTH = 14;
 
 /**
  * Precedence: nodes > moveTimeMs > depth > default movetime.

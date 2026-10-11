@@ -27,7 +27,7 @@ describe("runMigrations", () => {
     };
     expect(() => runMigrations(db, [() => undefined, failing])).toThrow("boom");
     expect(version(db)).toBe(1);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM t").get()).toEqual({ n: 0 });
+    expect({ ...db.prepare("SELECT COUNT(*) AS n FROM t").get() }).toStrictEqual({ n: 0 });
   });
 
   it("keeps a single default engine when an older database had several", () => {
@@ -38,9 +38,12 @@ describe("runMigrations", () => {
     db.exec(`CREATE TABLE external_databases (id TEXT PRIMARY KEY, source_id TEXT)`);
     db.exec(`INSERT INTO engines (id, is_default, updated_at) VALUES ('old', 1, 1), ('new', 1, 2)`);
     runMigrations(db, MIGRATIONS);
-    expect(db.prepare("SELECT id FROM engines WHERE is_default = 1").all()).toEqual([
-      { id: "new" }
-    ]);
+    expect(
+      db
+        .prepare("SELECT id FROM engines WHERE is_default = 1")
+        .all()
+        .map((row) => ({ ...row }))
+    ).toStrictEqual([{ id: "new" }]);
     expect(() => db.exec("UPDATE engines SET is_default = 1 WHERE id = 'old'")).toThrow(
       /UNIQUE constraint failed: engines.is_default/
     );
@@ -77,7 +80,8 @@ describe("runMigrations", () => {
           "SELECT game_id, created_at, engine_name, move_time_ms, move_count, commentary_count FROM game_reviews"
         )
         .all()
-    ).toEqual([
+        .map((row) => ({ ...row }))
+    ).toStrictEqual([
       {
         game_id: "g1",
         created_at: 42,
@@ -138,7 +142,7 @@ describe("runMigrations", () => {
       "repertoire_position_index",
       "repertoire_attempts"
     ]) {
-      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+      expect({ ...db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() }).toStrictEqual({ n: 0 });
     }
   });
 
@@ -170,19 +174,23 @@ describe("runMigrations", () => {
 
     db.exec("DELETE FROM games WHERE id = 'g'");
     db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");
-    expect(
-      db
+    expect({
+      ...db
         .prepare(
           "SELECT chapter_id, game_id, headers_json FROM repertoire_game_links WHERE id = 'l1'"
         )
         .get()
-    ).toEqual({
+    }).toStrictEqual({
       chapter_id: null,
       game_id: null,
       headers_json: "{}"
     });
     db.exec("DELETE FROM repertoires WHERE id = 'r'");
-    expect(db.prepare("SELECT COUNT(*) AS n FROM repertoire_game_links").get()).toEqual({ n: 0 });
+    expect({
+      ...db.prepare("SELECT COUNT(*) AS n FROM repertoire_game_links").get()
+    }).toStrictEqual({
+      n: 0
+    });
   });
 
   it("9: adds puzzle attempts and a single-row puzzle rating", () => {
@@ -197,13 +205,13 @@ describe("runMigrations", () => {
     insertAttempt("a1", "solved");
     insertAttempt("a2", "failed");
     expect(() => insertAttempt("a3", "abandoned")).toThrow(/CHECK constraint failed: outcome/);
-    expect(
-      db
+    expect({
+      ...db
         .prepare(
           "SELECT rated, wrong_move_count, solution_viewed, themes_json, completed_at FROM puzzle_attempts WHERE id = 'a1'"
         )
         .get()
-    ).toEqual({
+    }).toStrictEqual({
       rated: 0,
       wrong_move_count: 0,
       solution_viewed: 0,
@@ -228,7 +236,9 @@ describe("runMigrations", () => {
     db.exec("PRAGMA user_version = 9");
     runMigrations(db, MIGRATIONS);
     expect(version(db)).toBe(10);
-    expect(db.prepare("SELECT analysis_board FROM games WHERE id = 'old'").get()).toEqual({
+    expect({
+      ...db.prepare("SELECT analysis_board FROM games WHERE id = 'old'").get()
+    }).toStrictEqual({
       analysis_board: null
     });
   });

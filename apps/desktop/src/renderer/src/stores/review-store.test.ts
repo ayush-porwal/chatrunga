@@ -108,7 +108,10 @@ describe("review store", () => {
     unsubscribe();
     expect(updates).toBe(1);
     expect(useReviewStore.getState().progress?.moveIndex).toBe(1);
-    expect(useReviewStore.getState().partialMoves.map((item) => item.nodeId)).toEqual(["a", "b"]);
+    expect(useReviewStore.getState().partialMoves.map((item) => item.nodeId)).toStrictEqual([
+      "a",
+      "b"
+    ]);
   });
 
   it("stores a completed review and clears partial progress", () => {
@@ -157,19 +160,24 @@ describe("review store", () => {
     useReviewStore.getState().startReview("new");
     useReviewStore.getState().setReview({ ...review([move("a", null)]), createdAt: 2 });
     expect(useReviewStore.getState().review?.reviewId).toBe("new");
-    expect(useReviewStore.getState().analyses.map((info) => info.reviewId)).toEqual(["new", "old"]);
+    expect(useReviewStore.getState().analyses.map((info) => info.reviewId)).toStrictEqual([
+      "new",
+      "old"
+    ]);
 
     useReviewStore
       .getState()
       .addCommentary({ ply: 1, prose: "Fine.", generatedAt: 3, providerModel: "test/model" });
-    expect(useReviewStore.getState().analyses.map((info) => info.commentaryCount)).toEqual([1, 2]);
+    expect(useReviewStore.getState().analyses.map((info) => info.commentaryCount)).toStrictEqual([
+      1, 2
+    ]);
 
     // Showing the older one again keeps the list.
     useReviewStore.getState().loadReview(saved);
     expect(useReviewStore.getState().review?.reviewId).toBe("old");
     expect(useReviewStore.getState().analyses).toHaveLength(2);
     useReviewStore.getState().reset();
-    expect(useReviewStore.getState().analyses).toEqual([]);
+    expect(useReviewStore.getState().analyses).toStrictEqual([]);
   });
 
   it("replaces partial moves for the same node", () => {
@@ -288,6 +296,6 @@ describe("review store", () => {
     } as unknown as GameReview;
 
     useReviewStore.getState().loadReview(saved);
-    expect(useReviewStore.getState().review?.commentary).toEqual([ai]);
+    expect(useReviewStore.getState().review?.commentary).toStrictEqual([ai]);
   });
 });

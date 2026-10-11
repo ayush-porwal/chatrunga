@@ -10,6 +10,7 @@ import type {
   BoardArrow,
   BoardHighlight,
   Color,
+  GameHeaders,
   MoveNode,
   UserMove
 } from "@chaturanga/shared/types/chess";
@@ -106,49 +107,19 @@ export function BoardView() {
     return status.turn;
   }, [engineSide, gameOutcome, mode, status.isEnd, status.turn]);
 
-  const {
-    topName,
-    topElo,
-    topClock,
-    topColor,
-    bottomName,
-    bottomElo,
-    bottomClock,
-    bottomColor,
-    showTcHint,
-    resumedUntimed
-  } = useMemo(() => {
-    const self = moveTree.find((n) => n.id === currentNodeId);
-    const clockAnchorId =
-      self?.fenAfter === currentFen
-        ? currentNodeId
-        : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
-    const tc = headers.timeControl?.trim() || null;
-    // Each side's time at this move from the game's [%clk]; no clock boxes for a game without them.
-    const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
-    // Engines by their plain name (older builds saved "Stockfish (managed)").
-    const white = engineDisplayName(headers.white?.trim() ?? "") || "White";
-    const black = engineDisplayName(headers.black?.trim() ?? "") || "Black";
-    const wElo = headers.whiteElo?.trim() || null;
-    const bElo = headers.blackElo?.trim() || null;
-
-    const topIsBlack = orientation === "white";
-    const liveClock = isMatchMode(mode) && hasLiveClock;
-    return {
-      topName: topIsBlack ? black : white,
-      topElo: topIsBlack ? bElo : wElo,
-      topClock: clocks ? clocks[topIsBlack ? "black" : "white"] : "",
-      topColor: (topIsBlack ? "black" : "white") as Color,
-      bottomName: topIsBlack ? white : black,
-      bottomElo: topIsBlack ? wElo : bElo,
-      bottomClock: clocks ? clocks[topIsBlack ? "white" : "black"] : "",
-      bottomColor: (topIsBlack ? "white" : "black") as Color,
-      // The live engine clock already shows the time control; only hint it for imported games.
-      showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock),
-      // A timed engine game saved before its clocks were kept, played on: without a clock.
-      resumedUntimed: mode === "engine" && Boolean(engineSide) && !liveClock
-    };
-  }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, engineSide, hasLiveClock]);
+  const players = useMemo(
+    () =>
+      playerRowsAt({
+        moveTree,
+        currentNodeId,
+        currentFen,
+        headers,
+        orientation,
+        liveClock: isMatchMode(mode) && hasLiveClock,
+        engineGame: mode === "engine" && Boolean(engineSide)
+      }),
+    [moveTree, currentNodeId, currentFen, headers, orientation, mode, engineSide, hasLiveClock]
+  );
 
   // Live analysis (never an engine or Lichess game), running or paused on this position: the start
   // of the engine's top line from this position, as many moves as the arrows draw (a string, so
@@ -514,37 +485,23 @@ export function BoardView() {
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
   const liveClocks = isMatchMode(mode) && hasLiveClock;
+  const playerRow = (player: BoardPlayer, hint?: string | null) => (
+    <PlayerRow
+      color={player.color}
+      name={nameFor(player.color, player.name)}
+      elo={player.elo}
+      clock={liveClocks ? <EngineClock color={player.color} /> : player.clock}
+      clockActive={status.turn === player.color && !status.isEnd}
+      engine={mode === "engine" && engineSide === player.color ? activeEngine : null}
+      hint={hint}
+    />
+  );
 
   return (
     <BoardStage
       evalBar={<EvalBar orientation={orientation} />}
-      top={
-        <PlayerRow
-          color={topColor}
-          name={nameFor(topColor, topName)}
-          elo={topElo}
-          clock={liveClocks ? <EngineClock color={topColor} /> : topClock}
-          clockActive={status.turn === topColor && !status.isEnd}
-          engine={mode === "engine" && engineSide === topColor ? activeEngine : null}
-          hint={
-            showTcHint
-              ? resumedUntimed
-                ? "Resumed without a clock"
-                : `Time control ${timeControlLabel(headers.timeControl)}`
-              : null
-          }
-        />
-      }
-      bottom={
-        <PlayerRow
-          color={bottomColor}
-          name={nameFor(bottomColor, bottomName)}
-          elo={bottomElo}
-          clock={liveClocks ? <EngineClock color={bottomColor} /> : bottomClock}
-          clockActive={status.turn === bottomColor && !status.isEnd}
-          engine={mode === "engine" && engineSide === bottomColor ? activeEngine : null}
-        />
-      }
+      top={playerRow(players.top, players.hint)}
+      bottom={playerRow(players.bottom)}
     >
       {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}
       <div className="relative isolate h-full w-full">
@@ -566,6 +523,79 @@ export function BoardView() {
       </div>
     </BoardStage>
   );
+}
+
+type BoardPlayer = { color: Color; name: string; elo: string | null; clock: string };
+
+/**
+ * The players from the headers: engines by their plain name (older builds saved "Stockfish
+ * (managed)").
+ */
+function headerPlayers(headers: GameHeaders): Record<Color, { name: string; elo: string | null }> {
+  return {
+    white: {
+      name: engineDisplayName(headers.white?.trim() ?? "") || "White",
+      elo: headers.whiteElo?.trim() || null
+    },
+    black: {
+      name: engineDisplayName(headers.black?.trim() ?? "") || "Black",
+      elo: headers.blackElo?.trim() || null
+    }
+  };
+}
+
+/**
+ * The player rows: the side at the bottom is the orientation, each with its time at this move
+ * from the game's [%clk] (no clock boxes for a game without them), and the top row's hint: the
+ * time control of a game without clocks (the live engine clock already shows it), or that a timed
+ * engine game saved before its clocks were kept is played on without one.
+ */
+function playerRowsAt({
+  moveTree,
+  currentNodeId,
+  currentFen,
+  headers,
+  orientation,
+  liveClock,
+  engineGame
+}: {
+  moveTree: MoveNode[];
+  currentNodeId: string;
+  currentFen: string;
+  headers: GameHeaders;
+  orientation: Color;
+  /** A match's live clock shows the time instead of [%clk]. */
+  liveClock: boolean;
+  /** An engine game in progress (or resumed). */
+  engineGame: boolean;
+}): { top: BoardPlayer; bottom: BoardPlayer; hint: string | null } {
+  const self = moveTree.find((n) => n.id === currentNodeId);
+  const clockAnchorId =
+    self?.fenAfter === currentFen
+      ? currentNodeId
+      : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
+  const tc = headers.timeControl?.trim() || null;
+  const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
+  const players = headerPlayers(headers);
+  const row = (color: Color): BoardPlayer => ({
+    color,
+    ...players[color],
+    clock: clocks ? clocks[color] : ""
+  });
+  const [topColor, bottomColor]: [Color, Color] =
+    orientation === "white" ? ["black", "white"] : ["white", "black"];
+  const showTcHint = Boolean(tc && tc !== "-" && !clocks && !liveClock);
+  // A timed engine game saved before its clocks were kept, played on: without a clock.
+  const resumedUntimed = engineGame && !liveClock;
+  return {
+    top: row(topColor),
+    bottom: row(bottomColor),
+    hint: showTcHint
+      ? resumedUntimed
+        ? "Resumed without a clock"
+        : `Time control ${timeControlLabel(headers.timeControl)}`
+      : null
+  };
 }
 
 function lastMoveOf(node: Pick<MoveNode, "uci"> | undefined): Key[] | undefined {

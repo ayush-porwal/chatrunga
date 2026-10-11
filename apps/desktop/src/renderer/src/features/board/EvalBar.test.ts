@@ -30,7 +30,7 @@ describe("liveAnalysisEval", () => {
 
   it("reads the side to move's score from White's side", () => {
     // Black to move and 0.5 better for Black: White is half a pawn worse.
-    expect(liveAnalysisEval(AFTER_E4, { type: "cp", value: 50 })).toEqual({
+    expect(liveAnalysisEval(AFTER_E4, { type: "cp", value: 50 })).toStrictEqual({
       whiteShare: evalShare({ type: "cp", value: -50 }),
       label: "-0.5",
       barText: "0.5",
@@ -44,14 +44,14 @@ describe("liveAnalysisEval", () => {
 
   it("shows a finished position's result instead of a score", () => {
     const mated = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
-    expect(liveAnalysisEval(mated, { type: "cp", value: 300 })).toEqual({
+    expect(liveAnalysisEval(mated, { type: "cp", value: 300 })).toStrictEqual({
       whiteShare: 0,
       label: "0-1 #",
       barText: "0-1",
       barSide: "black"
     });
     const stalemate = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
-    expect(liveAnalysisEval(stalemate, null)).toEqual({
+    expect(liveAnalysisEval(stalemate, null)).toStrictEqual({
       whiteShare: 50,
       label: "½-½",
       barText: "½-½",
@@ -103,20 +103,32 @@ describe("evalBarLabel", () => {
   const black = { barSide: "black", barText: "2.3" } as const;
 
   it("sits at the better side's end: White's at the bottom, Black's at the top", () => {
-    expect(evalBarLabel(white, "white")).toEqual({ text: "2.3", side: "white", atTop: false });
-    expect(evalBarLabel(black, "white")).toEqual({ text: "2.3", side: "black", atTop: true });
+    expect(evalBarLabel(white, "white")).toStrictEqual({
+      text: "2.3",
+      side: "white",
+      atTop: false
+    });
+    expect(evalBarLabel(black, "white")).toStrictEqual({ text: "2.3", side: "black", atTop: true });
   });
 
   it("follows a flipped board: White's end is then at the top", () => {
-    expect(evalBarLabel(white, "black")).toEqual({ text: "2.3", side: "white", atTop: true });
-    expect(evalBarLabel(black, "black")).toEqual({ text: "2.3", side: "black", atTop: false });
+    expect(evalBarLabel(white, "black")).toStrictEqual({ text: "2.3", side: "white", atTop: true });
+    expect(evalBarLabel(black, "black")).toStrictEqual({
+      text: "2.3",
+      side: "black",
+      atTop: false
+    });
   });
 
   it("puts a near-even score at White's end, the same end as an exact 0", () => {
     // Its fill dips just below even, but its text still reads 0.0 at White's end.
     const nearEven = scoreEval({ type: "cp", value: -4 });
     expect(nearEven.whiteShare).toBeLessThan(50);
-    expect(evalBarLabel(nearEven, "white")).toEqual({ text: "0.0", side: "white", atTop: false });
+    expect(evalBarLabel(nearEven, "white")).toStrictEqual({
+      text: "0.0",
+      side: "white",
+      atTop: false
+    });
     expect(evalBarLabel(nearEven, "black").atTop).toBe(true);
   });
 });
@@ -132,14 +144,14 @@ describe("reviewedMoveEval", () => {
         evalAfter: { type: "mate", value: 0 },
         terminal: "checkmate"
       })
-    ).toEqual({ whiteShare: 0, label: "0-1 #", barText: "0-1", barSide: "black" });
+    ).toStrictEqual({ whiteShare: 0, label: "0-1 #", barText: "0-1", barSide: "black" });
     expect(
       reviewedMoveEval({
         fenBefore: blackToMove,
         evalAfter: { type: "cp", value: 0 },
         terminal: "stalemate"
       })
-    ).toEqual({ whiteShare: 50, label: "½-½", barText: "½-½", barSide: "white" });
+    ).toStrictEqual({ whiteShare: 50, label: "½-½", barText: "½-½", barSide: "white" });
   });
 
   it("shows the evaluation after any other move, and nothing without one", () => {
@@ -148,7 +160,7 @@ describe("reviewedMoveEval", () => {
       evalAfter: { type: "mate", value: -3 },
       terminal: null
     };
-    expect(reviewedMoveEval(move)).toEqual({
+    expect(reviewedMoveEval(move)).toStrictEqual({
       whiteShare: 0,
       label: "M-3",
       barText: "M3",

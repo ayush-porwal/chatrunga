@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
 import { compatibleReviewMoves } from "../../stores/review-validity";
 import { mainlineReviewInput } from "../game-review/review-utils";
@@ -33,6 +34,15 @@ const moves = reviewed({ Nd4: "inaccuracy", Nxe5: "blunder" });
 const nodeOf = (san: string) => moves.find((move) => move.san === san)?.nodeId ?? "";
 const finished = { moves };
 
+/** The tree with the move played as `san` changed to `replacement`. */
+function replaceMove(
+  tree: readonly MoveNode[],
+  san: string,
+  replacement: Pick<MoveNode, "san" | "uci">
+): MoveNode[] {
+  return tree.map((node) => (node.san === san ? { ...node, ...replacement } : node));
+}
+
 describe("showsMoveMarks", () => {
   it.each<[MarkSurface, boolean]>([
     ["review", true],
@@ -62,7 +72,7 @@ describe("mainBoardSurface", () => {
 
 describe("boardMoveMark", () => {
   it("marks a marked move's destination square, named for screen readers", () => {
-    expect(boardMoveMark("review", { ...finished, nodeId: nodeOf("Nxe5") })).toEqual({
+    expect(boardMoveMark("review", { ...finished, nodeId: nodeOf("Nxe5") })).toStrictEqual({
       nodeId: nodeOf("Nxe5"),
       square: "e5",
       annotation: "blunder",
@@ -87,7 +97,7 @@ describe("boardMoveMark", () => {
 
   it("marks a book move like any other", () => {
     const book = { moves: reviewed({ e4: "book", Nxe5: "blunder" }) };
-    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("e4") })).toEqual({
+    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("e4") })).toStrictEqual({
       nodeId: nodeOf("e4"),
       square: "e4",
       annotation: "book",
@@ -111,9 +121,7 @@ describe("boardMoveMark", () => {
 
   it("drops the mark of a move the game no longer has (a stale review)", () => {
     // The game was edited after the analysis: 4. c3 played where 4. Nxe5 was.
-    const edited = game.moveTree.map((node) =>
-      node.san === "Nxe5" ? { ...node, san: "c3", uci: "c2c3" } : node
-    );
+    const edited = replaceMove(game.moveTree, "Nxe5", { san: "c3", uci: "c2c3" });
     const still = compatibleReviewMoves(moves, edited);
     expect(boardMoveMark("review", { moves: still, nodeId: nodeOf("Nxe5") })).toBeNull();
     expect(boardMoveMark("review", { moves: still, nodeId: nodeOf("Nd4") })).toMatchObject({
@@ -124,10 +132,10 @@ describe("boardMoveMark", () => {
 
 describe("squareOffset", () => {
   it("places a square from White's side, and mirrored on a flipped board", () => {
-    expect(squareOffset("a1", "white")).toEqual({ left: 0, top: 87.5 });
-    expect(squareOffset("e5", "white")).toEqual({ left: 50, top: 37.5 });
-    expect(squareOffset("a1", "black")).toEqual({ left: 87.5, top: 0 });
-    expect(squareOffset("e5", "black")).toEqual({ left: 37.5, top: 50 });
-    expect(squareOffset("h8", "black")).toEqual({ left: 0, top: 87.5 });
+    expect(squareOffset("a1", "white")).toStrictEqual({ left: 0, top: 87.5 });
+    expect(squareOffset("e5", "white")).toStrictEqual({ left: 50, top: 37.5 });
+    expect(squareOffset("a1", "black")).toStrictEqual({ left: 87.5, top: 0 });
+    expect(squareOffset("e5", "black")).toStrictEqual({ left: 37.5, top: 50 });
+    expect(squareOffset("h8", "black")).toStrictEqual({ left: 0, top: 87.5 });
   });
 });

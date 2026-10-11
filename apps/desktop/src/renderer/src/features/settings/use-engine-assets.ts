@@ -82,11 +82,12 @@ export function useEngineAssets() {
     setBusy(Object.fromEntries(missing.map((asset) => [asset.id, true])));
     try {
       const summary = await api?.downloadAll();
-      const [first, ...rest] = summary?.failed ?? [];
+      const failed = summary?.failed ?? [];
+      const first = failed.at(0);
       if (first)
         setError(
-          rest.length
-            ? `${rest.length + 1} downloads failed. First: ${first.id} — ${first.reason}`
+          failed.length > 1
+            ? `${failed.length} downloads failed. First: ${first.id} — ${first.reason}`
             : `${first.id}: ${first.reason}`
         );
     } catch (err) {

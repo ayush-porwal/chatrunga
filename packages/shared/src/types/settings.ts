@@ -565,7 +565,7 @@ export function isBoardTheme(value: unknown): value is BoardTheme {
 /** Maps persisted settings from older builds onto current {@link PieceStyle} ids. */
 export function normalizePieceStyle(value: unknown): PieceStyle {
   if (typeof value !== "string") return defaultSettings.pieceStyle;
-  if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value]!;
+  if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value];
   return isOneOf(ALL_PIECE_STYLES, value) ? value : defaultSettings.pieceStyle;
 }
 
@@ -730,6 +730,9 @@ export function normalizeDefaultEngineId(value: unknown): string | null {
 /** Validates the review/engine resource settings, falling back to defaults for bad values. Idempotent. */
 export function normalizeReviewEngineSettings(settings: AppSettings): AppSettings {
   const levels = settings.reviewMaiaLevels;
+  // Unset is auto: null, or a key missing from settings a caller didn't merge over the defaults,
+  // the same way resolveEngineThreads reads it.
+  const threads = settings.engineThreads ?? null;
   return {
     ...settings,
     defaultEngineId: normalizeDefaultEngineId(settings.defaultEngineId),
@@ -737,10 +740,7 @@ export function normalizeReviewEngineSettings(settings: AppSettings): AppSetting
     reviewMaiaLevels: Array.isArray(levels)
       ? REVIEW_MAIA_LEVELS.filter((level) => levels.map(Number).includes(level))
       : null,
-    engineThreads:
-      settings.engineThreads === null || settings.engineThreads === undefined
-        ? null
-        : clampInt(settings.engineThreads, 1, 256, 1),
+    engineThreads: threads === null ? null : clampInt(threads, 1, 256, 1),
     engineHashMb: clampInt(
       settings.engineHashMb,
       ENGINE_HASH_MB_RANGE.min,

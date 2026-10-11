@@ -29,7 +29,7 @@ export function UsageDataSection({ appearance }: { appearance: AppSettings }) {
   useEffect(() => {
     let current = true;
     void window.chaturanga?.telemetry
-      ?.status()
+      .status()
       .then((next) => {
         if (current) setStatus(next);
       })

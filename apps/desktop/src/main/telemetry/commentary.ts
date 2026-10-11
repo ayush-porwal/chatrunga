@@ -47,61 +47,41 @@ export function commentaryReporter(
   // Retry is a click; a request made on its own when a move is shown is not activity by itself.
   if (context?.trigger === "user_retry") telemetry.markActive("study");
 
-  return (event) => {
-    if (event.type === "request") {
-      const totals: Totals = { requestId: randomUUID(), tokensComplete: true, costComplete: true };
-      requests.set(event.ply, totals);
-      telemetry.record("commentary_requested", {
-        ...common,
-        request_id: totals.requestId,
-        ply: event.ply
-      });
-      return;
-    }
-    const totals = requests.get(event.ply);
-    if (!totals) return;
-    if (event.type === "attempt") {
-      const answered = event.result === "accepted" || event.result === "validation_failed";
-      totals.input ??= event.request.messages;
-      if (answered) {
-        totals.promptTokens = add(totals.promptTokens, event.usage?.promptTokens);
-        totals.completionTokens = add(totals.completionTokens, event.usage?.completionTokens);
-        totals.costUsd = add(totals.costUsd, event.usage?.costUsd);
-        if (event.usage?.promptTokens === undefined || event.usage.completionTokens === undefined)
-          totals.tokensComplete = false;
-        if (event.usage?.costUsd === undefined) totals.costComplete = false;
-      }
-      telemetry.record("$ai_generation", {
-        ...common,
-        request_id: totals.requestId,
-        ply: event.ply,
-        attempt: event.attempt,
-        reason: event.reason,
-        result: event.result,
-        $ai_trace_id: totals.requestId,
-        $ai_span_id: randomUUID(),
-        $ai_span_name: event.reason === "initial" ? "commentary" : "commentary validation retry",
-        $ai_provider: AI_PROVIDER,
-        $ai_base_url: AI_BASE_URL,
-        $ai_model: model.model,
-        $ai_input: event.request.messages.map((message) => ({ ...message })),
-        $ai_output_choices:
-          event.output === null ? undefined : [{ role: "assistant", content: event.output }],
-        $ai_input_tokens: event.usage?.promptTokens,
-        $ai_output_tokens: event.usage?.completionTokens,
-        $ai_total_cost_usd: event.usage?.costUsd,
-        $ai_latency: seconds(event.latencyMs),
-        $ai_http_status: event.httpStatus ?? undefined,
-        $ai_temperature: event.request.temperature,
-        $ai_max_tokens: event.request.maxTokens,
-        $ai_stream: false,
-        // No answer arrived; an answer that failed validation is recorded as `result` instead.
-        $ai_is_error: !answered,
-        $ai_error: answered ? undefined : event.result
-      });
-      return;
-    }
-    requests.delete(event.ply);
+  const recordAttempt = (totals: Totals, event: AttemptReport) => {
+    const answered = event.result === "accepted" || event.result === "validation_failed";
+    totals.input ??= event.request.messages;
+    if (answered) addUsage(totals, event.usage);
+    telemetry.record("$ai_generation", {
+      ...common,
+      request_id: totals.requestId,
+      ply: event.ply,
+      attempt: event.attempt,
+      reason: event.reason,
+      result: event.result,
+      $ai_trace_id: totals.requestId,
+      $ai_span_id: randomUUID(),
+      $ai_span_name: event.reason === "initial" ? "commentary" : "commentary validation retry",
+      $ai_provider: AI_PROVIDER,
+      $ai_base_url: AI_BASE_URL,
+      $ai_model: model.model,
+      $ai_input: event.request.messages.map((message) => ({ ...message })),
+      $ai_output_choices:
+        event.output === null ? undefined : [{ role: "assistant", content: event.output }],
+      $ai_input_tokens: event.usage?.promptTokens,
+      $ai_output_tokens: event.usage?.completionTokens,
+      $ai_total_cost_usd: event.usage?.costUsd,
+      $ai_latency: seconds(event.latencyMs),
+      $ai_http_status: event.httpStatus ?? undefined,
+      $ai_temperature: event.request.temperature,
+      $ai_max_tokens: event.request.maxTokens,
+      $ai_stream: false,
+      // No answer arrived; an answer that failed validation is recorded as `result` instead.
+      $ai_is_error: !answered,
+      $ai_error: answered ? undefined : event.result
+    });
+  };
+
+  const recordOutcome = (totals: Totals, event: OutcomeReport) => {
     const answeredAny = event.attempts > 0;
     if (answeredAny) {
       telemetry.record("$ai_trace", {
@@ -135,6 +115,40 @@ export function commentaryReporter(
       cost_complete: answeredAny && totals.costComplete && totals.costUsd !== undefined
     });
   };
+
+  return (event) => {
+    if (event.type === "request") {
+      const totals: Totals = { requestId: randomUUID(), tokensComplete: true, costComplete: true };
+      requests.set(event.ply, totals);
+      telemetry.record("commentary_requested", {
+        ...common,
+        request_id: totals.requestId,
+        ply: event.ply
+      });
+      return;
+    }
+    const totals = requests.get(event.ply);
+    if (!totals) return;
+    if (event.type === "attempt") {
+      recordAttempt(totals, event);
+      return;
+    }
+    requests.delete(event.ply);
+    recordOutcome(totals, event);
+  };
+}
+
+type AttemptReport = Extract<CommentaryReport, { type: "attempt" }>;
+type OutcomeReport = Extract<CommentaryReport, { type: "outcome" }>;
+
+/** An answered attempt's usage joins the totals; a count it didn't report makes them incomplete. */
+function addUsage(totals: Totals, usage: AttemptReport["usage"]): void {
+  totals.promptTokens = add(totals.promptTokens, usage?.promptTokens);
+  totals.completionTokens = add(totals.completionTokens, usage?.completionTokens);
+  totals.costUsd = add(totals.costUsd, usage?.costUsd);
+  if (usage?.promptTokens === undefined || usage.completionTokens === undefined)
+    totals.tokensComplete = false;
+  if (usage?.costUsd === undefined) totals.costComplete = false;
 }
 
 /** Sums known values; unknown + unknown stays unknown (never 0). */

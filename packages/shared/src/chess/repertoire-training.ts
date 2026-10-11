@@ -178,7 +178,7 @@ function planTrainable<T extends Pick<RepertoireChapter, "kind" | "enabled" | "t
         const positionKey = lookup.positionKeys.get(id)!;
         const accepted = acceptedAt(positionKey) ?? [];
         const uciOf = (child: string) => lookup.nodesById.get(child)!.uci!;
-        const childId = children.find((child) => accepted.includes(uciOf(child))) ?? children[0]!;
+        const childId = children.find((child) => accepted.includes(uciOf(child))) ?? children[0];
         setEdge(childId, "included");
         picks.push({
           nodeId: id,

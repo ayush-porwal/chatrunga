@@ -6,6 +6,7 @@ import { bestMoveChance, difficultyModel } from "@chaturanga/shared/chess/maia-d
 import { annotationLabel, winPercent } from "@chaturanga/shared/chess/move-assessment";
 import { moveTimes } from "@chaturanga/shared/chess/move-times";
 import { CHART_SCORE_LIMIT, moverIsWhite, whiteChartScore } from "./review-score";
+import { plyLabel } from "./review-summary";
 
 /** The start position's id in the move tree (game-store's root). */
 const ROOT_NODE_ID = "root";
@@ -88,12 +89,6 @@ function whiteWinAtStart(first: MoveReview | undefined): number | null {
   if (score.type === "mate")
     return winPercent(score.value >= 0 ? CHART_SCORE_LIMIT : -CHART_SCORE_LIMIT);
   return winPercent(score.value);
-}
-
-/** "52. Ne4", "12… a5". */
-function plyLabel(ply: number, san: string): string {
-  const number = Math.ceil(ply / 2);
-  return ply % 2 === 1 ? `${number}. ${san}` : `${number}… ${san}`;
 }
 
 /**

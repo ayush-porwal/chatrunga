@@ -19,7 +19,7 @@ export const AVAILABLE: TelemetryConfig = {
   project: { token: "phc_test", host: "https://eu.i.posthog.com" }
 };
 
-export type CapturedBatch = {
+type CapturedBatch = {
   url: string;
   body: {
     api_key: string;

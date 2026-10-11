@@ -9,6 +9,7 @@ import {
   REPERTOIRE_ROOT_NODE_ID,
   type PracticeMode,
   type PracticeScope,
+  type PracticeSessionSnapshot,
   type PracticeSummary,
   type RepertoireChapter,
   type RepertoireChapterSummary,
@@ -21,7 +22,7 @@ import { sortedChapters } from "./repertoire-chapters";
 /** Pure rules of the practice setup form: defaults, the saved draft, and the main's limits. */
 
 export const DEFAULT_CARD_LIMIT = 20;
-export const DEFAULT_NEW_CARD_LIMIT = 5;
+const DEFAULT_NEW_CARD_LIMIT = 5;
 /** The main process's validators refuse anything above these. */
 export const MAX_CARD_LIMIT = 500;
 export const MAX_DEPTH_PLIES = 512;
@@ -85,6 +86,24 @@ export function retryMissedPreset(
     : null;
 }
 
+/**
+ * The new sessions a finished session's summary offers: "Retry missed", or for a line rehearsal
+ * "Rehearse again" (its chapter, branch and depth) instead (its misses are lines, not cards).
+ */
+export function summaryPresets(
+  session: Pick<PracticeSessionSnapshot, "mode" | "scope"> | null,
+  summary: Pick<PracticeSummary, "missedPositionKeys">
+): { retryMissed: PracticePreset | null; rehearseAgain: PracticePreset | null } {
+  const rehearsed = session?.mode === "rehearse-lines" ? session.scope : null;
+  if (!rehearsed) return { retryMissed: retryMissedPreset(summary), rehearseAgain: null };
+  return {
+    retryMissed: null,
+    rehearseAgain: rehearsed.rehearse
+      ? rehearsePreset(rehearsed.rehearse, rehearsed.maxDepthPlies)
+      : null
+  };
+}
+
 /** A targeted queue (exact decisions, due or not) is extra practice, not the scheduled review. */
 export function isExtraPractice(scope: Pick<PracticeScope, "positionKeys">): boolean {
   return Boolean(scope.positionKeys?.length);
@@ -130,7 +149,7 @@ export function targetedPracticeInput(
   repertoireId: string,
   preset: PracticePreset | null
 ): StartPracticeInput | null {
-  const positionKeys = [...new Set(preset?.positionKeys ?? [])];
+  const positionKeys = [...new Set(preset?.positionKeys)];
   if (!preset?.autoStart || !positionKeys.length) return null;
   const limit = clamp(positionKeys.length, 1, MAX_CARD_LIMIT);
   return {
@@ -149,14 +168,22 @@ export function targetedPracticeInput(
  */
 export function presetForSetup(preset: PracticePreset | null): PracticePreset | null {
   if (!preset || (!preset.autoStart && !preset.positionKeys)) return preset;
+  const kept = presetSelection(preset);
+  return Object.keys(kept).length ? kept : null;
+}
+
+/** What a preset preselects in the setup form: chapters, mode, and a rehearsal with its depth. */
+type PresetSelection = Pick<PracticePreset, "chapterIds" | "mode" | "rehearse" | "maxDepthPlies">;
+
+function presetSelection(preset: PracticePreset | null): PresetSelection {
+  if (!preset) return {};
   const { chapterIds, mode, rehearse, maxDepthPlies } = preset;
-  const kept: PracticePreset = {
+  return {
     ...(chapterIds ? { chapterIds } : {}),
     ...(mode ? { mode } : {}),
     ...(rehearse ? { rehearse } : {}),
     ...(rehearse && maxDepthPlies ? { maxDepthPlies } : {})
   };
-  return Object.keys(kept).length ? kept : null;
 }
 
 /**
@@ -178,13 +205,7 @@ export function initialPracticeInput(
           cardLimit: DEFAULT_CARD_LIMIT,
           newCardLimit: DEFAULT_NEW_CARD_LIMIT
         };
-  const merged: StartPracticeInput = {
-    ...base,
-    ...(preset?.chapterIds ? { chapterIds: preset.chapterIds } : {}),
-    ...(preset?.mode ? { mode: preset.mode } : {}),
-    ...(preset?.rehearse ? { rehearse: preset.rehearse } : {}),
-    ...(preset?.rehearse && preset.maxDepthPlies ? { maxDepthPlies: preset.maxDepthPlies } : {})
-  };
+  const merged: StartPracticeInput = { ...base, ...presetSelection(preset) };
   const allowed = practicableChapterIds(detail.chapters);
   const { chapterIds, rehearse, ...rest } = merged;
   // A targeted queue is never the setup's form (it starts on its own).
@@ -196,14 +217,20 @@ export function initialPracticeInput(
     ...rest,
     ...(kept.length ? { chapterIds: kept } : {}),
     ...(keptRehearse ? { rehearse: keptRehearse } : {}),
-    ...(rest.cardLimit !== undefined
-      ? { cardLimit: clamp(rest.cardLimit, 1, MAX_CARD_LIMIT) }
-      : {}),
-    ...(rest.newCardLimit !== undefined
-      ? { newCardLimit: clamp(rest.newCardLimit, 0, MAX_CARD_LIMIT) }
-      : {}),
-    ...(rest.maxDepthPlies !== undefined
-      ? { maxDepthPlies: clamp(rest.maxDepthPlies, 1, MAX_DEPTH_PLIES) }
+    ...withinLimits(rest)
+  };
+}
+
+/** The limits `input` sets, clamped to the main process's bounds (unset ones stay unset). */
+function withinLimits(
+  input: Pick<StartPracticeInput, "cardLimit" | "newCardLimit" | "maxDepthPlies">
+): Pick<StartPracticeInput, "cardLimit" | "newCardLimit" | "maxDepthPlies"> {
+  const { cardLimit, newCardLimit, maxDepthPlies } = input;
+  return {
+    ...(cardLimit !== undefined ? { cardLimit: clamp(cardLimit, 1, MAX_CARD_LIMIT) } : {}),
+    ...(newCardLimit !== undefined ? { newCardLimit: clamp(newCardLimit, 0, MAX_CARD_LIMIT) } : {}),
+    ...(maxDepthPlies !== undefined
+      ? { maxDepthPlies: clamp(maxDepthPlies, 1, MAX_DEPTH_PLIES) }
       : {})
   };
 }
@@ -219,12 +246,8 @@ export function boundedInt(value: string, min: number, max: number): number | un
   return Math.min(parsed, max);
 }
 
-/**
- * The start input built from the form's fields, within the main process's limits. A rehearsal
- * sends its chapter, optional branch and depth only: card limits don't apply to it.
- */
-export function practiceInputFromForm(form: {
-  repertoireId: string;
+/** The setup form's fields, as typed (numbers are text until read with `boundedInt`). */
+type PracticeForm = {
   mode: PracticeMode;
   chapterIds: readonly string[];
   depth: string;
@@ -233,7 +256,35 @@ export function practiceInputFromForm(form: {
   /** Rehearsal: the chapter, and the branch's node ("" or absent: the chapter start). */
   rehearseChapterId?: string;
   rehearseFromNodeId?: string;
-}): StartPracticeInput {
+};
+
+/**
+ * The form's fields for `input` (unset limits show their defaults). A rehearsal's chapter is the
+ * input's, else its first chapter, else the first of `chapters` (the practicable ones).
+ */
+export function practiceFormFields(
+  input: StartPracticeInput,
+  chapters: readonly Pick<RepertoireChapterSummary, "id">[]
+): Required<PracticeForm> {
+  return {
+    mode: input.mode,
+    chapterIds: input.chapterIds ?? [],
+    depth: input.maxDepthPlies ? String(input.maxDepthPlies) : "",
+    cards: String(input.cardLimit ?? DEFAULT_CARD_LIMIT),
+    fresh: String(input.newCardLimit ?? DEFAULT_NEW_CARD_LIMIT),
+    rehearseChapterId:
+      input.rehearse?.chapterId ?? input.chapterIds?.[0] ?? chapters.at(0)?.id ?? "",
+    rehearseFromNodeId: input.rehearse?.fromNodeId ?? ""
+  };
+}
+
+/**
+ * The start input built from the form's fields, within the main process's limits. A rehearsal
+ * sends its chapter, optional branch and depth only: card limits don't apply to it.
+ */
+export function practiceInputFromForm(
+  form: PracticeForm & { repertoireId: string }
+): StartPracticeInput {
   const depth = boundedInt(form.depth, 1, MAX_DEPTH_PLIES);
   if (form.mode === "rehearse-lines") {
     return {
@@ -277,11 +328,13 @@ export function rehearseStarts(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
   label: (lookup: ChapterLookup, nodeId: string) => string,
-  limit = MAX_REHEARSE_STARTS,
-  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
-  paused: ReadonlySet<string> = new Set()
+  {
+    limit = MAX_REHEARSE_STARTS,
+    maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
+    paused = new Set()
+  }: { limit?: number; maxDepthPlies?: number; paused?: ReadonlySet<string> } = {}
 ): { starts: RehearseStart[]; truncated: boolean } {
-  const context = rehearsalContext(chapter, color, maxDepthPlies, undefined, paused);
+  const context = rehearsalContext(chapter, color, { maxDepthPlies, paused });
   const starts: RehearseStart[] = [];
   for (const id of context.lookup.order) {
     if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;
@@ -315,6 +368,6 @@ export function explainedChapterIds(
   if (detail.decisionCount > 0) return [];
   const last = detail.workspace?.lastChapterId;
   if (last && known.has(last)) return [last];
-  const first = sortedChapters(detail.chapters)[0];
+  const first = sortedChapters(detail.chapters).at(0);
   return first ? [first.id] : [];
 }

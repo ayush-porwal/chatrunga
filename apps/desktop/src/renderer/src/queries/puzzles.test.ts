@@ -30,7 +30,7 @@ const attempt: DecidedPuzzleAttempt = {
 
 describe("recordInput", () => {
   it("sends the attempt's id, puzzle, outcome and counts — not the wrong moves themselves", () => {
-    expect(recordInput(attempt)).toEqual({
+    expect(recordInput(attempt)).toStrictEqual({
       attemptId: "a1",
       puzzleId: "00sHx",
       databaseId: "db1",
@@ -94,22 +94,22 @@ describe("recordAttemptEvent", () => {
 
   beforeEach(() => {
     usePuzzleRecordStore.setState({ byAttempt: {} });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockReturnValue(undefined);
   });
 
   it("shows a decided attempt's result and refreshes the rating", async () => {
     const target = recorder("ok");
     const pending = recordAttemptEvent({ kind: "decided", attempt }, target);
-    expect(stateOf()).toEqual({ status: "saving" });
+    expect(stateOf()).toStrictEqual({ status: "saving" });
     await pending;
-    expect(stateOf()).toEqual({ status: "saved", result });
+    expect(stateOf()).toStrictEqual({ status: "saved", result });
     expect(target.onRecorded).toHaveBeenCalledTimes(1);
   });
 
   it("a failed puzzle finished after its decided write failed shows the later write's result", async () => {
     const target = recorder("fail", "ok");
     await recordAttemptEvent({ kind: "decided", attempt }, target);
-    expect(stateOf()).toEqual({ status: "failed", message: "database is locked" });
+    expect(stateOf()).toStrictEqual({ status: "failed", message: "database is locked" });
     expect(target.onRecorded).not.toHaveBeenCalled();
     await recordAttemptEvent(
       { kind: "completed", attempt: { ...attempt, completedAt: 3_000 } },
@@ -118,7 +118,7 @@ describe("recordAttemptEvent", () => {
     expect(target.recordAttempt).toHaveBeenLastCalledWith(
       expect.objectContaining({ attemptId: "a1", completedAt: 3_000 })
     );
-    expect(stateOf()).toEqual({ status: "saved", result });
+    expect(stateOf()).toStrictEqual({ status: "saved", result });
     expect(target.onRecorded).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +129,7 @@ describe("recordAttemptEvent", () => {
       { kind: "completed", attempt: { ...attempt, completedAt: 3_000 } },
       target
     );
-    expect(stateOf()).toEqual({ status: "saved", result });
+    expect(stateOf()).toStrictEqual({ status: "saved", result });
     expect(target.onRecorded).toHaveBeenCalledTimes(1);
   });
 

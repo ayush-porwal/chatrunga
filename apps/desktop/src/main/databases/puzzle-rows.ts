@@ -105,6 +105,53 @@ export function parseCsvLine(line: string): string[] {
   return result;
 }
 
+type LichessFilters = NonNullable<PuzzleSampleInput["lichess"]>;
+type PositionFilters = NonNullable<PuzzleSampleInput["position"]>;
+
+/** A rating or popularity that isn't a number passes (the file doesn't say). */
+function passesLichessNumbers(
+  filters: LichessFilters,
+  rating: number,
+  popularity: number
+): boolean {
+  if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax))
+    return false;
+  return !(Number.isFinite(popularity) && popularity < filters.popularityMin);
+}
+
+/** Every theme asked for, and one of the lengths asked for (lengths are themes in the file). */
+function passesLichessThemes(filters: LichessFilters, themes: readonly string[]): boolean {
+  if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme)))
+    return false;
+  return !filters.lengths.length || filters.lengths.some((length) => themes.includes(length));
+}
+
+/** One of the openings asked for; the row's tags are split only when some are. */
+function passesLichessOpenings(filters: LichessFilters, openingsRaw: string | undefined): boolean {
+  if (!filters.openings.length) return true;
+  const openingTags = words(openingsRaw);
+  return filters.openings.some((opening) => openingTags.includes(opening));
+}
+
+const activeTagsOf = (tagValues: readonly string[]) =>
+  POSITION_TAGS.filter((_, index) => tagValues[index] === "1");
+
+/** The difficulty band (a difficulty that isn't a number passes) and every tag asked for. */
+function passesPositionFilters(
+  filters: PositionFilters,
+  difficulty: number,
+  tagValues: readonly string[]
+): boolean {
+  if (
+    Number.isFinite(difficulty) &&
+    (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)
+  )
+    return false;
+  if (!filters.tags.length) return true;
+  const activeTags = activeTagsOf(tagValues);
+  return filters.tags.every((tag) => activeTags.includes(tag));
+}
+
 /**
  * The filters that need no chess (rating, popularity, themes, openings, length, side, difficulty,
  * tags), checked on the raw row before any position is computed. A row that passes still goes
@@ -115,49 +162,29 @@ export function matchesCheapFilters(
   row: string[],
   input: PuzzleSampleInput
 ): boolean {
-  if (kind === "lichess") {
-    const [id, fenBefore, movesRaw, ratingRaw, , popularityRaw, , themesRaw, , openingsRaw] = row;
-    // The opponent's move and at least one reply, as `sampleFromLichessRow` needs: a row that can't
-    // make a puzzle mustn't take a place in a scan's sample.
-    if (!id || !fenBefore || words(movesRaw).length < 2) return false;
-    const filters = input.lichess;
-    if (!filters) return true;
-    const rating = Number(ratingRaw);
-    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax))
-      return false;
-    const popularity = Number(popularityRaw);
-    if (Number.isFinite(popularity) && popularity < filters.popularityMin) return false;
-    const themes = words(themesRaw);
-    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme)))
-      return false;
-    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length)))
-      return false;
-    if (filters.openings.length) {
-      const openingTags = words(openingsRaw);
-      if (!filters.openings.some((opening) => openingTags.includes(opening))) return false;
-    }
-    // The FEN is before the opponent's move: the solver is the other side.
-    if (filters.side !== "any") {
-      const solver = fenBefore.split(" ")[1] === "w" ? "black" : "white";
-      if (filters.side !== solver) return false;
-    }
-    return true;
-  }
+  return kind === "lichess"
+    ? lichessRowMatches(row, input.lichess)
+    : positionRowMatches(row, input.position);
+}
+
+function lichessRowMatches(row: string[], filters: LichessFilters | undefined): boolean {
+  const [id, fenBefore, movesRaw, ratingRaw, , popularityRaw, , themesRaw, , openingsRaw] = row;
+  // The opponent's move and at least one reply, as `sampleFromLichessRow` needs: a row that can't
+  // make a puzzle mustn't take a place in a scan's sample.
+  if (!id || !fenBefore || words(movesRaw).length < 2) return false;
+  if (!filters) return true;
+  if (!passesLichessNumbers(filters, Number(ratingRaw), Number(popularityRaw))) return false;
+  if (!passesLichessThemes(filters, words(themesRaw))) return false;
+  if (!passesLichessOpenings(filters, openingsRaw)) return false;
+  if (filters.side === "any") return true;
+  // The FEN is before the opponent's move: the solver is the other side.
+  return filters.side === (fenBefore.split(" ")[1] === "w" ? "black" : "white");
+}
+
+function positionRowMatches(row: string[], filters: PositionFilters | undefined): boolean {
   const [internalId, , , , fen, bestMove, difficultyRaw, ...tagValues] = row;
   if (!internalId || !fen || !bestMove) return false;
-  const filters = input.position;
-  if (!filters) return true;
-  const difficulty = Number(difficultyRaw);
-  if (
-    Number.isFinite(difficulty) &&
-    (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)
-  )
-    return false;
-  if (filters.tags.length) {
-    const activeTags = POSITION_TAGS.filter((_, index) => tagValues[index] === "1");
-    if (!filters.tags.every((tag) => activeTags.includes(tag))) return false;
-  }
-  return true;
+  return !filters || passesPositionFilters(filters, Number(difficultyRaw), tagValues);
 }
 
 /**
@@ -225,21 +252,16 @@ export function sampleFromLichessRow(
   const sideToMove = statusForFen(initialFen).turn;
 
   const filters = input.lichess;
-  if (filters) {
-    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax))
-      return null;
-    if (Number.isFinite(popularity) && popularity < filters.popularityMin) return null;
-    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme)))
-      return null;
-    if (
-      filters.openings.length &&
-      !filters.openings.some((opening) => openingTags.includes(opening))
+  if (
+    filters &&
+    !(
+      passesLichessNumbers(filters, rating, popularity) &&
+      passesLichessThemes(filters, themes) &&
+      passesLichessOpenings(filters, openingsRaw) &&
+      (filters.side === "any" || filters.side === sideToMove)
     )
-      return null;
-    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length)))
-      return null;
-    if (filters.side !== "any" && filters.side !== sideToMove) return null;
-  }
+  )
+    return null;
   return {
     id,
     databaseId: database.id,
@@ -271,18 +293,8 @@ export function sampleFromPositionRow(
   if (!internalId || !fen || !bestMove) return null;
   if (!playsThrough(fen, [bestMove])) return null;
   const difficulty = Number(difficultyRaw);
-  const activeTags = POSITION_TAGS.filter((_, index) => tagValues[index] === "1");
-
-  const filters = input.position;
-  if (filters) {
-    if (
-      Number.isFinite(difficulty) &&
-      (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)
-    ) {
-      return null;
-    }
-    if (filters.tags.length && !filters.tags.every((tag) => activeTags.includes(tag))) return null;
-  }
+  if (input.position && !passesPositionFilters(input.position, difficulty, tagValues)) return null;
+  const activeTags = activeTagsOf(tagValues);
   return {
     id: internalId,
     databaseId: database.id,

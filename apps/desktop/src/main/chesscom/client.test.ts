@@ -14,35 +14,41 @@ import {
 
 describe("chess.com API answers", () => {
   it("reads a profile: the id, the name as chess.com shows it, and a title", () => {
-    expect(parseProfile(fixture("profile"))).toEqual({
+    expect(parseProfile(fixture("profile"))).toStrictEqual({
       id: "ayush_p64",
       username: "Ayush_P64",
       title: null
     });
     expect(
       parseProfile({ username: "hikaru", url: "https://www.chess.com/member/Hikaru", title: "GM" })
-    ).toEqual({ id: "hikaru", username: "Hikaru", title: "GM" });
+    ).toStrictEqual({ id: "hikaru", username: "Hikaru", title: "GM" });
     // A profile URL naming someone else, or an odd title, isn't trusted.
     expect(
       parseProfile({ username: "erik", url: "https://www.chess.com/member/Other", title: "<b>" })
-    ).toEqual({ id: "erik", username: "erik", title: null });
+    ).toStrictEqual({ id: "erik", username: "erik", title: null });
     for (const answer of [null, [], { username: 5 }, { username: "../x" }, { code: 0 }])
       expect(parseProfile(answer)).toBeNull();
   });
 
   it("reads the standard ratings (Daily included), not the variants, tactics or puzzles", () => {
-    expect(parseStats(fixture("stats"))).toEqual({
+    expect(parseStats(fixture("stats"))).toStrictEqual({
       rapid: 1684,
       blitz: 1662,
       bullet: 1490,
       daily: 1550
     });
-    expect(parseStats({ chess_rapid: { last: { rating: "1500" } }, chess_blitz: {} })).toEqual({});
-    expect(parseStats(null)).toEqual({});
+    expect(
+      parseStats({ chess_rapid: { last: { rating: "1500" } }, chess_blitz: {} })
+    ).toStrictEqual({});
+    expect(parseStats(null)).toStrictEqual({});
   });
 
   it("lists the archive months oldest first, from well-formed URLs only", () => {
-    expect(parseArchiveMonths(fixture("archives"))).toEqual(["2026/08", "2026/09", "2026/10"]);
+    expect(parseArchiveMonths(fixture("archives"))).toStrictEqual([
+      "2026/08",
+      "2026/09",
+      "2026/10"
+    ]);
     // An answer without the list is refused, not read as "no games".
     expect(() => parseArchiveMonths({ archives: "nope" })).toThrow(/couldn't read/);
     expect(() => parseArchiveMonths(undefined)).toThrow(/couldn't read/);
@@ -52,18 +58,18 @@ describe("chess.com API answers", () => {
 
   it("keeps an archive's games that have a chess.com URL and an end time", () => {
     const games = parseArchiveGames(fixture("archive-2026-09"));
-    expect(games.map((game) => [game.url, game.rules, game.endTime])).toEqual([
+    expect(games.map((game) => [game.url, game.rules, game.endTime])).toStrictEqual([
       ["https://www.chess.com/game/live/150000001", "chess", 1790791330],
       ["https://www.chess.com/game/daily/150000002", "chess960", 1790000000],
       ["https://www.chess.com/game/live/150000003", "chess", 1790300000]
     ]);
-    expect(games[0]!.pgn).toContain('[Link "https://www.chess.com/game/live/150000001"]');
+    expect(games[0].pgn).toContain('[Link "https://www.chess.com/game/live/150000001"]');
     // No rules: it can't be told from a variant, so it isn't taken as standard chess.
     expect(
       parseArchiveGames({
         games: [{ url: "https://www.chess.com/game/live/9", pgn: "1. e4 *", end_time: 5 }]
       })
-    ).toEqual([
+    ).toStrictEqual([
       { url: "https://www.chess.com/game/live/9", pgn: "1. e4 *", rules: "", endTime: 5 }
     ]);
     expect(() => parseArchiveGames({ games: {} })).toThrow(/couldn't read/);
@@ -84,9 +90,9 @@ describe("ChesscomClient", () => {
     });
     const client = new ChesscomClient({ fetch, userAgent: "Chaturanga/test" });
     const answers = await Promise.all(["a", "b", "c"].map((name) => client.json(playerPath(name))));
-    expect(answers).toEqual([{ username: "a" }, { username: "b" }, { username: "c" }]);
+    expect(answers).toStrictEqual([{ username: "a" }, { username: "b" }, { username: "c" }]);
     expect(state.maxInFlight).toBe(1);
-    expect(requests).toEqual([
+    expect(requests).toStrictEqual([
       { path: "/pub/player/a", userAgent: "Chaturanga/test" },
       { path: "/pub/player/b", userAgent: "Chaturanga/test" },
       { path: "/pub/player/c", userAgent: "Chaturanga/test" }
@@ -105,7 +111,7 @@ describe("ChesscomClient", () => {
     const missing = await client.json("/pub/player/nobody").catch((error: unknown) => error);
     expect(missing).toBeInstanceOf(ChesscomHttpError);
     expect(missing).toMatchObject({ status: 404 });
-    expect(await client.json("/pub/player/ok")).toEqual({ username: "ok" });
+    expect(await client.json("/pub/player/ok")).toStrictEqual({ username: "ok" });
   });
 
   it("reports chess.com unreachable when the network fails, and only asks for API paths", async () => {

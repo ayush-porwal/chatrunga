@@ -203,8 +203,6 @@ export function RecentGames({
     if (view.searchOpen) searchInput.current?.focus();
   }, [view.searchOpen, view.searchFocus]);
 
-  const label = applied.filter.tab ? `${LIBRARY_TAB_LABELS[applied.filter.tab]} ` : "";
-
   return (
     <section className="flex h-full min-h-0 w-full min-w-0 flex-col" aria-label="Library">
       {view.searchOpen ? (
@@ -256,28 +254,12 @@ export function RecentGames({
           </div>
         ) : listState !== "ready" ? (
           // A failed read is not an empty library.
-          <div className="p-3">
-            <Notice
-              tone="danger"
-              title="Couldn't load your games"
-              action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() =>
-                    listState === "counts-error" ? view.retryCounts() : void games.refetch()
-                  }
-                >
-                  <RotateCcw />
-                  Try again
-                </Button>
-              }
-            >
-              {ipcErrorMessage(listState === "counts-error" ? view.countsError : games.error) ||
-                "The library couldn't be read."}
-            </Notice>
-          </div>
+          <LibraryLoadError
+            error={listState === "counts-error" ? view.countsError : games.error}
+            onRetry={() =>
+              listState === "counts-error" ? view.retryCounts() : void games.refetch()
+            }
+          />
         ) : list.length ? (
           <ul aria-label="Saved games">
             {list.map((game) => (
@@ -309,27 +291,68 @@ export function RecentGames({
               </li>
             ) : null}
           </ul>
-        ) : needle ? (
-          <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-            No games match “{needle}”
-          </p>
-        ) : view.hasGames ? (
-          <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-            No {applied.filter.reviewed ? "reviewed " : ""}
-            {label}games
-          </p>
         ) : (
-          <div className="flex min-h-full items-center justify-center p-6">
-            <div className="flex flex-col items-center gap-3">
-              <PiecePair piece="pawn" pieceClassName="size-24" gapClassName="[&>*+*]:-ml-4.5" />
-              <span className="text-[0.9375rem] font-medium text-fg-secondary">
-                Saved games will appear here.
-              </span>
-            </div>
-          </div>
+          <NoLibraryGames needle={needle} hasGames={view.hasGames} filter={applied.filter} />
         )}
       </div>
     </section>
+  );
+}
+
+/** The library couldn't be read (its counts or its games): why, and Try again. */
+function LibraryLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="p-3">
+      <Notice
+        tone="danger"
+        title="Couldn't load your games"
+        action={
+          <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+            <RotateCcw />
+            Try again
+          </Button>
+        }
+      >
+        {ipcErrorMessage(error) || "The library couldn't be read."}
+      </Notice>
+    </div>
+  );
+}
+
+/** Nothing listed: no match for the search, none the filter lets through, or no games at all. */
+function NoLibraryGames({
+  needle,
+  hasGames,
+  filter
+}: {
+  needle: string;
+  hasGames: boolean;
+  filter: LibraryView["applied"]["filter"];
+}) {
+  if (needle)
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No games match “{needle}”
+      </p>
+    );
+  if (hasGames) {
+    const label = filter.tab ? `${LIBRARY_TAB_LABELS[filter.tab]} ` : "";
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No {filter.reviewed ? "reviewed " : ""}
+        {label}games
+      </p>
+    );
+  }
+  return (
+    <div className="flex min-h-full items-center justify-center p-6">
+      <div className="flex flex-col items-center gap-3">
+        <PiecePair piece="pawn" pieceClassName="size-24" gapClassName="[&>*+*]:-ml-4.5" />
+        <span className="text-[0.9375rem] font-medium text-fg-secondary">
+          Saved games will appear here.
+        </span>
+      </div>
+    </div>
   );
 }
 

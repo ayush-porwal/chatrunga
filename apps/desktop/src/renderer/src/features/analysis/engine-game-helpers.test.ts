@@ -28,11 +28,11 @@ describe("currentLineUcis", () => {
       node({ id: "c", parentId: "b", uci: "g1f3" })
     ];
 
-    expect(currentLineUcis(tree, "c")).toEqual(["e2e4", "e7e5", "g1f3"]);
+    expect(currentLineUcis(tree, "c")).toStrictEqual(["e2e4", "e7e5", "g1f3"]);
   });
 
   it("returns an empty line for unknown nodes", () => {
-    expect(currentLineUcis([node({ id: "root", parentId: null })], "missing")).toEqual([]);
+    expect(currentLineUcis([node({ id: "root", parentId: null })], "missing")).toStrictEqual([]);
   });
 
   it("sends an imported game's castling as the king's move, which Stockfish accepts", () => {
@@ -42,7 +42,7 @@ describe("currentLineUcis", () => {
     );
     expect(game.moveTree.map((item) => item.uci)).toContain("e1h1");
 
-    expect(currentLineUcis(game.moveTree, game.currentNodeId)).toEqual([
+    expect(currentLineUcis(game.moveTree, game.currentNodeId)).toStrictEqual([
       "e2e4",
       "e7e5",
       "g1f3",
@@ -68,6 +68,6 @@ describe("currentLineUcis", () => {
 
 1. Rh1 *`);
 
-    expect(currentLineUcis(game.moveTree, game.currentNodeId)).toEqual(["e1h1"]);
+    expect(currentLineUcis(game.moveTree, game.currentNodeId)).toStrictEqual(["e1h1"]);
   });
 });

@@ -43,7 +43,7 @@ describe("LichessClient", () => {
       method: "POST",
       body: "rated=true&time=10"
     });
-    expect(requests[0]!.headers).toMatchObject({
+    expect(requests[0].headers).toMatchObject({
       authorization: "Bearer test-token",
       "content-type": "application/x-www-form-urlencoded"
     });
@@ -100,8 +100,8 @@ describe("LichessClient", () => {
     stream.pushRaw("\n");
     stream.close();
     await done;
-    expect(lines).toEqual([{ type: "gameStart" }]);
-    expect(requests[0]!.headers.accept).toBe("application/x-ndjson");
+    expect(lines).toStrictEqual([{ type: "gameStart" }]);
+    expect(requests[0].headers.accept).toBe("application/x-ndjson");
   });
 
   it("treats a silent stream as dropped", async () => {

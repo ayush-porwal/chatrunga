@@ -42,8 +42,8 @@ import {
 } from "../repertoire/service";
 import { IMPORT_CANCELLED_REPLY } from "@chaturanga/shared/types/repertoire";
 import { ImportCancelledError } from "../repertoire/import-job";
+import { asId } from "./fields";
 import {
-  asId,
   parseAddFromGameInput,
   parseArchiveRepertoireInput,
   parseChapterRef,
@@ -72,7 +72,7 @@ import {
   parseStartPracticeInput,
   parseUpdateDecisionInput,
   parseUpdateRepertoireMetadataInput
-} from "./validate";
+} from "./validate-repertoire";
 
 /**
  * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it.

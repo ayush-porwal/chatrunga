@@ -72,7 +72,7 @@ export function PlaySettingsDialog({
           : 0;
     if (!delta || !(event.target instanceof HTMLElement) || event.target.role !== "radio") return;
     const enabled = OPTIONS.filter(usable);
-    const next = enabled[(enabled.indexOf(pick) + delta + enabled.length) % enabled.length];
+    const next = enabled.at((enabled.indexOf(pick) + delta + enabled.length) % enabled.length);
     if (!next) return;
     event.preventDefault();
     setPick(next);
@@ -308,7 +308,6 @@ function EngineRow({
     0,
     engines.findIndex((engine) => engine.id === engineId)
   );
-  const selected = engines[selectedIndex];
   const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } =
     useListboxKeyboard({
       id: listId,
@@ -321,7 +320,7 @@ function EngineRow({
         setOpen(next);
       },
       onCommit: (index) => {
-        const engine = engines[index];
+        const engine = engines.at(index);
         if (engine) onEngine(engine.id);
       }
     });
@@ -340,6 +339,7 @@ function EngineRow({
     );
   }
 
+  const selected = engines[selectedIndex];
   return (
     <div
       ref={rootRef}
@@ -349,7 +349,7 @@ function EngineRow({
         checked && "border-accent-strong bg-accent-soft/50"
       )}
     >
-      <EngineAvatar imagePath={selected?.imagePath} size="sm" />
+      <EngineAvatar imagePath={selected.imagePath} size="sm" />
       <button
         ref={triggerRef}
         type="button"
@@ -370,7 +370,7 @@ function EngineRow({
         onKeyDown={onTriggerKeyDown}
       >
         <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
-          {selected ? engineDisplayName(selected.name) : "Choose an engine"}
+          {engineDisplayName(selected.name)}
         </b>
         <ChevronDown
           className={cn(
@@ -385,7 +385,7 @@ function EngineRow({
         type="button"
         role="radio"
         aria-checked={checked}
-        aria-label={selected ? `Engine: ${engineDisplayName(selected.name)}` : "Engine"}
+        aria-label={`Engine: ${engineDisplayName(selected.name)}`}
         tabIndex={checked ? 0 : -1}
         className="-m-1 grid place-items-center rounded-full p-1 outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         onClick={onPick}
@@ -403,7 +403,7 @@ function EngineRow({
             className={settingsListboxSurfaceClass}
           >
             {engines.map((engine, index) => {
-              const active = engine.id === selected?.id;
+              const active = engine.id === selected.id;
               return (
                 <button
                   key={engine.id}

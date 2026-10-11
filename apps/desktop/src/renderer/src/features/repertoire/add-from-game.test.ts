@@ -33,11 +33,16 @@ import {
 function gameTree(line: string[], rootVariation: string[] = []): MoveNode[] {
   let tree = createEmptyGame().moveTree;
   const play = (moves: string[]) => {
-    let parent = tree[0]!;
+    let parent = tree[0];
     for (const san of moves) {
       const moved = applySan(parent.fenAfter, san);
       if (!moved) throw new Error(`illegal ${san}`);
-      const result = addMoveNode(tree, parent.id, moved.san, moved.uci, parent.fenAfter, moved.fen);
+      const result = addMoveNode(tree, parent.id, {
+        san: moved.san,
+        uci: moved.uci,
+        fenBefore: parent.fenAfter,
+        fenAfter: moved.fen
+      });
       tree = result.moveTree;
       parent = result.node;
     }
@@ -67,7 +72,7 @@ describe("source extraction", () => {
         orientationHint: "black",
         result: "1-0"
       })
-    ).toEqual({
+    ).toStrictEqual({
       White: "Carlsen",
       Black: "Nakamura",
       ECO: "C50",
@@ -75,7 +80,7 @@ describe("source extraction", () => {
       WhiteElo: "2830",
       Result: "1-0"
     });
-    expect(sourceHeaders(null)).toEqual({});
+    expect(sourceHeaders(null)).toStrictEqual({});
   });
 
   it("builds a source from the board, the selected move as provenance", () => {
@@ -88,7 +93,7 @@ describe("source extraction", () => {
       moveTree: tree,
       currentNodeId: nf3.id
     });
-    expect(source).toEqual({
+    expect(source).toStrictEqual({
       gameId: null,
       headers: { White: "A" },
       rootFen: START_FEN,
@@ -120,8 +125,8 @@ describe("source extraction", () => {
       result: "*",
       headers: { white: "W", black: "B", event: "Open" },
       initialFen: null,
-      currentFen: tree[1]!.fenAfter,
-      currentNodeId: tree[1]!.id,
+      currentFen: tree[1].fenAfter,
+      currentNodeId: tree[1].id,
       pgn: "1. d4 *",
       moveTree: tree,
       review: null,
@@ -131,7 +136,7 @@ describe("source extraction", () => {
     expect(source.gameId).toBe("g2");
     expect(source.nodeId).toBeNull();
     expect(source.headers).toMatchObject({ White: "W", Black: "B", Event: "Open", Result: "*" });
-    expect(source.tree.map((node) => node.san)).toEqual([null, "d4"]);
+    expect(source.tree.map((node) => node.san)).toStrictEqual([null, "d4"]);
     expect(source.rootFen).toBe(START_FEN);
   });
 
@@ -214,7 +219,7 @@ describe("scope", () => {
 
   it("offers the line and branch only at a selected move", () => {
     const atMove = scopeOptions(tree, e5.id);
-    expect(atMove.map((option) => [option.value, option.label, option.disabled])).toEqual([
+    expect(atMove.map((option) => [option.value, option.label, option.disabled])).toStrictEqual([
       ["path", "Line to here", false],
       ["subtree", "This branch", false],
       ["whole-game", "Whole game", false]
@@ -224,7 +229,7 @@ describe("scope", () => {
         scopeOptions(tree, nodeId)
           .filter((option) => !option.disabled)
           .map((o) => o.value)
-      ).toEqual(["whole-game"]);
+      ).toStrictEqual(["whole-game"]);
     }
     expect(scopeOptions(createEmptyGame().moveTree, null).every((option) => option.disabled)).toBe(
       true
@@ -244,14 +249,14 @@ describe("scope", () => {
     expect(scopeNodeId({ kind: "path", toNodeId: "n" })).toBe("n");
     expect(scopeNodeId({ kind: "subtree", fromNodeId: "m", root: "original" })).toBe("m");
     expect(scopeNodeId({ kind: "whole-game" })).toBeNull();
-    expect(buildScope("path", "n", "original")).toEqual({ kind: "path", toNodeId: "n" });
-    expect(buildScope("subtree", "n", "standalone")).toEqual({
+    expect(buildScope("path", "n", "original")).toStrictEqual({ kind: "path", toNodeId: "n" });
+    expect(buildScope("subtree", "n", "standalone")).toStrictEqual({
       kind: "subtree",
       fromNodeId: "n",
       root: "standalone"
     });
-    expect(buildScope("path", null, "original")).toEqual({ kind: "whole-game" });
-    expect(buildScope("whole-game", "n", "original")).toEqual({ kind: "whole-game" });
+    expect(buildScope("path", null, "original")).toStrictEqual({ kind: "whole-game" });
+    expect(buildScope("whole-game", "n", "original")).toStrictEqual({ kind: "whole-game" });
   });
 });
 
@@ -264,7 +269,7 @@ describe("policy", () => {
   const initial = policyReducer(EMPTY_POLICY_STATE, { type: "init", baseKey: "k", preview });
 
   it("initialises from the defaults once per base key", () => {
-    expect(policyFor(initial, "k")).toEqual({
+    expect(policyFor(initial, "k")).toStrictEqual({
       includedNodeIds: ["a", "b"],
       coveredNodeIds: ["r1", "r2"]
     });
@@ -273,7 +278,7 @@ describe("policy", () => {
     expect(policyReducer(toggled, { type: "init", baseKey: "k", preview })).toBe(toggled);
     // A new scope or destination proposes again.
     const again = policyReducer(toggled, { type: "init", baseKey: "k2", preview });
-    expect(policyFor(again, "k2")?.includedNodeIds).toEqual(["a", "b"]);
+    expect(policyFor(again, "k2")?.includedNodeIds).toStrictEqual(["a", "b"]);
   });
 
   it("covers the defaults even when they aren't listed as opponent moves", () => {
@@ -282,24 +287,24 @@ describe("policy", () => {
       baseKey: "k",
       preview: { ...preview, opponentMoves: [move("r2")] }
     });
-    expect(policyFor(state, "k")?.coveredNodeIds).toEqual(["r1", "r2"]);
+    expect(policyFor(state, "k")?.coveredNodeIds).toStrictEqual(["r1", "r2"]);
   });
 
   it("toggles own moves on and off", () => {
     let state = policyReducer(initial, { type: "toggle", nodeId: "a" });
-    expect(policyFor(state, "k")?.includedNodeIds).toEqual(["b"]);
+    expect(policyFor(state, "k")?.includedNodeIds).toStrictEqual(["b"]);
     state = policyReducer(state, { type: "toggle", nodeId: "c" });
     state = policyReducer(state, { type: "toggle", nodeId: "a" });
-    expect(policyFor(state, "k")?.includedNodeIds).toEqual(["a", "b", "c"]);
+    expect(policyFor(state, "k")?.includedNodeIds).toStrictEqual(["a", "b", "c"]);
   });
 
   it("covers opponent replies only with the switch on, and remembers the switch", () => {
     let state = policyReducer(initial, { type: "set-cover", on: false });
-    expect(policyFor(state, "k")?.coveredNodeIds).toEqual([]);
+    expect(policyFor(state, "k")?.coveredNodeIds).toStrictEqual([]);
     state = policyReducer(state, { type: "init", baseKey: "k2", preview });
     expect(state.coverReplies).toBe(false);
     state = policyReducer(state, { type: "set-cover", on: true });
-    expect(policyFor(state, "k2")?.coveredNodeIds).toEqual(["r1", "r2"]);
+    expect(policyFor(state, "k2")?.coveredNodeIds).toStrictEqual(["r1", "r2"]);
     expect(policyReducer(state, { type: "reset" })).toMatchObject({
       baseKey: null,
       coverReplies: true
@@ -328,7 +333,7 @@ describe("input hashing", () => {
     expect(
       hashAddInput({ ...input, policy: { includedNodeIds: ["b", "a"], coveredNodeIds: [] } })
     ).toBe(hashAddInput(input));
-    expect(hashAddInput({ ...input, source: { ...input.source, nodeId: tree[1]!.id } })).toBe(
+    expect(hashAddInput({ ...input, source: { ...input.source, nodeId: tree[1].id } })).toBe(
       hashAddInput(input)
     );
   });
@@ -345,7 +350,7 @@ describe("input hashing", () => {
       hashAddInput({ ...input, destination: { ...input.destination, title: "Other" } as never })
     ).not.toBe(base);
     expect(hashAddInput({ ...input, expectedRevision: 4 })).not.toBe(base);
-    expect(hashAddInput({ ...input, scope: { kind: "path", toNodeId: tree[1]!.id } })).not.toBe(
+    expect(hashAddInput({ ...input, scope: { kind: "path", toNodeId: tree[1].id } })).not.toBe(
       base
     );
     expect(

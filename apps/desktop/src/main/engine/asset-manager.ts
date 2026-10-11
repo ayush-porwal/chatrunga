@@ -31,7 +31,8 @@ import {
   type CpuFeature,
   type EngineManifest,
   type PlatformKey,
-  type ReleaseAssetId
+  type ReleaseAssetId,
+  type SelectedAsset
 } from "./engine-manifest";
 import {
   RAW_DOWNLOAD_HOSTS,
@@ -41,6 +42,7 @@ import {
   isAllowedDownloadUrl,
   isReleaseDownloadOf,
   parseSha256Digest,
+  type CachedRelease,
   type FetchLike
 } from "./github-releases";
 import { downloadToFile } from "./http-download";
@@ -87,10 +89,10 @@ export type AssetId =
   | "maia-1700"
   | "maia-1900";
 
-export type AssetState = "missing" | "installed" | "custom";
+type AssetState = "missing" | "installed" | "custom";
 
 /** Where a download (or install) came from. */
-export type AssetSource = "github" | "fallback" | "fixed";
+type AssetSource = "github" | "fallback" | "fixed";
 
 export type AssetRecord = {
   id: AssetId;
@@ -216,7 +218,71 @@ export type ResolvedDownload = {
   checkError: string | null;
 };
 
-export class DigestMismatchError extends Error {
+function installedVersionOf(record: AssetRecord): string | null {
+  return record.version ?? record.manifestVersion ?? null;
+}
+
+/** An asset a download can fetch: what is installed, and the version a download would bring. */
+function downloadableStatus(record: AssetRecord, resolved: ResolvedDownload): AssetStatus {
+  const installedVersion = installedVersionOf(record);
+  return {
+    ...record,
+    installedVersion,
+    latestVersion: resolved.version,
+    // Only a live (or cached) GitHub answer can say there is something newer: the
+    // fallback manifest may well be older than what is installed.
+    updateAvailable:
+      record.state === "installed" &&
+      resolved.source === "github" &&
+      isDifferentVersion(installedVersion, resolved.version),
+    downloadSizeBytes: resolved.sizeBytes,
+    latestSource: resolved.source,
+    autoDownload: true,
+    installInstructions: null,
+    checkedAt: resolved.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
+    checkError: resolved.checkError
+  };
+}
+
+/** An asset this platform must install by hand (Lc0 on macOS / Linux). */
+function manualInstallStatus(record: AssetRecord, installInstructions: string | null): AssetStatus {
+  return {
+    ...record,
+    installedVersion: installedVersionOf(record),
+    latestVersion: null,
+    updateAvailable: false,
+    downloadSizeBytes: null,
+    latestSource: null,
+    autoDownload: false,
+    installInstructions,
+    checkedAt: null,
+    checkError: null
+  };
+}
+
+/** The GitHub release asset picked for this platform. */
+function releaseDownload(
+  id: ReleaseAssetId,
+  cached: CachedRelease,
+  selected: SelectedAsset,
+  checkError: string | null
+): ResolvedDownload {
+  return {
+    id,
+    url: selected.asset.browser_download_url,
+    sizeBytes: selected.asset.size,
+    sha256: parseSha256Digest(selected.asset.digest),
+    extract: selected.extract,
+    executablePattern: selected.executablePattern,
+    version: cached.release.tag_name,
+    source: "github",
+    assetName: selected.asset.name,
+    checkedAt: cached.fetchedAt,
+    checkError
+  };
+}
+
+class DigestMismatchError extends Error {
   constructor(id: AssetId) {
     super(`sha256 mismatch for ${id}`);
     this.name = "DigestMismatchError";
@@ -288,27 +354,10 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const lookup = opts.refresh ? { maxAgeMs: CHECK_MAX_AGE_MS } : ("cache-only" as const);
     const installed = this.getInstalled();
     return forEveryAssetAsync(async (id): Promise<AssetStatus> => {
-      const record = installed[id];
       const resolved = await this.resolveDownload(id, lookup).catch(() => null);
-      const installedVersion = record.version ?? record.manifestVersion ?? null;
-      const managed = record.state === "installed";
-      return {
-        ...record,
-        installedVersion,
-        latestVersion: resolved?.version ?? null,
-        // Only a live (or cached) GitHub answer can say there is something newer: the
-        // fallback manifest may well be older than what is installed.
-        updateAvailable:
-          managed &&
-          resolved?.source === "github" &&
-          isDifferentVersion(installedVersion, resolved.version),
-        downloadSizeBytes: resolved?.sizeBytes ?? null,
-        latestSource: resolved?.source ?? null,
-        autoDownload: resolved !== null,
-        installInstructions: resolved ? null : this.installInstructionsFor(id),
-        checkedAt: resolved?.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
-        checkError: resolved?.checkError ?? null
-      };
+      return resolved
+        ? downloadableStatus(installed[id], resolved)
+        : manualInstallStatus(installed[id], this.installInstructionsFor(id));
     });
   }
 
@@ -339,22 +388,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     id: AssetId,
     lookup: { maxAgeMs: number } | "cache-only" = { maxAgeMs: RELEASE_CACHE_TTL_MS }
   ): Promise<ResolvedDownload | null> {
-    if (!isReleaseAsset(id)) {
-      const entry = this.manifest.maiaWeights.files[id];
-      return {
-        id,
-        url: entry.url,
-        sizeBytes: entry.sizeBytes,
-        sha256: entry.sha256 ?? null,
-        extract: null,
-        executablePattern: null,
-        version: this.manifest.maiaWeights.version,
-        source: "fixed",
-        assetName: path.posix.basename(new URL(entry.url).pathname),
-        checkedAt: null,
-        checkError: null
-      };
-    }
+    if (!isReleaseAsset(id)) return this.weightDownload(id);
 
     const source = RELEASE_SOURCES[id];
     const matcher = this.platformKey ? source.platforms[this.platformKey] : undefined;
@@ -368,24 +402,38 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (cached) {
       const selected = selectReleaseAsset(cached.release.assets, matcher, await this.cpuFeatures());
       if (selected && isReleaseDownloadOf(selected.asset.browser_download_url, source.repo)) {
-        return {
-          id,
-          url: selected.asset.browser_download_url,
-          sizeBytes: selected.asset.size,
-          sha256: parseSha256Digest(selected.asset.digest),
-          extract: selected.extract,
-          executablePattern: selected.executablePattern,
-          version: cached.release.tag_name,
-          source: "github",
-          assetName: selected.asset.name,
-          checkedAt: cached.fetchedAt,
-          checkError: cached.stale ? checkError : null
-        };
+        return releaseDownload(id, cached, selected, cached.stale ? checkError : null);
       }
       checkError = `No ${this.platformKey} build found in ${source.repo} ${cached.release.tag_name}`;
       logger.warn("asset-manager", `${checkError}; using the bundled fallback`);
     }
+    return this.fallbackDownload(id, cached?.fetchedAt ?? null, checkError);
+  }
 
+  /** A Maia weight: the manifest's fixed file (they aren't GitHub release assets). */
+  private weightDownload(id: Exclude<AssetId, ReleaseAssetId>): ResolvedDownload {
+    const entry = this.manifest.maiaWeights.files[id];
+    return {
+      id,
+      url: entry.url,
+      sizeBytes: entry.sizeBytes,
+      sha256: entry.sha256 ?? null,
+      extract: null,
+      executablePattern: null,
+      version: this.manifest.maiaWeights.version,
+      source: "fixed",
+      assetName: path.posix.basename(new URL(entry.url).pathname),
+      checkedAt: null,
+      checkError: null
+    };
+  }
+
+  /** The bundled manifest's build for this platform, when GitHub gave none; null: manual install. */
+  private fallbackDownload(
+    id: ReleaseAssetId,
+    checkedAt: number | null,
+    checkError: string | null
+  ): ResolvedDownload | null {
     const entry = resolveManifestEntry(this.manifest, id, this.platformKey);
     if (!entry) return null;
     return {
@@ -398,7 +446,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       version: manifestVersionFor(this.manifest, id),
       source: "fallback",
       assetName: path.posix.basename(new URL(entry.url).pathname),
-      checkedAt: cached?.fetchedAt ?? null,
+      checkedAt,
       checkError
     };
   }
@@ -495,7 +543,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (resolved.sha256) {
       const actual = await sha256File(partialPath);
       if (actual !== resolved.sha256) {
-        await unlink(partialPath).catch(() => {});
+        await unlink(partialPath).catch(() => undefined);
         throw new DigestMismatchError(id);
       }
     } else {
@@ -518,7 +566,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         if (!found) throw new Error(`Executable not found in ${resolved.assetName} for ${id}`);
         staged = path.join(stagingDir, path.basename(finalPath));
         await rename(found, staged);
-        await unlink(partialPath).catch(() => {});
+        await unlink(partialPath).catch(() => undefined);
       } else {
         staged = path.join(stagingDir, path.basename(finalPath));
         await rename(partialPath, staged);
@@ -527,7 +575,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       await this.stripQuarantine(staged);
       await swapIntoPlace(staged, finalPath);
     } finally {
-      await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -583,7 +631,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const record = this.state.get(id);
     // Only delete files we installed; a custom path is the user's own file.
     if (record?.installedPath && record.state !== "custom") {
-      await unlink(record.installedPath).catch(() => {});
+      await unlink(record.installedPath).catch(() => undefined);
     }
     this.state.delete(id);
     await this.saveState();
@@ -652,7 +700,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   private async stripQuarantine(filePath: string): Promise<void> {
     if (process.platform === "darwin") {
-      await exec("xattr", ["-d", "com.apple.quarantine", filePath]).catch(() => {});
+      await exec("xattr", ["-d", "com.apple.quarantine", filePath]).catch(() => undefined);
       return;
     }
     if (process.platform === "win32") {
@@ -661,7 +709,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         "-NoProfile",
         "-Command",
         `Unblock-File -LiteralPath '${literal}'`
-      ]).catch(() => {});
+      ]).catch(() => undefined);
     }
   }
 
@@ -672,7 +720,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       entries
         .filter((name) => name.startsWith(".staging-") || /\.old-\d+$/.test(name))
         .map((name) =>
-          rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(() => {})
+          rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(
+            () => undefined
+          )
         )
     );
   }
@@ -681,7 +731,8 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (!existsSync(this.statePath)) return;
     try {
       const raw = await readFile(this.statePath, "utf-8");
-      const parsed = parseStoredJson<{ records?: AssetRecord[] }>(raw);
+      // A damaged file may hold null entries.
+      const parsed = parseStoredJson<{ records?: (AssetRecord | null)[] }>(raw);
       let changed = false;
       for (const record of parsed.records ?? []) {
         if (!isAssetId(record?.id)) continue;
@@ -719,7 +770,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       await rename(tmp, this.statePath);
     };
     const next = this.stateWrites.then(write, write);
-    this.stateWrites = next.catch(() => {});
+    this.stateWrites = next.catch(() => undefined);
     return next;
   }
 
@@ -747,7 +798,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 }
 
-export class DisallowedDownloadError extends Error {
+class DisallowedDownloadError extends Error {
   constructor(url: string) {
     let host = "an invalid URL";
     try {
@@ -779,14 +830,14 @@ async function swapIntoPlace(staged: string, finalPath: string): Promise<void> {
   try {
     await rename(staged, finalPath);
   } catch (error) {
-    await rename(aside, finalPath).catch(() => {});
+    await rename(aside, finalPath).catch(() => undefined);
     throw error;
   }
-  await unlink(aside).catch(() => {});
+  await unlink(aside).catch(() => undefined);
 }
 
 /** Largest regular file under `rootDir` whose basename matches `pattern`. */
-export async function findExecutable(rootDir: string, pattern: RegExp): Promise<string | null> {
+async function findExecutable(rootDir: string, pattern: RegExp): Promise<string | null> {
   const best = { file: null as string | null, size: -1 };
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > 4) return;

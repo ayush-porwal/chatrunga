@@ -18,36 +18,20 @@ import {
   type LibraryTabCounts
 } from "@chaturanga/shared/types/library";
 import { isOneOf } from "@chaturanga/shared/types/guards";
+import { readLocalPref, writeLocalPref } from "@/lib/local-prefs";
 import { useGameFacetsQuery } from "../../queries/api";
 import { recentGamesFilterOptions, type RecentGamesFilterOption } from "../play/recent-games";
 
 const TAB_KEY = "chaturanga.library.tab";
 
-function storage(): Storage | null {
-  // Storage access throws where it is blocked (a sandboxed or opaque origin).
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** The tab last chosen, or null (never chosen, or an unreadable value). */
 export function loadLibraryTab(): LibraryTab | null {
-  try {
-    const value = storage()?.getItem(TAB_KEY) ?? null;
-    return isOneOf(LIBRARY_TABS, value) ? value : null;
-  } catch {
-    return null;
-  }
+  const value = readLocalPref(TAB_KEY);
+  return isOneOf(LIBRARY_TABS, value) ? value : null;
 }
 
 export function saveLibraryTab(tab: LibraryTab): void {
-  try {
-    storage()?.setItem(TAB_KEY, tab);
-  } catch {
-    // Full or blocked storage: the choice still applies for this session.
-  }
+  writeLocalPref(TAB_KEY, tab);
 }
 
 /** The tab chosen last (null until one is), shared by every library list on screen. */

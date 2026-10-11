@@ -67,7 +67,9 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private feed: UpdateFeedConfig | null = null;
   private feedOverride: string | null = null;
   /** Resolves false to call the install off (the user kept the app open to save their game). */
-  private prepareForInstall: () => void | boolean | Promise<void | boolean> = () => {};
+  private prepareForInstall: () => void | boolean | Promise<void | boolean> = () => {
+    // Nothing to prepare until start() supplies the app's hook.
+  };
   /** An install is being prepared (pending saves are being written): a second click waits. */
   private installing = false;
   private started: Promise<void> | null = null;

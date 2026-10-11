@@ -57,7 +57,7 @@ describe("repertoire practice store", () => {
       card: cardOf("a", { attemptsSoFar: 1 }),
       finalGrade: false
     });
-    expect(store().message).toEqual({
+    expect(store().message).toStrictEqual({
       tone: "warn",
       text: "This move is outside your repertoire.",
       feedback: "Too slow."
@@ -87,11 +87,15 @@ describe("repertoire practice store", () => {
       card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 2 }),
       finalGrade: false
     });
-    expect(store().message).toEqual({
+    expect(store().message).toStrictEqual({
       tone: "success",
       text: "Correct — this card still counts as missed."
     });
-    expect(store().reveal).toEqual({ ucis: ["e2e4"], preferredUci: "e2e4", explanation: null });
+    expect(store().reveal).toStrictEqual({
+      ucis: ["e2e4"],
+      preferredUci: "e2e4",
+      explanation: null
+    });
     expect(store().session!.totals.wrong).toBe(1);
   });
 
@@ -133,14 +137,14 @@ describe("repertoire practice store", () => {
         moveComments: { e2e4: "Open games." }
       }
     });
-    expect(store().answer).toEqual({
+    expect(store().answer).toStrictEqual({
       ucis: ["e2e4"],
       preferredUci: "e2e4",
       explanation: "Centre.",
       moveComments: { e2e4: "Open games." }
     });
     // The feedback on the move just missed stays beside the answer.
-    expect(store().message).toEqual({
+    expect(store().message).toStrictEqual({
       tone: "info",
       text: "Revealed — this decision counts as missed.",
       feedback: "Not here."
@@ -161,7 +165,7 @@ describe("repertoire practice store", () => {
       card: cardOf("a", { state: "answered-correct" }),
       finalGrade: true
     });
-    expect(store().answer).toEqual({
+    expect(store().answer).toStrictEqual({
       ucis: ["e2e4", "d2d4"],
       preferredUci: "e2e4",
       explanation: "Centre.",
@@ -173,7 +177,7 @@ describe("repertoire practice store", () => {
   it("a resumed session shows the answer its card already revealed", () => {
     const revealed = { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null };
     store().setSession({ ...session(), shown: { hint: null, hintUci: null, revealed } });
-    expect(store().answer).toEqual(revealed);
+    expect(store().answer).toStrictEqual(revealed);
     store().setSession(session());
     expect(store().answer).toBeNull();
   });
@@ -256,7 +260,7 @@ describe("repertoire practice store", () => {
       card: cardOf("a", { state: "revealed" }),
       revealed: { ucis: ["g1f3"], preferredUci: "g1f3", explanation: null }
     });
-    expect(store().reveal?.ucis).toEqual(["g1f3"]);
+    expect(store().reveal?.ucis).toStrictEqual(["g1f3"]);
     expect(store().session!.totals.revealed).toBe(1);
 
     store().applyAction("skip", { card: cardOf("b", { state: "skipped" }) });
@@ -387,7 +391,7 @@ describe("repertoire practice store: line rehearsal", () => {
         endReason: null
       })
     );
-    expect(store().session!.cards.map((card) => card.queueItemId)).toEqual(["a", "x", "b"]);
+    expect(store().session!.cards.map((card) => card.queueItemId)).toStrictEqual(["a", "x", "b"]);
     expect(store().session!.cursor).toBe(0);
     expect(store().reveal).toBeNull();
     expect(store().rehearsal).toMatchObject({ replyShown: false, auto: true });
@@ -434,8 +438,8 @@ describe("repertoire practice store: line rehearsal", () => {
       card: lineCard("a", "L1", 0, { attemptsSoFar: 1 }),
       finalGrade: false
     });
-    expect(store().otherLine).toEqual(otherLine);
-    expect(store().message).toEqual({ tone: "info", text: OTHER_LINE_TEXT });
+    expect(store().otherLine).toStrictEqual(otherLine);
+    expect(store().message).toStrictEqual({ tone: "info", text: OTHER_LINE_TEXT });
     expect(store().session!.cursor).toBe(0);
     store().dismissOtherLine();
     expect(store().otherLine).toBeNull();
@@ -466,7 +470,7 @@ describe("repertoire practice store: line rehearsal", () => {
       rehearsal: { reply, next: lineCard("b", "L1", 1), lineComplete: false, endReason: null },
       revealed: { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null }
     });
-    expect(store().reveal?.ucis).toEqual(["e2e4"]);
+    expect(store().reveal?.ucis).toStrictEqual(["e2e4"]);
     expect(store().rehearsal).toMatchObject({ auto: false });
     store().continueStep();
     expect(store().rehearsal?.auto).toBe(true);
@@ -478,7 +482,7 @@ describe("repertoire practice store: line rehearsal", () => {
       card: lineCard("a", "L1", 0, { state: "answered-wrong" }),
       rehearsal: { reply: null, next: lineCard("b", "L2", 0), lineComplete: false, endReason: null }
     });
-    expect(store().session!.cards.map((card) => card.queueItemId)).toEqual(["a", "b"]);
+    expect(store().session!.cards.map((card) => card.queueItemId)).toStrictEqual(["a", "b"]);
     expect(store().rehearsal).toBeNull();
     expect(store().advance()).toBe(true);
     expect(currentCard(store().session)?.queueItemId).toBe("b");
@@ -524,7 +528,7 @@ describe("repertoire practice store: line rehearsal", () => {
       scope: { repertoireId: "r1", rehearse: { chapterId: "c1", fromNodeId: "n-e4" } }
     };
     store().setSession(fromE4);
-    expect(store().message).toEqual({ tone: "info", text: "The reply: Nc6." });
+    expect(store().message).toStrictEqual({ tone: "info", text: "The reply: Nc6." });
     expect(openingReplyMessage(fromE4, lineCard("b", "L1", 1, { nodeId: "x", leadUp }))).toBeNull();
     expect(
       openingReplyMessage(fromE4, lineCard("c", "L2", 0, { nodeId: "n-e4", leadUp }))
@@ -542,11 +546,11 @@ describe("repertoire practice store: line rehearsal", () => {
       { san: "Nc6", uci: "b8c6", fen: "f4" }
     ];
     const next = lineCard("b", "L1", 1, { leadUp });
-    expect(rehearsalReplyMessage(leadUp[1], next)).toEqual({
+    expect(rehearsalReplyMessage(leadUp[1], next)).toStrictEqual({
       tone: "info",
       text: "The reply: e5. Played for you (paused): Nf3 Nc6."
     });
-    expect(rehearsalReplyMessage(leadUp[3], next)).toEqual({
+    expect(rehearsalReplyMessage(leadUp[3], next)).toStrictEqual({
       tone: "info",
       text: "The reply: Nc6."
     });

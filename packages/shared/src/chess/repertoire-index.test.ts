@@ -91,10 +91,10 @@ describe("buildChapterLookup", () => {
         ["e4", "c5"]
       ])
     );
-    expect(lookup.order).toEqual(["root", "e4", "e4/e5", "e4/e5/Nf3", "e4/c5"]);
-    expect(lookup.childrenById.get("e4")).toEqual(["e4/e5", "e4/c5"]);
-    expect(lookup.parentPath.get("e4/e5/Nf3")).toEqual(["root", "e4", "e4/e5", "e4/e5/Nf3"]);
-    expect(lookup.parentPath.get("root")).toEqual(["root"]);
+    expect(lookup.order).toStrictEqual(["root", "e4", "e4/e5", "e4/e5/Nf3", "e4/c5"]);
+    expect(lookup.childrenById.get("e4")).toStrictEqual(["e4/e5", "e4/c5"]);
+    expect(lookup.parentPath.get("e4/e5/Nf3")).toStrictEqual(["root", "e4", "e4/e5", "e4/e5/Nf3"]);
+    expect(lookup.parentPath.get("root")).toStrictEqual(["root"]);
     expect(lookup.parentPath.get("missing")).toBeUndefined();
     expect(lookup.positionKeys.get("root")).toBe(positionKey(START_FEN));
   });
@@ -103,7 +103,7 @@ describe("buildChapterLookup", () => {
     const tree = treeFromLines([["e4", "e5"]]);
     tree.find((node) => node.id === "e4/e5")!.children.push("e4", "missing");
     const lookup = buildChapterLookup({ tree });
-    expect(lookup.order).toEqual(["root", "e4", "e4/e5"]);
+    expect(lookup.order).toStrictEqual(["root", "e4", "e4/e5"]);
   });
 
   it("requires a root", () => {
@@ -152,9 +152,9 @@ describe("computeScopeStates", () => {
 
   it("marks whole reference or disabled chapters", () => {
     const reference = computeScopeStates(chapter("c", lines, {}, { kind: "reference" }));
-    expect(new Set(reference.values())).toEqual(new Set(["reference"]));
+    expect(new Set(reference.values())).toStrictEqual(new Set(["reference"]));
     const disabled = computeScopeStates(chapter("c", lines, {}, { enabled: false }));
-    expect(new Set(disabled.values())).toEqual(new Set(["disabled"]));
+    expect(new Set(disabled.values())).toStrictEqual(new Set(["disabled"]));
   });
 });
 
@@ -164,13 +164,16 @@ describe("collectDecisions", () => {
       chapter("c", [["e4", "e5", "Nf3"], ["e4", "c5", "Nf3"], ["d4"]])
     ]);
     const start = decisions.get(positionKey(START_FEN))!;
-    expect([...start.acceptedUcis]).toEqual(["e2e4", "d2d4"]);
+    expect([...start.acceptedUcis]).toStrictEqual(["e2e4", "d2d4"]);
     expect(decisions.size).toBe(3); // start, after 1.e4 e5, after 1.e4 c5
   });
 
   it("only keys positions of the repertoire's color", () => {
     const decisions = collectDecisions("black", [chapter("c", [["e4", "e5", "Nf3", "Nc6"]])]);
-    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toEqual([["e7e5"], ["b8c6"]]);
+    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toStrictEqual([
+      ["e7e5"],
+      ["b8c6"]
+    ]);
   });
 
   it("counts a transposed position once across chapters, with every occurrence", () => {
@@ -180,11 +183,11 @@ describe("collectDecisions", () => {
     ]);
     const key = positionKey(treeFromLines([["d4", "d5", "Nf3"]]).at(-1)!.fenAfter);
     const shared = decisions.get(key)!;
-    expect(shared.occurrences.map((o) => [o.chapterId, o.chapterOrder])).toEqual([
+    expect(shared.occurrences.map((o) => [o.chapterId, o.chapterOrder])).toStrictEqual([
       ["a", 0],
       ["b", 1]
     ]);
-    expect([...shared.acceptedUcis]).toEqual(["g8f6"]);
+    expect([...shared.acceptedUcis]).toStrictEqual(["g8f6"]);
     // after 1.d4 · after 1.Nf3 · the transposed position
     expect(decisions.size).toBe(3);
   });
@@ -193,7 +196,7 @@ describe("collectDecisions", () => {
     const shuffle = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
     const decisions = collectDecisions("white", [chapter("c", [shuffle])]);
     const start = decisions.get(positionKey(START_FEN))!;
-    expect(start.occurrences.map((o) => o.nodeId)).toEqual(["root", "Nf3/Nf6/Ng1/Ng8"]);
+    expect(start.occurrences.map((o) => o.nodeId)).toStrictEqual(["root", "Nf3/Nf6/Ng1/Ng8"]);
     expect(decisions.size).toBe(2);
   });
 
@@ -206,7 +209,7 @@ describe("collectDecisions", () => {
     const viaReference = collectDecisions("white", [
       chapter("c", [["e4", "e5", "Nf3"], ["d4"]], { e4: { edge: "reference" } })
     ]);
-    expect([...viaReference.values()].map((d) => [...d.acceptedUcis])).toEqual([["d2d4"]]);
+    expect([...viaReference.values()].map((d) => [...d.acceptedUcis])).toStrictEqual([["d2d4"]]);
   });
 
   it("respects start/stop boundaries", () => {
@@ -218,7 +221,10 @@ describe("collectDecisions", () => {
       })
     ]);
     // 1.e4 is before the start; 3.Bb5 is trained; 4.Ba4 is after the stop.
-    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toEqual([["g1f3"], ["f1b5"]]);
+    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toStrictEqual([
+      ["g1f3"],
+      ["f1b5"]
+    ]);
   });
 });
 
@@ -235,7 +241,7 @@ describe("decision helpers", () => {
   };
 
   it("intersects stored choices with supported ones", () => {
-    expect(effectiveAcceptedUcis(decision, new Set(["c2c4", "e2e4", "g1f3"]))).toEqual([
+    expect(effectiveAcceptedUcis(decision, new Set(["c2c4", "e2e4", "g1f3"]))).toStrictEqual([
       "e2e4",
       "c2c4"
     ]);
@@ -263,9 +269,9 @@ describe("decision helpers", () => {
     const { upserts, suspendedKeys } = reconcileDecisions(existing, collected, {
       repertoireId: "r"
     });
-    expect(suspendedKeys).toEqual(["gone"]);
+    expect(suspendedKeys).toStrictEqual(["gone"]);
     const start = upserts.find((d) => d.positionKey === startKey)!;
-    expect(start.acceptedUcis).toEqual(["c2c4", "e2e4", "d2d4"]);
+    expect(start.acceptedUcis).toStrictEqual(["c2c4", "e2e4", "d2d4"]);
     expect(start.preferredUci).toBe("c2c4"); // inactive preference is kept
     const fresh = upserts.find((d) => d.positionKey === afterE5)!;
     expect(fresh).toMatchObject({
@@ -276,7 +282,7 @@ describe("decision helpers", () => {
 
     // Re-running with the result stored changes nothing.
     const again = reconcileDecisions(upserts, collected, { repertoireId: "r" });
-    expect(again).toEqual({ upserts: [], suspendedKeys: [] });
+    expect(again).toStrictEqual({ upserts: [], suspendedKeys: [] });
   });
 
   it("fills in a missing preference", () => {
@@ -287,7 +293,7 @@ describe("decision helpers", () => {
       collected,
       { repertoireId: "r" }
     );
-    expect(upserts).toEqual([expect.objectContaining({ preferredUci: "e2e4" })]);
+    expect(upserts).toStrictEqual([expect.objectContaining({ preferredUci: "e2e4" })]);
   });
 });
 
@@ -295,7 +301,7 @@ describe("defaultImportNodeMeta", () => {
   it("includes the first own move, references own alternatives and covers opponent moves", () => {
     const tree = treeFromLines([["e4", "e5", "Nf3"], ["e4", "e5", "Bc4"], ["e4", "c5"], ["d4"]]);
     const meta = defaultImportNodeMeta("white", tree);
-    expect(meta).toEqual({
+    expect(meta).toStrictEqual({
       e4: { edge: "included" },
       d4: { edge: "reference" },
       "e4/e5": { edge: "covered" },
@@ -306,6 +312,9 @@ describe("defaultImportNodeMeta", () => {
     const decisions = collectDecisions("white", [
       { id: "c", kind: "opening", enabled: true, sortOrder: 0, tree, nodeMeta: meta }
     ]);
-    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toEqual([["e2e4"], ["g1f3"]]);
+    expect([...decisions.values()].map((d) => [...d.acceptedUcis])).toStrictEqual([
+      ["e2e4"],
+      ["g1f3"]
+    ]);
   });
 });

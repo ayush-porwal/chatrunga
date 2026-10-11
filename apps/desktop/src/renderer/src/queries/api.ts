@@ -43,7 +43,7 @@ export function useEngineRegistrySubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      api()?.onEnginesChanged?.(
+      api()?.onEnginesChanged(
         () => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })
       ),
     [queryClient]
@@ -98,7 +98,7 @@ export function useDeleteEngineMutation() {
 }
 
 /** Games a library list fetches at a time (and adds on "Show more"). */
-export const GAME_PAGE_SIZE = 50;
+const GAME_PAGE_SIZE = 50;
 
 const NO_GAMES: GameListPage = { items: [], nextCursor: null };
 const NO_FACETS: GameLibraryFacets = { hasGames: false, tabs: emptyTabCounts() };
@@ -344,14 +344,14 @@ export function useUpdateSettingMutation() {
     (
       { key, value }: { key: keyof AppSettings; value: unknown },
       options?: Parameters<typeof mutatePatch>[1]
-    ) => mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
+    ) => mutatePatch({ patch: { [key]: value } }, options),
     [mutatePatch]
   );
   const mutateAsync = useCallback(
     (
       { key, value }: { key: keyof AppSettings; value: unknown },
       options?: Parameters<typeof mutatePatchAsync>[1]
-    ) => mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
+    ) => mutatePatchAsync({ patch: { [key]: value } }, options),
     [mutatePatchAsync]
   );
   return { ...update, mutate, mutateAsync };

@@ -216,43 +216,12 @@ export function AppPages({
             onResume={on.resumeRepertoirePractice}
             onReview={on.reviewRepertoire}
           />
-        ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
-          <RepertoireStudyPage
-            repertoireId={repertoire.repertoireId}
-            chapterId={repertoire.chapterId}
-            initialNodeId={repertoire.nodeId}
-            initialOrientation={repertoire.orientation}
-            tab={repertoire.tab}
-            stage={repertoire.stage}
-            onStageApplied={on.repertoireStageApplied}
-            onTabChange={on.repertoireTabChange}
-            onOpenChapter={(chapterId, nodeId = null) =>
-              on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
-            }
-            onPractice={(chapterIds) =>
-              on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
-            }
-            onRehearse={(target) =>
-              on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
-            }
-            onMissing={on.repertoireMissing}
-            onHub={on.repertoireHub}
-            onPositionChanged={on.repertoirePositionChanged}
-            onOpenGame={on.openGameAtNode}
-            onOpenEngineSettings={on.engineSettings}
-            onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
-          />
-        ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
-          <RepertoirePracticePage
-            repertoireId={repertoire.repertoireId}
-            sessionId={repertoire.sessionId}
-            preset={repertoire.preset}
-            onSessionStarted={on.repertoirePracticeStarted}
-            onSetup={on.repertoirePracticeSetup}
-            onStudy={({ chapterId, nodeId }) =>
-              on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
-            }
-            onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
+        ) : view === "repertoire-study" || view === "repertoire-practice" ? (
+          <RepertoireScreenPage
+            view={view}
+            repertoire={repertoire}
+            desktopApiAvailable={desktopApiAvailable}
+            on={on}
           />
         ) : view === "settings" ? (
           <SettingsPage
@@ -263,10 +232,6 @@ export function AppPages({
           <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
         ) : view === "databases" ? (
           <DatabasePage onTrain={on.trainWithDatabase} />
-        ) : view === "repertoire-study" || view === "repertoire-practice" ? (
-          // Its route is still catching up (the router applies a URL change in a transition, after
-          // the view): not the game's board meanwhile.
-          <PageLoading />
         ) : view === "game-review" ? (
           <GameReviewPage
             activeTab={reviewTab}
@@ -298,6 +263,65 @@ export function AppPages({
         )}
       </Suspense>
     </OpenSettingsContext.Provider>
+  );
+}
+
+/** The study or practice page of the repertoire screen the route names. */
+function RepertoireScreenPage({
+  view,
+  repertoire,
+  desktopApiAvailable,
+  on
+}: {
+  view: "repertoire-study" | "repertoire-practice";
+  repertoire: RepertoireScreen | null;
+  desktopApiAvailable: boolean;
+  on: PageCommands;
+}) {
+  // Its route is still catching up (the router applies a URL change in a transition, after the
+  // view): not the game's board meanwhile.
+  if (repertoire?.view !== view) return <PageLoading />;
+  if (repertoire.view === "repertoire-study") {
+    return (
+      <RepertoireStudyPage
+        repertoireId={repertoire.repertoireId}
+        chapterId={repertoire.chapterId}
+        initialNodeId={repertoire.nodeId}
+        initialOrientation={repertoire.orientation}
+        tab={repertoire.tab}
+        stage={repertoire.stage}
+        onStageApplied={on.repertoireStageApplied}
+        onTabChange={on.repertoireTabChange}
+        onOpenChapter={(chapterId, nodeId = null) =>
+          on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+        }
+        onPractice={(chapterIds) =>
+          on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
+        }
+        onRehearse={(target) =>
+          on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
+        }
+        onMissing={on.repertoireMissing}
+        onHub={on.repertoireHub}
+        onPositionChanged={on.repertoirePositionChanged}
+        onOpenGame={on.openGameAtNode}
+        onOpenEngineSettings={on.engineSettings}
+        onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
+      />
+    );
+  }
+  return (
+    <RepertoirePracticePage
+      repertoireId={repertoire.repertoireId}
+      sessionId={repertoire.sessionId}
+      preset={repertoire.preset}
+      onSessionStarted={on.repertoirePracticeStarted}
+      onSetup={on.repertoirePracticeSetup}
+      onStudy={({ chapterId, nodeId }) =>
+        on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+      }
+      onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
+    />
   );
 }
 

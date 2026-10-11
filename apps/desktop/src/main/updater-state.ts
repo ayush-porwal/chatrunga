@@ -424,50 +424,15 @@ export function reduceUpdateStatus(status: UpdateStatus, event: UpdateEvent): Up
       return status.kind === "downloading" || status.kind === "ready"
         ? status
         : { kind: "checking" };
-    case "available": {
-      if (status.kind === "ready" && status.version === event.info.version) return status;
-      if (status.kind === "downloading" && status.version === event.info.version) return status;
-      const manualUrl = event.manualUrl;
-      // The manual path downloads one specific file (the DMG); its size, not the updater package's.
-      const manualFile = manualUrl
-        ? event.info.files?.find(
-            (file) =>
-              manualUrl.endsWith(encodeURIComponent(file.url)) || manualUrl.endsWith(file.url)
-          )
-        : undefined;
-      const common = {
-        version: event.info.version,
-        notes: releaseNotesToText(event.info.releaseNotes),
-        sizeBytes: manualUrl ? (manualFile?.size ?? null) : updateSize(event.info),
-        releaseDate: event.info.releaseDate ?? null
-      };
-      return event.manualUrl
-        ? { kind: "manual", ...common, url: event.manualUrl }
-        : { kind: "available", ...common };
-    }
+    case "available":
+      return afterAvailable(status, event);
     case "not-available":
       return status.kind === "ready" || status.kind === "downloading"
         ? status
         : { kind: "up-to-date" };
     case "download-started":
-    case "progress": {
-      if (status.kind !== "available" && status.kind !== "downloading") return status;
-      const percent = event.type === "progress" ? Math.max(0, Math.min(100, event.percent)) : 0;
-      return {
-        kind: "downloading",
-        version: status.version,
-        notes: status.notes,
-        releaseDate: status.releaseDate,
-        percent,
-        transferredBytes: event.type === "progress" ? event.transferred : 0,
-        totalBytes:
-          event.type === "progress"
-            ? event.total
-            : status.kind === "available"
-              ? (status.sizeBytes ?? 0)
-              : status.totalBytes
-      };
-    }
+    case "progress":
+      return afterDownloadProgress(status, event);
     case "downloaded":
       return {
         kind: "ready",
@@ -481,6 +446,50 @@ export function reduceUpdateStatus(status: UpdateStatus, event: UpdateEvent): Up
       return { kind: "error", message: readableUpdateError(event.error, phase) };
     }
   }
+}
+
+/** An update was found: offered to download (or by its manual URL), unless it is already coming. */
+function afterAvailable(
+  status: UpdateStatus,
+  event: Extract<UpdateEvent, { type: "available" }>
+): UpdateStatus {
+  if (status.kind === "ready" && status.version === event.info.version) return status;
+  if (status.kind === "downloading" && status.version === event.info.version) return status;
+  const manualUrl = event.manualUrl;
+  // The manual path downloads one specific file (the DMG); its size, not the updater package's.
+  const manualFile = manualUrl
+    ? event.info.files?.find(
+        (file) => manualUrl.endsWith(encodeURIComponent(file.url)) || manualUrl.endsWith(file.url)
+      )
+    : undefined;
+  const common = {
+    version: event.info.version,
+    notes: releaseNotesToText(event.info.releaseNotes),
+    sizeBytes: manualUrl ? (manualFile?.size ?? null) : updateSize(event.info),
+    releaseDate: event.info.releaseDate ?? null
+  };
+  return manualUrl
+    ? { kind: "manual", ...common, url: manualUrl }
+    : { kind: "available", ...common };
+}
+
+/** A download started or moved on: only an offered or running download becomes `downloading`. */
+function afterDownloadProgress(
+  status: UpdateStatus,
+  event: Extract<UpdateEvent, { type: "download-started" | "progress" }>
+): UpdateStatus {
+  if (status.kind !== "available" && status.kind !== "downloading") return status;
+  const progress = event.type === "progress" ? event : null;
+  return {
+    kind: "downloading",
+    version: status.version,
+    notes: status.notes,
+    releaseDate: status.releaseDate,
+    percent: progress ? Math.max(0, Math.min(100, progress.percent)) : 0,
+    transferredBytes: progress ? progress.transferred : 0,
+    totalBytes:
+      progress?.total ?? (status.kind === "available" ? (status.sizeBytes ?? 0) : status.totalBytes)
+  };
 }
 
 /** Statuses during which starting another check is pointless or would disturb the flow. */

@@ -414,6 +414,9 @@ function parseGameLink(
   };
 }
 
+/** The repertoire an entry describes, as warnings and errors name it. */
+type EntryScope = { repertoireId: string; label: string; warnings: string[] };
+
 function parseEntry(
   value: unknown,
   index: number,
@@ -421,12 +424,38 @@ function parseEntry(
   warnings: string[]
 ): RepertoireBackupEntry {
   const entry = object(value, `repertoire ${index + 1}`);
-  const meta = object(entry.repertoire, `repertoire ${index + 1}`);
-  const repertoireId = id(meta.id, `repertoire ${index + 1}`);
-  const name = text(meta.name, `repertoire ${index + 1} name`, 200).trim();
-  const label = `repertoire "${name || repertoireId}"`;
+  const repertoire = parseRepertoireMeta(entry.repertoire, `repertoire ${index + 1}`);
+  const label = repertoireLabel(repertoire);
+  const scope: EntryScope = { repertoireId: repertoire.id, label, warnings };
+  const chapters = parseChapters(entry.chapters, scope);
+  const chapterIds = new Set(chapters.map((chapter) => chapter.id));
+  const decisions = parseDecisions(entry.decisions, scope);
+  const progress = parseProgressList(entry.progress, scope, options);
+  const gameLinks = array(entry.gameLinks ?? [], `${label} game links`).map((item, linkIndex) =>
+    parseGameLink(item, repertoire.id, chapterIds, `${label} game link ${linkIndex + 1}`)
+  );
+  return {
+    repertoire,
+    chapters,
+    decisions,
+    progress,
+    workspace: parseWorkspace(entry.workspace, chapterIds, `${label} workspace`),
+    gameLinks
+  };
+}
+
+/** How warnings and errors name a repertoire. */
+function repertoireLabel({ id, name }: { id: string; name: string }): string {
+  return `repertoire "${name || id}"`;
+}
+
+function parseRepertoireMeta(value: unknown, where: string): RepertoireBackupEntry["repertoire"] {
+  const meta = object(value, where);
+  const repertoireId = id(meta.id, where);
+  const name = text(meta.name, `${where} name`, 200).trim();
+  const label = repertoireLabel({ id: repertoireId, name });
   const tags = meta.tags === undefined ? [] : stringList(meta.tags, `${label} tags`, MAX_TAGS);
-  const repertoire: RepertoireBackupEntry["repertoire"] = {
+  return {
     id: repertoireId,
     name,
     color: color(meta.color, `${label} color`),
@@ -437,10 +466,13 @@ function parseEntry(
     createdAt: finite(meta.createdAt, `${label} creation time`),
     updatedAt: finite(meta.updatedAt, `${label} update time`)
   };
+}
 
+/** The entry's chapters; ones damaged when backed up are left out with a warning. */
+function parseChapters(value: unknown, { label, warnings }: EntryScope): RepertoireChapter[] {
   const chapters: RepertoireChapter[] = [];
   let damaged = 0;
-  array(entry.chapters, `${label} chapters`).forEach((chapter, chapterIndex) => {
+  array(value, `${label} chapters`).forEach((chapter, chapterIndex) => {
     // A chapter that was already unreadable when backed up holds raw data only.
     if (isObject(chapter) && isObject(chapter.damaged)) damaged += 1;
     else chapters.push(parseChapter(chapter, `${label} chapter ${chapterIndex + 1}`));
@@ -455,12 +487,18 @@ function parseEntry(
     if (chapterIds.has(chapter.id)) invalid(`${label} lists chapter "${chapter.title}" twice`);
     chapterIds.add(chapter.id);
   }
+  return chapters;
+}
 
-  // Decisions no chapter reaches are kept: the restore suspends them, as the library did.
+/** Decisions no chapter reaches are kept: the restore suspends them, as the library did. */
+function parseDecisions(
+  value: unknown,
+  { repertoireId, label, warnings }: EntryScope
+): RepertoireDecision[] {
   const decisions: RepertoireDecision[] = [];
   const seenDecisions = new Set<string>();
   let malformedDecisions = 0;
-  array(entry.decisions, `${label} decisions`).forEach((item, decisionIndex) => {
+  array(value, `${label} decisions`).forEach((item, decisionIndex) => {
     const decision = parseDecision(item, repertoireId, `${label} decision ${decisionIndex + 1}`);
     if (!isWellFormedKey(decision.positionKey) || seenDecisions.has(decision.positionKey)) {
       malformedDecisions += 1;
@@ -474,50 +512,46 @@ function parseEntry(
       `${label}: ${dropped(malformedDecisions, "decision", "decisions", "have a valid, unique position key")}`
     );
   }
+  return decisions;
+}
 
-  let progress: RepertoireProgress[] | null = null;
-  if (entry.progress !== null && entry.progress !== undefined) {
-    const rows = array(entry.progress, `${label} progress`).map((item, rowIndex) =>
-      parseProgress(item, repertoireId, `${label} progress entry ${rowIndex + 1}`)
-    );
-    if (options.keepProgress) {
-      progress = [];
-      const seen = new Set<string>();
-      let malformed = 0;
-      let newer = 0;
-      for (const row of rows) {
-        if (row.schedulerVersion > options.schedulerVersion) newer += 1;
-        else if (!isWellFormedKey(row.positionKey) || seen.has(row.positionKey)) malformed += 1;
-        else {
-          seen.add(row.positionKey);
-          progress.push(row);
-        }
-      }
-      if (malformed) {
-        warnings.push(
-          `${label}: ${dropped(malformed, "progress entry", "progress entries", "have a valid, unique position key")}`
-        );
-      }
-      if (newer) {
-        warnings.push(
-          `${label}: ${newer} progress entr${newer === 1 ? "y was" : "ies were"} scheduled by a newer app and left out`
-        );
-      }
+/**
+ * The entry's progress (null: none backed up, or not kept). Every row is checked, kept or not;
+ * rows scheduled by a newer app, and malformed or duplicate keys, are left out with a warning.
+ */
+function parseProgressList(
+  value: unknown,
+  { repertoireId, label, warnings }: EntryScope,
+  options: { keepProgress: boolean; schedulerVersion: number }
+): RepertoireProgress[] | null {
+  if (value === null || value === undefined) return null;
+  const rows = array(value, `${label} progress`).map((item, rowIndex) =>
+    parseProgress(item, repertoireId, `${label} progress entry ${rowIndex + 1}`)
+  );
+  if (!options.keepProgress) return null;
+  const progress: RepertoireProgress[] = [];
+  const seen = new Set<string>();
+  let malformed = 0;
+  let newer = 0;
+  for (const row of rows) {
+    if (row.schedulerVersion > options.schedulerVersion) newer += 1;
+    else if (!isWellFormedKey(row.positionKey) || seen.has(row.positionKey)) malformed += 1;
+    else {
+      seen.add(row.positionKey);
+      progress.push(row);
     }
   }
-
-  const gameLinks = array(entry.gameLinks ?? [], `${label} game links`).map((item, linkIndex) =>
-    parseGameLink(item, repertoireId, chapterIds, `${label} game link ${linkIndex + 1}`)
-  );
-
-  return {
-    repertoire,
-    chapters,
-    decisions,
-    progress,
-    workspace: parseWorkspace(entry.workspace, chapterIds, `${label} workspace`),
-    gameLinks
-  };
+  if (malformed) {
+    warnings.push(
+      `${label}: ${dropped(malformed, "progress entry", "progress entries", "have a valid, unique position key")}`
+    );
+  }
+  if (newer) {
+    warnings.push(
+      `${label}: ${newer} progress entr${newer === 1 ? "y was" : "ies were"} scheduled by a newer app and left out`
+    );
+  }
+  return progress;
 }
 
 /**
@@ -532,24 +566,67 @@ export function validateBackupDocument(
   value: unknown,
   limits: BackupLimits = DEFAULT_BACKUP_LIMITS
 ): { document: RepertoireBackupDocument; warnings: string[] } {
-  let parsed = value;
-  if (typeof value === "string") {
-    const bytes = value.length > limits.maxBytes ? value.length : bytesOf(value);
-    if (bytes > limits.maxBytes) {
-      invalid(`the file is ${mib(bytes)}; backups up to ${mib(limits.maxBytes)} can be restored`);
-    }
-    try {
-      parsed = JSON.parse(value.startsWith("\uFEFF") ? value.slice(1) : value);
-    } catch {
-      invalid("the file isn't valid JSON; choose a Chaturanga repertoire backup");
-    }
-  }
+  const parsed = typeof value === "string" ? parseBackupText(value, limits) : value;
   if (!isObject(parsed) || parsed.format !== REPERTOIRE_BACKUP_FORMAT) {
     invalid("this isn't a Chaturanga repertoire backup");
   }
   if (parsed.formatVersion !== REPERTOIRE_BACKUP_FORMAT_VERSION) {
     invalid(`format version ${String(parsed.formatVersion)} isn't supported by this app`);
   }
+  const warnings: string[] = [];
+  const { positionKeyVersion, schedulerVersion, keepProgress } = checkVersions(
+    parsed,
+    limits,
+    warnings
+  );
+
+  const app = isObject(parsed.app) ? parsed.app : {};
+  const entries = array(parsed.repertoires, "the repertoire list");
+  checkSize(entries, limits);
+  const repertoires = entries.map((entry, index) =>
+    parseEntry(entry, index, { keepProgress, schedulerVersion: limits.schedulerVersion }, warnings)
+  );
+  checkUniqueIds(repertoires);
+
+  return {
+    document: {
+      format: REPERTOIRE_BACKUP_FORMAT,
+      formatVersion: REPERTOIRE_BACKUP_FORMAT_VERSION,
+      positionKeyVersion,
+      schedulerVersion,
+      exportedAt: finite(parsed.exportedAt, "the export time"),
+      app: {
+        name: typeof app.name === "string" ? app.name.slice(0, 100) : "",
+        version: typeof app.version === "string" ? app.version.slice(0, 50) : ""
+      },
+      repertoires
+    },
+    warnings
+  };
+}
+
+/** A backup file's JSON, within the size limit (a leading byte order mark ignored). */
+function parseBackupText(value: string, limits: BackupLimits): unknown {
+  const bytes = value.length > limits.maxBytes ? value.length : bytesOf(value);
+  if (bytes > limits.maxBytes) {
+    invalid(`the file is ${mib(bytes)}; backups up to ${mib(limits.maxBytes)} can be restored`);
+  }
+  try {
+    return JSON.parse(value.startsWith("\uFEFF") ? value.slice(1) : value);
+  } catch {
+    invalid("the file isn't valid JSON; choose a Chaturanga repertoire backup");
+  }
+}
+
+/**
+ * The backup's position-key and scheduler versions: a newer position key can't be restored; an
+ * older one, or progress from a newer scheduler (left out), restores with a warning.
+ */
+function checkVersions(
+  parsed: Fields,
+  limits: BackupLimits,
+  warnings: string[]
+): { positionKeyVersion: number; schedulerVersion: number; keepProgress: boolean } {
   const positionKeyVersion = wholeNumber(parsed.positionKeyVersion, "the position key version");
   const schedulerVersion = wholeNumber(parsed.schedulerVersion, "the scheduler version");
   if (positionKeyVersion > limits.positionKeyVersion) {
@@ -557,7 +634,6 @@ export function validateBackupDocument(
       `it uses position key version ${positionKeyVersion}, newer than this app's ${limits.positionKeyVersion}; update Chaturanga to restore it`
     );
   }
-  const warnings: string[] = [];
   if (positionKeyVersion < limits.positionKeyVersion) {
     warnings.push(
       `The backup uses position key version ${positionKeyVersion}; decisions and progress keyed by it may not carry over`
@@ -569,9 +645,11 @@ export function validateBackupDocument(
       `Progress was scheduled by a newer app (scheduler version ${schedulerVersion}); it will be left out`
     );
   }
+  return { positionKeyVersion, schedulerVersion, keepProgress };
+}
 
-  const app = isObject(parsed.app) ? parsed.app : {};
-  const entries = array(parsed.repertoires, "the repertoire list");
+/** The repertoire, chapter and move counts against the limits, before anything is parsed. */
+function checkSize(entries: readonly unknown[], limits: BackupLimits): void {
   if (entries.length > limits.maxRepertoires) {
     invalid(
       `it has ${formatCount(entries.length)} repertoires; at most ${formatCount(limits.maxRepertoires)} can be restored at once`
@@ -596,10 +674,10 @@ export function validateBackupDocument(
       `it has ${formatCount(nodeTotal)} moves; at most ${formatCount(limits.maxNodes)} can be restored at once`
     );
   }
+}
 
-  const repertoires = entries.map((entry, index) =>
-    parseEntry(entry, index, { keepProgress, schedulerVersion: limits.schedulerVersion }, warnings)
-  );
+/** Each repertoire once, and each chapter in only one of them. */
+function checkUniqueIds(repertoires: readonly RepertoireBackupEntry[]): void {
   const repertoireIds = new Set<string>();
   const chapterIds = new Set<string>();
   for (const entry of repertoires) {
@@ -614,22 +692,6 @@ export function validateBackupDocument(
       chapterIds.add(chapter.id);
     }
   }
-
-  return {
-    document: {
-      format: REPERTOIRE_BACKUP_FORMAT,
-      formatVersion: REPERTOIRE_BACKUP_FORMAT_VERSION,
-      positionKeyVersion,
-      schedulerVersion,
-      exportedAt: finite(parsed.exportedAt, "the export time"),
-      app: {
-        name: typeof app.name === "string" ? app.name.slice(0, 100) : "",
-        version: typeof app.version === "string" ? app.version.slice(0, 50) : ""
-      },
-      repertoires
-    },
-    warnings
-  };
 }
 
 /* ------------------------------------------------------------------ diff and remap */
@@ -709,8 +771,26 @@ export function diffBackupEntry(
   incoming: RepertoireBackupEntry,
   context: { sessionCount?: number } = {}
 ): BackupDiff {
-  const before = new Map(existing.chapters.map((chapter) => [chapter.id, chapter]));
-  const after = new Map(incoming.chapters.map((chapter) => [chapter.id, chapter]));
+  const oldLinks = new Set(existing.gameLinks.map(linkContent));
+  const newLinks = new Set(incoming.gameLinks.map(linkContent));
+  return {
+    ...chapterChanges(existing.chapters, incoming.chapters),
+    decisionsChanged: decisionChanges(existing.decisions, incoming.decisions),
+    progressEntries: incoming.progress?.length ?? 0,
+    progressDiscarded: existing.progress?.length ?? 0,
+    sessionsDiscarded: context.sessionCount ?? 0,
+    linksAdded: [...newLinks].filter((link) => !oldLinks.has(link)).length,
+    linksRemoved: [...oldLinks].filter((link) => !newLinks.has(link)).length,
+    metadataChanged: metadataChanges(existing.repertoire, incoming.repertoire)
+  };
+}
+
+function chapterChanges(
+  existing: readonly RepertoireChapter[],
+  incoming: readonly RepertoireChapter[]
+): Pick<BackupDiff, "chaptersAdded" | "chaptersChanged" | "chaptersRemoved"> {
+  const before = new Map(existing.map((chapter) => [chapter.id, chapter]));
+  const after = new Map(incoming.map((chapter) => [chapter.id, chapter]));
   let chaptersAdded = 0;
   let chaptersChanged = 0;
   for (const [chapterId, chapter] of after) {
@@ -719,40 +799,36 @@ export function diffBackupEntry(
     else if (chapterContent(previous) !== chapterContent(chapter)) chaptersChanged += 1;
   }
   const chaptersRemoved = [...before.keys()].filter((chapterId) => !after.has(chapterId)).length;
+  return { chaptersAdded, chaptersChanged, chaptersRemoved };
+}
 
-  const oldDecisions = new Map(existing.decisions.map((item) => [item.positionKey, item]));
-  const newDecisions = new Map(incoming.decisions.map((item) => [item.positionKey, item]));
+/** Decisions added, removed or edited, by position key. */
+function decisionChanges(
+  existing: readonly RepertoireDecision[],
+  incoming: readonly RepertoireDecision[]
+): number {
+  const oldDecisions = new Map(existing.map((item) => [item.positionKey, item]));
+  const newDecisions = new Map(incoming.map((item) => [item.positionKey, item]));
   let decisionsChanged = 0;
   for (const key of new Set([...oldDecisions.keys(), ...newDecisions.keys()])) {
     const a = oldDecisions.get(key);
     const b = newDecisions.get(key);
     if (!a || !b || decisionContent(a) !== decisionContent(b)) decisionsChanged += 1;
   }
-  const oldLinks = new Set(existing.gameLinks.map(linkContent));
-  const newLinks = new Set(incoming.gameLinks.map(linkContent));
-  const linksAdded = [...newLinks].filter((link) => !oldLinks.has(link)).length;
-  const linksRemoved = [...oldLinks].filter((link) => !newLinks.has(link)).length;
-  const a = existing.repertoire;
-  const b = incoming.repertoire;
-  const metadataChanged = [
+  return decisionsChanged;
+}
+
+function metadataChanges(
+  a: RepertoireBackupEntry["repertoire"],
+  b: RepertoireBackupEntry["repertoire"]
+): string[] {
+  return [
     a.name !== b.name && "name",
     a.description !== b.description && "description",
     canonical(a.tags) !== canonical(b.tags) && "tags",
     a.archivedAt !== b.archivedAt && "archivedAt",
     a.color !== b.color && "color"
   ].filter((field): field is string => Boolean(field));
-  return {
-    chaptersAdded,
-    chaptersChanged,
-    chaptersRemoved,
-    decisionsChanged,
-    progressEntries: incoming.progress?.length ?? 0,
-    progressDiscarded: existing.progress?.length ?? 0,
-    sessionsDiscarded: context.sessionCount ?? 0,
-    linksAdded,
-    linksRemoved,
-    metadataChanged
-  };
 }
 
 /**

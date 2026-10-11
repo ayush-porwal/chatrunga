@@ -24,22 +24,30 @@ describe("BEST line cursor", () => {
   });
 
   it("steps forward along the line and stays on its last move past the end", () => {
-    expect(stepBestLine(line(0), 1)).toEqual({ kind: "line", cursor: line(1) });
-    expect(stepBestLine(line(2), 1)).toEqual({ kind: "line", cursor: line(2) });
-    expect(stepBestLine(line(1), 5)).toEqual({ kind: "line", cursor: line(2) });
+    expect(stepBestLine(line(0), 1)).toStrictEqual({ kind: "line", cursor: line(1) });
+    expect(stepBestLine(line(2), 1)).toStrictEqual({ kind: "line", cursor: line(2) });
+    expect(stepBestLine(line(1), 5)).toStrictEqual({ kind: "line", cursor: line(2) });
   });
 
   it("steps back along the line, then to the game move it branches from", () => {
-    expect(stepBestLine(line(2), -1)).toEqual({ kind: "line", cursor: line(1) });
-    expect(stepBestLine(line(0), -1)).toEqual({ kind: "game", nodeId: "before", stepsLeft: 0 });
+    expect(stepBestLine(line(2), -1)).toStrictEqual({ kind: "line", cursor: line(1) });
+    expect(stepBestLine(line(0), -1)).toStrictEqual({
+      kind: "game",
+      nodeId: "before",
+      stepsLeft: 0
+    });
     // Scrubbing further back carries on along the game from there.
-    expect(stepBestLine(line(1), -4)).toEqual({ kind: "game", nodeId: "before", stepsLeft: -2 });
+    expect(stepBestLine(line(1), -4)).toStrictEqual({
+      kind: "game",
+      nodeId: "before",
+      stepsLeft: -2
+    });
   });
 
   it("names the move on the board and the moves leading to it", () => {
     expect(bestLineStep(line(1)).fenAfter).toBe("fen-2");
-    expect(bestLineSans(line(1))).toEqual(["Nxd4", "exd4"]);
-    expect(bestLineSans(line(0))).toEqual(["Nxd4"]);
+    expect(bestLineSans(line(1))).toStrictEqual(["Nxd4", "exd4"]);
+    expect(bestLineSans(line(0))).toStrictEqual(["Nxd4"]);
   });
 
   it("is active only while the game is on its error and the board on its move", () => {

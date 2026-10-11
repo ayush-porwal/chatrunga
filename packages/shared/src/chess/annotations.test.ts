@@ -6,11 +6,11 @@ describe("PGN annotation comments", () => {
     const parsed = parseAnnotationComment("Idea [%cal Gg1f3,Rd1h5] [%csl Ye4,Bh7]");
     expect(parsed.clock).toBeNull();
     expect(parsed.text).toBe("Idea");
-    expect(parsed.arrows).toEqual([
+    expect(parsed.arrows).toStrictEqual([
       { color: "green", orig: "g1", dest: "f3" },
       { color: "red", orig: "d1", dest: "h5" }
     ]);
-    expect(parsed.highlights).toEqual([
+    expect(parsed.highlights).toStrictEqual([
       { color: "yellow", square: "e4" },
       { color: "blue", square: "h7" }
     ]);

@@ -67,7 +67,7 @@ const good = JSON.stringify({
 
 describe("puzzle explanation contract", () => {
   it("accepts a grounded answer and keeps headline and body", () => {
-    expect(validatePuzzleProse(good, payload())).toEqual({
+    expect(validatePuzzleProse(good, payload())).toStrictEqual({
       ok: true,
       headline: "The f7 pawn was the target",
       prose: expect.stringContaining("Qxf7#")
@@ -75,7 +75,7 @@ describe("puzzle explanation contract", () => {
   });
 
   it("grounds the solution, engine lines, the wrong move, its refutation and SAN in the ideas", () => {
-    expect([...puzzleGroundedSanTokens(payload())].sort()).toEqual([
+    expect([...puzzleGroundedSanTokens(payload())].sort()).toStrictEqual([
       "Bc5",
       "Nxe5",
       "Qe2",

@@ -3,7 +3,6 @@
  * games: each decided try is a row here, and the first try at a Lichess puzzle rates the solver
  * (chess/puzzle-rating.ts), in the same transaction as the row.
  */
-import type { SQLInputValue } from "node:sqlite";
 import type { Glicko2Rating } from "@chaturanga/shared/chess/glicko2";
 import {
   DEFAULT_PUZZLE_RATING,
@@ -24,7 +23,7 @@ import {
   type RecordPuzzleAttemptInput
 } from "@chaturanga/shared/types/puzzle-rating";
 import { getDb } from "./index";
-import { allRows, getRow } from "./rows";
+import { queriesOn } from "./rows";
 import { transaction } from "./repositories";
 
 /** Only the Lichess puzzle database carries Glicko-2 ratings; the position set is unrated. */
@@ -51,19 +50,7 @@ type RatingRow = {
   last_rated_at: number | null;
 };
 
-function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return allRows<T>(getDb().prepare(sql), ...params);
-}
-
-function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
-}
-
-function run(sql: string, ...params: SQLInputValue[]): void {
-  getDb()
-    .prepare(sql)
-    .run(...params);
-}
+const { all, get, run } = queriesOn(getDb);
 
 function ratingOf(
   rating: number | null,
@@ -100,13 +87,126 @@ function storedRating(): RatingRow | null {
   );
 }
 
+/**
+ * The same attempt recorded again keeps what was stored and only adds what was learned since — a
+ * failed puzzle finished afterwards: its completion, and the wrong moves made and the solution
+ * opened after it was decided (these only grow, so an older copy arriving late takes nothing away).
+ */
+function mergeRepeatedAttempt(input: RecordPuzzleAttemptInput): void {
+  run(
+    `UPDATE puzzle_attempts SET
+      wrong_move_count = MAX(wrong_move_count, ?),
+      solution_viewed = MAX(solution_viewed, ?),
+      completed_at = COALESCE(completed_at, ?)
+    WHERE id = ?`,
+    input.wrongMoveCount,
+    input.solutionViewed ? 1 : 0,
+    input.completedAt,
+    input.attemptId
+  );
+}
+
+/** Why the attempt doesn't rate the solver; null for the first try at a rated puzzle. */
+function unratedReasonFor(input: RecordPuzzleAttemptInput): PuzzleUnratedReason | null {
+  const ratedPuzzle =
+    input.sourceId === RATED_SOURCE_ID &&
+    input.puzzleRating !== null &&
+    input.puzzleRatingDeviation !== null;
+  if (!ratedPuzzle) return "unrated-puzzle";
+  const playedBefore = get<{ found: number }>(
+    "SELECT 1 AS found FROM puzzle_attempts WHERE source_id = ? AND puzzle_id = ? LIMIT 1",
+    input.sourceId,
+    input.puzzleId
+  );
+  return playedBefore ? "already-played" : null;
+}
+
+/** Rates the solver on a rated attempt and stores the new rating: the ratings before and after. */
+function rateSolver(
+  input: RecordPuzzleAttemptInput,
+  now: number
+): { before: Glicko2Rating; after: Glicko2Rating } {
+  // The renderer's clock decides when it happened, but not in the future.
+  const at = Math.min(input.decidedAt, now);
+  const stored = storedRating();
+  const lastRatedAt = stored?.last_rated_at ?? null;
+  // Rated attempts form one chain in the order they are recorded (main records them one at a
+  // time, as they arrive). One decided before the last rated attempt (a clock set back, say)
+  // is rated on the current rating with no idle time, and the rating keeps the later time.
+  const ratedAt = lastRatedAt === null ? at : Math.max(at, lastRatedAt);
+  // The rating this attempt is played at: the stored one, its deviation widened for the idle
+  // time since the last rated attempt (what the card and the attempt's row show as before).
+  const before = stored
+    ? ratingAfterIdle(
+        { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility },
+        lastRatedAt,
+        ratedAt
+      )
+    : DEFAULT_PUZZLE_RATING;
+  const after = rateAttempt(
+    before,
+    { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! },
+    { solved: input.outcome === "solved", at: ratedAt }
+  );
+  run(
+    `INSERT INTO puzzle_rating (id, rating, rd, volatility, rated_count, last_rated_at, updated_at)
+    VALUES (1, ?, ?, ?, 1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      rating = excluded.rating,
+      rd = excluded.rd,
+      volatility = excluded.volatility,
+      rated_count = puzzle_rating.rated_count + 1,
+      last_rated_at = excluded.last_rated_at,
+      updated_at = excluded.updated_at`,
+    after.rating,
+    after.deviation,
+    after.volatility,
+    ratedAt,
+    now
+  );
+  return { before, after };
+}
+
+function insertAttempt(
+  input: RecordPuzzleAttemptInput,
+  unratedReason: PuzzleUnratedReason | null,
+  ratings: { before: Glicko2Rating; after: Glicko2Rating } | null
+): void {
+  run(
+    `INSERT INTO puzzle_attempts (
+      id, puzzle_id, database_id, source_id, outcome, rated, unrated_reason, puzzle_rating, puzzle_rd,
+      rating_before, rd_before, volatility_before, rating_after, rd_after, volatility_after,
+      wrong_move_count, solution_viewed, themes_json, started_at, decided_at, completed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.attemptId,
+    input.puzzleId,
+    input.databaseId,
+    input.sourceId,
+    input.outcome,
+    unratedReason === null ? 1 : 0,
+    unratedReason,
+    input.puzzleRating,
+    input.puzzleRatingDeviation,
+    ratings?.before.rating ?? null,
+    ratings?.before.deviation ?? null,
+    ratings?.before.volatility ?? null,
+    ratings?.after.rating ?? null,
+    ratings?.after.deviation ?? null,
+    ratings?.after.volatility ?? null,
+    input.wrongMoveCount,
+    input.solutionViewed ? 1 : 0,
+    JSON.stringify(input.themes),
+    input.startedAt,
+    input.decidedAt,
+    input.completedAt
+  );
+}
+
 export const puzzleAttemptRepository = {
   /**
    * Stores a decided attempt and, for the first try at a rated puzzle, rates the solver. Recording
    * the same attempt again returns what was stored (never rating twice, the outcome kept) and only
-   * adds what was learned since — a failed puzzle finished afterwards: its completion, and the wrong
-   * moves made and the solution opened after it was decided (these only grow, so an older copy
-   * arriving late takes nothing away).
+   * adds what was learned since (see mergeRepeatedAttempt).
    */
   record(input: RecordPuzzleAttemptInput, now: number = Date.now()): PuzzleAttemptResult {
     return transaction(() => {
@@ -115,107 +215,11 @@ export const puzzleAttemptRepository = {
         input.attemptId
       );
       if (existing) {
-        run(
-          `UPDATE puzzle_attempts SET
-            wrong_move_count = MAX(wrong_move_count, ?),
-            solution_viewed = MAX(solution_viewed, ?),
-            completed_at = COALESCE(completed_at, ?)
-          WHERE id = ?`,
-          input.wrongMoveCount,
-          input.solutionViewed ? 1 : 0,
-          input.completedAt,
-          input.attemptId
-        );
+        mergeRepeatedAttempt(input);
         return toResult(existing);
       }
-
-      const ratedPuzzle =
-        input.sourceId === RATED_SOURCE_ID &&
-        input.puzzleRating !== null &&
-        input.puzzleRatingDeviation !== null;
-      const playedBefore = get<{ found: number }>(
-        "SELECT 1 AS found FROM puzzle_attempts WHERE source_id = ? AND puzzle_id = ? LIMIT 1",
-        input.sourceId,
-        input.puzzleId
-      );
-      const unratedReason: PuzzleUnratedReason | null = !ratedPuzzle
-        ? "unrated-puzzle"
-        : playedBefore
-          ? "already-played"
-          : null;
-
-      let before: Glicko2Rating | null = null;
-      let after: Glicko2Rating | null = null;
-      // The renderer's clock decides when it happened, but not in the future.
-      const at = Math.min(input.decidedAt, now);
-      if (unratedReason === null) {
-        const stored = storedRating();
-        const lastRatedAt = stored?.last_rated_at ?? null;
-        // Rated attempts form one chain in the order they are recorded (main records them one at a
-        // time, as they arrive). One decided before the last rated attempt (a clock set back, say)
-        // is rated on the current rating with no idle time, and the rating keeps the later time.
-        const ratedAt = lastRatedAt === null ? at : Math.max(at, lastRatedAt);
-        // The rating this attempt is played at: the stored one, its deviation widened for the idle
-        // time since the last rated attempt (what the card and the attempt's row show as before).
-        before = stored
-          ? ratingAfterIdle(
-              { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility },
-              lastRatedAt,
-              ratedAt
-            )
-          : DEFAULT_PUZZLE_RATING;
-        after = rateAttempt(
-          before,
-          { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! },
-          input.outcome === "solved",
-          ratedAt
-        );
-        run(
-          `INSERT INTO puzzle_rating (id, rating, rd, volatility, rated_count, last_rated_at, updated_at)
-          VALUES (1, ?, ?, ?, 1, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            rating = excluded.rating,
-            rd = excluded.rd,
-            volatility = excluded.volatility,
-            rated_count = puzzle_rating.rated_count + 1,
-            last_rated_at = excluded.last_rated_at,
-            updated_at = excluded.updated_at`,
-          after.rating,
-          after.deviation,
-          after.volatility,
-          ratedAt,
-          now
-        );
-      }
-
-      run(
-        `INSERT INTO puzzle_attempts (
-          id, puzzle_id, database_id, source_id, outcome, rated, unrated_reason, puzzle_rating, puzzle_rd,
-          rating_before, rd_before, volatility_before, rating_after, rd_after, volatility_after,
-          wrong_move_count, solution_viewed, themes_json, started_at, decided_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        input.attemptId,
-        input.puzzleId,
-        input.databaseId,
-        input.sourceId,
-        input.outcome,
-        unratedReason === null ? 1 : 0,
-        unratedReason,
-        input.puzzleRating,
-        input.puzzleRatingDeviation,
-        before?.rating ?? null,
-        before?.deviation ?? null,
-        before?.volatility ?? null,
-        after?.rating ?? null,
-        after?.deviation ?? null,
-        after?.volatility ?? null,
-        input.wrongMoveCount,
-        input.solutionViewed ? 1 : 0,
-        JSON.stringify(input.themes),
-        input.startedAt,
-        input.decidedAt,
-        input.completedAt
-      );
+      const unratedReason = unratedReasonFor(input);
+      insertAttempt(input, unratedReason, unratedReason === null ? rateSolver(input, now) : null);
       const stored = get<AttemptRow>("SELECT * FROM puzzle_attempts WHERE id = ?", input.attemptId);
       if (!stored) throw new Error("Failed to save the puzzle attempt");
       return toResult(stored);

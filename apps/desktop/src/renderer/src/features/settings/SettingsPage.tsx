@@ -198,16 +198,16 @@ function useScrollSpy(
     (scroller: HTMLElement) => {
       const top = scroller.getBoundingClientRect().top;
       const threshold = top + scroller.clientHeight / 3;
-      let current = sections[0];
+      let current = sections.at(0);
       for (const id of sections) {
         const element = document.getElementById(sectionDomId(id));
         if (element && element.getBoundingClientRect().top <= threshold) current = id;
       }
       if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4)
-        current = sections[sections.length - 1];
+        current = sections.at(-1);
       // At the very top the first section is the one being read, even when a short first card lets
       // the second one's top cross the threshold.
-      if (scroller.scrollTop <= 4) current = sections[0];
+      if (scroller.scrollTop <= 4) current = sections.at(0);
       if (current) setActive(current);
     },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for the section list

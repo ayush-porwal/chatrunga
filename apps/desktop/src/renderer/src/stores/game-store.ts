@@ -26,24 +26,29 @@ import {
   bestLineStep,
   type BestLineCursor
 } from "../features/game/best-line-cursor";
+import {
+  buildEngineGoClock,
+  clockAfterMove,
+  clockNow,
+  clockTag,
+  remainingClockMs,
+  restartTurn,
+  stopClock,
+  type EngineClockConfig,
+  type EngineClockLive
+} from "./game-clock";
+
+export {
+  buildEngineGoClock,
+  clockNow,
+  clockTag,
+  noteSystemResumed,
+  remainingClockMs,
+  setTimeAsleepSource,
+  type EngineClockLive
+} from "./game-clock";
 
 type PendingPromotion = { from: string; to: string } | null;
-
-type EngineClockConfig = {
-  initialMs: number;
-  incrementMs: number;
-};
-
-export type EngineClockLive = {
-  whiteMs: number;
-  blackMs: number;
-  turnStartedAt: number;
-  sideToMove: Color;
-  /** Set when the game ends (mate, resignation, draw, flag): the clocks freeze at this moment. */
-  stoppedAt?: number;
-  /** With `stoppedAt`: frozen only for now (the engine's search was set aside), not ended. */
-  paused?: boolean;
-};
 
 export type GameOutcome = {
   result: string;
@@ -205,6 +210,49 @@ export const useGameStore = create<GameStore>((set, get) => {
     }));
   }
 
+  /**
+   * A move played on a BEST line's position: the line up to it becomes a real variation (its
+   * existing moves reused), then the move is played from there as from any other node. False when
+   * the move is refused there.
+   */
+  function playOnBestLine(move: UserMove): boolean {
+    const line = activeBestLine(get());
+    if (!line) return true;
+    if (!applyUserMove(bestLineStep(line).fenAfter, move)) {
+      set((current) => ({
+        lastError: "Illegal move",
+        rejectedMoves: current.rejectedMoves + 1
+      }));
+      return false;
+    }
+    return get().goToLine(line.anchorNodeId, bestLineSans(line));
+  }
+
+  /** After `node` is played (in `moveTree`): a position that ends the game on the board. */
+  function endOnBoard(
+    match: Pick<GameStore, "mode" | "engineSide">,
+    node: MoveNode,
+    moveTree: MoveNode[]
+  ): void {
+    const ended = boardOutcome(node.fenAfter);
+    if (!ended) return;
+    // Mate / stalemate / draw by rule ends a timed game on the board: freeze both clocks.
+    if (get().engineClockLive) {
+      set((latest) => ({ engineClockLive: stopClock(latest.engineClockLive) }));
+    }
+    // An engine game ended on the board is decided like a resignation (and as Back brings it
+    // back): no more moves, so stepping back can't play on in a variation (Analyze can).
+    if (match.mode === "engine" && match.engineSide && mainlineEndId(moveTree) === node.id) {
+      // The headers take the result (the moves already say how it ended, no Termination tag).
+      set((latest) => ({
+        gameOutcome: ended,
+        headers: { ...latest.headers, result: ended.result },
+        engineClockLive: stopClock(latest.engineClockLive),
+        pendingPromotion: null
+      }));
+    }
+  }
+
   return {
     gameId: empty.id,
     source: empty.source,
@@ -232,7 +280,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     loadGame: (game) => {
       const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
       const fallbackNode = game.moveTree.find((node) => node.fenAfter === game.currentFen);
-      const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree[0];
+      const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree.at(0);
       const currentNode = requestedNode ?? fallbackNode ?? rootNode;
       set((state) => ({
         board: state.board + 1,
@@ -261,114 +309,41 @@ export const useGameStore = create<GameStore>((set, get) => {
     makeMove: (move, atNodeId) => {
       // The engine's move for the position it thought about, while the user looks at another.
       const elsewhere = atNodeId !== undefined && atNodeId !== get().currentNodeId;
-      // A move played on a BEST line's position: the line up to it becomes a real variation (its
-      // existing moves reused), then the move is played from there as from any other node.
-      const line = elsewhere ? null : activeBestLine(get());
-      if (line) {
-        if (!applyUserMove(bestLineStep(line).fenAfter, move)) {
-          set((current) => ({
-            lastError: "Illegal move",
-            rejectedMoves: current.rejectedMoves + 1
-          }));
-          return false;
-        }
-        if (!get().goToLine(line.anchorNodeId, bestLineSans(line))) return false;
-      }
+      if (!elsewhere && !playOnBestLine(move)) return false;
       const state = get();
       const reject = (patch: Partial<GameStore> = {}): false => {
         set((current) => ({ ...patch, rejectedMoves: current.rejectedMoves + 1 }));
         return false;
       };
-      if (state.gameOutcome) return reject();
-      const fromId = elsewhere ? atNodeId : state.currentNodeId;
-      // Online, a move is only ever played at the end of the game (never as a variation).
-      if (state.mode === "online" && fromId !== mainlineEndId(state.moveTree)) {
-        return reject({ lastError: "Go to the latest move to play." });
-      }
-      const parent = state.moveTree.find((node) => node.id === fromId);
-      if (elsewhere && !parent) return reject();
-      const fenBefore = parent?.fenAfter ?? state.currentFen;
-      const mover = statusForFen(fenBefore).turn;
+      const origin = moveOrigin(state, elsewhere ? atNodeId : undefined);
+      if ("refusal" in origin) return reject(origin.refusal);
+      const { mover } = origin;
       // The clock decides, not the poll: a move made after the flag fell loses on time, and the
       // increment can't bring an expired clock back.
       const now = clockNow();
-      const live = state.engineClockLive;
-      if (
-        state.mode === "engine" &&
-        live &&
-        live.stoppedAt === undefined &&
-        live.sideToMove === mover &&
-        remainingClockMs(live, mover, now) <= 0
-      ) {
+      if (flagFell(state, mover, now)) {
         get().resolveTimeout(mover);
         return reject();
       }
-      const applied = applyUserMove(fenBefore, move);
+      const applied = applyUserMove(origin.fenBefore, move);
       if (!applied) return reject({ lastError: "Illegal move" });
       // The timed game's latest move played again from the move before it: nothing changes but
       // where you look (the clock goes on as it was).
-      const replayed = state.moveTree.find(
-        (node) => node.parentId === fromId && node.uci === applied.uci
-      );
-      if (state.mode === "engine" && replayed && replayed === latestPlayedNode(state.moveTree)) {
+      const replayed = replayedLatestMove(state, origin.fromId, applied.uci);
+      if (replayed) {
         if (!elsewhere) get().goToNode(replayed.id);
         return true;
       }
-      // Your move replaces one of yours (you stepped back and played another while the engine's
-      // clock ran, or was paused after its search failed): the engine's turn never was, so its
-      // time comes back, and yours runs from when that turn began (from the pause, when paused).
-      // The replaced move's increment is taken back first: the replacement earns it again, not a
-      // second one. One that ran out meanwhile falls now: the move is too late, you lose on time.
-      const current = get().engineClockLive;
-      const paused = Boolean(current?.paused && current.stoppedAt !== undefined);
-      const takeback =
-        state.mode === "engine" &&
-        Boolean(state.engineSide) &&
-        mover !== state.engineSide &&
-        current?.sideToMove !== mover &&
-        current?.stoppedAt === undefined;
-      if (current && (paused || takeback) && !state.gameOutcome) {
-        const takeBack = current.sideToMove !== mover ? (state.engineClock?.incrementMs ?? 0) : 0;
-        const running: EngineClockLive = {
-          whiteMs: mover === "white" ? Math.max(0, current.whiteMs - takeBack) : current.whiteMs,
-          blackMs: mover === "black" ? Math.max(0, current.blackMs - takeBack) : current.blackMs,
-          sideToMove: mover,
-          turnStartedAt: paused ? (current.stoppedAt ?? now) : current.turnStartedAt
-        };
-        set({ engineClockLive: running });
-        if (remainingClockMs(running, mover, clockNow()) <= 0) {
+      const replacement = replacementClock(get(), mover);
+      if (replacement) {
+        set({ engineClockLive: replacement });
+        if (remainingClockMs(replacement, mover, clockNow()) <= 0) {
           get().resolveTimeout(mover);
           // Through reject(): the board takes back the piece it already moved.
           return reject();
         }
       }
-      const added = addMoveNode(
-        state.moveTree,
-        fromId,
-        applied.san,
-        applied.uci,
-        fenBefore,
-        applied.fen
-      );
-      const clocks = get();
-      const nextClock =
-        clocks.engineClock && clocks.engineClockLive
-          ? clockAfterMove(clocks.engineClock, clocks.engineClockLive, mover, now)
-          : null;
-      // A timed engine game keeps each move's clock and when it was played, so a saved game knows
-      // the time left (and how long the side to move has been thinking, even with the app closed).
-      const node: MoveNode =
-        nextClock && state.mode === "engine"
-          ? {
-              ...added.node,
-              clockAfter: clockTag(mover === "white" ? nextClock.whiteMs : nextClock.blackMs),
-              playedAt: Date.now()
-            }
-          : added.node;
-      const moveTree =
-        node === added.node
-          ? added.moveTree
-          : added.moveTree.map((item) => (item.id === node.id ? node : item));
+      const { moveTree, node, nextClock } = addPlayedMove(get(), origin, applied, now);
       set({
         moveTree,
         // The user's cursor stays where they look; it follows a move made where they are.
@@ -376,27 +351,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         lastError: null,
         ...(nextClock ? { engineClockLive: nextClock } : {})
       });
-      // Mate / stalemate / draw by rule ends a timed game on the board: freeze both clocks.
-      if (get().engineClockLive && statusForFen(node.fenAfter).isEnd) {
-        set((latest) => ({ engineClockLive: stopClock(latest.engineClockLive) }));
-      }
-      // An engine game ended on the board is decided like a resignation (and as Back brings it
-      // back): no more moves, so stepping back can't play on in a variation (Analyze can).
-      const ended = boardOutcome(node.fenAfter);
-      if (
-        state.mode === "engine" &&
-        state.engineSide &&
-        ended &&
-        mainlineEndId(moveTree) === node.id
-      ) {
-        // The headers take the result (the moves already say how it ended, no Termination tag).
-        set((latest) => ({
-          gameOutcome: ended,
-          headers: { ...latest.headers, result: ended.result },
-          engineClockLive: stopClock(latest.engineClockLive),
-          pendingPromotion: null
-        }));
-      }
+      endOnBoard(state, node, moveTree);
       return true;
     },
 
@@ -459,14 +414,12 @@ export const useGameStore = create<GameStore>((set, get) => {
           continue;
         }
         if (liveMatch) return false;
-        const added = addMoveNode(
-          moveTree,
-          parent.id,
-          applied.san,
-          applied.uci,
-          parent.fenAfter,
-          applied.fen
-        );
+        const added = addMoveNode(moveTree, parent.id, {
+          san: applied.san,
+          uci: applied.uci,
+          fenBefore: parent.fenAfter,
+          fenAfter: applied.fen
+        });
         moveTree = added.moveTree;
         node = added.node;
       }
@@ -688,14 +641,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       for (const uci of ucis.slice(shared)) {
         const applied = applyLineMove(node.fenAfter, uci);
         if (!applied) return false;
-        const added = addMoveNode(
-          moveTree,
-          node.id,
-          applied.san,
-          applied.uci,
-          node.fenAfter,
-          applied.fen
-        );
+        const added = addMoveNode(moveTree, node.id, {
+          san: applied.san,
+          uci: applied.uci,
+          fenBefore: node.fenAfter,
+          fenAfter: applied.fen
+        });
         moveTree = added.moveTree;
         node = added.node;
       }
@@ -783,36 +734,6 @@ export const useGameStore = create<GameStore>((set, get) => {
 });
 
 /**
- * Both clocks after `movedSide`'s move at `now`: the mover is charged the time since its turn
- * began and gets the increment; the other side's clock runs from now. Null when it wasn't the
- * mover's turn on the clock, or the clock is stopped.
- */
-function clockAfterMove(
-  cfg: EngineClockConfig,
-  live: EngineClockLive,
-  movedSide: Color,
-  now: number
-): EngineClockLive | null {
-  if (live.sideToMove !== movedSide || live.stoppedAt !== undefined) return null;
-  const charge = (ms: number) => Math.max(0, ms - (now - live.turnStartedAt) + cfg.incrementMs);
-  return {
-    whiteMs: movedSide === "white" ? charge(live.whiteMs) : live.whiteMs,
-    blackMs: movedSide === "black" ? charge(live.blackMs) : live.blackMs,
-    turnStartedAt: now,
-    sideToMove: movedSide === "white" ? "black" : "white"
-  };
-}
-
-/** Milliseconds as a PGN `[%clk]` time, to the tenth below ("0:01:59.5", "0:03:00"). */
-export function clockTag(ms: number): string {
-  const tenths = Math.max(0, Math.floor(ms / 100));
-  const seconds = Math.floor(tenths / 10);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const fraction = tenths % 10 ? `.${tenths % 10}` : "";
-  return `${Math.floor(seconds / 3600)}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}${fraction}`;
-}
-
-/**
  * Where a timed engine game is: the move played last (by `playedAt`, so a game played on in a
  * variation is found there), else the node its clock started at. Null for a game without one.
  */
@@ -835,22 +756,112 @@ export function timeForfeitOutcome(fen: string, loser: Color): GameOutcome {
   return { result, termination: "Time forfeit" };
 }
 
-export function buildEngineGoClock(
-  live: EngineClockLive,
-  cfg: EngineClockConfig,
+/** Where a move is played from: the node, its position and the side to move there. */
+type MoveOrigin = { fromId: string; fenBefore: string; mover: Color };
+
+/**
+ * Where a move is played from: the current move, or `atNodeId` (the engine's move for a position
+ * the user isn't looking at). Else the refusal, with what to set for it.
+ */
+function moveOrigin(
+  state: GameStore,
+  atNodeId: string | undefined
+): MoveOrigin | { refusal: Partial<GameStore> } {
+  if (state.gameOutcome) return { refusal: {} };
+  const fromId = atNodeId ?? state.currentNodeId;
+  // Online, a move is only ever played at the end of the game (never as a variation).
+  if (state.mode === "online" && fromId !== mainlineEndId(state.moveTree)) {
+    return { refusal: { lastError: "Go to the latest move to play." } };
+  }
+  const parent = state.moveTree.find((node) => node.id === fromId);
+  if (atNodeId !== undefined && !parent) return { refusal: {} };
+  const fenBefore = parent?.fenAfter ?? state.currentFen;
+  return { fromId, fenBefore, mover: statusForFen(fenBefore).turn };
+}
+
+/** In an engine game, `mover`'s clock is running and has run out at `now`. */
+function flagFell(
+  state: Pick<GameStore, "mode" | "engineClockLive">,
+  mover: Color,
   now: number
-): EngineGoClock {
-  const elapsed = now - live.turnStartedAt;
-  let w = live.whiteMs;
-  let b = live.blackMs;
-  if (live.sideToMove === "white") w -= elapsed;
-  else b -= elapsed;
-  return {
-    wtime: Math.max(1, Math.floor(w)),
-    btime: Math.max(1, Math.floor(b)),
-    winc: Math.max(0, Math.floor(cfg.incrementMs)),
-    binc: Math.max(0, Math.floor(cfg.incrementMs))
+): boolean {
+  const live = state.engineClockLive;
+  return (
+    state.mode === "engine" &&
+    live !== null &&
+    live.stoppedAt === undefined &&
+    live.sideToMove === mover &&
+    remainingClockMs(live, mover, now) <= 0
+  );
+}
+
+/** The engine game's latest move, when `uci` played from `fromId` is that move again. */
+function replayedLatestMove(
+  state: Pick<GameStore, "mode" | "moveTree">,
+  fromId: string,
+  uci: string
+): MoveNode | null {
+  const replayed = state.moveTree.find((node) => node.parentId === fromId && node.uci === uci);
+  return state.mode === "engine" && replayed && replayed === latestPlayedNode(state.moveTree)
+    ? replayed
+    : null;
+}
+
+/**
+ * Your move replaces one of yours (you stepped back and played another while the engine's
+ * clock ran, or was paused after its search failed): the engine's turn never was, so its
+ * time comes back, and yours runs from when that turn began (from the pause, when paused).
+ * The replaced move's increment is taken back first: the replacement earns it again, not a
+ * second one. Null when the move replaces none (the clock goes on as it is).
+ */
+function replacementClock(
+  state: Pick<GameStore, "mode" | "engineSide" | "engineClock" | "engineClockLive">,
+  mover: Color
+): EngineClockLive | null {
+  const current = state.engineClockLive;
+  if (!current) return null;
+  const paused = Boolean(current.paused && current.stoppedAt !== undefined);
+  const takeback =
+    state.mode === "engine" &&
+    Boolean(state.engineSide) &&
+    mover !== state.engineSide &&
+    current.sideToMove !== mover &&
+    current.stoppedAt === undefined;
+  if (!paused && !takeback) return null;
+  const takeBackMs = current.sideToMove !== mover ? (state.engineClock?.incrementMs ?? 0) : 0;
+  return restartTurn(current, mover, takeBackMs);
+}
+
+/**
+ * The tree with the move added, and both clocks after it (null when no clock ran for it). A timed
+ * engine game keeps each move's clock and when it was played, so a saved game knows the time
+ * left (and how long the side to move has been thinking, even with the app closed).
+ */
+function addPlayedMove(
+  state: Pick<GameStore, "moveTree" | "mode" | "engineClock" | "engineClockLive">,
+  origin: MoveOrigin,
+  applied: { san: string; uci: string; fen: string },
+  now: number
+): { moveTree: MoveNode[]; node: MoveNode; nextClock: EngineClockLive | null } {
+  const { fromId, fenBefore, mover } = origin;
+  const added = addMoveNode(state.moveTree, fromId, {
+    san: applied.san,
+    uci: applied.uci,
+    fenBefore,
+    fenAfter: applied.fen
+  });
+  const nextClock =
+    state.engineClock && state.engineClockLive
+      ? clockAfterMove(state.engineClock, state.engineClockLive, mover, now)
+      : null;
+  if (!nextClock || state.mode !== "engine") return { ...added, nextClock };
+  const node: MoveNode = {
+    ...added.node,
+    clockAfter: clockTag(mover === "white" ? nextClock.whiteMs : nextClock.blackMs),
+    playedAt: Date.now()
   };
+  const moveTree = added.moveTree.map((item) => (item.id === node.id ? node : item));
+  return { moveTree, node, nextClock };
 }
 
 /** Terminations that come from the final position (restoreView records them for board-ended games). */
@@ -896,7 +907,7 @@ export function isMatchMode(mode: GameMode): boolean {
 /** Root, then the main line (first child at every step). */
 function mainlineNodes(moveTree: MoveNode[]): MoveNode[] {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const root = moveTree.find((node) => node.parentId === null) ?? moveTree[0];
+  const root = moveTree.find((node) => node.parentId === null) ?? moveTree.at(0);
   const line: MoveNode[] = root ? [root] : [];
   let next = root?.children[0];
   while (next) {
@@ -916,70 +927,6 @@ export function mainlineUcis(moveTree: MoveNode[]): string[] {
 function mainlineEndId(moveTree: MoveNode[]): string {
   const line = mainlineNodes(moveTree);
   return line[line.length - 1]?.id ?? "root";
-}
-
-function stopClock(live: EngineClockLive | null): EngineClockLive | null {
-  if (!live) return live;
-  // A paused clock ends frozen where it was paused.
-  if (live.paused) return { ...live, paused: false };
-  return live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
-}
-
-/** Where the time asleep comes from (the main process; tests swap it). */
-let readTimeAsleep: () => number = () =>
-  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
-
-/**
- * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so
- * even a sub-second suspend is read before a move is timed (not left to the wake notice, which can
- * arrive after it), yet above the millisecond jitter between the two clocks, so a normal check
- * never asks the main process.
- */
-const SUSPECT_SLEEP_MS = 25;
-let lastMonotonic = performance.now();
-let lastWall = Date.now();
-/**
- * Main's total since the app started, read once now: a renderer reloaded later would otherwise
- * start from 0 and add every earlier sleep at its first check, jumping a running clock forward.
- */
-let timeAsleep = readTimeAsleep();
-/** The main process said the computer woke up: read the total at the next clock check. */
-let resumedSinceRead = false;
-
-/**
- * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
- * never adds or removes thinking time. Only differences between two readings mean anything.
- * `performance.now()` may stop while the computer sleeps, so the time it missed is added back —
- * as the main process measured it (from suspend to resume, not from wall-clock jumps). That is
- * read synchronously only when the two clocks drift apart since the last reading, which a sleep
- * always causes: a clock check never waits on the main process otherwise.
- */
-export function clockNow(): number {
-  const monotonic = performance.now();
-  const wall = Date.now();
-  if (resumedSinceRead || wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) {
-    timeAsleep = readTimeAsleep();
-    resumedSinceRead = false;
-  }
-  lastMonotonic = monotonic;
-  lastWall = wall;
-  return monotonic + timeAsleep;
-}
-
-/** The computer woke up (main's notice): the next clock check reads the time asleep. */
-export function noteSystemResumed(): void {
-  resumedSinceRead = true;
-}
-
-export function setTimeAsleepSource(source: () => number): void {
-  readTimeAsleep = source;
-}
-
-/** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
-export function remainingClockMs(live: EngineClockLive, side: Color, now: number): number {
-  const at = live.stoppedAt === undefined ? now : Math.min(now, live.stoppedAt);
-  const elapsed = live.sideToMove === side ? Math.max(0, at - live.turnStartedAt) : 0;
-  return Math.max(0, (side === "white" ? live.whiteMs : live.blackMs) - elapsed);
 }
 
 function applyLineMove(

@@ -39,7 +39,7 @@ export function fakeStream(signal?: AbortSignal | null, status = 200): FakeStrea
   };
 }
 
-export type RecordedRequest = {
+type RecordedRequest = {
   url: string;
   method: string;
   headers: Record<string, string>;
@@ -53,7 +53,7 @@ type Handler = (request: RecordedRequest) => Response | Promise<Response>;
  * `fetch` answering by `METHOD path` (path without the query string). Unmatched requests get a
  * 404. Every request is recorded.
  */
-export function fakeFetch(routes: Record<string, Handler>) {
+export function fakeFetch(routes: Partial<Record<string, Handler>>) {
   const requests: RecordedRequest[] = [];
   const fetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
     if (init.signal?.aborted) throw new DOMException("This operation was aborted", "AbortError");

@@ -21,6 +21,7 @@ vi.stubGlobal("window", {
   ...globalThis,
   chaturanga: {
     engines: { cancelReview },
+    system: { timeAsleepMs: () => 0 },
     events: {
       onReviewProgress: on("progress"),
       onReviewMoveCompleted: on("move"),
@@ -79,7 +80,7 @@ describe("a running review and edits to the game", () => {
 
     emit("completed", { reviewId: "run-1", review });
     expect(useReviewStore.getState().review).toBeNull();
-    expect(useReviewStore.getState().analyses).toEqual([]);
+    expect(useReviewStore.getState().analyses).toStrictEqual([]);
   });
 
   it("keeps the run going when the line is extended or a variation is added", () => {

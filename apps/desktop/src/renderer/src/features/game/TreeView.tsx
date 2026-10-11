@@ -11,7 +11,12 @@ import {
 import { Check, Trash2 } from "lucide-react";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { formatMoveEval } from "../game-review/review-score";
-import type { GameOpening, MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
+import type {
+  GameOpening,
+  MoveAnnotation,
+  MoveReview,
+  ReviewCommentary
+} from "@chaturanga/shared/types/engine";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import { buildTreeModel, type VariationRow } from "./move-tree-model";
 import {
@@ -108,23 +113,7 @@ export function TreeView({
   const listId = useId();
   const showScores = Boolean(reviews?.size);
 
-  const [folds, setFolds] = useState<LineFolds>(() => setAllLineFolds(loadShowAllLines()));
-  const toggleFold = useCallback(
-    (nodeId: string) => setFolds((current) => toggleLineFold(current, nodeId)),
-    []
-  );
-  // A BEST line the board lands on (↑ ↓ switch to folded ones too) unfolds, as its disc would.
-  const browsedLine = activeBestLine?.markedNodeId ?? null;
-  const [unfoldedFor, setUnfoldedFor] = useState<string | null>(null);
-  if (browsedLine !== unfoldedFor) {
-    setUnfoldedFor(browsedLine);
-    if (browsedLine && !lineUnfolded(folds, browsedLine))
-      setFolds(toggleLineFold(folds, browsedLine));
-  }
-  const setAllFolds = (showAll: boolean) => {
-    saveShowAllLines(showAll);
-    setFolds(setAllLineFolds(showAll));
-  };
+  const { folds, toggleFold, setAllFolds } = useLineFolds(activeBestLine?.markedNodeId ?? null);
   const hasLines = useMemo(
     () => (reviews ? [...reviews.values()].some((review) => hasBestLine(review)) : false),
     [reviews]
@@ -362,13 +351,6 @@ const MoveCell = memo(function MoveCell({
   onToggleLine
 }: MoveCellProps) {
   const annotation = review?.assessment?.annotation ?? null;
-  const san = node.san ?? "–";
-  const title = review
-    ? `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`
-    : (node.san ?? "Move");
-
-  const showDelete = selected && Boolean(onDeleteLine);
-  const foldable = lineUnfolded !== undefined && Boolean(onToggleLine);
 
   return (
     <div
@@ -383,63 +365,36 @@ const MoveCell = memo(function MoveCell({
         data-tree-node-id={node.id}
         aria-current={selected ? "step" : undefined}
         // Named by its SAN (the piece is drawn, not written); the mark has its own name beside it.
-        aria-label={san}
+        aria-label={node.san ?? "–"}
         className={cn(
           "flex h-8 w-full min-w-0 items-center gap-[0.4375rem] rounded-[0.3125rem] px-1.5 text-left text-[0.90625rem] font-medium tracking-[0.01em] outline-none",
           "focus-visible:ring-2 focus-visible:ring-accent/50",
-          annotation ? annotationTone[annotation].text : selected ? "text-fg" : "text-fg-secondary",
-          selected && "font-semibold"
+          moveTextClass(annotation, selected)
         )}
-        title={title}
+        title={moveTitle(node, review)}
         onMouseDown={keepFocusOnPress}
         onClick={() => onSelectNode(node.id)}
       >
         {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
         <span aria-hidden className="w-[1.125rem] shrink-0" />
-        <span className="flex min-w-0 items-center">
-          {node.san ? (
-            <span className="inline-flex w-[1.3em] shrink-0 justify-center">
-              <Figurine role={sanPiece(node.san)} className="m-0" />
-            </span>
-          ) : null}
-          <span className="truncate">{node.san ? bareSan(node.san) : san}</span>
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {showCommentaryState && commentary ? (
-            <Check
-              aria-label="Commentary ready"
-              className={cn("size-3 shrink-0", selected ? "text-fg" : "text-accent")}
-            />
-          ) : null}
-          {/* Its eval, right-aligned inside the move's block (a fixed width keeps rows aligned). */}
-          {showScores ? (
-            <span className="w-[2.5rem] text-right font-mono text-[0.71875rem] font-normal tracking-normal text-fg-subtle tabular-nums">
-              {review ? formatMoveEval(review) : null}
-            </span>
-          ) : null}
-        </span>
+        <MoveSan san={node.san} />
+        <MoveCellEnd
+          commentaryReady={showCommentaryState && Boolean(commentary)}
+          selected={selected}
+          showScores={showScores}
+          review={review}
+        />
       </button>
       {annotation ? (
-        <span className="pointer-events-none absolute top-1/2 left-1.5 flex -translate-y-1/2">
-          {foldable ? (
-            <button
-              type="button"
-              aria-expanded={lineUnfolded}
-              aria-controls={lineUnfolded ? lineId : undefined}
-              aria-label={`${annotationLabel(annotation)}: ${lineUnfolded ? "hide" : "show"} the best line`}
-              title={`${annotationLabel(annotation)} · ${lineUnfolded ? "hide" : "show"} the best line`}
-              className="pointer-events-auto flex cursor-pointer rounded-full outline-none transition-transform duration-micro ease-standard hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/50"
-              onMouseDown={keepFocusOnPress}
-              onClick={() => onToggleLine?.(node.id)}
-            >
-              <MoveMarkDisc annotation={annotation} decorative />
-            </button>
-          ) : (
-            <MoveMarkDisc annotation={annotation} />
-          )}
-        </span>
+        <MoveCellMark
+          annotation={annotation}
+          nodeId={node.id}
+          lineUnfolded={lineUnfolded}
+          lineId={lineId}
+          onToggleLine={onToggleLine}
+        />
       ) : null}
-      {showDelete ? (
+      {selected && onDeleteLine ? (
         <IconButton
           label={`Delete line from ${node.san ?? "selected move"}`}
           icon={<Trash2 />}
@@ -449,10 +404,135 @@ const MoveCell = memo(function MoveCell({
           className="absolute right-0.5 top-1/2 -translate-y-1/2 bg-accent-soft opacity-0 hover:bg-danger-soft group-hover:opacity-100 focus-visible:opacity-100"
           onClick={(event) => {
             event.stopPropagation();
-            onDeleteLine?.(node.id);
+            onDeleteLine(node.id);
           }}
         />
       ) : null}
     </div>
   );
 });
+
+/**
+ * The BEST lines folded or unfolded (all of them as last left, then one by one), and the line the
+ * board browses (`browsedLine`, its error's node), which unfolds as its disc would: ↑ ↓ switch to
+ * folded ones too.
+ */
+function useLineFolds(browsedLine: string | null) {
+  const [folds, setFolds] = useState<LineFolds>(() => setAllLineFolds(loadShowAllLines()));
+  const toggleFold = useCallback(
+    (nodeId: string) => setFolds((current) => toggleLineFold(current, nodeId)),
+    []
+  );
+  const [unfoldedFor, setUnfoldedFor] = useState<string | null>(null);
+  if (browsedLine !== unfoldedFor) {
+    setUnfoldedFor(browsedLine);
+    if (browsedLine && !lineUnfolded(folds, browsedLine))
+      setFolds(toggleLineFold(folds, browsedLine));
+  }
+  const setAllFolds = (showAll: boolean) => {
+    saveShowAllLines(showAll);
+    setFolds(setAllLineFolds(showAll));
+  };
+  return { folds, toggleFold, setAllFolds };
+}
+
+/** The move's end: a check once its commentary is written (where shown), and its eval column. */
+function MoveCellEnd({
+  commentaryReady,
+  selected,
+  showScores,
+  review
+}: {
+  commentaryReady: boolean;
+  selected: boolean;
+  showScores: boolean;
+  review: MoveReview | undefined;
+}) {
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1.5">
+      {commentaryReady ? (
+        <Check
+          aria-label="Commentary ready"
+          className={cn("size-3 shrink-0", selected ? "text-fg" : "text-accent")}
+        />
+      ) : null}
+      {/* Its eval, right-aligned inside the move's block (a fixed width keeps rows aligned). */}
+      {showScores ? (
+        <span className="w-[2.5rem] text-right font-mono text-[0.71875rem] font-normal tracking-normal text-fg-subtle tabular-nums">
+          {review ? formatMoveEval(review) : null}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The move's tooltip: its mark and eval once reviewed, else its SAN. */
+function moveTitle(node: MoveNode, review: MoveReview | undefined): string {
+  if (!review) return node.san ?? "Move";
+  const annotation = review.assessment?.annotation ?? null;
+  return `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`;
+}
+
+/** The SAN's colour: its mark's, else the current move's stronger text. */
+function moveTextClass(annotation: MoveAnnotation | null, selected: boolean): string {
+  const tone = annotation
+    ? annotationTone[annotation].text
+    : selected
+      ? "text-fg"
+      : "text-fg-secondary";
+  return cn(tone, selected && "font-semibold");
+}
+
+/**
+ * A fixed slot for the piece in the board's set (a pawn for pawn moves, the king for castling),
+ * then the SAN without its piece letter.
+ */
+function MoveSan({ san }: { san: string | null | undefined }) {
+  return (
+    <span className="flex min-w-0 items-center">
+      {san ? (
+        <span className="inline-flex w-[1.3em] shrink-0 justify-center">
+          <Figurine role={sanPiece(san)} className="m-0" />
+        </span>
+      ) : null}
+      <span className="truncate">{san ? bareSan(san) : (san ?? "–")}</span>
+    </span>
+  );
+}
+
+/** The mark's disc over its slot; a marked error's disc folds its BEST line (`lineId`). */
+function MoveCellMark({
+  annotation,
+  nodeId,
+  lineUnfolded,
+  lineId,
+  onToggleLine
+}: {
+  annotation: MoveAnnotation;
+  nodeId: string;
+  lineUnfolded: boolean | undefined;
+  lineId: string | undefined;
+  onToggleLine: ((nodeId: string) => void) | undefined;
+}) {
+  const foldable = lineUnfolded !== undefined && Boolean(onToggleLine);
+  return (
+    <span className="pointer-events-none absolute top-1/2 left-1.5 flex -translate-y-1/2">
+      {foldable ? (
+        <button
+          type="button"
+          aria-expanded={lineUnfolded}
+          aria-controls={lineUnfolded ? lineId : undefined}
+          aria-label={`${annotationLabel(annotation)}: ${lineUnfolded ? "hide" : "show"} the best line`}
+          title={`${annotationLabel(annotation)} · ${lineUnfolded ? "hide" : "show"} the best line`}
+          className="pointer-events-auto flex cursor-pointer rounded-full outline-none transition-transform duration-micro ease-standard hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/50"
+          onMouseDown={keepFocusOnPress}
+          onClick={() => onToggleLine?.(nodeId)}
+        >
+          <MoveMarkDisc annotation={annotation} decorative />
+        </button>
+      ) : (
+        <MoveMarkDisc annotation={annotation} />
+      )}
+    </span>
+  );
+}

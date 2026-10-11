@@ -33,20 +33,20 @@ export type PracticeOutcomeMessage = {
 };
 
 /** A revealed answer: its accepted moves are drawn on the board. */
-export type PracticeReveal = PracticeAnswer;
+type PracticeReveal = PracticeAnswer;
 
 /** Why a rehearsed line ended. */
 export type RehearsalEndReason = NonNullable<RehearsalStep["endReason"]>;
 
 /** Where an accepted move from another line lives (an `other-line` answer). */
-export type PracticeOtherLine = NonNullable<AttemptResult["otherLine"]>;
+type PracticeOtherLine = NonNullable<AttemptResult["otherLine"]>;
 
 /**
  * A rehearsal step the main process returned and the page hasn't finished presenting: the reply is
  * shown on the board once `replyShown`, then the next decision (or the line's end) is presented.
  * `auto` is false after a reveal, until the player chooses to continue the line.
  */
-export type PendingRehearsalStep = { step: RehearsalStep; replyShown: boolean; auto: boolean };
+type PendingRehearsalStep = { step: RehearsalStep; replyShown: boolean; auto: boolean };
 
 export type RepertoirePracticeState = {
   session: PracticeSessionSnapshot | null;
@@ -215,7 +215,7 @@ export function openingReplyMessage(
 ): PracticeOutcomeMessage | null {
   if (session.mode !== "rehearse-lines" || card.rehearsal?.stepIndex !== 0) return null;
   const from = session.scope.rehearse?.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
-  const reply = card.leadUp[card.leadUp.length - 1];
+  const reply = card.leadUp.at(-1);
   if (card.nodeId === from || !reply) return null;
   return { tone: "info", text: `The reply: ${reply.san}.` };
 }
@@ -260,8 +260,65 @@ export function lineCompleteText(reason: RehearsalEndReason | null): string {
 
 export const OTHER_LINE_TEXT = "That is a repertoire choice in another line.";
 
-export const SESSION_ENDED_TEXT =
-  "This chapter changed since the session started, so the session ended.";
+const SESSION_ENDED_TEXT = "This chapter changed since the session started, so the session ended.";
+
+/** What a practice action shows, from its result and the session it leaves (`next`). */
+type ActionPatch = (
+  result: PracticeActionResult,
+  next: PracticeSessionSnapshot,
+  shown: RepertoirePracticeState
+) => Partial<RepertoirePracticeState>;
+
+const ACTION_PATCHES: Record<PracticeAction["kind"], ActionPatch> = {
+  "follow-other-line": (result, next) => ({
+    session: next,
+    otherLine: null,
+    message: { tone: "success", text: "Following that line." },
+    rehearsal: result.rehearsal ? { step: result.rehearsal, replyShown: false, auto: true } : null
+  }),
+  hint: (result, next, shown) => {
+    if (result.sessionEnded) {
+      // No hint was given: the session is over (the page moves on to its summary).
+      return {
+        session: { ...next, status: "finished" },
+        message: { tone: "info", text: SESSION_ENDED_TEXT },
+        endNote: SESSION_ENDED_TEXT
+      };
+    }
+    return {
+      session: next,
+      hint:
+        result.revealed?.explanation ??
+        shown.hint ??
+        result.card.prompt ??
+        "No hint was written for this position.",
+      hintUci: result.revealed?.preferredUci ?? result.revealed?.ucis[0] ?? shown.hintUci
+    };
+  },
+  reveal: (result, next, shown) => {
+    const revealed = result.revealed ?? { ucis: [], preferredUci: null, explanation: null };
+    return {
+      session: next,
+      reveal: revealed,
+      answer: revealed,
+      message: {
+        tone: "info",
+        text:
+          result.card.state === "skipped"
+            ? "This decision changed since the session started, so the card was skipped."
+            : "Revealed — this decision counts as missed.",
+        // The author's words on the move just missed stay beside the answer.
+        feedback: shown.message?.feedback ?? null
+      },
+      otherLine: null,
+      // A rehearsal waits on the answer until the player continues the line.
+      rehearsal: result.rehearsal
+        ? { step: result.rehearsal, replyShown: false, auto: false }
+        : null
+    };
+  },
+  skip: (_result, next) => ({ session: next })
+};
 
 export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actions>((set, get) => ({
   ...initialState,
@@ -355,58 +412,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     // A reveal or following another line continues a rehearsed line; a skip starts the next one.
     const continues = kind === "reveal" || kind === "follow-other-line" || kind === "skip";
     const next = withStep(withCard(session, result.card), continues ? result.rehearsal : undefined);
-    if (kind === "follow-other-line") {
-      set({
-        session: next,
-        otherLine: null,
-        message: { tone: "success", text: "Following that line." },
-        rehearsal: result.rehearsal
-          ? { step: result.rehearsal, replyShown: false, auto: true }
-          : null
-      });
-      return;
-    }
-    if (kind === "hint" && result.sessionEnded) {
-      // No hint was given: the session is over (the page moves on to its summary).
-      set({
-        session: { ...next, status: "finished" },
-        message: { tone: "info", text: SESSION_ENDED_TEXT },
-        endNote: SESSION_ENDED_TEXT
-      });
-    } else if (kind === "hint") {
-      set({
-        session: next,
-        hint:
-          result.revealed?.explanation ??
-          get().hint ??
-          result.card.prompt ??
-          "No hint was written for this position.",
-        hintUci: result.revealed?.preferredUci ?? result.revealed?.ucis[0] ?? get().hintUci
-      });
-    } else if (kind === "reveal") {
-      const revealed = result.revealed ?? { ucis: [], preferredUci: null, explanation: null };
-      set({
-        session: next,
-        reveal: revealed,
-        answer: revealed,
-        message: {
-          tone: "info",
-          text:
-            result.card.state === "skipped"
-              ? "This decision changed since the session started, so the card was skipped."
-              : "Revealed — this decision counts as missed.",
-          // The author's words on the move just missed stay beside the answer.
-          feedback: get().message?.feedback ?? null
-        },
-        otherLine: null,
-        // A rehearsal waits on the answer until the player continues the line.
-        rehearsal: result.rehearsal
-          ? { step: result.rehearsal, replyShown: false, auto: false }
-          : null
-      });
-    } else {
-      set({ session: next });
-    }
+    set(ACTION_PATCHES[kind](result, next, get()));
   },
 
   advance: () => {

@@ -23,23 +23,23 @@ describe("readNdjson", () => {
     const values = await collect(
       bodyFrom(['{"type":"game', 'Start","id":1}\n', "\n", '\n{"a"', ':2}\n{"b":3}\n\n'])
     );
-    expect(values).toEqual([{ type: "gameStart", id: 1 }, { a: 2 }, { b: 3 }]);
+    expect(values).toStrictEqual([{ type: "gameStart", id: 1 }, { a: 2 }, { b: 3 }]);
   });
 
   it("parses a final line without a trailing newline", async () => {
-    expect(await collect(bodyFrom(['{"a":1}\n{"b":', "2}"]))).toEqual([{ a: 1 }, { b: 2 }]);
+    expect(await collect(bodyFrom(['{"a":1}\n{"b":', "2}"]))).toStrictEqual([{ a: 1 }, { b: 2 }]);
   });
 
   it("decodes a multi-byte character split between chunks", async () => {
     const bytes = new TextEncoder().encode('{"name":"Élodie"}\n');
     const split = bytes.indexOf(0xc3) + 1;
-    expect(await collect(bodyFrom([bytes.slice(0, split), bytes.slice(split)]))).toEqual([
+    expect(await collect(bodyFrom([bytes.slice(0, split), bytes.slice(split)]))).toStrictEqual([
       { name: "Élodie" }
     ]);
   });
 
   it("skips malformed lines and handles CRLF", async () => {
-    expect(await collect(bodyFrom(['not json\r\n{"ok":true}\r\n']))).toEqual([{ ok: true }]);
+    expect(await collect(bodyFrom(['not json\r\n{"ok":true}\r\n']))).toStrictEqual([{ ok: true }]);
   });
 
   it("reports every chunk, keep-alives included", async () => {
@@ -52,7 +52,7 @@ describe("readNdjson", () => {
       values.push(value);
     }
     expect(chunks).toBe(3);
-    expect(values).toEqual([{ a: 1 }]);
+    expect(values).toStrictEqual([{ a: 1 }]);
   });
 
   it("releases the stream when the consumer stops early", async () => {
@@ -66,7 +66,7 @@ describe("readNdjson", () => {
       }
     });
     for await (const value of readNdjson(body)) {
-      expect(value).toEqual({ a: 1 });
+      expect(value).toStrictEqual({ a: 1 });
       break;
     }
     expect(cancelled).toBe(true);

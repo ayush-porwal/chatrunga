@@ -24,16 +24,18 @@ describe("reviewMaiaModels", () => {
   const engines = [maia(1100), maia(1500), maia(1900, false)];
 
   it("lists the installed levels a review runs", () => {
-    expect(reviewMaiaModels(engines, { reviewUseMaia: true, reviewMaiaLevels: null })).toEqual([
-      1100, 1500
-    ]);
+    expect(
+      reviewMaiaModels(engines, { reviewUseMaia: true, reviewMaiaLevels: null })
+    ).toStrictEqual([1100, 1500]);
     expect(
       reviewMaiaModels(engines, { reviewUseMaia: true, reviewMaiaLevels: [1500, 1700] })
-    ).toEqual([1500]);
+    ).toStrictEqual([1500]);
   });
 
   it("has none with Maia off", () => {
-    expect(reviewMaiaModels(engines, { reviewUseMaia: false, reviewMaiaLevels: null })).toEqual([]);
+    expect(
+      reviewMaiaModels(engines, { reviewUseMaia: false, reviewMaiaLevels: null })
+    ).toStrictEqual([]);
   });
 });
 

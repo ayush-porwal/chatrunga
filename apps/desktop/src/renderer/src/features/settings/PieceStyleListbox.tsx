@@ -46,7 +46,7 @@ export function PieceStyleListbox({ id, value, pieceSizes, onChange }: PieceStyl
       open,
       setOpen,
       onCommit: (index) => {
-        const opt = pieceStyleOptions[index];
+        const opt = pieceStyleOptions.at(index);
         if (opt) onChange(opt.id);
       }
     });

@@ -3,7 +3,7 @@ import { PLATFORMS, type Platform, type PlatformId } from "./assets";
 type UAData = { platform?: string; mobile?: boolean };
 
 /** The visitor's desktop OS, or null on phones, tablets and anything unrecognised. */
-export function detectPlatform(): PlatformId | null {
+function detectPlatform(): PlatformId | null {
   const nav = navigator as Navigator & { userAgentData?: UAData };
   const ua = nav.userAgent;
   if (nav.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(ua)) return null;

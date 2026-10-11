@@ -46,7 +46,7 @@ export function appTarget(): { executablePath: string; args: string[]; packaged:
 }
 
 /** The unpacked app electron-builder wrote for this OS and CPU (`--dir`, or any target's staging folder). */
-export function findPackagedExecutable(distDir = join(desktopDir, "dist")): string {
+function findPackagedExecutable(distDir = join(desktopDir, "dist")): string {
   const folders = existsSync(distDir)
     ? readdirSync(distDir).filter((name) => statSync(join(distDir, name)).isDirectory())
     : [];
@@ -93,7 +93,7 @@ const OUTPUT_LINES = 200;
  * proxy, Node's fetch through the same proxy and a guard that only serves `routeToFile` URLs),
  * analytics and updates off, native open/save/message dialogs and external links stubbed.
  */
-export async function launchApp(profile: string): Promise<LaunchedApp> {
+async function launchApp(profile: string): Promise<LaunchedApp> {
   const target = appTarget();
   // Where this launch's lines start in main.log (a profile launched before has some already).
   const logStart = readMainLog(profile).length;
@@ -156,7 +156,7 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
   if (smallScreen) {
     await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) => {
-      const window = BrowserWindow.getAllWindows()[0];
+      const window = BrowserWindow.getAllWindows().at(0);
       window?.setMinimumSize(800, 600);
       window?.setContentSize(1008, 677);
     });
@@ -218,30 +218,30 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
 
     // Native dialogs would block the run: open/save are cancelled unless a test stubs a file;
     // message boxes answer their default button and are recorded.
-    dialog.showOpenDialog = (async () => {
+    dialog.showOpenDialog = async () => {
       recordDialog("open");
       return { canceled: true, filePaths: [] };
-    }) as typeof dialog.showOpenDialog;
-    dialog.showSaveDialog = (async () => {
+    };
+    dialog.showSaveDialog = async () => {
       recordDialog("save");
       return { canceled: true, filePath: "" };
-    }) as typeof dialog.showSaveDialog;
-    dialog.showMessageBoxSync = ((...args: unknown[]) => {
+    };
+    dialog.showMessageBoxSync = (...args: unknown[]) => {
       const options = (args.length > 1 ? args[1] : args[0]) as {
         message?: string;
         defaultId?: number;
       };
       recordDialog(`message: ${options.message ?? ""}`);
       return options.defaultId ?? 0;
-    }) as typeof dialog.showMessageBoxSync;
-    dialog.showMessageBox = (async (...args: unknown[]) => {
+    };
+    dialog.showMessageBox = async (...args: unknown[]) => {
       const options = (args.length > 1 ? args[1] : args[0]) as {
         message?: string;
         defaultId?: number;
       };
       recordDialog(`message: ${options.message ?? ""}`);
       return { response: options.defaultId ?? 0, checkboxChecked: false };
-    }) as typeof dialog.showMessageBox;
+    };
     shell.openExternal = async (url: string) => {
       recordDialog(`openExternal: ${url}`);
     };
@@ -292,7 +292,7 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
 const DIALOG_LOG = "e2e-dialogs.log";
 
 /** A worker thread's answer, as recorded: a puzzle scan's is `{ ok, complete, matches, ids }`. */
-export type WorkerAnswer = {
+type WorkerAnswer = {
   ok: boolean;
   complete: boolean | null;
   matches: number | null;
@@ -336,18 +336,18 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 }
 
 /** The next native open dialog picks `file`. */
-export function stubOpenFile(app: ElectronApplication, file: string) {
+function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
     const previous = dialog.showOpenDialog.bind(dialog);
-    dialog.showOpenDialog = (async () => {
+    dialog.showOpenDialog = async () => {
       dialog.showOpenDialog = previous;
       return { canceled: false, filePaths: [file] };
-    }) as typeof dialog.showOpenDialog;
+    };
   }, file);
 }
 
 /** The repo's scripted UCI engine (streams `info` lines on `go infinite`), run by this Node. */
-export const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
+const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
 
 /**
  * Registers the fake engine as the default, through the preload bridge (the Settings form needs a
@@ -385,7 +385,7 @@ export async function importPgnFile(
 }
 
 /** The Play page's bottom row: Recent games and Start something new (Play has no page heading). */
-export const playPage = (page: Page) => ({
+const playPage = (page: Page) => ({
   recentGames: page.getByRole("region", { name: "Recent games" }),
   startNew: page.getByRole("region", { name: "Start something new" })
 });
@@ -478,21 +478,19 @@ export async function closeApp(
   const quitLate = new Promise<"late">(
     (resolve) => (quitTimer = setTimeout(() => resolve("late"), quitTimeoutMs))
   );
-  let quitDone = false;
   let stopPolling = false;
   const quit = new Promise<"quit">((resolve) => {
     const poll = () => {
       if (stopPolling) return;
-      if (launch && quitLogged(launch)) {
-        quitDone = true;
-        resolve("quit");
-      } else pollTimer = setTimeout(poll, 100);
+      if (launch && quitLogged(launch)) resolve("quit");
+      else pollTimer = setTimeout(poll, 100);
     };
     if (launch) poll();
   });
   let outcome = await Promise.race([closed, quit, quitLate]);
+  const quitDone = outcome === "quit";
   // The exit's deadline runs from the end of the quit: a slow quit doesn't shorten it.
-  if (outcome === "quit")
+  if (quitDone)
     outcome = await Promise.race([
       closed,
       new Promise<"late">(
@@ -508,18 +506,7 @@ export async function closeApp(
   // Windows `app.process()` is the shell that started Electron): all of them are listed, then
   // killed.
   const processes = pid === undefined ? [] : processTree(pid);
-  if (process.platform === "win32" && pid !== undefined) {
-    for (const id of [pid, ...processes.map((entry) => entry.pid)])
-      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
-  } else {
-    for (const id of [pid, ...processes.map((entry) => entry.pid)]) {
-      try {
-        if (id !== undefined) process.kill(id, "SIGKILL");
-      } catch {
-        // Gone already.
-      }
-    }
-  }
+  if (pid !== undefined) killProcesses([pid, ...processes.map((entry) => entry.pid)]);
   await closed;
   const listed = processes
     .map((entry) => `${entry.pid} (parent ${entry.parent}) ${entry.command}`)
@@ -531,6 +518,22 @@ export async function closeApp(
     `${what}, so it was killed.\nIts processes then:\n${listed || "(none)"}` +
       (await quitDiagnostics(app))
   );
+}
+
+/** Kills a stuck app's processes; on Windows with their children (`taskkill /T`). */
+function killProcesses(ids: readonly number[]): void {
+  if (process.platform === "win32") {
+    for (const id of ids)
+      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  for (const id of ids) {
+    try {
+      process.kill(id, "SIGKILL");
+    } catch {
+      // Gone already.
+    }
+  }
 }
 
 /** The profile's main.log ("" until the app writes it). */

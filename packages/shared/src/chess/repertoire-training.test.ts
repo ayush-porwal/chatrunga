@@ -78,8 +78,10 @@ describe("scopeCause", () => {
   it("names the chapter first: left out, then reference material", () => {
     const { chapter } = chapterFrom(SICILIAN);
     const lookup = buildChapterLookup(chapter);
-    expect(scopeCause({ ...chapter, enabled: false }, lookup, "n2")).toEqual({ kind: "left-out" });
-    expect(scopeCause({ ...chapter, kind: "reference" }, lookup, "n2")).toEqual({
+    expect(scopeCause({ ...chapter, enabled: false }, lookup, "n2")).toStrictEqual({
+      kind: "left-out"
+    });
+    expect(scopeCause({ ...chapter, kind: "reference" }, lookup, "n2")).toStrictEqual({
       kind: "reference-chapter"
     });
     expect(scopeCause(chapter, lookup, "n2")).toBeNull();
@@ -91,7 +93,7 @@ describe("scopeCause", () => {
       [ids["e4 c5 Nf3"]]: { edge: "included", disabled: true }
     }));
     const lookup = buildChapterLookup(chapter);
-    expect(scopeCause(chapter, lookup, ids["e4 c5 Nf3 d6"])).toEqual({
+    expect(scopeCause(chapter, lookup, ids["e4 c5 Nf3 d6"])).toStrictEqual({
       kind: "reference-move",
       nodeId: ids["e4"]
     });
@@ -99,7 +101,7 @@ describe("scopeCause", () => {
       ...chapter,
       nodeMeta: { ...chapter.nodeMeta, [ids["e4"]]: { edge: "included" as const } }
     };
-    expect(scopeCause(included, lookup, ids["e4 c5 Nf3 d6"])).toEqual({
+    expect(scopeCause(included, lookup, ids["e4 c5 Nf3 d6"])).toStrictEqual({
       kind: "disabled-branch",
       nodeId: ids["e4 c5 Nf3"]
     });
@@ -111,13 +113,13 @@ describe("scopeCause", () => {
       [ids["e4 c5 Nc3"]]: { edge: "reference", trainingStart: true }
     }));
     const lookup = buildChapterLookup(chapter);
-    expect(scopeCause(chapter, lookup, ids["e4 c5"])).toEqual({
+    expect(scopeCause(chapter, lookup, ids["e4 c5"])).toStrictEqual({
       kind: "before-start",
       nodeId: ids["e4 c5 Nc3"]
     });
     const noStart = { ...chapter, nodeMeta: { [ids["e4 c5"]]: chapter.nodeMeta[ids["e4 c5"]] } };
     expect(scopeCause(noStart, lookup, ids["e4 c5"])).toBeNull();
-    expect(scopeCause(noStart, lookup, ids["e4 c5 Nf3"])).toEqual({
+    expect(scopeCause(noStart, lookup, ids["e4 c5 Nf3"])).toStrictEqual({
       kind: "stopped",
       nodeId: ids["e4 c5"]
     });
@@ -134,7 +136,7 @@ describe("ownMoveCause", () => {
 
   it("an own move that isn't accepted is its own cause", () => {
     const { chapter, ids } = chapterFrom(SICILIAN, (ids) => ({ [ids["e4"]]: { edge: "covered" } }));
-    expect(ownMoveCause(chapter, buildChapterLookup(chapter), ids["e4"])).toEqual({
+    expect(ownMoveCause(chapter, buildChapterLookup(chapter), ids["e4"])).toStrictEqual({
       kind: "reference-move",
       nodeId: ids["e4"]
     });
@@ -145,7 +147,7 @@ describe("chapterTraining", () => {
   it("a chapter whose moves are all reference names the player's first move", () => {
     const { chapter, ids } = chapterFrom(SICILIAN);
     const reference = { ...chapter, nodeMeta: allReference(chapter) };
-    expect(chapterTraining("white", reference)).toEqual({
+    expect(chapterTraining("white", reference)).toStrictEqual({
       decisionKeys: [],
       blocker: { kind: "reference-move", nodeId: ids["e4"] }
     });
@@ -153,27 +155,27 @@ describe("chapterTraining", () => {
 
   it("names a chapter left out, a reference chapter, an empty one and one without own moves", () => {
     const { chapter } = chapterFrom(SICILIAN);
-    expect(chapterTraining("white", { ...chapter, enabled: false }).blocker).toEqual({
+    expect(chapterTraining("white", { ...chapter, enabled: false }).blocker).toStrictEqual({
       kind: "left-out"
     });
-    expect(chapterTraining("white", { ...chapter, kind: "reference" }).blocker).toEqual({
+    expect(chapterTraining("white", { ...chapter, kind: "reference" }).blocker).toStrictEqual({
       kind: "reference-chapter"
     });
     const empty = chapterFrom('[Event "Empty"]\n\n*').chapter;
-    expect(chapterTraining("white", empty)).toEqual({
+    expect(chapterTraining("white", empty)).toStrictEqual({
       decisionKeys: [],
       blocker: { kind: "no-moves" }
     });
     // 1. e4 alone has no move of Black's.
     const onlyWhite = chapterFrom("1. e4 *").chapter;
-    expect(chapterTraining("black", onlyWhite).blocker).toEqual({ kind: "no-own-moves" });
+    expect(chapterTraining("black", onlyWhite).blocker).toStrictEqual({ kind: "no-own-moves" });
   });
 
   it("lists the decisions of a chapter that trains", () => {
     const { chapter } = chapterFrom(SICILIAN);
     const training = chapterTraining("white", chapter);
     expect(training.blocker).toBeNull();
-    expect(training.decisionKeys).toEqual([...collectDecisions("white", [chapter]).keys()]);
+    expect(training.decisionKeys).toStrictEqual([...collectDecisions("white", [chapter]).keys()]);
     expect(training.decisionKeys).toHaveLength(4);
   });
 });
@@ -182,12 +184,12 @@ describe("trainableChapter", () => {
   it("makes an all-reference chapter train like an import, keeping alternatives as reference", () => {
     const { chapter, ids } = chapterFrom(SICILIAN);
     const fixed = trainableChapter("white", { ...chapter, nodeMeta: allReference(chapter) });
-    expect(fixed.nodeMeta[ids["e4"]]).toEqual({ edge: "included" });
-    expect(fixed.nodeMeta[ids["e4 c5"]]).toEqual({ edge: "covered" });
-    expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toEqual({ edge: "included" });
-    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toEqual({ edge: "reference" });
+    expect(fixed.nodeMeta[ids["e4"]]).toStrictEqual({ edge: "included" });
+    expect(fixed.nodeMeta[ids["e4 c5"]]).toStrictEqual({ edge: "covered" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toStrictEqual({ edge: "included" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toStrictEqual({ edge: "reference" });
     // Below a reference alternative nothing changes.
-    expect(fixed.nodeMeta[ids["e4 c5 Nc3 Nc6"]]).toEqual({ edge: "reference" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nc3 Nc6"]]).toStrictEqual({ edge: "reference" });
     expect(collectDecisions("white", [fixed]).size).toBe(4);
   });
 
@@ -199,13 +201,16 @@ describe("trainableChapter", () => {
     expect(fixed.kind).toBe("opening");
     expect(fixed.enabled).toBe(true);
     // Nc3 was accepted already: Nf3 stays as it was (included by default, no entry).
-    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toEqual({ edge: "included", trainingStop: true });
+    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toStrictEqual({
+      edge: "included",
+      trainingStop: true
+    });
     expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toBeUndefined();
   });
 
   it("leaves a chapter that trains as it was", () => {
     const { chapter } = chapterFrom(SICILIAN);
-    expect(trainableChapter("white", chapter).nodeMeta).toEqual(chapter.nodeMeta);
+    expect(trainableChapter("white", chapter).nodeMeta).toStrictEqual(chapter.nodeMeta);
   });
 
   it("accepts the move the repertoire already accepts at a position, not widening its decision", () => {
@@ -214,10 +219,11 @@ describe("trainableChapter", () => {
     const lookup = buildChapterLookup(chapter);
     const afterC5 = lookup.positionKeys.get(ids["e4 c5"])!;
     // Another chapter practises 2. Nc3 after 1. e4 c5: this one accepts Nc3 there, not Nf3.
-    const acceptedAt = (key: string) => (key === afterC5 ? ["b1c3"] : undefined);
+    const decisions = new Map([[afterC5, ["b1c3"]]]);
+    const acceptedAt = (key: string) => decisions.get(key);
     const fixed = trainableChapter("white", reference, acceptedAt);
-    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toEqual({ edge: "included" });
-    expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toEqual({ edge: "reference" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toStrictEqual({ edge: "included" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toStrictEqual({ edge: "reference" });
     const picks = trainingPicks("white", reference, acceptedAt);
     expect(picks.find((pick) => pick.positionKey === afterC5)).toMatchObject({
       childId: ids["e4 c5 Nc3"],
@@ -236,10 +242,11 @@ describe("trainableChapter", () => {
     expect(first.every((pick) => !pick.widens)).toBe(true);
     // The repertoire plays 2. c3 after 1. e4 c5: accepting Nf3 there adds to that decision.
     const afterC5 = buildChapterLookup(chapter).positionKeys.get(ids["e4 c5"])!;
-    const widened = trainingPicks("white", reference, (key) =>
-      key === afterC5 ? ["c2c3"] : undefined
-    ).filter((pick) => pick.widens);
-    expect(widened).toEqual([
+    const decisions = new Map([[afterC5, ["c2c3"]]]);
+    const widened = trainingPicks("white", reference, (key) => decisions.get(key)).filter(
+      (pick) => pick.widens
+    );
+    expect(widened).toStrictEqual([
       expect.objectContaining({ nodeId: ids["e4 c5"], childId: ids["e4 c5 Nf3"], uci: "g1f3" })
     ]);
   });

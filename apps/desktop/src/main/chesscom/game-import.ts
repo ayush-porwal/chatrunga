@@ -46,7 +46,7 @@ export function firstImportSince(window: ChesscomImportWindow, now: number): num
 }
 
 /** The archive month before `month` (`2026/01` → `2025/12`). */
-export function previousMonth(month: ArchiveMonth): ArchiveMonth {
+function previousMonth(month: ArchiveMonth): ArchiveMonth {
   const [year = 0, number = 1] = month.split("/").map(Number);
   return archiveMonthOf(Date.UTC(year, number - 2, 1));
 }

@@ -8,7 +8,7 @@ import { useSyncExternalStore } from "react";
 /** Piece slide for a single step (a move played, ← / →). */
 export const PIECE_MOVE_MS = 180;
 /** Highlights (last move, check, legal-move dots) fading in after a step. */
-export const HIGHLIGHT_FADE_MS = 140;
+const HIGHLIGHT_FADE_MS = 140;
 /** Position changes closer together than this snap instead of sliding (held keys, fast clicks). */
 export const RAPID_STEP_MS = 90;
 

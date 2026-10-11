@@ -67,8 +67,7 @@ export function BoardResizeGrip({ availRef }: { availRef: RefObject<HTMLElement 
     resize(
       draggedBoardEdge(
         current.start,
-        event.clientX - current.x,
-        event.clientY - current.y,
+        { dx: event.clientX - current.x, dy: event.clientY - current.y },
         current.max,
         current.shift
       )

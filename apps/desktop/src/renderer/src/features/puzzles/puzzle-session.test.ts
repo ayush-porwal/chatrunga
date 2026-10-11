@@ -24,7 +24,7 @@ describe("submitPuzzleMove", () => {
   it("plays the expected move and advances the solution", () => {
     const play = vi.fn(() => true);
     expect(submitPuzzleMove("e2e4", play)).toBe(true);
-    expect(play).toHaveBeenCalledOnce();
+    expect(play).toHaveBeenCalledTimes(1);
     expect(usePuzzleStore.getState()).toMatchObject({ solutionIndex: 1, feedbackKind: "correct" });
   });
 

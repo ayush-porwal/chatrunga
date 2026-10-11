@@ -21,6 +21,13 @@ import {
 import { buildTreeModel, variationText } from "./move-tree-model";
 
 /** A reviewed move with the engine's best line (UCI) from before it, and its mark. */
+/** The fixture's move played as `san` (never the root); it throws when there is none. */
+function moveBySan(tree: readonly MoveNode[], san: string): MoveNode {
+  const move = tree.find((item) => item.san === san && item.parentId !== null);
+  if (!move) throw new Error(`no move ${san}`);
+  return move;
+}
+
 function reviewed(
   move: ReturnType<typeof mainlineReviewInput>[number],
   annotation: MoveAnnotation | null,
@@ -95,14 +102,14 @@ describe("hasBestLine", () => {
   it("falls back to the best move when the review kept no line", () => {
     const review = { ...reviewed(bySan("Nxe5"), "mistake"), bestMove: "c2c3" };
     expect(hasBestLine(review)).toBe(true);
-    expect(bestLineMoves(review).map((move) => move.san)).toEqual(["c3"]);
+    expect(bestLineMoves(review).map((move) => move.san)).toStrictEqual(["c3"]);
   });
 });
 
 describe("bestLineMoves", () => {
   it("numbers the line from the position before the error, as it reads in the list", () => {
     const moves = bestLineMoves(blunder);
-    expect(moves.map((move) => [move.number, move.san])).toEqual([
+    expect(moves.map((move) => [move.number, move.san])).toStrictEqual([
       ["4.", "c3"],
       [null, "Nc6"],
       ["5.", "d4"],
@@ -124,13 +131,13 @@ describe("bestLineMoves", () => {
     const long = reviewed(bySan("Nxe5"), "blunder", [...blunder.bestLine, "c3d4", "f8b4"]);
     expect(bestLineMoves(long)).toHaveLength(4);
     const broken = reviewed(bySan("Nxe5"), "blunder", ["c2c3", "a1a8", "d2d4"]);
-    expect(bestLineMoves(broken).map((move) => move.san)).toEqual(["c3"]);
+    expect(bestLineMoves(broken).map((move) => move.san)).toStrictEqual(["c3"]);
   });
 
   it("carries each move's position for its preview and its UCI for the highlight", () => {
     const [first] = bestLineMoves(blunder);
-    expect(first?.uci).toBe("c2c3");
-    expect(first?.fenAfter.split(" ")[0]).toBe(
+    expect(first.uci).toBe("c2c3");
+    expect(first.fenAfter.split(" ")[0]).toBe(
       "r1bqkbnr/pppp1ppp/8/4p3/2BnP3/2P2N2/PP1P1PPP/RNBQK2R"
     );
   });
@@ -179,7 +186,7 @@ describe("mainlineItems", () => {
 
   it("pairs the moves by number, two to a row", () => {
     const model = buildTreeModel(game.moveTree);
-    expect(mainlineItems(model).map(describeItem)).toEqual([
+    expect(mainlineItems(model).map(describeItem)).toStrictEqual([
       "1: e4 e5",
       "2: Nf3 Nc6",
       "3: Bc4 Nd4",
@@ -193,13 +200,13 @@ describe("mainlineItems", () => {
       "1. e4 e5 2. Nf3 (2. Bc4 Nf6) 2… Nc6 3. Bc4 Nd4 4. Nxe5 (4. c3 (4. Nc3 Nxf3+) c6) 4… Qg5 (4… Nxc2+ 5. Qxc2) *"
     );
     const model = buildTreeModel(branched.moveTree);
-    const node = (san: string): MoveNode =>
-      branched.moveTree.find((item) => item.san === san && item.parentId !== null)!;
+    const node = (san: string): MoveNode => moveBySan(branched.moveTree, san);
+    const unfolded = new Set<string | null>(["Nxe5", "Qg5"]);
     const items = mainlineItems(model, {
       bookEndNodeId: node("Nc6").id,
-      showsBestLine: (item) => item.san === "Nxe5" || item.san === "Qg5"
+      showsBestLine: (item) => unfolded.has(item.san)
     });
-    expect(items.map(describeItem)).toEqual([
+    expect(items.map(describeItem)).toStrictEqual([
       "1: e4 e5",
       "2: Nf3 Nc6",
       "opening",
@@ -221,7 +228,7 @@ describe("mainlineItems", () => {
     const { game: fromBlack } = importPgnText(
       '[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n\n1… e5 2. Nf3 *'
     );
-    expect(mainlineItems(buildTreeModel(fromBlack.moveTree)).map(describeItem)).toEqual([
+    expect(mainlineItems(buildTreeModel(fromBlack.moveTree)).map(describeItem)).toStrictEqual([
       "1: … e5",
       "2: Nf3"
     ]);

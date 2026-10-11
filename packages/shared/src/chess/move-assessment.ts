@@ -202,14 +202,14 @@ function moverOf(fen: string): "white" | "black" | null {
  */
 function evidenceFor(move: AssessableMove): Evidence | null {
   const lines = sortedLines(move.topLines);
-  const best = lines[0];
+  const best = lines.at(0);
   const mover = moverOf(move.fenBefore);
   if (!best || !mover) return null;
   const before = moverEval(best.score, true);
   const playedLine = lines.find((line) => line.pv[0] === move.playedMove) ?? null;
   const terminal = terminalOf(move);
   const checkedLine = move.verification?.playedLine;
-  const reply = sortedLines(move.replyLines)[0];
+  const reply = sortedLines(move.replyLines).at(0);
   let after: MoverEval | null = null;
   if (terminal === "checkmate") after = { kind: "mate", moverMates: true };
   else if (terminal) after = { kind: "cp", cp: 0 };
@@ -335,7 +335,7 @@ type Candidate = {
  */
 function candidateFrom(lines: readonly AnalysisLine[], move: AssessableMove): Candidate {
   const sorted = sortedLines(lines);
-  const best = sorted[0];
+  const best = sorted.at(0);
   const played = sorted.find((line) => line.pv[0] === move.playedMove);
   if (!best || !played) return { kind: null, gap: null, savesMaterial: false };
   const playedWin = lineWin(played);
@@ -433,39 +433,44 @@ function praiseGate(
   evidence: Evidence,
   context: AssessmentContext
 ): PraiseGate {
-  const { lines, before, after, playedLine } = evidence;
-  const winBefore = moverWin(before);
-  const winLoss = Math.max(0, winBefore - moverWin(after));
   const previous =
     context.previous && context.previous.move.fenAfter === move.fenBefore ? context.previous : null;
-  const opponentErred =
-    (previous?.assessment.severity === "mistake" || previous?.assessment.severity === "blunder") &&
-    (previous.assessment.winBefore ?? 0) > DECIDED_LOSS;
   const prediction =
     context.trustMaia === false
       ? null
       : predictionAtLevel(move.humanPredictions, context.playerRating);
   const humanTop = prediction?.topMoves[0] ?? null;
   const naturalMove = Boolean(humanTop && humanTop.uci === move.playedMove);
-  const engineTop = lines[0]?.pv[0] === move.playedMove;
-  const excludedBy =
-    legalMoveCount(move.fenBefore) < 2
-      ? "forced"
-      : isRecapture(move, previous?.move ?? null)
-        ? "recapture"
-        : !playedLine || winLoss > NEAR_BEST
-          ? "near_best"
-          : winBefore >= DECIDED_WIN
-            ? "decided"
-            : null;
+  const engineTop = evidence.lines[0]?.pv[0] === move.playedMove;
   return {
-    excludedBy,
-    opponentErred,
+    excludedBy: praiseExclusion(move, evidence, previous?.move ?? null),
+    opponentErred: gaveSomethingAway(previous),
     prediction,
     naturalMove,
     obvious: naturalMove && humanTop !== null && humanTop.prob >= OBVIOUS_PROBABILITY,
     tactic: engineTop && move.motifs.some((motif) => TACTICAL_MOTIFS.has(motif))
   };
+}
+
+/** The first exclusion from praise that applies to the move (see `PraiseGate.excludedBy`). */
+function praiseExclusion(
+  move: AssessableMove,
+  { before, after, playedLine }: Evidence,
+  previousMove: AssessableMove | null
+): PraiseGate["excludedBy"] {
+  if (legalMoveCount(move.fenBefore) < 2) return "forced";
+  if (isRecapture(move, previousMove)) return "recapture";
+  const winBefore = moverWin(before);
+  const winLoss = Math.max(0, winBefore - moverWin(after));
+  if (!playedLine || winLoss > NEAR_BEST) return "near_best";
+  return winBefore >= DECIDED_WIN ? "decided" : null;
+}
+
+/** The opponent's move into the position was a mistake or blunder made while not already lost. */
+function gaveSomethingAway(previous: AssessmentContext["previous"]): boolean {
+  if (!previous) return false;
+  const { severity, winBefore } = previous.assessment;
+  return (severity === "mistake" || severity === "blunder") && (winBefore ?? 0) > DECIDED_LOSS;
 }
 
 /**
@@ -495,6 +500,23 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/** A move's evaluations as the marks read them: the mover's winning chances (0–100). */
+type Reading = {
+  move: AssessableMove;
+  evidence: Evidence;
+  winBefore: number;
+  winAfter: number;
+  /** The played move is the engine's best. */
+  engineTop: boolean;
+  /**
+   * The played line's winning chances against the best other line's (null: no comparison).
+   * Replaced by the deeper search's gap when that search confirms a Great or Brilliant mark.
+   */
+  alternativeGap: number | null;
+  /** The assessment's tags so far; the marks add theirs. */
+  tags: Set<AssessmentTag>;
+};
+
 /**
  * Assesses one move. `context.previous` is the opponent's move into this position (Miss, Good and
  * recaptures depend on it); `context.book` makes it a book move, marked Book whatever it cost.
@@ -516,16 +538,8 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
       tags: [...tags]
     };
   }
-  const { lines, before, after, playedLine } = evidence;
-  const winBefore = moverWin(before);
-  const winAfter = moverWin(after);
-  const winLoss = Math.max(0, winBefore - winAfter);
-  const engineTop = lines[0]?.pv[0] === move.playedMove;
-  if (engineTop) tags.add("engine_top");
-  const otherWins = playedLine ? lines.filter((line) => line !== playedLine).map(lineWin) : [];
-  // Replaced by the deeper search's gap when that search confirms a Great or Brilliant mark.
-  let alternativeGap =
-    playedLine && otherWins.length ? lineWin(playedLine) - Math.max(...otherWins) : null;
+  const reading = readingOf(move, evidence, tags);
+  const { winBefore, winAfter } = reading;
   const result = (
     severity: ErrorSeverity | null,
     annotation: MoveAnnotation | null
@@ -533,8 +547,8 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     policy: MOVE_ASSESSMENT_POLICY,
     winBefore: round1(winBefore),
     winAfter: round1(winAfter),
-    winLoss: round1(winLoss),
-    alternativeGap: alternativeGap === null ? null : round1(alternativeGap),
+    winLoss: round1(Math.max(0, winBefore - winAfter)),
+    alternativeGap: reading.alternativeGap === null ? null : round1(reading.alternativeGap),
     severity,
     annotation,
     tags: [...tags]
@@ -543,82 +557,126 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
   if (context.book) return result(null, "book");
 
   const gate = praiseGate(move, evidence, context);
-  const { opponentErred, prediction } = gate;
   if (gate.naturalMove) tags.add("natural_move");
 
-  const { severity, mateTag } = severityFor(before, after);
+  const { severity, mateTag } = severityFor(evidence.before, evidence.after);
   if (mateTag) tags.add(mateTag);
-  if (severity) {
-    if (
-      move.bestMove &&
-      move.bestMove !== move.playedMove &&
-      move.motifs.some((motif) => motif.length > 0)
-    ) {
-      tags.add("missed_tactic");
-    }
-    if (opponentErred && severity !== "inaccuracy" && winBefore >= OPPORTUNITY_WIN) {
-      tags.add("missed_chance");
-      return result(severity, "miss");
-    }
-    if (severity === "inaccuracy" && (winAfter >= DECIDED_WIN || winBefore <= DECIDED_LOSS)) {
-      tags.add("decided");
-      return result(severity, null);
-    }
-    return result(severity, severity);
-  }
+  if (severity) return result(severity, errorMark(reading, severity, gate));
+  return result(null, praiseMark(reading, gate));
+}
 
-  // No error: praise only what clears every exclusion (the same ones verificationNeed applies).
+function readingOf(move: AssessableMove, evidence: Evidence, tags: Set<AssessmentTag>): Reading {
+  const { lines, before, after, playedLine } = evidence;
+  const engineTop = lines[0]?.pv[0] === move.playedMove;
+  if (engineTop) tags.add("engine_top");
+  const otherWins = playedLine ? lines.filter((line) => line !== playedLine).map(lineWin) : [];
+  return {
+    move,
+    evidence,
+    winBefore: moverWin(before),
+    winAfter: moverWin(after),
+    engineTop,
+    alternativeGap:
+      playedLine && otherWins.length ? lineWin(playedLine) - Math.max(...otherWins) : null,
+    tags
+  };
+}
+
+/** The mark of an error of `severity`: a Miss when it let a gift go, none when nothing hinged on it. */
+function errorMark(
+  { move, winBefore, winAfter, tags }: Reading,
+  severity: ErrorSeverity,
+  gate: PraiseGate
+): MoveAnnotation | null {
+  if (
+    move.bestMove &&
+    move.bestMove !== move.playedMove &&
+    move.motifs.some((motif) => motif.length > 0)
+  ) {
+    tags.add("missed_tactic");
+  }
+  if (gate.opponentErred && severity !== "inaccuracy" && winBefore >= OPPORTUNITY_WIN) {
+    tags.add("missed_chance");
+    return "miss";
+  }
+  if (severity === "inaccuracy" && (winAfter >= DECIDED_WIN || winBefore <= DECIDED_LOSS)) {
+    tags.add("decided");
+    return null;
+  }
+  return severity;
+}
+
+/** The mark of a move without an error: praise only what clears every exclusion. */
+function praiseMark(reading: Reading, gate: PraiseGate): MoveAnnotation | null {
+  const { move, engineTop, alternativeGap, tags } = reading;
+  // The same exclusions verificationNeed applies.
   switch (gate.excludedBy) {
     case "forced":
     case "recapture":
       tags.add(gate.excludedBy);
-      return result(null, null);
+      return null;
     case "near_best":
-      return result(null, null);
+      return null;
     case "decided":
     case null:
       break;
   }
-  if (opponentErred) tags.add("punishes_error");
+  if (gate.opponentErred) tags.add("punishes_error");
   const punishes =
-    opponentErred &&
+    gate.opponentErred &&
     ((alternativeGap !== null && alternativeGap >= CHOICE_GAP) ||
       (engineTop && move.motifs.length > 0));
   if (gate.excludedBy === "decided") {
     tags.add("decided");
-    return result(null, punishes ? "good" : null);
+    return punishes ? "good" : null;
   }
+  return (
+    confirmedCandidate(reading, gate) ?? excellentMark(reading, gate) ?? (punishes ? "good" : null)
+  );
+}
 
-  const candidate = candidateFor(lines, move, gate);
+/**
+ * Great or Brilliant, when the move is a candidate and the deeper search confirms it (its gap then
+ * replaces the reading's).
+ */
+function confirmedCandidate(reading: Reading, gate: PraiseGate): "brilliant" | "great" | null {
+  const { move, evidence, tags } = reading;
+  const candidate = candidateFor(evidence.lines, move, gate);
   if (candidate.blocked && candidate.savesMaterial && !gate.obvious) tags.add("saves_material");
-  if (candidate.kind) {
-    const deeper = move.verification?.deeperLines;
-    if (!deeper?.length) {
-      tags.add("unverified");
-    } else {
-      const confirmed = candidateFor(deeper, move, gate);
-      if (confirmed.kind) alternativeGap = confirmed.gap;
-      if (confirmed.kind === "brilliant") {
-        tags.add("sacrifice");
-        return result(null, "brilliant");
-      }
-      if (confirmed.kind === "great") {
-        tags.add("only_move");
-        return result(null, "great");
-      }
-      tags.add("unstable");
-    }
+  if (!candidate.kind) return null;
+  const deeper = move.verification?.deeperLines;
+  if (!deeper?.length) {
+    tags.add("unverified");
+    return null;
   }
+  const confirmed = candidateFor(deeper, move, gate);
+  if (confirmed.kind) reading.alternativeGap = confirmed.gap;
+  if (confirmed.kind === "brilliant") {
+    tags.add("sacrifice");
+    return "brilliant";
+  }
+  if (confirmed.kind === "great") {
+    tags.add("only_move");
+    return "great";
+  }
+  tags.add("unstable");
+  return null;
+}
 
+/** Excellent: the engine's best where the choice mattered, a tactic or hard to find at the level. */
+function excellentMark(
+  { move, engineTop, alternativeGap, tags }: Reading,
+  gate: PraiseGate
+): "excellent" | null {
   const choiceMattered = alternativeGap !== null && alternativeGap >= CHOICE_GAP;
-  const playedProbability = prediction ? probabilityOf(prediction, move.playedMove) : null;
+  const playedProbability = gate.prediction
+    ? probabilityOf(gate.prediction, move.playedMove)
+    : null;
   const hardToFind = playedProbability !== null && playedProbability < HARD_PROBABILITY;
-  if (engineTop && choiceMattered && (gate.tactic || hardToFind)) {
-    if (gate.tactic) tags.add("tactic");
-    if (hardToFind) tags.add("hard_to_find");
-    return result(null, "excellent");
-  }
-  return result(null, punishes ? "good" : null);
+  if (!engineTop || !choiceMattered || (!gate.tactic && !hardToFind)) return null;
+  if (gate.tactic) tags.add("tactic");
+  if (hardToFind) tags.add("hard_to_find");
+  return "excellent";
 }
 
 /** Options for assessing a whole line: its book moves come from `openingBook` (none without one). */
@@ -638,16 +696,11 @@ export function assessMoves(
   const book = openingBook ? classifyOpening(openingBook, moves).book : [];
   const assessments: MoveAssessment[] = [];
   moves.forEach((move, index) => {
-    const previousMove = moves[index - 1];
-    const previousAssessment = assessments[index - 1];
     assessments.push(
       assessMove(move, {
         ...context,
         book: book[index] ?? false,
-        previous:
-          previousMove && previousAssessment
-            ? { move: previousMove, assessment: previousAssessment }
-            : null
+        previous: index > 0 ? { move: moves[index - 1], assessment: assessments[index - 1] } : null
       })
     );
   });
@@ -709,6 +762,27 @@ function classifyOpeningSafely(book: OpeningBook, review: GameReview) {
   }
 }
 
+type SummaryCount = Exclude<keyof GameReviewSummary, "totalMoves" | "averageCentipawnLoss">;
+
+const SEVERITY_COUNTS: Record<ErrorSeverity, SummaryCount> = {
+  inaccuracy: "inaccuracies",
+  mistake: "mistakes",
+  blunder: "blunders"
+};
+
+/** The count each mark adds to; error marks count by severity instead (null). */
+const MARK_COUNTS: Record<MoveAnnotation, SummaryCount | null> = {
+  book: "book",
+  brilliant: "brilliant",
+  great: "great",
+  excellent: "excellent",
+  good: "good",
+  miss: "misses",
+  inaccuracy: null,
+  mistake: null,
+  blunder: null
+};
+
 /**
  * Counts for a review's summary. Errors count by severity (marked or not), so shortening what the
  * review highlights never changes them; positives count by mark.
@@ -730,6 +804,9 @@ export function summarizeMoves(moves: readonly MoveReview[]): GameReviewSummary 
     humanErrors: 0,
     averageCentipawnLoss: null
   };
+  const count = (key: SummaryCount) => {
+    summary[key] = (summary[key] ?? 0) + 1;
+  };
   let lossSum = 0;
   let lossCount = 0;
   for (const move of moves) {
@@ -740,49 +817,14 @@ export function summarizeMoves(moves: readonly MoveReview[]): GameReviewSummary 
     }
     const assessment = move.assessment;
     if (!assessment) continue;
-    if (assessment.tags.includes("engine_top")) summary.best += 1;
-    switch (assessment.severity) {
-      case "inaccuracy":
-        summary.inaccuracies += 1;
-        break;
-      case "mistake":
-        summary.mistakes += 1;
-        break;
-      case "blunder":
-        summary.blunders += 1;
-        break;
-      case null:
-        break;
+    if (assessment.tags.includes("engine_top")) count("best");
+    if (assessment.severity) {
+      count(SEVERITY_COUNTS[assessment.severity]);
+      if (assessment.tags.includes("missed_tactic")) count("missedTactics");
+      if (assessment.tags.includes("natural_move")) count("humanErrors");
     }
-    if (assessment.severity && assessment.tags.includes("missed_tactic"))
-      summary.missedTactics += 1;
-    if (assessment.severity && assessment.tags.includes("natural_move"))
-      summary.humanErrors = (summary.humanErrors ?? 0) + 1;
-    switch (assessment.annotation) {
-      case "book":
-        summary.book = (summary.book ?? 0) + 1;
-        break;
-      case "brilliant":
-        summary.brilliant = (summary.brilliant ?? 0) + 1;
-        break;
-      case "great":
-        summary.great = (summary.great ?? 0) + 1;
-        break;
-      case "excellent":
-        summary.excellent += 1;
-        break;
-      case "good":
-        summary.good += 1;
-        break;
-      case "miss":
-        summary.misses = (summary.misses ?? 0) + 1;
-        break;
-      case "inaccuracy":
-      case "mistake":
-      case "blunder":
-      case null:
-        break;
-    }
+    const markCount = assessment.annotation ? MARK_COUNTS[assessment.annotation] : null;
+    if (markCount) count(markCount);
   }
   summary.averageCentipawnLoss = lossCount ? Math.round(lossSum / lossCount) : null;
   return summary;

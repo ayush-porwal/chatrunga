@@ -54,7 +54,7 @@ export function stepBestLine(cursor: BestLineCursor, delta: number): BestLineSte
 
 /** The move of the line on the board. */
 export function bestLineStep(cursor: BestLineCursor): BestLineStep {
-  return cursor.moves[cursor.index]!;
+  return cursor.moves[cursor.index];
 }
 
 /** The line's moves up to the one on the board (SAN): what a new move played there follows. */

@@ -4,7 +4,7 @@ import { uptime } from "node:os";
 export type ClockReading = { monotonic: number; wall: number; uptimeMs: number };
 
 /** How far the two measurements may differ before the wall clock is taken to have been changed. */
-export const SLEEP_AGREEMENT_MS = 1_500;
+const SLEEP_AGREEMENT_MS = 1_500;
 
 export function readClocks(): ClockReading {
   return { monotonic: performance.now(), wall: Date.now(), uptimeMs: uptime() * 1000 };

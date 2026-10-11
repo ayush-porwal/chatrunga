@@ -79,7 +79,7 @@ export function describeComparison(comparison: RepertoireComparison): Comparison
     if (!recognized) {
       if (!moves.length) return { tone: "neutral", text: "This game has no moves to compare" };
       // Nothing judged yet, but the final position is where a chapter begins.
-      const chapter = comparison.chaptersUsed[0];
+      const chapter = comparison.chaptersUsed.at(0);
       return chapter
         ? { tone: "info", text: `This game ends where ${chapter.title} begins` }
         : { tone: "neutral", text: "No chapter of this repertoire applies to this game" };
@@ -166,7 +166,10 @@ export type RememberedRepertoires = { white: string | null; black: string | null
 export type OpeningSide = { board: number; color: RepertoireColor };
 
 /** The side picked for this board, or null when none was or it was picked for another board. */
-export function openingSideFor(side: OpeningSide | null, board: number): RepertoireColor | null {
+export function openingSideFor(
+  side: OpeningSide | null | undefined,
+  board: number
+): RepertoireColor | null {
   return side && side.board === board ? side.color : null;
 }
 
@@ -182,39 +185,51 @@ export function suggestedSide(input: {
   /** The connected chess.com account's username. */
   chesscomUsername?: string | null;
   engineSide: RepertoireColor | null;
-}): { color: RepertoireColor; hint: string } | null {
-  const { source, headers, lichessUsername, engineSide } = input;
+}): SideSuggestion | null {
+  const { source, headers, engineSide } = input;
+  if (source === "engine-game") return engineGameSide(headers, engineSide);
   const account =
     source === "lichess"
-      ? { username: lichessUsername, site: "Lichess" }
+      ? { username: input.lichessUsername, site: "Lichess" }
       : source === "chesscom"
         ? { username: input.chesscomUsername ?? null, site: "Chess.com" }
         : null;
-  if (account?.username) {
-    const name = account.username.toLowerCase();
-    const white = headers.white?.toLowerCase() === name;
-    const black = headers.black?.toLowerCase() === name;
-    if (white !== black) {
-      const color = white ? "white" : "black";
-      return {
-        color,
-        hint: `You played ${color === "white" ? "White" : "Black"} in this ${account.site} game`
-      };
-    }
-  }
-  if (source === "engine-game") {
-    // The live match's side, else the "You" header an engine game is saved with.
-    const you = (name: string | null | undefined) => name === "You";
-    const fromHeaders =
-      you(headers.white) !== you(headers.black) ? (you(headers.white) ? "white" : "black") : null;
-    const color = engineSide ? (engineSide === "white" ? "black" : "white") : fromHeaders;
-    if (!color) return null;
-    return {
-      color,
-      hint: `You played ${color === "white" ? "White" : "Black"} against the engine`
-    };
-  }
-  return null;
+  return account?.username ? accountSide(headers, account.username, account.site) : null;
+}
+
+type SideSuggestion = { color: RepertoireColor; hint: string };
+
+const SIDE_NAME: Record<RepertoireColor, string> = { white: "White", black: "Black" };
+
+/**
+ * An online game's side: the one whose header is the connected account (neither, or both: none).
+ */
+function accountSide(
+  headers: Pick<GameHeaders, "white" | "black">,
+  username: string,
+  site: string
+): SideSuggestion | null {
+  const name = username.toLowerCase();
+  const white = headers.white?.toLowerCase() === name;
+  const black = headers.black?.toLowerCase() === name;
+  if (white === black) return null;
+  const color = white ? "white" : "black";
+  return { color, hint: `You played ${SIDE_NAME[color]} in this ${site} game` };
+}
+
+/**
+ * A local game against the engine: the live match's side, else the "You" header it is saved with.
+ */
+function engineGameSide(
+  headers: Pick<GameHeaders, "white" | "black">,
+  engineSide: RepertoireColor | null
+): SideSuggestion | null {
+  const you = (name: string | null | undefined) => name === "You";
+  const fromHeaders =
+    you(headers.white) !== you(headers.black) ? (you(headers.white) ? "white" : "black") : null;
+  const color = engineSide ? (engineSide === "white" ? "black" : "white") : fromHeaders;
+  if (!color) return null;
+  return { color, hint: `You played ${SIDE_NAME[color]} against the engine` };
 }
 
 /**
@@ -245,7 +260,7 @@ export function pickRepertoire<T extends Pick<RepertoireSummary, "id" | "color">
   rememberedId: string | null
 ): T | null {
   const ofColor = repertoires.filter((item) => item.color === color);
-  return ofColor.find((item) => item.id === rememberedId) ?? ofColor[0] ?? null;
+  return ofColor.find((item) => item.id === rememberedId) ?? ofColor.at(0) ?? null;
 }
 
 /* ------------------------------------------------------------------ actions */

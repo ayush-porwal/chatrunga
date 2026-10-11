@@ -15,7 +15,7 @@ describe("resolveWindowGlassState", () => {
       enabled: true,
       reducedTransparency: false
     });
-    expect(state).toEqual({
+    expect(state).toStrictEqual({
       supported: true,
       enabled: true,
       reducedTransparency: false,
@@ -40,7 +40,7 @@ describe("resolveWindowGlassState", () => {
     for (const platform of ["win32", "linux"] as const) {
       expect(
         resolveWindowGlassState({ platform, enabled: true, reducedTransparency: true })
-      ).toEqual({
+      ).toStrictEqual({
         supported: false,
         enabled: true,
         reducedTransparency: false,
@@ -58,11 +58,14 @@ describe("windowGlassOptions", () => {
       reducedTransparency: false
     });
     const off = { ...on, enabled: false, active: false };
-    expect(windowGlassOptions(on)).toEqual({
+    expect(windowGlassOptions(on)).toStrictEqual({
       vibrancy: GLASS_VIBRANCY,
       backgroundColor: GLASS_BACKGROUND
     });
-    expect(windowGlassOptions(off)).toEqual({ vibrancy: null, backgroundColor: OPAQUE_BACKGROUND });
+    expect(windowGlassOptions(off)).toStrictEqual({
+      vibrancy: null,
+      backgroundColor: OPAQUE_BACKGROUND
+    });
   });
 });
 

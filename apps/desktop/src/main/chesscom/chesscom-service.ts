@@ -26,7 +26,7 @@ import {
 } from "./client";
 import { firstImportSince, importChesscomGames, type ImportRepository } from "./game-import";
 
-export const NOT_CONNECTED_ERROR = "Connect your chess.com account first.";
+const NOT_CONNECTED_ERROR = "Connect your chess.com account first.";
 
 export type ChesscomGameStore = ImportRepository & { removeBySource(source: GameSource): number };
 

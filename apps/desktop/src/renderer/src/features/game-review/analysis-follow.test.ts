@@ -41,12 +41,12 @@ describe("analysis follower", () => {
   it("steps to each move as it is analysed, with its sound", () => {
     const { follower, steps } = follow();
     follower.update(line, 0);
-    expect(steps).toEqual([]);
+    expect(steps).toStrictEqual([]);
     follower.update(line, 1);
-    expect(steps).toEqual([{ nodeId: "m1", quiet: false }]);
+    expect(steps).toStrictEqual([{ nodeId: "m1", quiet: false }]);
     vi.advanceTimersByTime(FOLLOW_STEP_MS);
     follower.update(line, 2);
-    expect(steps.at(-1)).toEqual({ nodeId: "m2", quiet: false });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m2", quiet: false });
     expect(steps).toHaveLength(2);
   });
 
@@ -59,15 +59,15 @@ describe("analysis follower", () => {
     vi.advanceTimersByTime(FOLLOW_STEP_MS - 1);
     expect(steps).toHaveLength(1);
     vi.advanceTimersByTime(1);
-    expect(steps.at(-1)).toEqual({ nodeId: "m2", quiet: false });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m2", quiet: false });
 
     // Cached moves finishing at once: two behind still steps, more than two jumps without sound.
     follower.update(line, 4);
     vi.advanceTimersByTime(FOLLOW_STEP_MS);
-    expect(steps.at(-1)).toEqual({ nodeId: "m3", quiet: false });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m3", quiet: false });
     follower.update(line, 8);
     vi.advanceTimersByTime(FOLLOW_STEP_MS);
-    expect(steps.at(-1)).toEqual({ nodeId: "m8", quiet: true });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m8", quiet: true });
     expect(steps).toHaveLength(4);
     vi.advanceTimersByTime(FOLLOW_STEP_MS * 4);
     expect(steps).toHaveLength(4);
@@ -76,10 +76,10 @@ describe("analysis follower", () => {
   it("starts from wherever the board is: a jump from elsewhere is quiet", () => {
     const ahead = follow("m6");
     ahead.follower.update(line, 0);
-    expect(ahead.steps).toEqual([{ nodeId: "root", quiet: true }]);
+    expect(ahead.steps).toStrictEqual([{ nodeId: "root", quiet: true }]);
     const onBestLine = follow(null);
     onBestLine.follower.update(line, 1);
-    expect(onBestLine.steps).toEqual([{ nodeId: "m1", quiet: true }]);
+    expect(onBestLine.steps).toStrictEqual([{ nodeId: "m1", quiet: true }]);
   });
 
   it("pauses when the user navigates, and resumes by jumping to the latest analysed move", () => {
@@ -92,20 +92,20 @@ describe("analysis follower", () => {
     vi.advanceTimersByTime(FOLLOW_STEP_MS * 4);
     expect(steps).toHaveLength(1);
     expect(follower.isPaused()).toBe(true);
-    expect(paused).toEqual([true]);
+    expect(paused).toStrictEqual([true]);
 
     follower.resume();
-    expect(paused).toEqual([true, false]);
-    expect(steps.at(-1)).toEqual({ nodeId: "m3", quiet: true });
+    expect(paused).toStrictEqual([true, false]);
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m3", quiet: true });
     vi.advanceTimersByTime(FOLLOW_STEP_MS);
     follower.update(line, 4);
-    expect(steps.at(-1)).toEqual({ nodeId: "m4", quiet: false });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m4", quiet: false });
   });
 
   it("pauses when the user picks the move already shown, so the board holds there", () => {
     const { follower, steps } = follow();
     follower.update(line, 1);
-    expect(steps).toEqual([{ nodeId: "m1", quiet: false }]);
+    expect(steps).toStrictEqual([{ nodeId: "m1", quiet: false }]);
     // A click on m1, where the board already is: no board change, but the user means "hold here".
     follower.pause();
     expect(follower.isPaused()).toBe(true);
@@ -120,7 +120,7 @@ describe("analysis follower", () => {
     follower.noteBoard("m1", true);
     expect(follower.isPaused()).toBe(true);
     follower.resume();
-    expect(steps.at(-1)).toEqual({ nodeId: "m1", quiet: true });
+    expect(steps.at(-1)).toStrictEqual({ nodeId: "m1", quiet: true });
   });
 
   it("resuming one move behind is a step with its sound; resuming in place moves nothing", () => {
@@ -129,7 +129,7 @@ describe("analysis follower", () => {
     behind.follower.noteBoard("root", false);
     behind.follower.noteBoard("m1", false);
     behind.follower.resume();
-    expect(behind.steps.at(-1)).toEqual({ nodeId: "m2", quiet: false });
+    expect(behind.steps.at(-1)).toStrictEqual({ nodeId: "m2", quiet: false });
     const inPlace = follow();
     inPlace.follower.update(line, 1);
     inPlace.follower.noteBoard("root", false);
@@ -147,7 +147,7 @@ describe("analysis follower", () => {
     following.follower.update(line, 1);
     following.follower.update(line, 2);
     following.follower.finish("m8");
-    expect(following.steps.at(-1)).toEqual({ nodeId: "m8", quiet: true });
+    expect(following.steps.at(-1)).toStrictEqual({ nodeId: "m8", quiet: true });
     // Finished: nothing further moves the board, and the user's navigation no longer pauses.
     vi.advanceTimersByTime(FOLLOW_STEP_MS * 4);
     following.follower.update(line, 3);
@@ -158,10 +158,10 @@ describe("analysis follower", () => {
     const oneBehind = follow("m7");
     oneBehind.follower.update(line, 7);
     oneBehind.follower.finish("m8");
-    expect(oneBehind.steps).toEqual([{ nodeId: "m8", quiet: false }]);
+    expect(oneBehind.steps).toStrictEqual([{ nodeId: "m8", quiet: false }]);
     const atEnd = follow("m8");
     atEnd.follower.finish("m8");
-    expect(atEnd.steps).toEqual([]);
+    expect(atEnd.steps).toStrictEqual([]);
 
     const paused = follow();
     paused.follower.update(line, 1);
@@ -179,14 +179,14 @@ describe("analysis follower", () => {
     follower.update(line, 3);
     follower.resume();
     follower.finish("m8");
-    expect(steps).toEqual([{ nodeId: "m1", quiet: false }]);
+    expect(steps).toStrictEqual([{ nodeId: "m1", quiet: false }]);
   });
 
   it("ignores a target outside the line", () => {
     const { follower, steps } = follow();
     follower.update(line, line.length);
     follower.update([], 0);
-    expect(steps).toEqual([]);
+    expect(steps).toStrictEqual([]);
   });
 });
 

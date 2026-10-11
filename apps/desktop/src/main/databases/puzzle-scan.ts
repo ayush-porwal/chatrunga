@@ -52,7 +52,7 @@ export async function reservoirScan(
   let lines = 0;
   await scanCsvLines(job.filePath, job.compressed, (line, lineIndex) => {
     lines += 1;
-    if (lineIndex === 0 || !line.trim()) return;
+    if (lineIndex === 0 || !line.trim()) return true;
     const row = parseCsvLine(line);
     const id = row[0] ?? "";
     if (
@@ -60,7 +60,7 @@ export async function reservoirScan(
       (wanted && !wanted.has(id)) ||
       !matchesCheapFilters(job.kind, row, job.input)
     )
-      return;
+      return true;
     matches += 1;
     if (rows.length < job.size) rows.push(row);
     else {
@@ -73,6 +73,7 @@ export async function reservoirScan(
       stopped = true;
       return false;
     }
+    return true;
   });
   // Not even a header: the file couldn't be read, which must not pass for "nothing matched".
   if (!lines && (await stat(job.filePath)).size > 0) {
@@ -85,6 +86,7 @@ export async function reservoirScan(
 export async function scanCsvLines(
   filePath: string,
   compressed: boolean,
+  /** False stops the scan; anything else reads on. */
   onLine: (line: string, lineIndex: number) => boolean | void
 ): Promise<void> {
   const decoder = new TextDecoder();
@@ -179,8 +181,7 @@ async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
     const decompress = createZstdDecompress();
     let failure: unknown = null;
     const frames = pipeline(file, decompress, (error) => {
-      if (error && (error as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE")
-        failure = error;
+      if (error && error.code !== "ERR_STREAM_PREMATURE_CLOSE") failure = error;
     });
     try {
       for await (const chunk of frames) yield bytes(chunk);

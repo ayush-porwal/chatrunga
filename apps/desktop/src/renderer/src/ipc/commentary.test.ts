@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rendererCommentaryError, requestRendererCommentary } from "./commentary";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("renderer commentary bridge", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("passes generation through the preload bridge", async () => {
     const generate = vi.fn().mockResolvedValue({ commentary: [], error: null });
     vi.stubGlobal("window", { chaturanga: { commentary: { generate } } });
 
-    await expect(requestRendererCommentary({ payloads: [] })).resolves.toEqual({
+    await expect(requestRendererCommentary({ payloads: [] })).resolves.toStrictEqual({
       commentary: [],
       error: null
     });

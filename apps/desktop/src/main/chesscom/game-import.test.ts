@@ -32,6 +32,22 @@ function memoryRepository(existingSites: string[] = []) {
   return { repository, saved };
 }
 
+/** The games of a monthly archive fixture. */
+function archiveGames(archive: unknown): unknown[] {
+  return isRecord(archive) && Array.isArray(archive.games) ? archive.games : [];
+}
+
+/** The repository, except that saving the game at `site` fails (the database is locked). */
+function failingFor(repository: ImportRepository, site: string): ImportRepository {
+  return {
+    findIdBySite: (id) => repository.findIdBySite(id),
+    saveImported: (input, playedAt) => {
+      if (input.headers.site === site) throw new Error("database is locked");
+      return repository.saveImported(input, playedAt);
+    }
+  };
+}
+
 function chesscom(routes: Parameters<typeof fakeChesscom>[0] = {}) {
   const fake = fakeChesscom({
     [ARCHIVES]: fixture("archives"),
@@ -62,20 +78,25 @@ describe("importChesscomGames", () => {
       cursor: null,
       since: firstImportSince("all", NOW)
     });
-    expect(requests.map((request) => request.path)).toEqual([ARCHIVES, AUGUST, SEPTEMBER, OCTOBER]);
+    expect(requests.map((request) => request.path)).toStrictEqual([
+      ARCHIVES,
+      AUGUST,
+      SEPTEMBER,
+      OCTOBER
+    ]);
     expect(state.maxInFlight).toBe(1);
     // The chess960 game is skipped; the malformed entries never reach the importer.
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    expect(saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000001",
       "https://www.chess.com/game/live/150000003",
       "https://www.chess.com/game/live/150000010"
     ]);
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       imported: 3,
       skipped: 1,
       nextCursor: { month: "2026/10", floor: 0 }
     });
-    const first = saved[0]!;
+    const first = saved[0];
     expect(first.playedAt).toBe(1790791330 * 1000);
     expect(first.input).toMatchObject({
       id: null,
@@ -91,7 +112,7 @@ describe("importChesscomGames", () => {
       }
     });
     // Clocks come through, and the stored PGN names the game's page as its site.
-    expect(first.input.moveTree[1]!.clockAfter).toBeTruthy();
+    expect(first.input.moveTree[1].clockAfter).toBeTruthy();
     expect(first.input.pgn).toContain('[Site "https://www.chess.com/game/live/150000001"]');
   });
 
@@ -108,7 +129,7 @@ describe("importChesscomGames", () => {
       cursor: null,
       since: 0
     });
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    expect(saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000003"
     ]);
     expect(result).toMatchObject({ imported: 1, skipped: 3 });
@@ -125,8 +146,8 @@ describe("importChesscomGames", () => {
       cursor: null,
       since: Date.UTC(2026, 8, 26)
     });
-    expect(requests.map((request) => request.path)).toEqual([ARCHIVES, SEPTEMBER, OCTOBER]);
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    expect(requests.map((request) => request.path)).toStrictEqual([ARCHIVES, SEPTEMBER, OCTOBER]);
+    expect(saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000001",
       "https://www.chess.com/game/live/150000010"
     ]);
@@ -137,7 +158,7 @@ describe("importChesscomGames", () => {
     const { client, requests } = chesscom({
       [OCTOBER]: {
         games: [
-          ...(isRecord(october) && Array.isArray(october.games) ? october.games : []),
+          ...archiveGames(october),
           {
             url: "https://www.chess.com/game/live/150000011",
             pgn: '[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. d4 d5 *',
@@ -159,12 +180,12 @@ describe("importChesscomGames", () => {
       cursor: { month: "2026/10", floor: 0 },
       since: 0
     });
-    expect(requests.map((request) => request.path)).toEqual([ARCHIVES, SEPTEMBER, OCTOBER]);
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    expect(requests.map((request) => request.path)).toStrictEqual([ARCHIVES, SEPTEMBER, OCTOBER]);
+    expect(saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000003",
       "https://www.chess.com/game/live/150000011"
     ]);
-    expect(result.nextCursor).toEqual({ month: "2026/10", floor: 0 });
+    expect(result.nextCursor).toStrictEqual({ month: "2026/10", floor: 0 });
   });
 
   it("keeps to the first import's window on later imports", async () => {
@@ -178,11 +199,11 @@ describe("importChesscomGames", () => {
       cursor: { month: "2026/10", floor: 1790300001 },
       since: 0
     });
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    expect(saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000001",
       "https://www.chess.com/game/live/150000010"
     ]);
-    expect(result.nextCursor).toEqual({ month: "2026/10", floor: 1790300001 });
+    expect(result.nextCursor).toStrictEqual({ month: "2026/10", floor: 1790300001 });
   });
 
   it("keeps the cursor when there's nothing new to read", async () => {
@@ -195,7 +216,7 @@ describe("importChesscomGames", () => {
       cursor,
       since: 0
     });
-    expect(result).toEqual({ imported: 0, skipped: 0, nextCursor: cursor });
+    expect(result).toStrictEqual({ imported: 0, skipped: 0, nextCursor: cursor });
   });
 
   it("skips a game it can't read for good, and retries one the library couldn't save", async () => {
@@ -221,20 +242,17 @@ describe("importChesscomGames", () => {
       since: 0
     });
     // Neither September game can be read (an illegal move, no PGN): they don't hold the cursor.
-    expect(readable.saved.map((item) => item.input.headers.site)).toEqual([
+    expect(readable.saved.map((item) => item.input.headers.site)).toStrictEqual([
       "https://www.chess.com/game/live/150000010"
     ]);
-    expect(first).toEqual({ imported: 1, skipped: 2, nextCursor: { month: "2026/10", floor: 0 } });
+    expect(first).toStrictEqual({
+      imported: 1,
+      skipped: 2,
+      nextCursor: { month: "2026/10", floor: 0 }
+    });
 
     const { repository } = memoryRepository();
-    const failing: ImportRepository = {
-      findIdBySite: (site) => repository.findIdBySite(site),
-      saveImported: (input, playedAt) => {
-        if (input.headers.site === "https://www.chess.com/game/live/150000003")
-          throw new Error("database is locked");
-        return repository.saveImported(input, playedAt);
-      }
-    };
+    const failing = failingFor(repository, "https://www.chess.com/game/live/150000003");
     const second = await importChesscomGames({
       client: chesscom().client,
       repository: failing,

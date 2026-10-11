@@ -43,12 +43,17 @@ function origin(nodeId: string): HandoffOrigin {
 describe("chapterPath", () => {
   it("returns the nodes from the root to the node", () => {
     const { chapter } = italian();
-    expect(chapterPath(chapter, "m2").map((node) => node.id)).toEqual(["root", "m0", "m1", "m2"]);
+    expect(chapterPath(chapter, "m2").map((node) => node.id)).toStrictEqual([
+      "root",
+      "m0",
+      "m1",
+      "m2"
+    ]);
   });
 
   it("falls back to the root for an unknown node", () => {
     const { chapter } = italian();
-    expect(chapterPath(chapter, "nope").map((node) => node.id)).toEqual(["root"]);
+    expect(chapterPath(chapter, "nope").map((node) => node.id)).toStrictEqual(["root"]);
   });
 });
 
@@ -56,10 +61,10 @@ describe("buildInitialSession", () => {
   it("carries the root, the authored UCI route, the colour and a label", () => {
     const initial = buildInitialSession(origin("m2"));
     expect(initial.rootFen).toBe(START_FEN);
-    expect(initial.moves).toEqual(["e2e4", "e7e5", "g1f3"]);
+    expect(initial.moves).toStrictEqual(["e2e4", "e7e5", "g1f3"]);
     expect(initial.playerColor).toBe("white");
     expect(initial.label).toBe("My 1.e4 › Italian — 1. e4 e5 2. Nf3");
-    expect(initial.repertoire).toEqual({
+    expect(initial.repertoire).toStrictEqual({
       repertoireId: "r1",
       chapterId: "c1",
       nodeId: "m2",
@@ -69,7 +74,7 @@ describe("buildInitialSession", () => {
 
   it("names a start at the chapter's root", () => {
     const initial = buildInitialSession(origin("root"));
-    expect(initial.moves).toEqual([]);
+    expect(initial.moves).toStrictEqual([]);
     expect(initial.label).toBe("My 1.e4 › Italian — starting position");
     expect(initial.repertoire.capturedPath).toBe("Start");
   });
@@ -82,7 +87,13 @@ describe("gameFromInitialSession", () => {
     expect(game.id).toBeNull();
     expect(game.source).toBe("engine-game");
     expect(game.headers).toMatchObject({ event: "Casual game", result: "*" });
-    expect(game.moveTree.map((node) => node.uci)).toEqual([null, "e2e4", "e7e5", "g1f3", "b8c6"]);
+    expect(game.moveTree.map((node) => node.uci)).toStrictEqual([
+      null,
+      "e2e4",
+      "e7e5",
+      "g1f3",
+      "b8c6"
+    ]);
     const last = game.moveTree.find((node) => node.id === game.currentNodeId)!;
     expect(last.uci).toBe("b8c6");
     expect(game.currentFen).toBe(last.fenAfter);

@@ -10,24 +10,24 @@ describe("findOpeningPuzzles", () => {
       asked.push(tag);
       return true;
     });
-    expect(search).toEqual({ status: "found", tag: "Sicilian_Defense_Najdorf_Variation" });
-    expect(asked).toEqual(["Sicilian_Defense_Najdorf_Variation"]);
+    expect(search).toStrictEqual({ status: "found", tag: "Sicilian_Defense_Najdorf_Variation" });
+    expect(asked).toStrictEqual(["Sicilian_Defense_Najdorf_Variation"]);
   });
 
   it("falls back to the family when the variation has no puzzles", async () => {
     const search = await findOpeningPuzzles(NAJDORF, async (tag) => tag === "Sicilian_Defense");
-    expect(search).toEqual({ status: "found", tag: "Sicilian_Defense" });
+    expect(search).toStrictEqual({ status: "found", tag: "Sicilian_Defense" });
   });
 
   it("says there are none when even the family has none", async () => {
-    expect(await findOpeningPuzzles(NAJDORF, async () => false)).toEqual({ status: "none" });
-    expect(await findOpeningPuzzles("Bird Opening", async () => false)).toEqual({
+    expect(await findOpeningPuzzles(NAJDORF, async () => false)).toStrictEqual({ status: "none" });
+    expect(await findOpeningPuzzles("Bird Opening", async () => false)).toStrictEqual({
       status: "none"
     });
   });
 
   it("uses a tag it couldn't check as is (the Puzzles page says what's wrong)", async () => {
-    expect(await findOpeningPuzzles(NAJDORF, async () => null)).toEqual({
+    expect(await findOpeningPuzzles(NAJDORF, async () => null)).toStrictEqual({
       status: "found",
       tag: "Sicilian_Defense_Najdorf_Variation"
     });
@@ -45,10 +45,10 @@ describe("findOpeningPuzzles", () => {
       },
       leave.signal
     );
-    expect(search).toEqual({ status: "cancelled" });
+    expect(search).toStrictEqual({ status: "cancelled" });
     // The family is never searched for once the user has gone.
-    expect(asked).toEqual(["Sicilian_Defense_Najdorf_Variation"]);
-    expect(await findOpeningPuzzles(NAJDORF, async () => true, leave.signal)).toEqual({
+    expect(asked).toStrictEqual(["Sicilian_Defense_Najdorf_Variation"]);
+    expect(await findOpeningPuzzles(NAJDORF, async () => true, leave.signal)).toStrictEqual({
       status: "cancelled"
     });
   });

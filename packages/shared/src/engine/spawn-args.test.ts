@@ -42,12 +42,12 @@ describe("spawnArgsForEngine", () => {
     const config = base();
     config.weightsPath = "/data/net.pb.gz";
     config.args = ["--threads=2", "--weights=/ignored/path"];
-    expect(spawnArgsForEngine(config)).toEqual(["--weights=/data/net.pb.gz", "--threads=2"]);
+    expect(spawnArgsForEngine(config)).toStrictEqual(["--weights=/data/net.pb.gz", "--threads=2"]);
   });
 
   it("passes through args when weightsPath is absent", () => {
     const config = base();
     config.args = ["--foo=bar"];
-    expect(spawnArgsForEngine(config)).toEqual(["--foo=bar"]);
+    expect(spawnArgsForEngine(config)).toStrictEqual(["--foo=bar"]);
   });
 });

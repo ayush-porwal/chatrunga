@@ -27,7 +27,7 @@ export type RestoreRowAction =
   | { type: "name"; sourceId: string; newName: string };
 
 /** The name a restored copy gets when none is typed. */
-export function defaultRestoredName(name: string): string {
+function defaultRestoredName(name: string): string {
   return `${name} (restored)`;
 }
 

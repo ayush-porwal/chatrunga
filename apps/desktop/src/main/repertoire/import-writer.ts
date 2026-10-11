@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { ImportResult } from "@chaturanga/shared/types/repertoire";
 import { commitImportJob, type ImportCommitJob } from "./core";
+import { positionKeysOf } from "./import-job";
 import { missingWorkerError } from "./import-runner";
 import {
   WRITER_SLICE_NODES,
@@ -18,7 +19,7 @@ import {
 } from "./import-writer-protocol";
 
 /** The worker bundled next to the main entry (electron.vite.config.ts). */
-export const IMPORT_WRITER_WORKER = join(
+const IMPORT_WRITER_WORKER = join(
   dirname(fileURLToPath(import.meta.url)),
   "repertoire-import-writer-worker.js"
 );
@@ -67,7 +68,7 @@ export async function runImportCommit(
     );
   });
   // A failure while sending (the worker died) still settles through `reply`.
-  reply.catch(() => {});
+  reply.catch(() => undefined);
   try {
     const post = (request: ImportWriterRequest) => worker.postMessage(request);
     let sliceStart = performance.now();
@@ -75,12 +76,7 @@ export async function runImportCommit(
       post({ type: "chapter", chapter });
       for (let start = 0; start < tree.length; start += WRITER_SLICE_NODES) {
         const nodes = tree.slice(start, start + WRITER_SLICE_NODES);
-        const keys: [string, string][] = [];
-        for (const node of nodes) {
-          const key = positionKeys[node.id];
-          if (key) keys.push([node.id, key]);
-        }
-        post({ type: "nodes", nodes, keys });
+        post({ type: "nodes", nodes, keys: positionKeysOf(nodes, positionKeys) });
         if (performance.now() - sliceStart >= POST_SLICE_MS) {
           await yieldToEventLoop();
           sliceStart = performance.now();

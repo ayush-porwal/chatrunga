@@ -31,7 +31,7 @@ const summary = (id: string, overrides: Partial<GameSummary> = {}): GameSummary 
 describe("Recent games rows", () => {
   it("shows the newest ten, leaving out the In progress card's game", () => {
     const games = Array.from({ length: 11 }, (_, index) => summary(`g${index}`));
-    expect(recentRows(games, null).map((game) => game.id)).toEqual(
+    expect(recentRows(games, null).map((game) => game.id)).toStrictEqual(
       games.slice(0, 10).map((game) => game.id)
     );
     // Taking one out still leaves ten (the page reads eleven).
@@ -40,9 +40,9 @@ describe("Recent games rows", () => {
   });
 
   it("scores each side once decided, nothing while in progress", () => {
-    expect(scoresFor("1-0")).toEqual({ white: "1", black: "0" });
-    expect(scoresFor("0-1")).toEqual({ white: "0", black: "1" });
-    expect(scoresFor("1/2-1/2")).toEqual({ white: "½", black: "½" });
+    expect(scoresFor("1-0")).toStrictEqual({ white: "1", black: "0" });
+    expect(scoresFor("0-1")).toStrictEqual({ white: "0", black: "1" });
+    expect(scoresFor("1/2-1/2")).toStrictEqual({ white: "½", black: "½" });
     expect(scoresFor("*")).toBeNull();
     expect(scoresFor(null)).toBeNull();
   });
@@ -67,8 +67,8 @@ describe("Recent games rows", () => {
     const facts = savedGameFacts(game);
     // Five plies of main line (the variation doesn't count): three moves.
     expect(facts.moves).toBe(3);
-    const current = game.moveTree.find((node) => node.id === game.currentNodeId);
-    expect(facts.lastMoveUci).toBe(current?.uci ?? null);
+    // The board's move: the last of the main line, 3… a6.
+    expect(facts.lastMoveUci).toBe("a7a6");
     expect(savedGameFacts({ ...game, moveTree: game.moveTree.slice(0, 1) }).moves).toBe(0);
   });
 
@@ -94,7 +94,7 @@ describe("Recent games rows", () => {
     };
 
     it("offers All games, then each source with games in tab order, with their counts", () => {
-      expect(recentGamesFilterOptions(counts({ engine: 2, lichess: 5 }), null)).toEqual([
+      expect(recentGamesFilterOptions(counts({ engine: 2, lichess: 5 }), null)).toStrictEqual([
         { tab: null, label: "All games", count: 7 },
         { tab: "lichess", label: "Lichess", count: 5 },
         { tab: "engine", label: "Engine", count: 2 }
@@ -104,11 +104,11 @@ describe("Recent games rows", () => {
     it("leaves the In progress card's game out of its source and the total", () => {
       const options = recentGamesFilterOptions(counts({ engine: 1, chesscom: 3 }), "engine");
       // Its source's only game: the source isn't offered.
-      expect(options).toEqual([
+      expect(options).toStrictEqual([
         { tab: null, label: "All games", count: 3 },
         { tab: "chesscom", label: "Chess.com", count: 3 }
       ]);
-      expect(recentGamesFilterOptions(counts({}), null)).toEqual([
+      expect(recentGamesFilterOptions(counts({}), null)).toStrictEqual([
         { tab: null, label: "All games", count: 0 }
       ]);
     });

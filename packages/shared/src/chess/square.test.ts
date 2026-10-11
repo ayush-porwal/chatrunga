@@ -10,8 +10,8 @@ describe("isSquare", () => {
 
 describe("uciSquares", () => {
   it("splits a UCI move into its squares, ignoring a promotion", () => {
-    expect(uciSquares("e2e4")).toEqual(["e2", "e4"]);
-    expect(uciSquares("e7e8q")).toEqual(["e7", "e8"]);
+    expect(uciSquares("e2e4")).toStrictEqual(["e2", "e4"]);
+    expect(uciSquares("e7e8q")).toStrictEqual(["e7", "e8"]);
   });
 
   it("is null for text that doesn't start with two squares", () => {

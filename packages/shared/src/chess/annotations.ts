@@ -8,7 +8,7 @@ const colorToTag: Record<AnnotationColor, string> = {
   blue: "B"
 };
 
-const tagToColor: Record<string, AnnotationColor> = {
+const tagToColor: Partial<Record<string, AnnotationColor>> = {
   G: "green",
   R: "red",
   Y: "yellow",
@@ -35,9 +35,17 @@ export function parseAnnotationComment(comment: string): {
   arrows: BoardArrow[];
   highlights: BoardHighlight[];
 } {
-  const arrows: BoardArrow[] = [];
-  const highlights: BoardHighlight[] = [];
+  const text = stripAnnotationTags(comment);
+  return {
+    text: text || null,
+    clock: clockIn(comment),
+    arrows: arrowsIn(comment),
+    highlights: highlightsIn(comment)
+  };
+}
 
+/** The comment's last `%clk` time, as shown (null: none). */
+function clockIn(comment: string): string | null {
   let clock: string | null = null;
   for (const match of comment.matchAll(clkPattern)) {
     const raw = match[1]?.trim();
@@ -45,7 +53,12 @@ export function parseAnnotationComment(comment: string): {
     const display = raw.split(";")[0]?.trim();
     if (display) clock = display;
   }
+  return clock;
+}
 
+/** The comment's `%cal` arrows (malformed tokens skipped). */
+function arrowsIn(comment: string): BoardArrow[] {
+  const arrows: BoardArrow[] = [];
   for (const match of comment.matchAll(calPattern)) {
     for (const token of match[1].split(",")) {
       const trimmed = token.trim();
@@ -57,7 +70,12 @@ export function parseAnnotationComment(comment: string): {
       }
     }
   }
+  return arrows;
+}
 
+/** The comment's `%csl` square highlights (malformed tokens skipped). */
+function highlightsIn(comment: string): BoardHighlight[] {
+  const highlights: BoardHighlight[] = [];
   for (const match of comment.matchAll(cslPattern)) {
     for (const token of match[1].split(",")) {
       const trimmed = token.trim();
@@ -68,9 +86,7 @@ export function parseAnnotationComment(comment: string): {
       }
     }
   }
-
-  const text = stripAnnotationTags(comment);
-  return { text: text || null, clock, arrows, highlights };
+  return highlights;
 }
 
 export function serializeAnnotationComment(

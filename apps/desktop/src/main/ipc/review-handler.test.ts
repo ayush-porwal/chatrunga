@@ -80,127 +80,134 @@ const events = () =>
     })
   );
 
-beforeEach(() => {
-  db = telemetryDatabase();
-  initTelemetry({
-    config: AVAILABLE,
-    database: () => db,
-    consent: () => true,
-    fetchImpl: fakeEndpoint().fetchImpl,
-    appVersion: "1.0.0",
-    platform: "linux",
-    arch: "x64"
-  });
-  reviewGameWithEngine.mockReset();
-});
-
-describe("runGameReview analytics", () => {
-  it("reviewing one game three times is three operations on one game", async () => {
-    reviewGameWithEngine.mockResolvedValue(finished);
-    const manager = fakeManager();
-    const results = [];
-    for (const id of ["r1", "r2", "r3"])
-      results.push(await runGameReview(manager as never, input(id)));
-    // The operation id is kept with the review, so opening it later is attributable.
-    expect(results.map((review) => review.reviewId)).toEqual(["r1", "r2", "r3"]);
-
-    const completed = events().filter((event) => event.event === "review_completed");
-    expect(completed.map((event) => event.review_id)).toEqual(["r1", "r2", "r3"]);
-    expect(new Set(completed.map((event) => event.game_ref)).size).toBe(1);
-    expect(completed[0]).toMatchObject({
-      engine_family: "stockfish",
-      ply_count: 0,
-      maia_levels: 0
-    });
-    expect(events().filter((event) => event.event === "review_started")).toHaveLength(3);
-    expect(events().filter((event) => event.event === "activation_milestone")).toHaveLength(1);
-  });
-
-  it("a cancelled review is a cancellation, not a failure; an error is a coded failure", async () => {
-    const manager = fakeManager();
-    reviewGameWithEngine.mockImplementationOnce(async () => {
-      manager.cancelled.add("r-cancel");
-      throw new Error("Review cancelled");
-    });
-    await expect(runGameReview(manager as never, input("r-cancel"))).rejects.toThrow(
-      "Review cancelled"
-    );
-    reviewGameWithEngine.mockRejectedValueOnce(
-      new Error("sf exited unexpectedly (code 9) at /Users/me/engines/sf")
-    );
-    await expect(runGameReview(manager as never, input("r-fail"))).rejects.toThrow(
-      /sf exited unexpectedly/
-    );
-
-    const terminal = events().filter((event) =>
-      ["review_completed", "review_failed", "review_cancelled"].includes(String(event.event))
-    );
-    expect(terminal.map((event) => [event.event, event.review_id])).toEqual([
-      ["review_cancelled", "r-cancel"],
-      ["review_failed", "r-fail"]
-    ]);
-    expect(terminal[1]).toMatchObject({ error_code: "engine_exited" });
-    // The error text (with its path) is never recorded.
-    expect(JSON.stringify(events())).not.toContain("/Users/me");
-  });
-
-  it("a review still completes when analytics storage fails", async () => {
+describe("review handler", () => {
+  beforeEach(() => {
+    db = telemetryDatabase();
     initTelemetry({
       config: AVAILABLE,
-      database: () => {
-        throw new Error("disk full");
-      },
+      database: () => db,
       consent: () => true,
       fetchImpl: fakeEndpoint().fetchImpl,
       appVersion: "1.0.0",
       platform: "linux",
       arch: "x64"
     });
-    reviewGameWithEngine.mockResolvedValue(finished);
-    await expect(runGameReview(fakeManager() as never, input("r-ok", null))).resolves.toMatchObject(
-      { reviewId: "r-ok" }
-    );
+    reviewGameWithEngine.mockReset();
   });
-});
 
-describe("the rating a review is made for", () => {
-  it("is the game's own rating for the reviewed side, passed to the engine and saved with the review", async () => {
-    reviewGameWithEngine.mockResolvedValue(finished);
-    const review = await runGameReview(fakeManager() as never, {
-      ...input("r-rated"),
-      timeControl: "180+2",
-      rating: { side: "black", whiteElo: 2010, blackElo: 1533, speed: null }
+  describe("runGameReview analytics", () => {
+    it("reviewing one game three times is three operations on one game", async () => {
+      reviewGameWithEngine.mockResolvedValue(finished);
+      const manager = fakeManager();
+      const results = [];
+      for (const id of ["r1", "r2", "r3"])
+        results.push(await runGameReview(manager as never, input(id)));
+      // The operation id is kept with the review, so opening it later is attributable.
+      expect(results.map((review) => review.reviewId)).toStrictEqual(["r1", "r2", "r3"]);
+
+      const completed = events().filter((event) => event.event === "review_completed");
+      expect(completed.map((event) => event.review_id)).toStrictEqual(["r1", "r2", "r3"]);
+      expect(new Set(completed.map((event) => event.game_ref)).size).toBe(1);
+      expect(completed[0]).toMatchObject({
+        engine_family: "stockfish",
+        ply_count: 0,
+        maia_levels: 0
+      });
+      expect(events().filter((event) => event.event === "review_started")).toHaveLength(3);
+      expect(events().filter((event) => event.event === "activation_milestone")).toHaveLength(1);
     });
-    expect(reviewGameWithEngine.mock.lastCall?.[4]).toMatchObject({ playerRating: 1533 });
-    // This profile runs no Maia (reviewUseMaia off), so no model is named.
-    expect(review.rating).toEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: null });
-    // The side it was made for is saved with it (Review as).
-    expect(review.side).toBe("black");
+
+    it("a cancelled review is a cancellation, not a failure; an error is a coded failure", async () => {
+      const manager = fakeManager();
+      reviewGameWithEngine.mockImplementationOnce(async () => {
+        manager.cancelled.add("r-cancel");
+        throw new Error("Review cancelled");
+      });
+      await expect(runGameReview(manager as never, input("r-cancel"))).rejects.toThrow(
+        "Review cancelled"
+      );
+      reviewGameWithEngine.mockRejectedValueOnce(
+        new Error("sf exited unexpectedly (code 9) at /Users/me/engines/sf")
+      );
+      await expect(runGameReview(manager as never, input("r-fail"))).rejects.toThrow(
+        /sf exited unexpectedly/
+      );
+
+      const terminal = events().filter((event) =>
+        ["review_completed", "review_failed", "review_cancelled"].includes(String(event.event))
+      );
+      expect(terminal.map((event) => [event.event, event.review_id])).toStrictEqual([
+        ["review_cancelled", "r-cancel"],
+        ["review_failed", "r-fail"]
+      ]);
+      expect(terminal[1]).toMatchObject({ error_code: "engine_exited" });
+      // The error text (with its path) is never recorded.
+      expect(JSON.stringify(events())).not.toContain("/Users/me");
+    });
+
+    it("a review still completes when analytics storage fails", async () => {
+      initTelemetry({
+        config: AVAILABLE,
+        database: () => {
+          throw new Error("disk full");
+        },
+        consent: () => true,
+        fetchImpl: fakeEndpoint().fetchImpl,
+        appVersion: "1.0.0",
+        platform: "linux",
+        arch: "x64"
+      });
+      reviewGameWithEngine.mockResolvedValue(finished);
+      await expect(
+        runGameReview(fakeManager() as never, input("r-ok", null))
+      ).resolves.toMatchObject({ reviewId: "r-ok" });
+    });
   });
 
-  it("is the Settings rating for the game's mode without one, rapid without a time control", async () => {
-    reviewGameWithEngine.mockResolvedValue(finished);
-    const review = await runGameReview(fakeManager() as never, { ...input("r-unrated") });
-    expect(review.rating).toMatchObject({ rating: 1500, source: "settings", mode: "rapid" });
-    // Without a side from the renderer, the Settings side.
-    expect(review.side).toBe("white");
-  });
-});
+  describe("the rating a review is made for", () => {
+    it("is the game's own rating for the reviewed side, passed to the engine and saved with the review", async () => {
+      reviewGameWithEngine.mockResolvedValue(finished);
+      const review = await runGameReview(fakeManager() as never, {
+        ...input("r-rated"),
+        timeControl: "180+2",
+        rating: { side: "black", whiteElo: 2010, blackElo: 1533, speed: null }
+      });
+      expect(reviewGameWithEngine.mock.lastCall?.[3]).toMatchObject({ playerRating: 1533 });
+      // This profile runs no Maia (reviewUseMaia off), so no model is named.
+      expect(review.rating).toStrictEqual({
+        rating: 1533,
+        source: "game",
+        mode: "blitz",
+        maiaModel: null
+      });
+      // The side it was made for is saved with it (Review as).
+      expect(review.side).toBe("black");
+    });
 
-describe("reviewRatingFor", () => {
-  it("rounds to the nearest Maia level the review runs", () => {
-    const settings = {
-      reviewPlayerColor: "white" as const,
-      playerRatings: {
-        ...defaultSettings.playerRatings,
-        blitz: { source: "manual" as const, rating: 1000 }
-      }
-    };
-    expect(
-      reviewRatingFor({ timeControl: "300+0" }, settings, [
-        { maiaRating: 1100 },
-        { maiaRating: 1500 }
-      ])
-    ).toEqual({ rating: 1000, source: "settings", mode: "blitz", maiaModel: 1100 });
+    it("is the Settings rating for the game's mode without one, rapid without a time control", async () => {
+      reviewGameWithEngine.mockResolvedValue(finished);
+      const review = await runGameReview(fakeManager() as never, { ...input("r-unrated") });
+      expect(review.rating).toMatchObject({ rating: 1500, source: "settings", mode: "rapid" });
+      // Without a side from the renderer, the Settings side.
+      expect(review.side).toBe("white");
+    });
+  });
+
+  describe("reviewRatingFor", () => {
+    it("rounds to the nearest Maia level the review runs", () => {
+      const settings = {
+        reviewPlayerColor: "white" as const,
+        playerRatings: {
+          ...defaultSettings.playerRatings,
+          blitz: { source: "manual" as const, rating: 1000 }
+        }
+      };
+      expect(
+        reviewRatingFor({ timeControl: "300+0" }, settings, [
+          { maiaRating: 1100 },
+          { maiaRating: 1500 }
+        ])
+      ).toStrictEqual({ rating: 1000, source: "settings", mode: "blitz", maiaModel: 1100 });
+    });
   });
 });

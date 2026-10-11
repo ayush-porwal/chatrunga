@@ -16,7 +16,7 @@ describe("puzzle draft store", () => {
       ratingMin: 1500
     });
     usePuzzleDraftStore.getState().resetFilters();
-    expect(usePuzzleDraftStore.getState().draft).toEqual({
+    expect(usePuzzleDraftStore.getState().draft).toStrictEqual({
       databaseId: "db1",
       ...DEFAULT_PUZZLE_FILTERS
     });
@@ -38,7 +38,7 @@ describe("puzzle draft store", () => {
       position: { difficultyMin: 2, difficultyMax: 3, tags: ["space"] }
     };
     const draft = draftFromSessionConfig(config);
-    expect(draft).toEqual({
+    expect(draft).toStrictEqual({
       databaseId: "db2",
       themes: ["fork"],
       lengths: ["short"],
@@ -54,7 +54,7 @@ describe("puzzle draft store", () => {
     });
     // A copy: editing the draft never changes the running set.
     draft.positionTags.push("trading");
-    expect(config.position.tags).toEqual(["space"]);
+    expect(config.position.tags).toStrictEqual(["space"]);
     usePuzzleDraftStore.getState().update(draftFromSessionConfig(config));
     expect(usePuzzleDraftStore.getState().draft).toMatchObject({
       databaseId: "db2",

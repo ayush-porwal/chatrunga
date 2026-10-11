@@ -59,11 +59,11 @@ describe("puzzles:recordAttempt", () => {
     busyOnce.add("early");
     const early = recordAttempt("early");
     const later = recordAttempt("later");
-    await expect(Promise.all([early, later])).resolves.toEqual([
+    await expect(Promise.all([early, later])).resolves.toStrictEqual([
       { attemptId: "early" },
       { attemptId: "later" }
     ]);
-    expect(recorded).toEqual(["early", "early", "later"]);
+    expect(recorded).toStrictEqual(["early", "early", "later"]);
   });
 
   it("a recording that fails doesn't hold up the next", async () => {
@@ -71,14 +71,14 @@ describe("puzzles:recordAttempt", () => {
     const broken = recordAttempt("broken");
     const next = recordAttempt("next");
     await expect(broken).rejects.toThrow(/disk I\/O error/);
-    await expect(next).resolves.toEqual({ attemptId: "next" });
-    expect(recorded).toEqual(["broken", "next"]);
+    await expect(next).resolves.toStrictEqual({ attemptId: "next" });
+    expect(recorded).toStrictEqual(["broken", "next"]);
   });
 
   it("rejects an invalid attempt without recording it", async () => {
     expect(() => handlers.get("puzzles:recordAttempt")!(null, { attemptId: "x" })).toThrow(
       /Invalid puzzle outcome/
     );
-    expect(recorded).toEqual([]);
+    expect(recorded).toStrictEqual([]);
   });
 });

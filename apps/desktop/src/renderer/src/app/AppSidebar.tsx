@@ -60,23 +60,6 @@ export const AppSidebar = memo(function AppSidebar({
   onFlip: () => void;
   onSettings: () => void;
 }) {
-  const item = (
-    icon: LucideIcon,
-    label: string,
-    onClick: () => void,
-    isActive = false,
-    shortcut?: string
-  ) => (
-    <SidebarCommand
-      expanded={expanded}
-      icon={icon}
-      label={label}
-      active={isActive}
-      shortcut={shortcut}
-      onClick={onClick}
-    />
-  );
-
   return (
     <nav
       className="scroll-area col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col justify-between gap-3 overflow-y-auto overflow-x-hidden px-2.5 pb-2"
@@ -101,25 +84,68 @@ export const AppSidebar = memo(function AppSidebar({
             )}
           />
         </div>
-        {item(icons.play, "Play", onPlay, active.play)}
-        {item(icons.analyze, "Analyze", onAnalyze, active.analyze)}
-        {item(icons.review, "Game review", onReview, active.review)}
-        {item(icons.repertoire, "Repertoire", onRepertoire, active.repertoire)}
-        {item(icons.puzzles, "Puzzles", onPuzzles, active.puzzles)}
-        {item(icons.databases, "Databases", onDatabases, active.databases)}
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.play}
+          label="Play"
+          active={active.play}
+          onClick={onPlay}
+        />
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.analyze}
+          label="Analyze"
+          active={active.analyze}
+          onClick={onAnalyze}
+        />
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.review}
+          label="Game review"
+          active={active.review}
+          onClick={onReview}
+        />
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.repertoire}
+          label="Repertoire"
+          active={active.repertoire}
+          onClick={onRepertoire}
+        />
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.puzzles}
+          label="Puzzles"
+          active={active.puzzles}
+          onClick={onPuzzles}
+        />
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.databases}
+          label="Databases"
+          active={active.databases}
+          onClick={onDatabases}
+        />
       </div>
 
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
         {boardView ? (
           <>
-            {item(
-              focusMode ? Minimize2 : Maximize2,
-              focusMode ? "Exit focus" : "Focus board",
-              onFocusToggle,
-              focusMode,
-              BOARD_SHORTCUTS.focus
-            )}
-            {item(Repeat2, "Flip board", onFlip, false, BOARD_SHORTCUTS.flip)}
+            <SidebarCommand
+              expanded={expanded}
+              icon={focusMode ? Minimize2 : Maximize2}
+              label={focusMode ? "Exit focus" : "Focus board"}
+              active={focusMode}
+              shortcut={BOARD_SHORTCUTS.focus}
+              onClick={onFocusToggle}
+            />
+            <SidebarCommand
+              expanded={expanded}
+              icon={Repeat2}
+              label="Flip board"
+              shortcut={BOARD_SHORTCUTS.flip}
+              onClick={onFlip}
+            />
           </>
         ) : null}
         {/* Settings with the update button on its row (expanded) or directly above it (rail), so
@@ -131,7 +157,13 @@ export const AppSidebar = memo(function AppSidebar({
           )}
         >
           <div className={cn("min-w-0", expanded ? "col-start-1 row-start-1" : "row-start-2")}>
-            {item(icons.settings, "Settings", onSettings, active.settings)}
+            <SidebarCommand
+              expanded={expanded}
+              icon={icons.settings}
+              label="Settings"
+              active={active.settings}
+              onClick={onSettings}
+            />
           </div>
           <UpdateButton
             tooltipSide={expanded ? "top" : "right"}

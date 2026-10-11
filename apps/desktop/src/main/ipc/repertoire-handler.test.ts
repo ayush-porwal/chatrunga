@@ -213,7 +213,7 @@ describe("registerRepertoireIpc", () => {
     }
     expect(invoke("getDueSummary")).toBe("getDueSummary");
     // Every write passes the write gate (commitImport takes it inside the service); no read does.
-    expect([...gated].sort()).toEqual([
+    expect([...gated].sort()).toStrictEqual([
       "archiveRepertoire",
       "createRepertoire",
       "duplicateRepertoire",
@@ -232,7 +232,7 @@ describe("registerRepertoireIpc", () => {
     ]);
     await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toBe("previewImport");
     expect(invoke("list", undefined)).toBe("listRepertoires");
-    expect(calls.find(([name]) => name === "compareGame")?.[1][0]).toEqual({
+    expect(calls.find(([name]) => name === "compareGame")?.[1][0]).toStrictEqual({
       repertoireId: "r1",
       color: "black",
       rootFen: START,
@@ -242,7 +242,7 @@ describe("registerRepertoireIpc", () => {
       positionKeys: ["v1:key"],
       ungraded: true
     });
-    expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toEqual({
+    expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toStrictEqual({
       sessionId: "s1",
       queueItemId: "q1",
       attemptId: "a1",
@@ -310,9 +310,9 @@ describe("registerRepertoireIpc", () => {
     expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: "" })).toThrow(/jobId/);
     expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: 7 })).toThrow(/jobId/);
     invoke("previewImport", { pgn: "1. e4 *", jobId: "job-1" });
-    expect(calls.at(-1)).toEqual(["previewImport", [{ pgn: "1. e4 *", jobId: "job-1" }]]);
+    expect(calls.at(-1)).toStrictEqual(["previewImport", [{ pgn: "1. e4 *", jobId: "job-1" }]]);
     invoke("previewImport", { pgn: "1. e4 *" });
-    expect(calls.at(-1)?.[1][0]).toEqual({ pgn: "1. e4 *" });
+    expect(calls.at(-1)?.[1][0]).toStrictEqual({ pgn: "1. e4 *" });
     expect(() =>
       invoke("commitImport", {
         jobId: "j",
@@ -405,7 +405,7 @@ describe("registerRepertoireIpc", () => {
   it("answers a cancelled preview with the marker, and rejects any other failure", async () => {
     try {
       previewOutcome = () => Promise.reject(new ImportCancelledError());
-      await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toEqual(
+      await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toStrictEqual(
         IMPORT_CANCELLED_REPLY
       );
       previewOutcome = () => Promise.reject(new Error("No PGN game found."));
@@ -420,12 +420,12 @@ describe("registerRepertoireIpc", () => {
   it("parses backup inputs and never accepts a filesystem path", () => {
     calls.length = 0;
     expect(invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe("exportBackup");
-    expect(calls.at(-1)?.[1][0]).toEqual({ repertoireIds: undefined, includeProgress: true });
+    expect(calls.at(-1)?.[1][0]).toStrictEqual({ repertoireIds: undefined, includeProgress: true });
     expect(invoke("exportBackup", { repertoireIds: ["r1"], includeProgress: false })).toBe(
       "exportBackup"
     );
     expect(invoke("previewBackupImport", { pickFile: true })).toBe("previewBackupImport");
-    expect(calls.at(-1)?.[1][0]).toEqual({ pickFile: true });
+    expect(calls.at(-1)?.[1][0]).toStrictEqual({ pickFile: true });
     expect(invoke("previewBackupImport", { json: "{}" })).toBe("previewBackupImport");
     const restore = {
       jobId: "j",
@@ -435,11 +435,18 @@ describe("registerRepertoireIpc", () => {
       ]
     };
     expect(invoke("restoreBackup", restore)).toBe("restoreBackup");
-    expect(calls.at(-1)?.[1][0]).toEqual(restore);
+    // Every selection is rebuilt with all its fields; the ones not given are undefined.
+    expect(calls.at(-1)?.[1][0]).toStrictEqual({
+      jobId: "j",
+      selections: [
+        { ...restore.selections[0], newName: undefined },
+        { ...restore.selections[1], expectedRevision: undefined }
+      ]
+    });
     expect(gated.has("restoreBackup")).toBe(true);
     expect(invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
     expect(invoke("refreshBackupPreview", "j")).toBe("refreshBackupPreview");
-    expect(calls.at(-1)?.[1]).toEqual(["j"]);
+    expect(calls.at(-1)?.[1]).toStrictEqual(["j"]);
 
     expect(() => invoke("exportBackup", { includeProgress: "yes" })).toThrow(/includeProgress/);
     expect(() =>

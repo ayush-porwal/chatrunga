@@ -50,7 +50,7 @@ function setup(overrides: Partial<MoveReview> = {}) {
     motifs: []
   }));
   const index = 6;
-  const base = moves[index];
+  const base = moves.at(index);
   if (!base) throw new Error("missing ply 7");
   const move: MoveReview = {
     ...base,
@@ -63,6 +63,22 @@ function setup(overrides: Partial<MoveReview> = {}) {
   moves[index] = move;
   const ctx: CommentaryMoveContext = { move, moves, moveTree: tree };
   return { tree, nodes, moves, move, ctx };
+}
+
+/** The fixture's item at `index` (it throws when the fixture has none there). */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items.at(index);
+  if (item === undefined) throw new Error(`missing item ${index}`);
+  return item;
+}
+
+/** The tree with `child` added as a variation under `parentId`. */
+function withVariation(tree: readonly MoveNode[], parentId: string, child: MoveNode): MoveNode[] {
+  return tree
+    .map((node) =>
+      node.id === parentId ? { ...node, children: [...node.children, child.id] } : node
+    )
+    .concat(child);
 }
 
 function resolveProse(prose: string, ctx: CommentaryMoveContext) {
@@ -92,7 +108,7 @@ describe("tokenizeCommentary", () => {
     const moves = segments.filter(
       (segment): segment is CommentaryMoveToken => segment.kind === "move"
     );
-    expect(moves.map((token) => [token.text, token.san, token.plyHint])).toEqual([
+    expect(moves.map((token) => [token.text, token.san, token.plyHint])).toStrictEqual([
       ["4. Nxe5", "Nxe5", 7],
       ["Qg5", "Qg5", null],
       ["14...Nf6", "Nf6", 28],
@@ -112,7 +128,7 @@ describe("tokenizeCommentary", () => {
     )
       .filter((segment) => segment.kind === "move")
       .map((segment) => segment.text);
-    expect(moves).toEqual(["c3"]);
+    expect(moves).toStrictEqual(["c3"]);
   });
 });
 
@@ -120,59 +136,57 @@ describe("resolveCommentaryMoves", () => {
   it("resolves the played move to its own node through the main line", () => {
     const { ctx, nodes } = setup();
     const [played] = resolveProse("Nxe5 grabs a pawn.", ctx);
-    expect(played?.target?.kind).toBe("played");
-    expect(played?.target?.startNodeId).toBe("root");
-    expect(played?.target?.moves).toHaveLength(7);
-    expect(played?.target?.fenAfter).toBe(nodes[6]?.fenAfter);
+    expect(played.target?.kind).toBe("played");
+    expect(played.target?.startNodeId).toBe("root");
+    expect(played.target?.moves).toHaveLength(7);
+    expect(played.target?.fenAfter).toBe(nodes[6]?.fenAfter);
   });
 
   it("keeps a consecutive best-line run together from the move's parent", () => {
     const { ctx, move, nodes } = setup();
     const result = resolveProse("The engine preferred Nxd4 exd4 O-O instead.", ctx);
-    expect(result.map((item) => item.target?.kind)).toEqual(["best", "best", "best"]);
+    expect(result.map((item) => item.target?.kind)).toStrictEqual(["best", "best", "best"]);
     for (const item of result) expect(item.target?.startNodeId).toBe(nodes[5]?.id);
-    expect(result[2]?.target?.moves).toEqual(["Nxd4", "exd4", "O-O"]);
+    expect(result[2]?.target?.moves).toStrictEqual(["Nxd4", "exd4", "O-O"]);
     expect(result[2]?.target?.fenAfter).toBe(fenAfter(move.fenBefore, ["Nxd4", "exd4", "O-O"]));
   });
 
   it("resolves history nearest to the commented move and the actual reply", () => {
     const { ctx } = setup();
     const [nc6, qg5] = resolveProse("Earlier Nc6 developed; after it Qg5 hit two pieces.", ctx);
-    expect(nc6?.target).toMatchObject({ kind: "history", startNodeId: "root" });
-    expect(nc6?.target?.moves).toHaveLength(4);
-    expect(qg5?.target?.kind).toBe("history");
-    expect(qg5?.target?.moves).toHaveLength(8);
+    expect(nc6.target).toMatchObject({ kind: "history", startNodeId: "root" });
+    expect(nc6.target?.moves).toHaveLength(4);
+    expect(qg5.target?.kind).toBe("history");
+    expect(qg5.target?.moves).toHaveLength(8);
   });
 
   it("resolves the stored reply line from the move's own node", () => {
     const { ctx, move } = setup();
     const result = resolveProse("It allowed Qe7 Nxf7 Qxe4+ with a winning attack.", ctx);
-    expect(result.map((item) => item.target?.kind)).toEqual(["reply", "reply", "reply"]);
+    expect(result.map((item) => item.target?.kind)).toStrictEqual(["reply", "reply", "reply"]);
     expect(result[2]?.target?.startNodeId).toBe(move.nodeId);
-    expect(result[2]?.target?.moves).toEqual(["Qe7", "Nxf7", "Qxe4+"]);
+    expect(result[2]?.target?.moves).toStrictEqual(["Qe7", "Nxf7", "Qxe4+"]);
   });
 
   it("falls back to the next ply's best line when replyLines are missing", () => {
     const { ctx, moves, move } = setup({ replyLines: undefined });
-    const next = moves[7];
-    if (!next) throw new Error("missing ply 8");
-    moves[7] = { ...next, bestLine: ["d8e7", "e5f7"] };
+    moves[7] = { ...at(moves, 7), bestLine: ["d8e7", "e5f7"] };
     const [qe7] = resolveProse("It allowed Qe7.", { ...ctx, moves });
-    expect(qe7?.target).toMatchObject({ kind: "reply", startNodeId: move.nodeId, moves: ["Qe7"] });
+    expect(qe7.target).toMatchObject({ kind: "reply", startNodeId: move.nodeId, moves: ["Qe7"] });
   });
 
   it("resolves alternatives", () => {
     const { ctx } = setup();
     const [c3] = resolveProse("The engine also liked c3.", ctx);
-    expect(c3?.target).toMatchObject({ kind: "alternative", moves: ["c3"] });
+    expect(c3.target).toMatchObject({ kind: "alternative", moves: ["c3"] });
   });
 
   it("uses move-number prefixes to pick the right occurrence", () => {
     const { ctx } = setup();
     const [plain, numbered] = resolveProse("Nf3 early, and 7...Nf3# at the end.", ctx);
-    expect(plain?.target?.moves).toHaveLength(3);
-    expect(numbered?.target?.kind).toBe("game");
-    expect(numbered?.target?.moves).toHaveLength(14);
+    expect(plain.target?.moves).toHaveLength(3);
+    expect(numbered.target?.kind).toBe("game");
+    expect(numbered.target?.moves).toHaveLength(14);
   });
 
   it("accepts over-disambiguated SAN and leaves unknown or illegal moves as text", () => {
@@ -181,9 +195,9 @@ describe("resolveCommentaryMoves", () => {
       "Nfxe5 was played; Qh5 never happened and Bb5 was impossible.",
       ctx
     );
-    expect(nfxe5?.target?.kind).toBe("played");
-    expect(qh5?.target).toBeNull();
-    expect(bxf7?.target).toBeNull();
+    expect(nfxe5.target?.kind).toBe("played");
+    expect(qh5.target).toBeNull();
+    expect(bxf7.target).toBeNull();
   });
 
   it("resolves a single token without run context", () => {
@@ -206,51 +220,35 @@ describe("reviewAnchorFor", () => {
   it("anchors variations to the nearest reviewed ancestor", () => {
     const { tree, moves, nodes } = setup();
     const reviews = new Map(moves.map((move) => [move.nodeId, move]));
-    const variation: MoveNode = {
-      ...(nodes[6] as MoveNode),
-      id: "var1",
-      parentId: nodes[5]?.id ?? null,
-      children: []
-    };
-    const withVariation = tree
-      .map((node) =>
-        node.id === nodes[5]?.id ? { ...node, children: [...node.children, "var1"] } : node
-      )
-      .concat(variation);
-    expect(reviewAnchorFor(withVariation, "var1", reviews)).toMatchObject({
+    const parentId = at(nodes, 5).id;
+    const variation: MoveNode = { ...at(nodes, 6), id: "var1", parentId, children: [] };
+    const tree1 = withVariation(tree, parentId, variation);
+    expect(reviewAnchorFor(tree1, "var1", reviews)).toMatchObject({
       move: { ply: 6 },
       variation: true
     });
-    expect(reviewAnchorFor(withVariation, nodes[6]?.id ?? "", reviews)).toMatchObject({
+    expect(reviewAnchorFor(tree1, at(nodes, 6).id, reviews)).toMatchObject({
       move: { ply: 7 },
       variation: false
     });
-    expect(reviewAnchorFor(withVariation, nodes[6]?.id ?? "", new Map())).toBeNull();
-    expect(reviewAnchorFor(withVariation, "root", reviews)).toBeNull();
+    expect(reviewAnchorFor(tree1, at(nodes, 6).id, new Map())).toBeNull();
+    expect(reviewAnchorFor(tree1, "root", reviews)).toBeNull();
   });
 
   it("keeps the move a link was clicked from as the anchor for lines from its parent", () => {
     const { tree, moves, nodes } = setup();
     const reviews = new Map(moves.map((move) => [move.nodeId, move]));
-    const played = nodes[6] as MoveNode;
+    const played = at(nodes, 6);
     // A best-line variation replacing ply 7: it hangs off ply 6's node.
-    const sibling: MoveNode = {
-      ...played,
-      id: "alt1",
-      parentId: nodes[5]?.id ?? null,
-      children: []
-    };
-    const withVariation = tree
-      .map((node) =>
-        node.id === nodes[5]?.id ? { ...node, children: [...node.children, "alt1"] } : node
-      )
-      .concat(sibling);
-    expect(reviewAnchorFor(withVariation, "alt1", reviews, played.id)).toMatchObject({
+    const parentId = at(nodes, 5).id;
+    const sibling: MoveNode = { ...played, id: "alt1", parentId, children: [] };
+    const tree1 = withVariation(tree, parentId, sibling);
+    expect(reviewAnchorFor(tree1, "alt1", reviews, played.id)).toMatchObject({
       move: { ply: 7 },
       variation: true
     });
     // An unrelated preference (a later move) does not apply.
-    expect(reviewAnchorFor(withVariation, "alt1", reviews, nodes[10]?.id ?? null)).toMatchObject({
+    expect(reviewAnchorFor(tree1, "alt1", reviews, at(nodes, 10).id)).toMatchObject({
       move: { ply: 6 },
       variation: true
     });

@@ -221,37 +221,39 @@ function targetFacts(m: MoveContext): { facts: string[]; targets: Square[] } {
 
 /** Other sliders (either side) that see further because the piece left its square. */
 function discoveredLineFacts(m: MoveContext): string[] {
-  const { before, after, mover, enemy, to } = m;
   const facts: string[] = [];
-  for (const sq of after.board.occupied) {
-    if (sq === to) continue;
-    const piece = after.board.get(sq);
-    if (!piece || !isSlider(piece.role) || before.board.get(sq)?.role !== piece.role) continue;
-    const was = pieceAttacks(before, sq);
-    const now = pieceAttacks(after, sq);
-    if (!was || !now) continue;
-    const gained = now.diff(was);
-    if (gained.isEmpty()) continue;
-    const hit = Array.from(gained.intersect(after.board[opposite(piece.color)])).filter(
-      (target) => after.board.getRole(target) !== undefined
-    );
-    if (piece.color === mover && hit.length) {
-      facts.push(
-        `uncovers the ${pieceOn(after, sq)}, which now attacks the ${pieceList(after, hit, 2)}`
-      );
-    } else if (piece.color === enemy && hit.length) {
-      facts.push(
-        `opens a line for the opponent's ${pieceOn(after, sq)}, which now hits the ${pieceList(after, hit, 2)}`
-      );
-    } else if (piece.color === mover && gained.size() >= 3) {
-      const enemyHalf = Array.from(gained).filter((g) =>
-        mover === "white" ? squareRank(g) >= 4 : squareRank(g) <= 3
-      );
-      if (enemyHalf.length >= 2)
-        facts.push(`opens the line for the ${pieceOn(after, sq)} toward the opponent's side`);
-    }
+  for (const sq of m.after.board.occupied) {
+    const fact = sq === m.to ? null : discoveredLineFact(m, sq);
+    if (fact) facts.push(fact);
   }
   return facts;
+}
+
+/** What the slider on `sq` newly sees after the move (null: nothing, or nothing worth saying). */
+function discoveredLineFact(m: MoveContext, sq: Square): string | null {
+  const { before, after, mover } = m;
+  const piece = after.board.get(sq);
+  if (!piece || !isSlider(piece.role) || before.board.get(sq)?.role !== piece.role) return null;
+  const was = pieceAttacks(before, sq);
+  const now = pieceAttacks(after, sq);
+  if (!was || !now) return null;
+  const gained = now.diff(was);
+  if (gained.isEmpty()) return null;
+  const hit = Array.from(gained.intersect(after.board[opposite(piece.color)])).filter(
+    (target) => after.board.getRole(target) !== undefined
+  );
+  if (hit.length) {
+    return piece.color === mover
+      ? `uncovers the ${pieceOn(after, sq)}, which now attacks the ${pieceList(after, hit, 2)}`
+      : `opens a line for the opponent's ${pieceOn(after, sq)}, which now hits the ${pieceList(after, hit, 2)}`;
+  }
+  if (piece.color !== mover || gained.size() < 3) return null;
+  const enemyHalf = Array.from(gained).filter((g) =>
+    mover === "white" ? squareRank(g) >= 4 : squareRank(g) <= 3
+  );
+  return enemyHalf.length >= 2
+    ? `opens the line for the ${pieceOn(after, sq)} toward the opponent's side`
+    : null;
 }
 
 /** Defensive duties given up (by moving away, or by blocking another defender), where it now matters. */
@@ -273,7 +275,7 @@ function abandonedDutyFacts(m: MoveContext): string[] {
     if (attacked ? exchangeGain(after, sq) <= 0 : defendersAfter.nonEmpty()) continue;
     const who = lost.includes(move.from)
       ? `the ${role} used to guard it`
-      : `it blocks the ${pieceOn(before, lost[0] as Square)}`;
+      : `it blocks the ${pieceOn(before, lost[0])}`;
     const status = attacked ? looseNote(after, sq) : "now undefended";
     facts.push(`stops protecting the ${pieceOn(after, sq)} (${who}; ${status})`);
   }
@@ -358,41 +360,59 @@ function materialList(roles: readonly Role[]): string {
 /** Material swing over the first plies of a line, e.g. "over 4 plies Black wins a rook for a knight". */
 export function lineOutcome(fen: string, pv: readonly string[], maxPlies = 8): string | null {
   try {
-    const pos = positionFromFen(fen);
-    const won: Record<Color, Role[]> = { white: [], black: [] };
-    let plies = 0;
-    for (const uci of pv.slice(0, maxPlies)) {
-      const move = parseUci(uci);
-      if (!move || !("from" in move) || !pos.isLegal(move)) break;
-      const captured = capturedRole(pos, move);
-      if (captured) won[pos.turn].push(captured);
-      pos.play(move);
-      plies += 1;
-      if (pos.isEnd()) break;
-    }
+    const { pos, plies, won } = playLine(fen, pv, maxPlies);
     if (!plies) return null;
     const mate = pos.isCheckmate()
       ? `, ending with ${sideName(opposite(pos.turn))} delivering checkmate`
       : "";
     if (!won.white.length && !won.black.length)
       return mate ? `the line${mate.replace(/^,/, "")}` : null;
-    const points = (roles: Role[]) => roles.reduce((sum, r) => sum + PIECE_POINTS[r], 0);
-    const net = points(won.white) - points(won.black);
-    const span = `${plies} ${plies === 1 ? "ply" : "plies"}`;
-    const simple = won.white.length + won.black.length <= 3;
-    if (net === 0) {
-      return simple
-        ? `over ${span} the material trades evenly (${materialList(won.white)} for ${materialList(won.black)})${mate}`
-        : `over ${span} the trades leave material level${mate}`;
-    }
-    const winner: Color = net > 0 ? "white" : "black";
-    const margin = Math.abs(net);
-    return simple
-      ? `over ${span} ${sideName(winner)} wins ${materialList(won[winner])} for ${materialList(won[opposite(winner)])}${mate}`
-      : `over ${span} of trades ${sideName(winner)} comes out ${margin} point${margin === 1 ? "" : "s"} of material ahead${mate}`;
+    return tradeOutcome(won, plies, mate);
   } catch {
     return null;
   }
+}
+
+/**
+ * Plays `pv` from `fen`, up to `maxPlies` and stopping at a move that can't be played or the
+ * game's end, with what each side captured on the way.
+ */
+function playLine(
+  fen: string,
+  pv: readonly string[],
+  maxPlies: number
+): { pos: Chess; plies: number; won: Record<Color, Role[]> } {
+  const pos = positionFromFen(fen);
+  const won: Record<Color, Role[]> = { white: [], black: [] };
+  let plies = 0;
+  for (const uci of pv.slice(0, maxPlies)) {
+    const move = parseUci(uci);
+    if (!move || !("from" in move) || !pos.isLegal(move)) break;
+    const captured = capturedRole(pos, move);
+    if (captured) won[pos.turn].push(captured);
+    pos.play(move);
+    plies += 1;
+    if (pos.isEnd()) break;
+  }
+  return { pos, plies, won };
+}
+
+/** How a line's captures came out over its `plies`; `mate` is the checkmate clause, if any. */
+function tradeOutcome(won: Record<Color, Role[]>, plies: number, mate: string): string {
+  const points = (roles: Role[]) => roles.reduce((sum, r) => sum + PIECE_POINTS[r], 0);
+  const net = points(won.white) - points(won.black);
+  const span = `${plies} ${plies === 1 ? "ply" : "plies"}`;
+  const simple = won.white.length + won.black.length <= 3;
+  if (net === 0) {
+    return simple
+      ? `over ${span} the material trades evenly (${materialList(won.white)} for ${materialList(won.black)})${mate}`
+      : `over ${span} the trades leave material level${mate}`;
+  }
+  const winner: Color = net > 0 ? "white" : "black";
+  const margin = Math.abs(net);
+  return simple
+    ? `over ${span} ${sideName(winner)} wins ${materialList(won[winner])} for ${materialList(won[opposite(winner)])}${mate}`
+    : `over ${span} of trades ${sideName(winner)} comes out ${margin} point${margin === 1 ? "" : "s"} of material ahead${mate}`;
 }
 
 /** What the opponent's best reply exploits in the played move. */
@@ -507,22 +527,15 @@ export function buildIdeaFacts(input: IdeaFactsInput): IdeaFacts | null {
   const board = describeBoard(input.fenBefore);
   if (!board) return null;
   const fenAfter = fenOf(played.after);
-  const playedIsBest = !input.bestUci || input.bestUci === input.playedUci;
 
   const result: IdeaFacts = {
     board,
     played: { san: played.san, facts: moveFacts(played) }
   };
 
-  if (!playedIsBest && input.bestUci) {
-    const best = play(input.fenBefore, input.bestUci);
-    if (best) {
-      const facts = [
-        ...moveFacts(best),
-        ...lineFacts(best, input.fenBefore, input.bestLine, "best line")
-      ];
-      result.best = { san: best.san, facts: facts.slice(0, MAX_FACTS) };
-    }
+  if (input.bestUci && input.bestUci !== input.playedUci) {
+    const best = bestMoveIdea(input.fenBefore, input.bestUci, input.bestLine);
+    if (best) result.best = best;
   } else {
     const facts = [
       ...result.played.facts,
@@ -531,30 +544,59 @@ export function buildIdeaFacts(input: IdeaFactsInput): IdeaFacts | null {
     result.played.facts = facts.slice(0, MAX_FACTS);
   }
 
-  const replyUci = input.replyLine?.[0];
-  if (replyUci && input.bestUci !== input.playedUci) {
-    const reply = play(fenAfter, replyUci);
-    if (reply) {
-      const facts = replyFacts(played, reply);
-      const outcome = lineOutcome(fenAfter, input.replyLine ?? []);
-      if (outcome) facts.push(`reply line: ${outcome}`);
-      result.reply = { san: reply.san, facts: facts.slice(0, MAX_FACTS) };
-    }
+  if (input.bestUci !== input.playedUci) {
+    const reply = replyIdea(played, fenAfter, input.replyLine);
+    if (reply) result.reply = reply;
   }
 
-  const before = positionSnapshot(input.fenBefore, Boolean(input.early));
-  const after = positionSnapshot(fenAfter, Boolean(input.early));
-  if (before && after) {
-    const changes = snapshotChanges(before, after);
-    // "before" carries only what differs from "after", to keep the payload small.
-    const beforeDiff = changedFields(before.snapshot, after.snapshot);
-    result.position = {
-      before: beforeDiff,
-      after: after.snapshot,
-      ...(changes.length ? { changes } : {})
-    };
-  }
+  const position = positionChange(input.fenBefore, fenAfter, Boolean(input.early));
+  if (position) result.position = position;
   return result;
+}
+
+/** The engine's best move (when another move was played): what it does, then its line's outcome. */
+function bestMoveIdea(
+  fenBefore: string,
+  bestUci: string,
+  bestLine: readonly string[] | undefined
+): NonNullable<IdeaFacts["best"]> | null {
+  const best = play(fenBefore, bestUci);
+  if (!best) return null;
+  const facts = [...moveFacts(best), ...lineFacts(best, fenBefore, bestLine, "best line")];
+  return { san: best.san, facts: facts.slice(0, MAX_FACTS) };
+}
+
+/** The opponent's best reply to the played move, with its line's outcome. */
+function replyIdea(
+  played: Played,
+  fenAfter: string,
+  replyLine: readonly string[] | undefined
+): NonNullable<IdeaFacts["reply"]> | null {
+  const replyUci = replyLine?.[0];
+  const reply = replyUci ? play(fenAfter, replyUci) : null;
+  if (!reply) return null;
+  const facts = replyFacts(played, reply);
+  const outcome = lineOutcome(fenAfter, replyLine ?? []);
+  if (outcome) facts.push(`reply line: ${outcome}`);
+  return { san: reply.san, facts: facts.slice(0, MAX_FACTS) };
+}
+
+/** The position before and after the move, and what changed structurally. */
+function positionChange(
+  fenBefore: string,
+  fenAfter: string,
+  early: boolean
+): NonNullable<IdeaFacts["position"]> | null {
+  const before = positionSnapshot(fenBefore, early);
+  const after = positionSnapshot(fenAfter, early);
+  if (!before || !after) return null;
+  const changes = snapshotChanges(before, after);
+  // "before" carries only what differs from "after", to keep the payload small.
+  return {
+    before: changedFields(before.snapshot, after.snapshot),
+    after: after.snapshot,
+    ...(changes.length ? { changes } : {})
+  };
 }
 
 function fenOf(pos: Chess): string {

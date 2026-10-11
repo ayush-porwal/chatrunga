@@ -8,7 +8,7 @@
 /** At most one board step this often: a re-run's cached moves finish almost at once. */
 export const FOLLOW_STEP_MS = 250;
 /** Further behind than this many moves, the board catches up in one quiet jump. */
-export const FOLLOW_MAX_LAG = 2;
+const FOLLOW_MAX_LAG = 2;
 
 /** A board step: `quiet` is a catch-up jump, made without move sounds or sliding pieces. */
 export type FollowStep = { nodeId: string; quiet: boolean };
@@ -22,7 +22,7 @@ export function followTargetIndex(
   analysed: readonly { nodeId: string }[]
 ): number {
   const done = new Set(analysed.map((move) => move.nodeId));
-  for (let index = line.length - 1; index > 0; index -= 1) if (done.has(line[index]!)) return index;
+  for (let index = line.length - 1; index > 0; index -= 1) if (done.has(line[index])) return index;
   return 0;
 }
 
@@ -130,8 +130,8 @@ export function createAnalysisFollower({
     }
     const lag = to - from;
     // Off the line, ahead of the analysis or too far behind: one quiet jump. Else the next move.
-    if (from < 0 || lag < 0 || lag > maxLag) place(line[to]!, true);
-    else place(line[from + 1]!, false);
+    if (from < 0 || lag < 0 || lag > maxLag) place(line[to], true);
+    else place(line[from + 1], false);
     advance();
   };
 

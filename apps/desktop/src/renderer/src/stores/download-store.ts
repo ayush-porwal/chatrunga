@@ -6,12 +6,12 @@ export const COMPLETED_PROGRESS_MS = 1800;
 
 type DownloadStore = {
   /** Per database source: its running download, or its outcome (completed / failed). */
-  progress: Record<string, DatabaseDownloadProgress>;
+  progress: Partial<Record<string, DatabaseDownloadProgress>>;
   /**
    * Sources an event (or a clear) has touched: the store is up to date for them, even with no entry
    * left (cancelled, cleared), so a snapshot must not bring back an older state.
    */
-  reported: Record<string, true>;
+  reported: Partial<Record<string, true>>;
   apply: (progress: DatabaseDownloadProgress) => void;
   /** A snapshot taken earlier: only for sources no event has reported since (events are newer). */
   applySnapshot: (running: readonly DatabaseDownloadProgress[]) => void;

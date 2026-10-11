@@ -41,6 +41,6 @@ describe("download store", () => {
     store.apply(progress("b", "completed", 100));
     store.clear("b");
     store.applySnapshot([progress("a", "downloading", 20), progress("b", "downloading", 90)]);
-    expect(useDownloadStore.getState().progress).toEqual({});
+    expect(useDownloadStore.getState().progress).toStrictEqual({});
   });
 });

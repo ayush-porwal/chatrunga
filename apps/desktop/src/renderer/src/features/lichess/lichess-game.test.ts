@@ -52,23 +52,23 @@ describe("lichess game helpers", () => {
 
   it("maps Lichess statuses to results and terminations", () => {
     expect(lichessOutcome({ status: "started", winner: null })).toBeNull();
-    expect(lichessOutcome({ status: "mate", winner: "white" })).toEqual({
+    expect(lichessOutcome({ status: "mate", winner: "white" })).toStrictEqual({
       result: "1-0",
       termination: "Checkmate"
     });
-    expect(lichessOutcome({ status: "resign", winner: "black" })).toEqual({
+    expect(lichessOutcome({ status: "resign", winner: "black" })).toStrictEqual({
       result: "0-1",
       termination: "Player resign"
     });
-    expect(lichessOutcome({ status: "outoftime", winner: "white" })).toEqual({
+    expect(lichessOutcome({ status: "outoftime", winner: "white" })).toStrictEqual({
       result: "1-0",
       termination: "Time forfeit"
     });
-    expect(lichessOutcome({ status: "draw", winner: null })).toEqual({
+    expect(lichessOutcome({ status: "draw", winner: null })).toStrictEqual({
       result: "1/2-1/2",
       termination: "Draw"
     });
-    expect(lichessOutcome({ status: "aborted", winner: null })).toEqual({
+    expect(lichessOutcome({ status: "aborted", winner: null })).toStrictEqual({
       result: "*",
       termination: "Game aborted"
     });

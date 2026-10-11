@@ -63,8 +63,8 @@ describe("normalizePlayerRatings", () => {
   it("keeps good modes and defaults the rest", () => {
     expect(
       normalizePlayerRatings({ blitz: { source: "manual", rating: 1800 }, rapid: "nope" })
-    ).toEqual({ ...uniformRatings(1500), blitz: { source: "manual", rating: 1800 } });
-    expect(normalizePlayerRatings(undefined)).toEqual(uniformRatings(1500));
+    ).toStrictEqual({ ...uniformRatings(1500), blitz: { source: "manual", rating: 1800 } });
+    expect(normalizePlayerRatings(undefined)).toStrictEqual(uniformRatings(1500));
   });
 
   it("drops the edited and provisional flags an earlier build stored", () => {
@@ -74,7 +74,7 @@ describe("normalizePlayerRatings", () => {
         blitz: { source: "lichess", rating: 1720, syncedAt: NOW, provisional: true },
         rapid: { source: "manual", rating: 1600, edited: true }
       })
-    ).toEqual({
+    ).toStrictEqual({
       ...uniformRatings(1500),
       blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
       rapid: { source: "manual", rating: 1600 }
@@ -83,7 +83,7 @@ describe("normalizePlayerRatings", () => {
 
   it("is idempotent", () => {
     const ratings = normalizePlayerRatings({ blitz: { source: "manual", rating: 1800 } });
-    expect(normalizePlayerRatings(ratings)).toEqual(ratings);
+    expect(normalizePlayerRatings(ratings)).toStrictEqual(ratings);
   });
 });
 
@@ -100,7 +100,7 @@ describe("applyLichessPerfs", () => {
       },
       NOW
     );
-    expect(next).toEqual({
+    expect(next).toStrictEqual({
       ...start,
       blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
       rapid: { source: "lichess", rating: 1810, syncedAt: NOW }
@@ -117,8 +117,8 @@ describe("applyLichessPerfs", () => {
       },
       NOW
     );
-    expect(next.rapid).toEqual({ source: "lichess", rating: 1900, syncedAt: NOW });
-    expect(next.blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
+    expect(next.rapid).toStrictEqual({ source: "lichess", rating: 1900, syncedAt: NOW });
+    expect(next.blitz).toStrictEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 
   it("updates an earlier sync", () => {
@@ -133,7 +133,7 @@ describe("applyLichessPerfs", () => {
         { blitz: { rating: 1731, games: 301, provisional: false } },
         NOW + 1000
       ).blitz
-    ).toEqual({ source: "lichess", rating: 1731, syncedAt: NOW + 1000 });
+    ).toStrictEqual({ source: "lichess", rating: 1731, syncedAt: NOW + 1000 });
   });
 });
 
@@ -147,7 +147,7 @@ describe("releaseLichessRatings", () => {
       },
       NOW
     );
-    expect(releaseLichessRatings(synced)).toEqual({
+    expect(releaseLichessRatings(synced)).toStrictEqual({
       ...uniformRatings(1500),
       blitz: { source: "manual", rating: 1720 },
       rapid: { source: "manual", rating: 1810 }
@@ -166,7 +166,7 @@ describe("setManualRating / applyRatingToAllModes", () => {
   );
 
   it("edits a typed-in mode, never a synced one (provisional on Lichess or not)", () => {
-    expect(setManualRating(synced, "bullet", 1700).bullet).toEqual({
+    expect(setManualRating(synced, "bullet", 1700).bullet).toStrictEqual({
       source: "manual",
       rating: 1700
     });
@@ -176,7 +176,7 @@ describe("setManualRating / applyRatingToAllModes", () => {
   });
 
   it("sets the welcome's rating on every mode but the synced ones", () => {
-    expect(applyRatingToAllModes(synced, 1234)).toEqual({
+    expect(applyRatingToAllModes(synced, 1234)).toStrictEqual({
       bullet: { source: "manual", rating: 1234 },
       blitz: synced.blitz,
       rapid: synced.rapid,
@@ -197,13 +197,15 @@ describe("the account in charge of the ratings", () => {
   });
 
   it("maps chess.com's ratings onto the modes: Daily is Correspondence, no Classical", () => {
-    expect(chesscomRatingsByMode({ rapid: 1684, blitz: 1662, bullet: 1490, daily: 1550 })).toEqual({
+    expect(
+      chesscomRatingsByMode({ rapid: 1684, blitz: 1662, bullet: 1490, daily: 1550 })
+    ).toStrictEqual({
       rapid: 1684,
       blitz: 1662,
       bullet: 1490,
       correspondence: 1550
     });
-    expect(chesscomRatingsByMode({ blitz: Number.NaN })).toEqual({});
+    expect(chesscomRatingsByMode({ blitz: Number.NaN })).toStrictEqual({});
   });
 
   it("fills each mode the account has, read-only; gives the other account's up, typed-in", () => {
@@ -216,7 +218,7 @@ describe("the account in charge of the ratings", () => {
       NOW
     );
     const next = applyAccountRatings(lichess, "chesscom", { rapid: 1684, blitz: 1662 }, NOW + 1);
-    expect(next).toEqual({
+    expect(next).toStrictEqual({
       bullet: { source: "manual", rating: 1500 },
       blitz: { source: "chesscom", rating: 1662, syncedAt: NOW + 1 },
       rapid: { source: "chesscom", rating: 1684, syncedAt: NOW + 1 },
@@ -235,11 +237,13 @@ describe("the account in charge of the ratings", () => {
       blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
       rapid: { source: "chesscom", rating: 1684, syncedAt: NOW }
     };
-    expect(releaseAccountRatings(mixed, "chesscom")).toEqual({
+    expect(releaseAccountRatings(mixed, "chesscom")).toStrictEqual({
       ...mixed,
       rapid: { source: "manual", rating: 1684 }
     });
-    expect(releaseAccountRatings(releaseAccountRatings(mixed, "chesscom"), "lichess")).toEqual({
+    expect(
+      releaseAccountRatings(releaseAccountRatings(mixed, "chesscom"), "lichess")
+    ).toStrictEqual({
       ...uniformRatings(1500),
       blitz: { source: "manual", rating: 1720 },
       rapid: { source: "manual", rating: 1684 }

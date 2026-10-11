@@ -50,7 +50,7 @@ export function MatchActions({
  * end of its main line). A game played from a repertoire is left out: it has its own actions
  * (RepertoireHandoffActions).
  */
-export function useEnginePostGame(): boolean {
+function useEnginePostGame(): boolean {
   const played = useRepertoireHandoffStore((state) => state.played);
   return useGameStore(
     (state) =>

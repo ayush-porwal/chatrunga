@@ -2,7 +2,8 @@ import { ipcMain } from "electron";
 import { engineRepository, retryOnceIfBusy } from "../db/repositories";
 import { noteEngineReadiness } from "../telemetry/engine-readiness";
 import { broadcast } from "./broadcast";
-import { asId, parseEngineInput, parseEnginePatch } from "./validate";
+import { parseEngineInput, parseEnginePatch } from "./validate";
+import { asId } from "./fields";
 
 /**
  * Adding, editing and removing engines. These writes (like the settings and game ones) get one

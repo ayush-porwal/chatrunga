@@ -12,7 +12,11 @@ import { settingsRepository } from "../db/repositories";
 import { errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions, listAllEngines } from "../engine/engine-config";
 import type { EngineManager } from "../engine/engine-manager";
-import { analysePositionsWithEngine, reviewGameWithEngine } from "../engine/review";
+import {
+  analysePositionsWithEngine,
+  reviewGameWithEngine,
+  type ReviewProgressSink
+} from "../engine/review";
 import { selectMaiaEnginesForReview } from "../engine/review-analysis";
 import { getTelemetry } from "../telemetry";
 import { engineFamily, plyBucket, reviewFailureCode } from "../telemetry/properties";
@@ -64,6 +68,52 @@ export function reviewRatingFor(
   });
 }
 
+/** What a review operation is, for usage analytics: its size and the search it runs. */
+function reviewShape(
+  input: ReviewGameInput,
+  config: EngineConfig,
+  multipv: number,
+  maiaLevels: number
+) {
+  return {
+    ply_count: input.moves.length,
+    ply_bucket: plyBucket(input.moves.length),
+    engine_family: engineFamily(config),
+    search_ms: input.moveTimeMs ?? undefined,
+    multipv,
+    maia_levels: maiaLevels
+  };
+}
+
+/** Review knobs come from settings; an explicit `multipv` in the input wins. */
+function reviewMultipv(input: ReviewGameInput, settings: AppSettings): number {
+  return input.multipv && input.multipv > 0 ? input.multipv : settings.reviewMultiPv;
+}
+
+/** A review's progress relayed through EngineManager events (to the renderer). */
+function relayedProgress(
+  engineManager: EngineManager,
+  input: ReviewGameInput,
+  onMoveDone: () => void
+): ReviewProgressSink {
+  const { reviewId } = input;
+  const totalMoves = input.moves.length;
+  return {
+    onPhaseProgress: (progress) =>
+      engineManager.emit("reviewProgress", {
+        reviewId,
+        totalMoves,
+        playedUci: input.moves[progress.moveIndex]?.uci ?? "",
+        ...progress
+      }),
+    onMoveCompleted: ({ moveIndex, move, opening }) => {
+      onMoveDone();
+      engineManager.emit("reviewMoveCompleted", { reviewId, moveIndex, totalMoves, move, opening });
+    },
+    shouldCancel: () => engineManager.isReviewCancelled(reviewId)
+  };
+}
+
 /**
  * Runs a full game review, streaming progress through EngineManager events
  * (relayed to the renderer) and resolving with the finished review.
@@ -78,11 +128,9 @@ export async function runGameReview(
 ): Promise<GameReview> {
   const config = engineConfigForId(input.engineId);
   if (!config) throw new Error("Engine not found");
-  // Review knobs come from settings; an explicit `multipv` in the input wins.
   const settings = settingsRepository.getAll();
-  const multipv = input.multipv && input.multipv > 0 ? input.multipv : settings.reviewMultiPv;
+  const multipv = reviewMultipv(input, settings);
   const { reviewId } = input;
-  const totalMoves = input.moves.length;
   const maiaEngines = maiaEnginesFor(input, config);
   const rating = reviewRatingFor(input, settings, maiaEngines);
 
@@ -91,12 +139,7 @@ export async function runGameReview(
   const operation = {
     review_id: reviewId,
     game_ref: telemetry?.gameRef(input.gameId) ?? undefined,
-    ply_count: totalMoves,
-    ply_bucket: plyBucket(totalMoves),
-    engine_family: engineFamily(config),
-    search_ms: input.moveTimeMs ?? undefined,
-    multipv,
-    maia_levels: maiaEngines.length
+    ...reviewShape(input, config, multipv, maiaEngines.length)
   };
   // Starting a review is a user action (Analyze).
   telemetry?.markActive("study");
@@ -109,28 +152,12 @@ export async function runGameReview(
     const review = await reviewGameWithEngine(
       config,
       { ...input, multipv },
+      relayedProgress(engineManager, input, () => (movesDone += 1)),
       {
-        onPhaseProgress: (progress) =>
-          engineManager.emit("reviewProgress", {
-            reviewId,
-            totalMoves,
-            playedUci: input.moves[progress.moveIndex]?.uci ?? "",
-            ...progress
-          }),
-        onMoveCompleted: ({ moveIndex, move, opening }) => {
-          movesDone += 1;
-          engineManager.emit("reviewMoveCompleted", {
-            reviewId,
-            moveIndex,
-            totalMoves,
-            move,
-            opening
-          });
-        },
-        shouldCancel: () => engineManager.isReviewCancelled(reviewId)
-      },
-      maiaEngines,
-      { ...engineResourceOptions(settings), playerRating: rating.rating }
+        ...engineResourceOptions(settings),
+        playerRating: rating.rating,
+        maiaConfigs: maiaEngines
+      }
     );
     // The operation id travels with the saved review, so opening it later is attributable; the
     // rating it was made for, so it shows where that came from; and the side it was made for.

@@ -89,7 +89,25 @@ export default defineConfig({
       minify: true,
       // Sounds stay files: Vite would inline the small ones as data: URLs, which the packaged app's
       // CSP (media-src 'self') blocks, silencing them.
-      assetsInlineLimit: (filePath) => (/\.(mp3|wav|ogg)$/i.test(filePath) ? false : undefined)
+      assetsInlineLimit: (filePath) => (/\.(mp3|wav|ogg)$/i.test(filePath) ? false : undefined),
+      rollupOptions: {
+        // Setting any option here makes electron-vite ask for the entry it otherwise defaults to.
+        input: resolve(rootDir, "src/renderer/index.html"),
+        output: {
+          // Libraries in their own chunks, apart from the app's code: a release that only changes
+          // the app leaves them byte-identical, so the updater's differential download skips them.
+          codeSplitting: {
+            groups: [
+              {
+                name: "react",
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+                priority: 20
+              },
+              { name: "vendor", test: /[\\/]node_modules[\\/]/, priority: 10, entriesAware: true }
+            ]
+          }
+        }
+      }
     },
     server: {
       host: "127.0.0.1"

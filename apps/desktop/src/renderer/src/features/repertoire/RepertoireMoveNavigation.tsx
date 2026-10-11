@@ -88,40 +88,9 @@ export function useTreeKeyboardNavigation({
   onSelect: (nodeId: string) => void;
 }) {
   const handleKeyDown = useEventCallback((event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (isTyping(event.target) || isTyping(document.activeElement)) return;
-    const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target?.closest(KEYBOARD_WIDGET_SELECTOR)) return;
-    if (document.querySelector(OVERLAY_SELECTOR)) return;
-    let next: string;
-    switch (event.key) {
-      case "ArrowLeft":
-      case "ArrowRight":
-        if (event.repeat) markRapidNavigation();
-        next = nodeAfterSteps(nodes, selectedNodeId, event.key === "ArrowLeft" ? -1 : 1);
-        break;
-      case "Home":
-        next = ROOT_ID;
-        break;
-      case "End":
-        next = lastNodeOfLine(nodes, selectedNodeId);
-        break;
-      case "ArrowUp":
-      case "ArrowDown": {
-        const target = alternativeTarget(
-          nodes,
-          { kind: "node", nodeId: selectedNodeId },
-          () => [],
-          event.key === "ArrowDown" ? 1 : -1
-        );
-        // Nothing to switch to: the key keeps its own use (scrolling).
-        if (target?.kind !== "node") return;
-        next = target.nodeId;
-        break;
-      }
-      default:
-        return;
-    }
+    if (!isTreeNavigationKey(event)) return;
+    const next = treeKeyTarget(event, nodes, selectedNodeId);
+    if (next === null) return;
     event.preventDefault();
     if (next !== selectedNodeId) onSelect(next);
   });
@@ -131,4 +100,47 @@ export function useTreeKeyboardNavigation({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [enabled, handleKeyDown]);
+}
+
+/**
+ * False when the key belongs to something else: a modified key, typing, an open dialog or menu,
+ * or a composite widget that owns its arrow keys.
+ */
+function isTreeNavigationKey(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
+  if (isTyping(event.target) || isTyping(document.activeElement)) return false;
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (target?.closest(KEYBOARD_WIDGET_SELECTOR)) return false;
+  return !document.querySelector(OVERLAY_SELECTOR);
+}
+
+/** The node a navigation key moves to, or null when the key keeps its own use. */
+function treeKeyTarget(
+  event: KeyboardEvent,
+  nodes: readonly MoveNode[],
+  selectedNodeId: string
+): string | null {
+  switch (event.key) {
+    case "ArrowLeft":
+    case "ArrowRight":
+      if (event.repeat) markRapidNavigation();
+      return nodeAfterSteps(nodes, selectedNodeId, event.key === "ArrowLeft" ? -1 : 1);
+    case "Home":
+      return ROOT_ID;
+    case "End":
+      return lastNodeOfLine(nodes, selectedNodeId);
+    case "ArrowUp":
+    case "ArrowDown": {
+      const target = alternativeTarget(
+        nodes,
+        { kind: "node", nodeId: selectedNodeId },
+        () => [],
+        event.key === "ArrowDown" ? 1 : -1
+      );
+      // Nothing to switch to: the key keeps its own use (scrolling).
+      return target?.kind === "node" ? target.nodeId : null;
+    }
+    default:
+      return null;
+  }
 }

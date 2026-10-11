@@ -50,12 +50,12 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
 
   // 2. Maia engines — need lc0 AND a Maia weight to be installed.
   const lc0Record = assets["lc0"];
-  const lc0Path = lc0Record && isUsable(lc0Record) ? pathFor(lc0Record) : null;
+  const lc0Path = isUsable(lc0Record) ? pathFor(lc0Record) : null;
 
   for (const rating of MAIA_RATINGS) {
-    const maiaRecord = assets[`maia-${rating}` as keyof typeof assets];
+    const maiaRecord = assets[`maia-${rating}` as const];
     const name = `Maia ${rating} ${MANAGED_SUFFIX}`;
-    if (lc0Path && maiaRecord && isUsable(maiaRecord)) {
+    if (lc0Path && isUsable(maiaRecord)) {
       upsertManagedMaia(rating, lc0Path, pathFor(maiaRecord), existingEngines);
     } else {
       // Either lc0 missing or this weight missing → remove the corresponding
@@ -111,8 +111,7 @@ function autoFixEngineFlags(): void {
   }
 }
 
-function isUsable(record: AssetRecord | undefined): boolean {
-  if (!record) return false;
+function isUsable(record: AssetRecord): boolean {
   if (record.state !== "installed" && record.state !== "custom") return false;
   return Boolean(pathFor(record));
 }

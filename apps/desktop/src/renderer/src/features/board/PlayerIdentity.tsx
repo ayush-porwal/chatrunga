@@ -8,7 +8,7 @@ import { EngineAvatar } from "../analysis/EngineAvatar";
  * image slot), name, optional Elo and hint. Shared by the game board (BoardView) and the game
  * review board via <PlayerRow> so both read the same.
  */
-export function PlayerIdentity({
+function PlayerIdentity({
   color,
   name,
   elo,

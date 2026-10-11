@@ -199,23 +199,27 @@ function move(overrides: Partial<MoveReview> = {}): MoveReview {
 
 describe("game review utilities", () => {
   it("converts engine UCI into SAN before building the coach payload", () => {
-    const payload = buildInsightPayload(move(), 1500);
+    const payload = buildInsightPayload(move(), { userRating: 1500 });
     expect(payload?.engines.stockfish.bestMoveSan).toBe("e4");
-    expect(payload?.engines.stockfish.bestLineSan).toEqual(["e4", "e5"]);
+    expect(payload?.engines.stockfish.bestLineSan).toStrictEqual(["e4", "e5"]);
     // An ordinary engine match carries no mark, and the coach is told so.
     expect(payload?.annotation).toBeNull();
     expect(payload?.severity).toBeUndefined();
   });
 
   it("tells the coach a verified find was one, and an error what it cost", () => {
-    const great = buildInsightPayload(move({ assessment: assessed(null, "great") }), 1500);
+    const great = buildInsightPayload(move({ assessment: assessed(null, "great") }), {
+      userRating: 1500
+    });
     expect(great).toMatchObject({ annotation: "great", curatorReason: "difficult_find" });
-    const good = buildInsightPayload(move({ assessment: assessed(null, "good") }), 1500);
+    const good = buildInsightPayload(move({ assessment: assessed(null, "good") }), {
+      userRating: 1500
+    });
     expect(good).toMatchObject({ annotation: "good", curatorReason: "move_review" });
     // An inaccuracy left unmarked (a decided game) is still explained as an error.
     const unmarked = buildInsightPayload(
       move({ assessment: { ...assessed("inaccuracy", null), tags: ["decided"] } }),
-      1500
+      { userRating: 1500 }
     );
     expect(unmarked).toMatchObject({
       annotation: null,
@@ -228,13 +232,13 @@ describe("game review utilities", () => {
 
   it("counts errors by severity, marked or not", () => {
     const moves = trapGame();
-    expect(countBySeverity(moves)).toEqual({ inaccuracy: 1, mistake: 1, blunder: 1 });
+    expect(countBySeverity(moves)).toStrictEqual({ inaccuracy: 1, mistake: 1, blunder: 1 });
     expect(
       countBySeverity([
         move({ assessment: { ...assessed("inaccuracy", null), tags: ["decided"] } }),
         move()
       ])
-    ).toEqual({
+    ).toStrictEqual({
       inaccuracy: 1,
       mistake: 0,
       blunder: 0
@@ -242,24 +246,31 @@ describe("game review utilities", () => {
   });
 
   it("uses a neutral review reason when no Maia data is available", () => {
-    const payload = buildInsightPayload(move({ humanPredictions: undefined }), 1500);
+    const payload = buildInsightPayload(move({ humanPredictions: undefined }), {
+      userRating: 1500
+    });
     expect(payload?.curatorReason).toBe("move_review");
     expect(payload?.engines.maiaCurve.interpretation.label).toBe("neutral");
   });
 
   it("adds history, alternatives, the reply line and game context for a mid-game mistake", () => {
     const moves = trapGame();
-    const mistake = moves[6]!;
-    const payload = buildInsightPayload(mistake, 1500, "detailed", "white", {
-      moves,
-      headers: {
-        white: "Alice",
-        black: "Bob",
-        event: "Club game",
-        eco: "C50",
-        opening: "Italian Game",
-        timeControl: "300+2",
-        result: null
+    const mistake = moves[6];
+    const payload = buildInsightPayload(mistake, {
+      userRating: 1500,
+      commentaryDetail: "detailed",
+      playerColor: "white",
+      context: {
+        moves,
+        headers: {
+          white: "Alice",
+          black: "Bob",
+          event: "Club game",
+          eco: "C50",
+          opening: "Italian Game",
+          timeControl: "300+2",
+          result: null
+        }
       }
     });
     expect(payload).not.toBeNull();
@@ -272,20 +283,28 @@ describe("game review utilities", () => {
       phase: "opening"
     });
     expect(stockfish.evalPerspective).toBe("white");
-    expect(stockfish.assessment).toEqual({
+    expect(stockfish.assessment).toStrictEqual({
       before: "white_slightly_better",
       after: "black_clearly_better",
       afterBest: "white_slightly_better"
     });
-    expect(stockfish.alternatives?.map((item) => item.san)).toEqual(["Nxd4", "O-O", "c3"]);
+    expect(stockfish.alternatives?.map((item) => item.san)).toStrictEqual(["Nxd4", "O-O", "c3"]);
     expect(stockfish.alternatives?.[0]).toMatchObject({
       rank: 1,
       eval: "+0.90",
       lineSan: ["Nxd4", "exd4", "c3", "dxc3"]
     });
     expect(stockfish.playedMoveRank).toBeUndefined();
-    expect(stockfish.replyLineSan).toEqual(["Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4+", "Be2", "Nf3#"]);
-    expect(payload!.context?.recentMoves?.map((item) => item.san)).toEqual([
+    expect(stockfish.replyLineSan).toStrictEqual([
+      "Qg5",
+      "Nxf7",
+      "Qxg2",
+      "Rf1",
+      "Qxe4+",
+      "Be2",
+      "Nf3#"
+    ]);
+    expect(payload!.context?.recentMoves?.map((item) => item.san)).toStrictEqual([
       "e4",
       "e5",
       "Nf3",
@@ -299,11 +318,11 @@ describe("game review utilities", () => {
       annotation: "inaccuracy",
       evalAfter: "+0.90"
     });
-    expect(payload!.context?.mistakesSoFar).toEqual({
+    expect(payload!.context?.mistakesSoFar).toStrictEqual({
       white: { inaccuracies: 0, mistakes: 0, blunders: 0 },
       black: { inaccuracies: 1, mistakes: 0, blunders: 0 }
     });
-    expect(payload!.context?.actualReply).toEqual({
+    expect(payload!.context?.actualReply).toStrictEqual({
       moveNumberSan: "4...",
       san: "Qg5",
       matchesEngine: true
@@ -319,7 +338,7 @@ describe("game review utilities", () => {
       totalPlies: 9
     });
     // Own clock went 290s -> 284s with a 2s increment: 8s spent.
-    expect(payload!.clock).toEqual({
+    expect(payload!.clock).toStrictEqual({
       moverRemainingSec: 284,
       moverSpentSec: 8,
       opponentRemainingSec: 280
@@ -336,22 +355,26 @@ describe("game review utilities", () => {
   it("prefers the stored reply search when the review has one", () => {
     const moves = trapGame();
     const last = {
-      ...moves[6]!,
+      ...moves[6],
       replyLines: [
         { multipv: 1, depth: 18, score: cp(180), scoreWhite: cp(-180), pv: ["d8g5", "e5f7"] }
       ]
     };
-    const payload = buildInsightPayload(last, 1500);
-    expect(payload?.engines.stockfish.replyLineSan).toEqual(["Qg5", "Nxf7"]);
+    const payload = buildInsightPayload(last, { userRating: 1500 });
+    expect(payload?.engines.stockfish.replyLineSan).toStrictEqual(["Qg5", "Nxf7"]);
   });
 
-  it("keeps the four-argument call working without game context", () => {
+  it("builds the payload without game context", () => {
     const moves = trapGame();
-    const payload = buildInsightPayload(moves[6]!, 1500, "balanced", "white");
+    const payload = buildInsightPayload(moves[6], {
+      userRating: 1500,
+      commentaryDetail: "balanced",
+      playerColor: "white"
+    });
     expect(payload?.context).toBeUndefined();
     expect(payload?.engines.stockfish.replyLineSan).toBeUndefined();
     expect(payload?.engines.stockfish.alternatives).toHaveLength(3);
-    expect(payload?.clock).toEqual({ moverRemainingSec: 284 });
+    expect(payload?.clock).toStrictEqual({ moverRemainingSec: 284 });
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
   });
 
@@ -361,20 +384,17 @@ describe("game review utilities", () => {
       ([1100, 1300, 1500, 1700, 1900] as const).map((rating) => ({
         rating,
         topMoves: [
-          { uci: "f3e5", prob: probs[0]! },
-          { uci: "e1g1", prob: probs[1]! },
-          { uci: "f3d4", prob: probs[2]! }
+          { uci: "f3e5", prob: probs[0] },
+          { uci: "e1g1", prob: probs[1] },
+          { uci: "f3d4", prob: probs[2] }
         ]
       }));
     const trusted = { moves, review: { schemaVersion: 2 } };
     const informative = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
-      1500,
-      "balanced",
-      "white",
-      trusted
+      { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: trusted }
     );
-    expect(informative?.engines.humanTopMoves).toEqual({
+    expect(informative?.engines.humanTopMoves).toStrictEqual({
       rating: 1500,
       moves: [
         { san: "Nxe5", prob: 0.6 },
@@ -383,20 +403,14 @@ describe("game review utilities", () => {
       ]
     });
     const flat = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.2, 0.2, 0.2]) },
-      1500,
-      "balanced",
-      "white",
-      trusted
+      { ...moves[6], humanPredictions: predictions([0.2, 0.2, 0.2]) },
+      { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: trusted }
     );
     expect(flat?.engines.humanTopMoves).toBeUndefined();
     // Reviews older than schemaVersion 2 stored fake policies: no Maia data at all.
     const legacy = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
-      1500,
-      "balanced",
-      "white",
-      { moves }
+      { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: { moves } }
     );
     expect(legacy?.engines.humanTopMoves).toBeUndefined();
     expect(legacy?.engines.maia).toBeUndefined();
@@ -405,7 +419,7 @@ describe("game review utilities", () => {
   it("sends real per-level Maia evidence, engine identity and win chances for schemaVersion 2 reviews", () => {
     const moves = trapGame();
     const mistake: MoveReview = {
-      ...moves[6]!,
+      ...moves[6],
       wdlBefore: { win: 450, draw: 400, loss: 150 },
       wdlAfter: { win: 700, draw: 200, loss: 100 },
       humanPredictions: [
@@ -444,12 +458,17 @@ describe("game review utilities", () => {
         }
       ]
     };
-    const payload = buildInsightPayload(mistake, 1400, "balanced", "white", {
-      moves,
-      review: {
-        schemaVersion: 2,
-        engineName: "Stockfish 17",
-        engineSettings: { multipv: 3, moveTimeMs: 250, depth: null }
+    const payload = buildInsightPayload(mistake, {
+      userRating: 1400,
+      commentaryDetail: "balanced",
+      playerColor: "white",
+      context: {
+        moves,
+        review: {
+          schemaVersion: 2,
+          engineName: "Stockfish 17",
+          engineSettings: { multipv: 3, moveTimeMs: 250, depth: null }
+        }
       }
     });
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
@@ -484,9 +503,14 @@ describe("game review utilities", () => {
 
   it("adds board-derived idea facts and keeps the payload compact", () => {
     const moves = trapGame();
-    const payload = buildInsightPayload(moves[6]!, 1500, "detailed", "white", {
-      moves,
-      review: { schemaVersion: 2 }
+    const payload = buildInsightPayload(moves[6], {
+      userRating: 1500,
+      commentaryDetail: "detailed",
+      playerColor: "white",
+      context: {
+        moves,
+        review: { schemaVersion: 2 }
+      }
     })!;
     expect(payload.ideas?.board.white).toContain("B c1 c4");
     expect(payload.ideas?.played.san).toBe("Nxe5");
@@ -515,7 +539,12 @@ describe("game review utilities", () => {
       bestMove: "d1d8",
       bestLine: ["d1d8"]
     });
-    const payload = buildInsightPayload(mate, 1500, "balanced", "white", { moves: [mate] });
+    const payload = buildInsightPayload(mate, {
+      userRating: 1500,
+      commentaryDetail: "balanced",
+      playerColor: "white",
+      context: { moves: [mate] }
+    });
     expect(payload).not.toBeNull();
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
     expect(payload!.game).toMatchObject({
@@ -545,7 +574,7 @@ describe("game review utilities", () => {
       bestMove: "h1g2",
       bestLine: ["h1g2", "a8a7"]
     });
-    const payload = buildInsightPayload(stalemate, 1500);
+    const payload = buildInsightPayload(stalemate, { userRating: 1500 });
     expect(payload?.game.terminal).toBe("stalemate");
     expect(payload?.engines.stockfish).toMatchObject({
       evalAfter: "0.00",
@@ -614,7 +643,7 @@ describe("game review utilities", () => {
         children: []
       }
     ];
-    expect(mainlineReviewInput(tree).map((move) => move.uci)).toEqual(["e2e4", "e7e5"]);
+    expect(mainlineReviewInput(tree).map((move) => move.uci)).toStrictEqual(["e2e4", "e7e5"]);
   });
 });
 
@@ -623,8 +652,8 @@ describe("engine line steps", () => {
 
   it("gives the position after each move, stopping at one that doesn't fit", () => {
     const steps = uciLineSteps(START, ["e2e4", "e7e5", "e1e5", "g1f3"]);
-    expect(steps.map((step) => step.san)).toEqual(["e4", "e5"]);
-    expect(steps[1]!.fenAfter).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+    expect(steps.map((step) => step.san)).toStrictEqual(["e4", "e5"]);
+    expect(steps[1].fenAfter).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
   });
 
   it("numbers a line from either side to move", () => {

@@ -9,11 +9,11 @@ import {
 
 describe("review helpers", () => {
   it("converts scores into White perspective", () => {
-    expect(scoreFromWhitePerspective({ type: "cp", value: 80 }, "white")).toEqual({
+    expect(scoreFromWhitePerspective({ type: "cp", value: 80 }, "white")).toStrictEqual({
       type: "cp",
       value: 80
     });
-    expect(scoreFromWhitePerspective({ type: "cp", value: 80 }, "black")).toEqual({
+    expect(scoreFromWhitePerspective({ type: "cp", value: 80 }, "black")).toStrictEqual({
       type: "cp",
       value: -80
     });

@@ -217,13 +217,13 @@ export async function currentIncludePlan<C extends Parameters<typeof trainingPic
 
 /** The question before "Include in practice" widens decisions other chapters share. */
 export function wideningQuestion(lookup: ChapterLookup, widened: readonly TrainingPick[]): string {
-  const [first, ...rest] = widened;
+  const first = widened.at(0);
   if (!first) return "";
   const where =
     first.nodeId === REPERTOIRE_ROOT_NODE_ID
       ? "at the start"
       : `after ${pathLabel(lookup, first.nodeId)}`;
-  const more = rest.length ? ` (and ${rest.length} more)` : "";
+  const more = widened.length > 1 ? ` (and ${widened.length - 1} more)` : "";
   return `Your other chapters play a different move ${where}. Including also accepts ${moveLabel(lookup, first.childId)} there${more}.`;
 }
 
@@ -320,7 +320,8 @@ export function practiceEmptyExplanation(
   blocked: readonly BlockedChapter[],
   othersPractise: boolean
 ): PracticeEmpty {
-  const [first, ...rest] = blocked;
+  const first = blocked.at(0);
+  const rest = blocked.slice(1);
   if (first && !othersPractise) {
     return {
       title: `Nothing to practise in “${first.title}”`,

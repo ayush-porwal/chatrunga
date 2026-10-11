@@ -36,11 +36,11 @@ import {
   progressRepository,
   repertoireRepository,
   transaction,
-  workspaceRepository,
   type PositionIndexRow,
   type RepertoireRecord,
   type StoredDecision
 } from "./repository";
+import { workspaceRepository } from "./workspace-repository";
 
 export function requireRepertoire(id: string): RepertoireRecord {
   const record = repertoireRepository.get(id);
@@ -289,28 +289,37 @@ export function sameIndexInputs(a: RepertoireChapter, b: RepertoireChapter): boo
   ) {
     return false;
   }
-  for (let index = 0; index < a.tree.length; index++) {
-    const x = a.tree[index];
-    const y = b.tree[index];
-    if (
-      x.id !== y.id ||
-      x.parentId !== y.parentId ||
-      x.uci !== y.uci ||
-      x.fenAfter !== y.fenAfter ||
-      x.ply !== y.ply ||
-      x.children.length !== y.children.length ||
-      x.children.some((childId, at) => childId !== y.children[at])
-    ) {
-      return false;
-    }
-  }
-  const ids = Object.keys(a.nodeMeta);
-  if (ids.length !== Object.keys(b.nodeMeta).length) return false;
+  return (
+    a.tree.every((node, index) => sameTreeNode(node, b.tree[index])) &&
+    sameTrainingMarks(a.nodeMeta, b.nodeMeta)
+  );
+}
+
+/** The same place in the tree, move, position and ply (annotations don't count). */
+function sameTreeNode(x: MoveNode, y: MoveNode): boolean {
+  return (
+    x.id === y.id &&
+    x.parentId === y.parentId &&
+    x.uci === y.uci &&
+    x.fenAfter === y.fenAfter &&
+    x.ply === y.ply &&
+    x.children.length === y.children.length &&
+    x.children.every((childId, at) => childId === y.children[at])
+  );
+}
+
+/** The same nodes marked, with the same edge, training boundaries and disabled flag. */
+function sameTrainingMarks(
+  a: RepertoireChapter["nodeMeta"],
+  b: RepertoireChapter["nodeMeta"]
+): boolean {
+  const ids = Object.keys(a);
+  if (ids.length !== Object.keys(b).length) return false;
   return ids.every((id) => {
-    const x = a.nodeMeta[id];
-    const y = b.nodeMeta[id];
+    if (!Object.hasOwn(b, id)) return false;
+    const x = a[id];
+    const y = b[id];
     return (
-      y !== undefined &&
       x.edge === y.edge &&
       Boolean(x.trainingStart) === Boolean(y.trainingStart) &&
       Boolean(x.trainingStop) === Boolean(y.trainingStop) &&
@@ -495,38 +504,17 @@ export function reindexChapter(
   const chapterId = (after ?? before)?.id;
   if (!chapterId) return reindex(record, now);
 
-  // The stored keys of the old tree also seed the new one: most of its positions are the same.
   const storedKeys = before
     ? positionIndexRepository.chapterKeys(chapterId)
     : new Map<string, string>();
-  const seed = new Map<string, string>();
-  for (const node of before?.tree ?? []) {
-    const key = storedKeys.get(node.id);
-    if (key !== undefined) seed.set(node.fenAfter, key);
-  }
-  const keyOf = memoizedPositionKey(seed);
+  const keyOf = memoizedPositionKey(storedKeySeed(before, storedKeys));
   const old = before ? chapterIndex(record.color, before, keyOf) : NO_CHAPTER;
   if (old.rows.length !== storedKeys.size) return reindex(record, now);
   const next = after ? chapterIndex(record.color, after, keyOf) : NO_CHAPTER;
 
   const reordered = before !== null && after !== null && before.sortOrder !== after.sortOrder;
-  const changedKeys: string[] = [];
-  for (const key of new Set([...old.choices.keys(), ...next.choices.keys()])) {
-    if (reordered || !sameChoices(old.choices.get(key), next.choices.get(key))) {
-      changedKeys.push(key);
-    }
-  }
-
-  // Where the chapter only gained choices, the stored decision already says what the other
-  // chapters support there; anything it lost may still be supported elsewhere, so those keys
-  // read the other chapters.
-  const grown: string[] = [];
-  const shrunk: string[] = [];
-  for (const key of changedKeys) {
-    const kept = new Set(next.choices.get(key));
-    if ((old.choices.get(key) ?? []).every((uci) => kept.has(uci))) grown.push(key);
-    else shrunk.push(key);
-  }
+  const changedKeys = changedChoiceKeys(old, next, reordered);
+  const { grown, shrunk } = splitByGrowth(changedKeys, old, next);
   const collected = new Map([
     ...grownChoices(record, grown, next.choices),
     ...(shrunk.length ? supportedChoices(record, chapterId, shrunk, next.choices) : [])
@@ -536,6 +524,50 @@ export function reindexChapter(
     : { decisionsChanged: 0, progressChanged: false };
   positionIndexRepository.replaceChapter(record.id, chapterId, next.rows, record.revision);
   return result;
+}
+
+/** The stored keys of the old tree, by position: they seed the new one (most positions stay). */
+export function storedKeySeed(
+  before: RepertoireChapter | null,
+  storedKeys: ReadonlyMap<string, string>
+): Map<string, string> {
+  const seed = new Map<string, string>();
+  for (const node of before?.tree ?? []) {
+    const key = storedKeys.get(node.id);
+    if (key !== undefined) seed.set(node.fenAfter, key);
+  }
+  return seed;
+}
+
+/** The positions whose supported choices changed (all of them when the chapter moved in order). */
+function changedChoiceKeys(old: ChapterIndex, next: ChapterIndex, reordered: boolean): string[] {
+  const changedKeys: string[] = [];
+  for (const key of new Set([...old.choices.keys(), ...next.choices.keys()])) {
+    if (reordered || !sameChoices(old.choices.get(key), next.choices.get(key))) {
+      changedKeys.push(key);
+    }
+  }
+  return changedKeys;
+}
+
+/**
+ * Where the chapter only gained choices (`grown`), the stored decision already says what the
+ * other chapters support there; anything it lost (`shrunk`) may still be supported elsewhere, so
+ * those keys read the other chapters.
+ */
+function splitByGrowth(
+  changedKeys: readonly string[],
+  old: ChapterIndex,
+  next: ChapterIndex
+): { grown: string[]; shrunk: string[] } {
+  const grown: string[] = [];
+  const shrunk: string[] = [];
+  for (const key of changedKeys) {
+    const kept = new Set(next.choices.get(key));
+    if ((old.choices.get(key) ?? []).every((uci) => kept.has(uci))) grown.push(key);
+    else shrunk.push(key);
+  }
+  return { grown, shrunk };
 }
 
 /**
@@ -577,10 +609,7 @@ function reconcilePositions(
 /* ------------------------------------------------------------------ import commit */
 
 /** The tree without the excluded nodes and their subtrees. */
-export function pruneTree(
-  tree: readonly MoveNode[],
-  excludeNodeIds: readonly string[]
-): MoveNode[] {
+function pruneTree(tree: readonly MoveNode[], excludeNodeIds: readonly string[]): MoveNode[] {
   if (excludeNodeIds.includes(REPERTOIRE_ROOT_NODE_ID)) {
     throw new Error("Invalid excludeNodeIds: the root can't be excluded");
   }
@@ -609,7 +638,7 @@ export type ImportCommitChapter = {
   tree: MoveNode[];
   excludeNodeIds: string[];
   /** Position keys the parse worker computed, by node id. */
-  positionKeys: Record<string, string>;
+  positionKeys: Partial<Record<string, string>>;
 };
 
 export type ImportCommitJob = {

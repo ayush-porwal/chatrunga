@@ -30,11 +30,13 @@ export function StudySourcesSection({
 }) {
   const links = useGameLinksQuery(repertoireId, chapterId);
   const remove = useRemoveGameLinkMutation();
-  const sources = links.data?.filter((link) => link.kind !== "played") ?? [];
-  const played = links.data?.filter((link) => link.kind === "played") ?? [];
+  const all = links.data ?? [];
+  const sources = all.filter((link) => link.kind !== "played");
+  const played = all.filter((link) => link.kind === "played");
 
-  if (!links.data?.length && !links.isError) return null;
+  if (!all.length && !links.isError) return null;
 
+  const showSources = sources.length > 0 || links.isError;
   const removeError = remove.error ? (
     <Notice tone="danger">{ipcErrorMessage(remove.error) || "Couldn't remove that link."}</Notice>
   ) : null;
@@ -48,13 +50,8 @@ export function StudySourcesSection({
 
   return (
     <>
-      {sources.length || links.isError ? (
-        <section className="grid gap-2" aria-label="Sources">
-          <SectionHeader
-            as="h3"
-            title="Sources"
-            description="Games this chapter's moves were added from."
-          />
+      {showSources ? (
+        <GameLinkList title="Sources" description="Games this chapter's moves were added from.">
           {links.isError ? (
             <Notice tone="danger">
               {ipcErrorMessage(links.error) || "The chapter's sources couldn't be read."}
@@ -73,16 +70,14 @@ export function StudySourcesSection({
               />
             ))}
           </ul>
-        </section>
+        </GameLinkList>
       ) : null}
       {played.length ? (
-        <section className="grid gap-2" aria-label="Played from here">
-          <SectionHeader
-            as="h3"
-            title="Played from here"
-            description="Engine games you started from this chapter's positions."
-          />
-          {sources.length || links.isError ? null : removeError}
+        <GameLinkList
+          title="Played from here"
+          description="Engine games you started from this chapter's positions."
+        >
+          {showSources ? null : removeError}
           <ul className="grid gap-1.5">
             {played.map((link) => (
               <GameLinkRow
@@ -96,9 +91,27 @@ export function StudySourcesSection({
               />
             ))}
           </ul>
-        </section>
+        </GameLinkList>
       ) : null}
     </>
+  );
+}
+
+/** One of the two lists, labelled by its title. */
+function GameLinkList({
+  title,
+  description,
+  children
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-2" aria-label={title}>
+      <SectionHeader as="h3" title={title} description={description} />
+      {children}
+    </section>
   );
 }
 

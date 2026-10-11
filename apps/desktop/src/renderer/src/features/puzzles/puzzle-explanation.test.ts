@@ -93,13 +93,13 @@ describe("which case is explained", () => {
 
 describe("explainSearchPlan", () => {
   it("searches the start with the review's lines, and the wrong move's result with one", () => {
-    expect(explainSearchPlan(puzzle, null, 3)).toEqual({
+    expect(explainSearchPlan(puzzle, null, 3)).toStrictEqual({
       positions: [{ fen: START, multipv: 3 }],
       start: 0,
       beforeMistake: null,
       afterMistake: null
     });
-    expect(explainSearchPlan(puzzle, wrong, 9)).toEqual({
+    expect(explainSearchPlan(puzzle, wrong, 9)).toStrictEqual({
       positions: [
         { fen: START, multipv: 5 },
         { fen: AFTER_WRONG, multipv: 1 }
@@ -118,7 +118,7 @@ describe("explainSearchPlan", () => {
       uci: "d2d4"
     };
     const plan = explainSearchPlan(puzzle, later, 2);
-    expect(plan.positions.map((position) => position.multipv)).toEqual([2, 1, 1]);
+    expect(plan.positions.map((position) => position.multipv)).toStrictEqual([2, 1, 1]);
     expect(plan).toMatchObject({ beforeMistake: 1, afterMistake: 2 });
   });
 });
@@ -151,8 +151,8 @@ describe("swingFor", () => {
 });
 
 describe("buildPuzzleExplanationPayload", () => {
-  it("grounds a wrong move: the solution, the refutation, how much it gave away and the ideas", () => {
-    const payload = buildPuzzleExplanationPayload({
+  it("grounds a wrong move: the solution, the refutation, how much it gave away and the ideas", async () => {
+    const payload = await buildPuzzleExplanationPayload({
       puzzle,
       kind: "failed_wrong_move",
       wrong,
@@ -196,14 +196,14 @@ describe("buildPuzzleExplanationPayload", () => {
     expect(payload?.ideas?.reply?.san).toBe("Nxe5");
   });
 
-  it("builds facts the coach validator grounds an answer against", () => {
-    const payload = buildPuzzleExplanationPayload({
+  it("builds facts the coach validator grounds an answer against", async () => {
+    const payload = (await buildPuzzleExplanationPayload({
       puzzle,
       kind: "failed_wrong_move",
       wrong,
       analysis,
       settings
-    })!;
+    }))!;
     const answer = JSON.stringify({
       headline: "The f7 pawn was the target",
       body: "Qxe5+ wins a pawn with check, but Nxe5 takes your queen. Only the king guarded f7, so Qxf7# was mate."
@@ -211,8 +211,8 @@ describe("buildPuzzleExplanationPayload", () => {
     expect(validatePuzzleProse(answer, payload)).toMatchObject({ ok: true });
   });
 
-  it("explains a solved puzzle from the start position, with no mistake", () => {
-    const payload = buildPuzzleExplanationPayload({
+  it("explains a solved puzzle from the start position, with no mistake", async () => {
+    const payload = await buildPuzzleExplanationPayload({
       puzzle,
       kind: "solved",
       wrong: null,
@@ -225,7 +225,7 @@ describe("buildPuzzleExplanationPayload", () => {
     expect(payload?.ideas?.best).toBeUndefined();
   });
 
-  it("names the moves played before a later mistake, and a still-winning one", () => {
+  it("names the moves played before a later mistake, and a still-winning one", async () => {
     const longer: PuzzleSample = {
       ...puzzle,
       initialFen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -241,7 +241,7 @@ describe("buildPuzzleExplanationPayload", () => {
       expectedUci: "g1f3",
       at: 1
     };
-    const payload = buildPuzzleExplanationPayload({
+    const payload = await buildPuzzleExplanationPayload({
       puzzle: longer,
       kind: "failed_wrong_move",
       wrong: later,
@@ -287,8 +287,8 @@ describe("buildPuzzleExplanationPayload", () => {
       afterMistake: []
     };
 
-    it("calls another mate a mate, with no refutation and nothing given away", () => {
-      const payload = buildPuzzleExplanationPayload({
+    it("calls another mate a mate, with no refutation and nothing given away", async () => {
+      const payload = await buildPuzzleExplanationPayload({
         puzzle: mating,
         kind: "failed_wrong_move",
         wrong: ended("c3h8"),
@@ -307,8 +307,8 @@ describe("buildPuzzleExplanationPayload", () => {
       expect(payload?.ideas?.reply).toBeUndefined();
     });
 
-    it("says a stalemate throws the win away, with no reply to it", () => {
-      const payload = buildPuzzleExplanationPayload({
+    it("says a stalemate throws the win away, with no reply to it", async () => {
+      const payload = await buildPuzzleExplanationPayload({
         puzzle: mating,
         kind: "failed_wrong_move",
         wrong: ended("c3c7"),
@@ -327,9 +327,9 @@ describe("buildPuzzleExplanationPayload", () => {
     });
   });
 
-  it("is null when the engine had nothing for the start, or the solution doesn't replay", () => {
+  it("is null when the engine had nothing for the start, or the solution doesn't replay", async () => {
     expect(
-      buildPuzzleExplanationPayload({
+      await buildPuzzleExplanationPayload({
         puzzle,
         kind: "solved",
         wrong: null,
@@ -338,7 +338,7 @@ describe("buildPuzzleExplanationPayload", () => {
       })
     ).toBeNull();
     expect(
-      buildPuzzleExplanationPayload({
+      await buildPuzzleExplanationPayload({
         puzzle: { ...puzzle, solutionMoves: ["a1a8"] },
         kind: "solved",
         wrong: null,

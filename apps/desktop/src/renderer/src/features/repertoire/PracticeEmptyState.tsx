@@ -85,7 +85,7 @@ export function PracticeEmptyState({
   const ref = useRef<HTMLDivElement | null>(null);
   // The setup's Start sits below: bring the answer into view where it appears.
   useEffect(() => {
-    if (settled) ref.current?.scrollIntoView?.({ block: "nearest" });
+    if (settled) ref.current?.scrollIntoView({ block: "nearest" });
   }, [settled, mode, chapterIds]);
   if (!settled) return null;
 
@@ -94,9 +94,8 @@ export function PracticeEmptyState({
     scope.blocked.map(({ chapter, explanation }) => ({ title: chapter.title, explanation })),
     scope.othersPractise
   );
-  const [first] = scope.blocked;
+  const first = scope.blocked.at(0);
   const cause = first && !scope.othersPractise ? first : null;
-  const fix = cause ? trainingFix(cause.blocker) : null;
   const study = (blocked: Blocked) =>
     onStudy({ chapterId: blocked.chapter.id, nodeId: blocked.focus });
   return (
@@ -128,16 +127,12 @@ export function PracticeEmptyState({
         }
         action={
           cause ? (
-            <Button
-              type="button"
-              variant="primary"
-              title={empty.more}
-              aria-describedby={empty.more ? moreId : undefined}
+            <StudyCauseButton
+              blocker={cause.blocker}
+              more={empty.more}
+              moreId={moreId}
               onClick={() => study(cause)}
-            >
-              <BookOpen />
-              {fix ? "Fix in Study" : "Open in Study"}
-            </Button>
+            />
           ) : empty.offerLearnNew ? (
             <Button type="button" variant="primary" disabled={starting} onClick={onLearnNew}>
               <Sparkles />
@@ -147,5 +142,34 @@ export function PracticeEmptyState({
         }
       />
     </div>
+  );
+}
+
+/**
+ * The way back to Study at the cause: "Fix in Study" when Study can fix it there. `more` (the
+ * cause's longer explanation, rendered as `moreId`) is its tooltip and description.
+ */
+function StudyCauseButton({
+  blocker,
+  more,
+  moreId,
+  onClick
+}: {
+  blocker: TrainingBlocker;
+  more: string | undefined;
+  moreId: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="primary"
+      title={more}
+      aria-describedby={more ? moreId : undefined}
+      onClick={onClick}
+    >
+      <BookOpen />
+      {trainingFix(blocker) ? "Fix in Study" : "Open in Study"}
+    </Button>
   );
 }

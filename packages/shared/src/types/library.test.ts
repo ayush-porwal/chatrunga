@@ -31,16 +31,16 @@ function counts(games: Partial<Record<keyof LibraryTabCounts, number>>): Library
 
 describe("library tabs", () => {
   it("puts every game source under exactly one tab", () => {
-    expect([...GAME_SOURCES].sort()).toEqual(Object.keys(EVERY_SOURCE).sort());
+    expect([...GAME_SOURCES].sort()).toStrictEqual(Object.keys(EVERY_SOURCE).sort());
     const listed = LIBRARY_TABS.flatMap((tab) => sourcesOfTab(tab));
-    expect([...listed].sort()).toEqual([...GAME_SOURCES].sort());
+    expect([...listed].sort()).toStrictEqual([...GAME_SOURCES].sort());
     for (const source of GAME_SOURCES) expect(sourcesOfTab(libraryTabOf(source))).toContain(source);
   });
 
   it("maps each source to its tab; games made in the app are Chaturanga's", () => {
     expect(
       Object.fromEntries(GAME_SOURCES.map((source) => [source, libraryTabOf(source)]))
-    ).toEqual({
+    ).toStrictEqual({
       lichess: "lichess",
       chesscom: "chesscom",
       "pgn-import": "imported",
@@ -49,7 +49,7 @@ describe("library tabs", () => {
       analysis: "chaturanga",
       puzzle: "chaturanga"
     });
-    expect(LIBRARY_TABS).toEqual(["lichess", "chesscom", "imported", "engine", "chaturanga"]);
+    expect(LIBRARY_TABS).toStrictEqual(["lichess", "chesscom", "imported", "engine", "chaturanga"]);
   });
 
   it("tells a game source from anything else", () => {
@@ -59,11 +59,11 @@ describe("library tabs", () => {
   });
 
   it("shows only the tabs with games, in tab order", () => {
-    expect(visibleLibraryTabs(counts({ chaturanga: 2, chesscom: 5, lichess: 0 }))).toEqual([
+    expect(visibleLibraryTabs(counts({ chaturanga: 2, chesscom: 5, lichess: 0 }))).toStrictEqual([
       "chesscom",
       "chaturanga"
     ]);
-    expect(visibleLibraryTabs(emptyTabCounts())).toEqual([]);
+    expect(visibleLibraryTabs(emptyTabCounts())).toStrictEqual([]);
   });
 });
 

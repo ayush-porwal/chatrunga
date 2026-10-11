@@ -85,7 +85,7 @@ describe("importLichessGames", () => {
     const { repository, saved } = memoryRepository();
     const result = await importLichessGames({ client, repository, username: "Kenneth", since: 50 });
     expect(saved).toHaveLength(1);
-    expect(result).toEqual({ imported: 1, skipped: 2, nextSince: 300 });
+    expect(result).toStrictEqual({ imported: 1, skipped: 2, nextSince: 300 });
   });
 
   it("imports new games as Lichess games dated by their last move, and skips ones already there", async () => {
@@ -129,10 +129,10 @@ describe("importLichessGames", () => {
       since: 1234
     });
 
-    expect(result).toEqual({ imported: 1, skipped: 4, nextSince: 5001 });
+    expect(result).toStrictEqual({ imported: 1, skipped: 4, nextSince: 5001 });
     expect(saved).toHaveLength(1);
-    expect(saved[0]!.playedAt).toBe(5000);
-    expect(saved[0]!.input).toMatchObject({
+    expect(saved[0].playedAt).toBe(5000);
+    expect(saved[0].input).toMatchObject({
       id: null,
       source: "lichess",
       headers: {
@@ -142,23 +142,23 @@ describe("importLichessGames", () => {
         result: "1-0"
       }
     });
-    expect(saved[0]!.input.moveTree.map((node) => node.san).filter(Boolean)).toEqual([
+    expect(saved[0].input.moveTree.map((node) => node.san).filter(Boolean)).toStrictEqual([
       "e4",
       "e5",
       "Nf3"
     ]);
-    expect(saved[0]!.input.pgn).toContain('[Site "https://lichess.org/newGame1"]');
+    expect(saved[0].input.pgn).toContain('[Site "https://lichess.org/newGame1"]');
 
-    const url = new URL(requests[0]!.url);
+    const url = new URL(requests[0].url);
     expect(url.pathname).toBe("/api/games/user/Kenneth");
-    expect(Object.fromEntries(url.searchParams)).toEqual({
+    expect(Object.fromEntries(url.searchParams)).toStrictEqual({
       since: "1234",
       pgnInJson: "true",
       clocks: "true",
       opening: "true",
       finished: "true"
     });
-    expect(requests[0]!.headers.accept).toBe("application/x-ndjson");
+    expect(requests[0].headers.accept).toBe("application/x-ndjson");
   });
 
   it("adds the Site header when the PGN lacks it", async () => {
@@ -168,19 +168,19 @@ describe("importLichessGames", () => {
     ]);
     const { repository, saved } = memoryRepository();
     await importLichessGames({ client, repository, username: "Kenneth", since: 0 });
-    expect(saved[0]!.input.headers.site).toBe("https://lichess.org/noSite01");
-    expect(saved[0]!.input.pgn).toContain('[Site "https://lichess.org/noSite01"]');
+    expect(saved[0].input.headers.site).toBe("https://lichess.org/noSite01");
+    expect(saved[0].input.pgn).toContain('[Site "https://lichess.org/noSite01"]');
   });
 
   it("has no cursor when there was nothing new", async () => {
     const { client } = gamesExport([]);
     const { repository } = memoryRepository();
-    expect(await importLichessGames({ client, repository, username: "Kenneth", since: 0 })).toEqual(
-      {
-        imported: 0,
-        skipped: 0,
-        nextSince: null
-      }
-    );
+    expect(
+      await importLichessGames({ client, repository, username: "Kenneth", since: 0 })
+    ).toStrictEqual({
+      imported: 0,
+      skipped: 0,
+      nextSince: null
+    });
   });
 });

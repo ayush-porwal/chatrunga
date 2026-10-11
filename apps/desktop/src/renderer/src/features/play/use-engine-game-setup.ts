@@ -4,6 +4,7 @@ import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { Color } from "@chaturanga/shared/types/chess";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { positionStatus } from "@/lib/position-status";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
@@ -17,6 +18,45 @@ import { gameFromInitialSession } from "../repertoire/handoffs";
 import { engineClockMs, engineClockPreset, type EngineClockPresetId } from "./time-control";
 
 export type EngineGameSetup = ReturnType<typeof useEngineGameSetup>;
+
+/**
+ * The engine to play: Play settings' choice, else the last one picked, else the default, else the
+ * first; an engine deleted since it was chosen falls back to the next choice.
+ */
+function pickEngine(
+  engines: readonly EngineConfig[],
+  settingsEngineId: string | null | undefined,
+  draftEngineId: string | null | undefined
+): EngineConfig | undefined {
+  return (
+    engines.find((engine) => engine.id === settingsEngineId) ??
+    engines.find((engine) => engine.id === draftEngineId) ??
+    engines.find((engine) => engine.isDefault) ??
+    engines.at(0)
+  );
+}
+
+/** A new engine game's headers: a casual game against the engine, at its clock. */
+function engineGameHeaders(
+  engine: EngineConfig,
+  engineColor: Color,
+  clock: ReturnType<typeof engineClockMs>
+) {
+  const name = engineDisplayName(engine.name);
+  return {
+    event: "Casual game",
+    site: "?",
+    result: "*",
+    timeControl: clock
+      ? `${Math.floor(clock.initialMs / 1000)}+${Math.floor(clock.incrementMs / 1000)}`
+      : "-",
+    // Named sides: the titlebar, board labels and saved game keep the engine's name after the game ends.
+    white: engineColor === "white" ? name : "You",
+    black: engineColor === "black" ? name : "You",
+    // Which engine it was, so rejoining finds it again even when two share a name.
+    engineId: engine.id
+  };
+}
 
 /**
  * The Play card's engine game: which engine (Play settings' choice, else the last one picked, else
@@ -38,12 +78,7 @@ export function useEngineGameSetup({
   const updateDraft = usePlayDraftStore((state) => state.update);
   const orientation = useGameStore((state) => state.orientation);
   const list = useMemo(() => engines.data ?? [], [engines.data]);
-  // An engine deleted since it was chosen falls back to the next choice, then the default.
-  const selectedEngine =
-    list.find((engine) => engine.id === settings.data?.playEngineId) ??
-    list.find((engine) => engine.id === draft.engineId) ??
-    list.find((engine) => engine.isDefault) ??
-    list[0];
+  const selectedEngine = pickEngine(list, settings.data?.playEngineId, draft.engineId);
   // A repertoire handoff (Study → Play from here): the game starts there, as its colour.
   const initialSession = draft.initialSession ?? null;
   const [handoffError, setHandoffError] = useState<string | null>(null);
@@ -90,20 +125,7 @@ export function useEngineGameSetup({
     } else game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");
-    const name = engineDisplayName(engine.name);
-    game.patchHeaders({
-      event: "Casual game",
-      site: "?",
-      result: "*",
-      timeControl: clock
-        ? `${Math.floor(clock.initialMs / 1000)}+${Math.floor(clock.incrementMs / 1000)}`
-        : "-",
-      // Named sides: the titlebar, board labels and saved game keep the engine's name after the game ends.
-      white: engineColor === "white" ? name : "You",
-      black: engineColor === "black" ? name : "You",
-      // Which engine it was, so rejoining finds it again even when two share a name.
-      engineId: engine.id
-    });
+    game.patchHeaders(engineGameHeaders(engine, engineColor, clock));
     game.setMode("engine");
     game.setEngineSide(engineColor);
     // With a clock the engine plays to it; without one it thinks a fixed time per move.

@@ -15,7 +15,7 @@ export function ReleaseNotes({ notes, className }: { notes: string; className?: 
       | { type: "paragraph"; parts: InlinePart[] }
     > = [];
     for (const block of parseReleaseNotes(notes)) {
-      const last = result[result.length - 1];
+      const last = result.at(-1);
       if (block.type === "bullet") {
         if (last?.type === "list") last.items.push(block.parts);
         else result.push({ type: "list", items: [block.parts] });

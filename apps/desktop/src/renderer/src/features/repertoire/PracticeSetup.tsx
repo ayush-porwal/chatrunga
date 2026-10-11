@@ -9,6 +9,7 @@ import {
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type PracticeMode,
+  type RepertoireChapterSummary,
   type RepertoireDetail,
   type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
@@ -33,20 +34,17 @@ import { pathLabel } from "./repertoire-model";
 import { startUnavailableReason } from "./training-explanations";
 import { PracticeEmptyState } from "./PracticeEmptyState";
 import {
-  DEFAULT_CARD_LIMIT,
-  DEFAULT_NEW_CARD_LIMIT,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
   MAX_REHEARSE_STARTS,
   boundedInt,
   explainedChapterIds,
+  practiceFormFields,
   practiceInputFromForm,
   rehearseStarts,
   type RehearseStart
 } from "./practice-setup";
 import { isOneOf } from "@chaturanga/shared/types/guards";
-
-export { initialPracticeInput } from "./practice-setup";
 
 const modeOptions = [
   { value: "review-due" as const, label: "Review due" },
@@ -96,40 +94,26 @@ export function PracticeSetup({
   /** Study at a chapter and move (the way to fix a chapter with nothing to practise). */
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
 }) {
-  const ids = {
-    depth: useId(),
-    cards: useId(),
-    fresh: useId(),
-    chapter: useId(),
-    from: useId(),
-    advance: useId(),
-    startReason: useId()
-  };
+  const ids = { depth: useId(), cards: useId(), fresh: useId() };
   const settings = useSettingsQuery();
   const setSetting = useSetSetting();
   const advanceMs = settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs;
-  const [mode, setMode] = useState<PracticeMode>(initial.mode);
-  const [chapterIds, setChapterIds] = useState<string[]>(initial.chapterIds ?? []);
-  const [depth, setDepth] = useState(initial.maxDepthPlies ? String(initial.maxDepthPlies) : "");
-  const [cards, setCards] = useState(String(initial.cardLimit ?? DEFAULT_CARD_LIMIT));
-  const [fresh, setFresh] = useState(String(initial.newCardLimit ?? DEFAULT_NEW_CARD_LIMIT));
   const trainable = sortedChapters(detail.chapters).filter(
     (chapter) => chapter.kind === "opening" && chapter.enabled
   );
+  const fields = practiceFormFields(initial, trainable);
+  const [mode, setMode] = useState<PracticeMode>(fields.mode);
+  const [chapterIds, setChapterIds] = useState(fields.chapterIds);
+  const [depth, setDepth] = useState(fields.depth);
+  const [cards, setCards] = useState(fields.cards);
+  const [fresh, setFresh] = useState(fields.fresh);
   const rehearsing = mode === "rehearse-lines";
-  const [rehearseChapterId, setRehearseChapterId] = useState(
-    initial.rehearse?.chapterId ?? initial.chapterIds?.[0] ?? trainable[0]?.id ?? ""
-  );
-  const [fromNodeId, setFromNodeId] = useState(initial.rehearse?.fromNodeId ?? "");
-  const branch = useRehearseStarts(
-    detail,
-    rehearsing && rehearseChapterId ? rehearseChapterId : null,
-    initial.rehearse?.chapterId === rehearseChapterId ? (initial.rehearse.fromNodeId ?? "") : "",
-    boundedInt(depth, 1, MAX_DEPTH_PLIES) ?? DEFAULT_REHEARSAL_DEPTH_PLIES
-  );
-  // A branch that is no longer in the chapter starts from the chapter start (once it's loaded).
-  const effectiveFrom =
-    branch.loading || branch.starts.some((start) => start.nodeId === fromNodeId) ? fromNodeId : "";
+  const rehearsal = useRehearsalChoice(detail, {
+    opening: fields,
+    preselected: initial.rehearse,
+    active: rehearsing,
+    depth
+  });
 
   const input = (override?: PracticeMode): StartPracticeInput =>
     practiceInputFromForm({
@@ -139,8 +123,8 @@ export function PracticeSetup({
       depth,
       cards,
       fresh,
-      rehearseChapterId,
-      rehearseFromNodeId: effectiveFrom
+      rehearseChapterId: rehearsal.chapterId,
+      rehearseFromNodeId: rehearsal.fromNodeId
     });
 
   // A repertoire with no decision at all is explained before any start.
@@ -155,8 +139,8 @@ export function PracticeSetup({
     decisionCount: detail.decisionCount,
     practicableChapters: trainable.length,
     rehearsing,
-    rehearseChapterId,
-    rehearseChapterAsks: branch.asks
+    rehearseChapterId: rehearsal.chapterId,
+    rehearseChapterAsks: rehearsal.branch.asks
   });
 
   const toggle = (id: string) =>
@@ -180,93 +164,20 @@ export function PracticeSetup({
           />
         ) : null}
         <section className={`${cardPadded} grid gap-4`} aria-label="Practice setup">
-          <SectionHeader
-            title="Practice"
-            description={
-              rehearsing
-                ? "Play your moves along the chapter's lines; replies are supplied from the chapter. Results stay in this session."
-                : "One decision at a time: play any move you accepted for the position."
-            }
-          />
+          <SectionHeader title="Practice" description={MODE_DESCRIPTIONS[mode]} />
           <SegmentedControl
             ariaLabel="Practice mode"
             value={mode}
             onChange={setMode}
             options={modeOptions}
           />
-          {rehearsing ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Chapter" htmlFor={ids.chapter}>
-                <Select
-                  id={ids.chapter}
-                  value={rehearseChapterId}
-                  disabled={!trainable.length}
-                  onChange={(event) => {
-                    setRehearseChapterId(event.target.value);
-                    setFromNodeId("");
-                  }}
-                >
-                  {trainable.length ? null : <option value="">No chapters</option>}
-                  {trainable.map((chapter) => (
-                    <option key={chapter.id} value={chapter.id}>
-                      {chapter.title}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field
-                label="Start from"
-                hint={
-                  branch.truncated
-                    ? `first ${MAX_REHEARSE_STARTS} positions listed`
-                    : branch.loading
-                      ? "loading the chapter…"
-                      : undefined
-                }
-                htmlFor={ids.from}
-              >
-                <Select
-                  id={ids.from}
-                  value={effectiveFrom}
-                  disabled={!rehearseChapterId}
-                  onChange={(event) => setFromNodeId(event.target.value)}
-                >
-                  <option value="">Chapter start</option>
-                  {branch.starts.map((start) => (
-                    <option key={start.nodeId} value={start.nodeId}>
-                      {start.path}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          ) : null}
-          <div className={rehearsing ? "hidden" : "grid gap-2"}>
-            <p className="text-xs font-medium text-fg-secondary">Chapters</p>
-            {trainable.length ? (
-              <div className="flex flex-wrap gap-1.5">
-                {trainable.map((chapter) => (
-                  <ChipButton
-                    key={chapter.id}
-                    selected={chapterIds.includes(chapter.id)}
-                    onClick={() => toggle(chapter.id)}
-                  >
-                    {chapter.title}
-                    {chapter.dueCount ? (
-                      <span className="text-fg-subtle">· {chapter.dueCount}</span>
-                    ) : null}
-                  </ChipButton>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-fg-muted">No enabled opening chapters to practise.</p>
-            )}
-            <p className="text-2xs text-fg-subtle">
-              {chapterIds.length
-                ? `${chapterIds.length} selected`
-                : "None selected: every enabled opening chapter."}
-            </p>
-          </div>
+          {rehearsing ? <RehearsalFields trainable={trainable} rehearsal={rehearsal} /> : null}
+          <ChapterChips
+            trainable={trainable}
+            selected={chapterIds}
+            hidden={rehearsing}
+            onToggle={toggle}
+          />
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Max depth" hint="plies from the chapter start" htmlFor={ids.depth}>
               <Input
@@ -308,49 +219,241 @@ export function PracticeSetup({
             )}
           </div>
           {rehearsing ? null : (
-            <Field
-              label="Next card"
-              hint="after a correct answer; one with notes waits for Next"
-              htmlFor={ids.advance}
-            >
-              <Select
-                id={ids.advance}
-                className="sm:max-w-56"
-                value={String(advanceMs)}
-                onChange={(event) => {
-                  const delay = Number(event.target.value);
-                  if (isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay))
-                    setSetting("practiceAutoAdvanceMs", delay);
-                }}
-              >
-                {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (
-                  <option key={delay} value={delay}>
-                    {ADVANCE_LABELS[delay]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <NextCardField
+              value={advanceMs}
+              onChange={(delay) => setSetting("practiceAutoAdvanceMs", delay)}
+            />
           )}
           {error ? <Notice tone="danger">{error}</Notice> : null}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Button
-              type="button"
-              variant="primary"
-              disabled={starting || unavailable !== null}
-              aria-describedby={unavailable ? ids.startReason : undefined}
-              onClick={() => onStart(input())}
-            >
-              {rehearsing ? <Route /> : <GraduationCap />}
-              {starting ? "Starting…" : START_LABELS[mode]}
-            </Button>
-            {unavailable ? (
-              <p id={ids.startReason} className="text-xs text-fg-muted">
-                {unavailable}
-              </p>
-            ) : null}
-          </div>
+          <StartPracticeButton
+            mode={mode}
+            starting={starting}
+            unavailable={unavailable}
+            onStart={() => onStart(input())}
+          />
         </section>
       </div>
+    </div>
+  );
+}
+
+const MODE_DESCRIPTIONS: Record<PracticeMode, string> = {
+  "review-due": "One decision at a time: play any move you accepted for the position.",
+  "learn-new": "One decision at a time: play any move you accepted for the position.",
+  "rehearse-lines":
+    "Play your moves along the chapter's lines; replies are supplied from the chapter. Results stay in this session."
+};
+
+type RehearsalChoice = ReturnType<typeof useRehearsalChoice>;
+
+/**
+ * The chapter and branch a rehearsal plays, starting from `opening` (the setup's rehearsal
+ * fields), with the branches it can start from while `active`. `preselected` is the rehearsal the
+ * setup opened with: its branch stays offered while its chapter is chosen.
+ */
+function useRehearsalChoice(
+  detail: RepertoireDetail,
+  {
+    opening,
+    preselected,
+    active,
+    depth
+  }: {
+    opening: { rehearseChapterId: string; rehearseFromNodeId: string };
+    preselected: StartPracticeInput["rehearse"];
+    active: boolean;
+    /** The depth field, as typed. */
+    depth: string;
+  }
+) {
+  const [chapterId, setChapterId] = useState(opening.rehearseChapterId);
+  const [fromNodeId, setFromNodeId] = useState(opening.rehearseFromNodeId);
+  const branch = useRehearseStarts(
+    detail,
+    active && chapterId ? chapterId : null,
+    preselected?.chapterId === chapterId ? (preselected.fromNodeId ?? "") : "",
+    boundedInt(depth, 1, MAX_DEPTH_PLIES) ?? DEFAULT_REHEARSAL_DEPTH_PLIES
+  );
+  // A branch that is no longer in the chapter starts from the chapter start (once it's loaded).
+  const effectiveFrom =
+    branch.loading || branch.starts.some((start) => start.nodeId === fromNodeId) ? fromNodeId : "";
+  return {
+    chapterId,
+    fromNodeId: effectiveFrom,
+    branch,
+    chooseChapter: (id: string) => {
+      setChapterId(id);
+      setFromNodeId("");
+    },
+    chooseFrom: setFromNodeId
+  };
+}
+
+/** Rehearse lines: the chapter, and the branch to start from (the chapter start by default). */
+function RehearsalFields({
+  trainable,
+  rehearsal
+}: {
+  trainable: readonly RepertoireChapterSummary[];
+  rehearsal: RehearsalChoice;
+}) {
+  const chapterFieldId = useId();
+  const fromFieldId = useId();
+  const { branch } = rehearsal;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Chapter" htmlFor={chapterFieldId}>
+        <Select
+          id={chapterFieldId}
+          value={rehearsal.chapterId}
+          disabled={!trainable.length}
+          onChange={(event) => rehearsal.chooseChapter(event.target.value)}
+        >
+          {trainable.length ? null : <option value="">No chapters</option>}
+          {trainable.map((chapter) => (
+            <option key={chapter.id} value={chapter.id}>
+              {chapter.title}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field
+        label="Start from"
+        hint={
+          branch.truncated
+            ? `first ${MAX_REHEARSE_STARTS} positions listed`
+            : branch.loading
+              ? "loading the chapter…"
+              : undefined
+        }
+        htmlFor={fromFieldId}
+      >
+        <Select
+          id={fromFieldId}
+          value={rehearsal.fromNodeId}
+          disabled={!rehearsal.chapterId}
+          onChange={(event) => rehearsal.chooseFrom(event.target.value)}
+        >
+          <option value="">Chapter start</option>
+          {branch.starts.map((start) => (
+            <option key={start.nodeId} value={start.nodeId}>
+              {start.path}
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </div>
+  );
+}
+
+/** The chapters to practise (none selected: every enabled opening chapter), with their due counts. */
+function ChapterChips({
+  trainable,
+  selected,
+  hidden,
+  onToggle
+}: {
+  trainable: readonly RepertoireChapterSummary[];
+  selected: readonly string[];
+  /** Hidden while rehearsing (a rehearsal picks one chapter), keeping the selection. */
+  hidden: boolean;
+  onToggle: (chapterId: string) => void;
+}) {
+  return (
+    <div className={hidden ? "hidden" : "grid gap-2"}>
+      <p className="text-xs font-medium text-fg-secondary">Chapters</p>
+      {trainable.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {trainable.map((chapter) => (
+            <ChipButton
+              key={chapter.id}
+              selected={selected.includes(chapter.id)}
+              onClick={() => onToggle(chapter.id)}
+            >
+              {chapter.title}
+              {chapter.dueCount ? (
+                <span className="text-fg-subtle">· {chapter.dueCount}</span>
+              ) : null}
+            </ChipButton>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-fg-muted">No enabled opening chapters to practise.</p>
+      )}
+      <p className="text-2xs text-fg-subtle">
+        {selected.length
+          ? `${selected.length} selected`
+          : "None selected: every enabled opening chapter."}
+      </p>
+    </div>
+  );
+}
+
+/** The saved auto-advance preference ("Next card"). */
+function NextCardField({
+  value,
+  onChange
+}: {
+  value: PracticeAutoAdvanceMs;
+  onChange: (delay: PracticeAutoAdvanceMs) => void;
+}) {
+  const id = useId();
+  return (
+    <Field
+      label="Next card"
+      hint="after a correct answer; one with notes waits for Next"
+      htmlFor={id}
+    >
+      <Select
+        id={id}
+        className="sm:max-w-56"
+        value={String(value)}
+        onChange={(event) => {
+          const delay = Number(event.target.value);
+          if (isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay)) onChange(delay);
+        }}
+      >
+        {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (
+          <option key={delay} value={delay}>
+            {ADVANCE_LABELS[delay]}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+/** Start, disabled with the reason beside it while nothing can start. */
+function StartPracticeButton({
+  mode,
+  starting,
+  unavailable,
+  onStart
+}: {
+  mode: PracticeMode;
+  starting: boolean;
+  /** Why nothing can start (null: it can). */
+  unavailable: string | null;
+  onStart: () => void;
+}) {
+  const reasonId = useId();
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <Button
+        type="button"
+        variant="primary"
+        disabled={starting || unavailable !== null}
+        aria-describedby={unavailable ? reasonId : undefined}
+        onClick={onStart}
+      >
+        {mode === "rehearse-lines" ? <Route /> : <GraduationCap />}
+        {starting ? "Starting…" : START_LABELS[mode]}
+      </Button>
+      {unavailable ? (
+        <p id={reasonId} className="text-xs text-fg-muted">
+          {unavailable}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -375,11 +478,11 @@ function useRehearseStarts(
   const pausedLoading = Boolean(chapterId) && pausedKeys.isPending;
   const listed = useMemo(() => {
     if (!data || pausedLoading) return { starts: [], truncated: false, asks: null };
-    const paused = new Set(pausedKeys.data ?? []);
-    const context = rehearsalContext(data, detail.color, maxDepthPlies, undefined, paused);
+    const paused = new Set(pausedKeys.data);
+    const context = rehearsalContext(data, detail.color, { maxDepthPlies, paused });
     const asks = lineEnds(context, REPERTOIRE_ROOT_NODE_ID).length > 0;
     const result = {
-      ...rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies, paused),
+      ...rehearseStarts(data, detail.color, pathLabel, { maxDepthPlies, paused }),
       asks
     };
     if (!preselected || result.starts.some((start) => start.nodeId === preselected)) return result;

@@ -9,7 +9,6 @@ import { runImportCommit } from "./import-writer";
 import { WRITER_SLICE_NODES } from "./import-writer-protocol";
 
 const dir = mkdtempSync(join(tmpdir(), "chaturanga-import-writer-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /**
  * A stand-in writer speaking the writer protocol; the repertoire id picks its behaviour. "ok"
@@ -83,6 +82,8 @@ function job(repertoireId: string, sizes: number[]): ImportCommitJob {
 }
 
 describe("runImportCommit (writer worker)", () => {
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
   it("sends every chapter in bounded slices, then resolves with the worker's result", async () => {
     const dbPath = join(dir, "ok.sqlite");
     const result = (await runImportCommit(job("ok", [5, 4500, 1]), () => dbPath, {
@@ -91,13 +92,13 @@ describe("runImportCommit (writer worker)", () => {
       received: { chapters: string[]; nodeMessages: number; nodes: number; keys: number };
       job: Record<string, unknown>;
     };
-    expect(result.received).toEqual({
+    expect(result.received).toStrictEqual({
       chapters: ["Game 1", "Game 2", "Game 3"],
       nodeMessages: 1 + Math.ceil(4500 / WRITER_SLICE_NODES) + 1,
       nodes: 4506,
       keys: 4506
     });
-    expect(result.job).toEqual({
+    expect(result.job).toStrictEqual({
       repertoireId: "ok",
       expectedRevision: 3,
       now: 1,
@@ -128,7 +129,7 @@ describe("runImportCommit (writer worker)", () => {
     ).rejects.toThrow(
       "The import couldn't be saved: the writer stopped unexpectedly (exit 7); nothing was imported. Try again."
     );
-    expect(db.prepare("SELECT COUNT(*) AS n FROM rows").get()).toEqual({ n: 0 });
+    expect({ ...db.prepare("SELECT COUNT(*) AS n FROM rows").get() }).toStrictEqual({ n: 0 });
     // The dead connection's lock is gone: this connection can write.
     db.exec("INSERT INTO rows (name) VALUES ('after')");
     db.close();

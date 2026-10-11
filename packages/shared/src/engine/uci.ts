@@ -1,4 +1,8 @@
 import type { EngineBestMove, EngineInfo, EngineScore, Wdl } from "../types/engine";
+import { isOneOf } from "../types/guards";
+
+/** The `info` fields given as one number after their name. */
+const NUMBER_FIELDS = ["depth", "seldepth", "multipv", "nodes", "nps"] as const;
 
 export function parseInfoLine(engineId: string, line: string): EngineInfo | null {
   if (!line.startsWith("info ")) return null;
@@ -8,11 +12,7 @@ export function parseInfoLine(engineId: string, line: string): EngineInfo | null
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
     const next = tokens[index + 1];
-    if (token === "depth" && next) info.depth = Number(next);
-    if (token === "seldepth" && next) info.seldepth = Number(next);
-    if (token === "multipv" && next) info.multipv = Number(next);
-    if (token === "nodes" && next) info.nodes = Number(next);
-    if (token === "nps" && next) info.nps = Number(next);
+    if (isOneOf(NUMBER_FIELDS, token) && next) info[token] = Number(next);
     if (token === "wdl") {
       const win = Number(tokens[index + 1]);
       const draw = Number(tokens[index + 2]);

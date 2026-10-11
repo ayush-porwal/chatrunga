@@ -89,9 +89,9 @@ describe("CommentaryScheduler", () => {
       scheduler.schedule(job(id, calls));
       await vi.advanceTimersByTimeAsync(80);
     }
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS);
-    expect(calls).toEqual(["p5"]);
+    expect(calls).toStrictEqual(["p5"]);
   });
 
   it("does not restart the debounce when the same move re-renders", async () => {
@@ -101,7 +101,7 @@ describe("CommentaryScheduler", () => {
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS - 100);
     scheduler.schedule(job("p1", calls));
     await vi.advanceTimersByTimeAsync(100);
-    expect(calls).toEqual(["p1"]);
+    expect(calls).toStrictEqual(["p1"]);
   });
 
   it("cancels a pending request when the move leaves view", async () => {
@@ -110,7 +110,7 @@ describe("CommentaryScheduler", () => {
     scheduler.schedule(job("p1", calls));
     scheduler.schedule(null);
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 
   it("never runs the same request twice at once", async () => {
@@ -124,7 +124,7 @@ describe("CommentaryScheduler", () => {
     scheduler.schedule(job("p1", calls, gate));
     scheduler.runNow(job("p1", calls, gate));
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
-    expect(calls).toEqual(["p1"]);
+    expect(calls).toStrictEqual(["p1"]);
     expect(scheduler.isBusy("p1")).toBe(true);
     release();
     await vi.advanceTimersByTimeAsync(0);
@@ -137,7 +137,7 @@ describe("CommentaryScheduler", () => {
     scheduler.schedule(job("p1", calls));
     scheduler.dispose();
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 });
 

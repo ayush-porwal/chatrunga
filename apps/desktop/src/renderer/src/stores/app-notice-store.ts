@@ -1,9 +1,9 @@
 import { create } from "zustand";
 
 /** A notice's optional follow-up ("Open chapter"). Choosing it also dismisses the notice. */
-export type AppNoticeAction = { label: string; onSelect: () => void };
+type AppNoticeAction = { label: string; onSelect: () => void };
 
-export type AppNoticeTone = "danger" | "success" | "info";
+type AppNoticeTone = "danger" | "success" | "info";
 
 /**
  * A message from an action that isn't tied to a page (sidebar Import / Export PGN failures, a

@@ -324,13 +324,13 @@ export function useGameAutosave(): void {
         schedule();
       }),
       // Closing the window (or quitting): write what's pending before the renderer goes away.
-      window.chaturanga?.games.onFlushRequest?.(flushPending) ?? (() => {})
+      window.chaturanga?.games.onFlushRequest?.(flushPending)
     ];
     pendingFlush = flushPending;
     return () => {
       if (pendingFlush === flushPending) pendingFlush = null;
       window.clearTimeout(timeout);
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
+      unsubscribers.forEach((unsubscribe) => unsubscribe?.());
     };
   }, [saveGame]);
 }

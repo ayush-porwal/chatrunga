@@ -1,95 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Eye,
-  GraduationCap,
-  Lightbulb,
-  Loader2,
-  Play,
-  RotateCcw,
-  Route,
-  SkipForward,
-  Square
-} from "lucide-react";
-import { nanoid } from "nanoid";
+import { GraduationCap, Loader2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import type { Color } from "@chaturanga/shared/types/chess";
-import type {
-  PracticeAction,
-  PracticeAnswer,
-  PracticeCard,
-  PracticeSessionSnapshot,
-  RepertoireDetail,
-  StartPracticeInput
-} from "@chaturanga/shared/types/repertoire";
-import { defaultSettings } from "@chaturanga/shared/types/settings";
+import type { StartPracticeInput } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Notice } from "@/components/ui/notice";
-import { Stat, StatGroup } from "@/components/ui/stat";
-import { ipcErrorMessage } from "@/lib/ipc-error";
-import { useEventCallback } from "@/lib/use-event-callback";
-import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
-import { useSettingsQuery } from "../../queries/api";
-import {
-  useEndPracticeMutation,
-  useRecordAttemptMutation,
-  useRecordPracticeActionMutation,
-  useRepertoireQuery,
-  useResumePracticeMutation,
-  useSaveRepertoireWorkspaceMutation,
-  useStartPracticeMutation
-} from "../../queries/repertoire";
-import {
-  currentCard,
-  rehearsalStepNumber,
-  rehearsalTitle,
-  useRepertoirePracticeStore
-} from "../../stores/repertoire-practice-store";
-import { useAppNoticeStore } from "../../stores/app-notice-store";
-import { useLichessStore } from "../../stores/lichess-store";
-import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
-import { usePrefersReducedMotion } from "../board/board-motion";
-import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
-import { ControlledBoard } from "../board/ControlledBoard";
-import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
-import {
-  autoStartPracticeInput,
-  isExtraPractice,
-  rehearsePreset,
-  retryMissedPreset,
-  savesPracticeDraft,
-  type PracticePreset
-} from "./practice-setup";
-import {
-  beginStart,
-  IDLE_START,
-  isEmptyTargetedStart,
-  settleStart,
-  startShowsSpinner,
-  type PracticeStart
-} from "./practice-start";
+import { useRepertoireQuery } from "../../queries/repertoire";
+import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
+import { PracticeSession } from "./PracticeSession";
+import { PracticeSetup } from "./PracticeSetup";
+import { initialPracticeInput, type PracticePreset } from "./practice-setup";
+import { isEmptyTargetedStart, startShowsSpinner, type PracticeStart } from "./practice-start";
 import { PracticeSummaryView } from "./PracticeSummaryView";
-import {
-  answerView,
-  autoAdvanceDelay,
-  hintMarks,
-  hintStageText,
-  isPracticeNextKey,
-  lastMoveOf,
-  nextUnansweredIndex,
-  revealArrows
-} from "./repertoire-model";
-
-/** Rehearsal: the brief confirmation before the authored reply is played. */
-const REHEARSAL_CONFIRM_MS = 450;
-/** Rehearsal: how long the reply stays on the board (its motion included) before the next step. */
-const REHEARSAL_REPLY_MS = 650;
-/** Rehearsal: how long "Line complete" shows before the next line starts. */
-const LINE_ADVANCE_MS = 900;
-const REPLAY_STEP_MS = 700;
-const REPLAY_STEP_REDUCED_MS = 250;
-
-const practice = () => useRepertoirePracticeStore.getState();
+import { usePracticeResume } from "./usePracticeResume";
+import { usePracticeStart, usePresetAutoStart } from "./usePracticeStart";
 
 /**
  * Repertoire practice (design §5.3): setup, then one hidden-answer decision at a time (no tree,
@@ -131,113 +53,24 @@ export function RepertoirePracticePage({
       endNote: state.endNote
     }))
   );
-  const start = useStartPracticeMutation();
-  const resume = useResumePracticeMutation();
-  const { mutateAsync: endFinishedSession } = useEndPracticeMutation();
-  /** The finished session whose summary was asked for (once; Retry asks again). */
-  const summaryRequested = useRef<string | null>(null);
-  // Revisiting a session (its summary since replaced by another's) asks for its summary again.
-  useEffect(() => {
-    summaryRequested.current = null;
-  }, [sessionId]);
-  const saveWorkspace = useSaveRepertoireWorkspaceMutation();
-  /** The last start and how it ended (only the newest start settles it). */
-  const [startState, setStartState] = useState<PracticeStart>(IDLE_START);
-  const startRequest = useRef(0);
-  /** The targeted preset already started (once per preset; Back to it never restarts it). */
-  const [autoStarted, setAutoStarted] = useState<PracticePreset | null>(null);
-  const [resumeError, setResumeError] = useState<string | null>(null);
   const shownSession = session && session.sessionId === sessionId ? session : null;
-  const { mutate: resumeSession } = resume;
-  const finishedWithoutSummary =
-    shownSession?.status === "finished" && summary?.sessionId !== shownSession.sessionId;
-
-  // A session that already ended (Back after "Practice again", a restart) is never shown as live:
-  // ending it again is idempotent and returns its summary. Asked once per session, so the answer
-  // is taken from the promise: a per-call callback would be lost if this page's mutation observer
-  // were resubscribed meanwhile (React's StrictMode remount does that).
-  useEffect(() => {
-    if (!finishedWithoutSummary || !shownSession) return;
-    if (summaryRequested.current === shownSession.sessionId) return;
-    summaryRequested.current = shownSession.sessionId;
-    endFinishedSession(shownSession.sessionId).then(
-      (result) => practice().setSummary(result),
-      (error) =>
-        setResumeError(ipcErrorMessage(error) || "That session's summary couldn't be read.")
-    );
-  }, [finishedWithoutSummary, shownSession, endFinishedSession]);
-
-  // Opening a session's route (history, a restart): resume it from the main process.
-  useEffect(() => {
-    if (!sessionId || !desktop) return;
-    if (practice().session?.sessionId === sessionId) return;
-    // A Lichess game being played: nothing trains until it ends (the route is guarded in App too).
-    if (repertoireCommandBlocked(useLichessStore.getState(), "resume-practice")) return;
-    setResumeError(null);
-    resumeSession(sessionId, {
-      onSuccess: (snapshot) => practice().setSession(snapshot),
-      onError: (error) => setResumeError(ipcErrorMessage(error) || "That session can't be resumed.")
-    });
-  }, [sessionId, desktop, resumeSession]);
-
-  /**
-   * Starts a session. The answer is taken from the promise, never from per-call callbacks or the
-   * mutation's pending flag: an auto-start runs once from an effect, and a remount of this page
-   * (StrictMode) would otherwise lose its answer and leave the spinner up for good.
-   */
-  const startSession = useEventCallback((input: StartPracticeInput, fromPreset?: boolean) => {
-    if (repertoireCommandBlocked(useLichessStore.getState(), "start-practice")) {
-      useAppNoticeStore.getState().show(LIVE_GAME_NOTICE, { tone: "info" });
-      return;
-    }
-    const loaded = detail.data;
-    if (loaded && savesPracticeDraft(input, fromPreset === true)) {
-      saveWorkspace.mutate({
-        repertoireId,
-        workspace: {
-          lastChapterId: loaded.workspace?.lastChapterId ?? null,
-          lastNodeId: loaded.workspace?.lastNodeId ?? null,
-          orientation: loaded.workspace?.orientation ?? loaded.color,
-          practiceDraft: input
-        },
-        practiceSetup: true
-      });
-    }
-    const request = ++startRequest.current;
-    setStartState(beginStart(request, input, fromPreset === true));
-    start.mutateAsync(input).then(
-      (snapshot) => {
-        setStartState((state) => settleStart(state, request, { kind: "answered", snapshot }));
-        if (request !== startRequest.current || !snapshot.cards.length) return;
-        practice().setSession(snapshot);
-        onSessionStarted(snapshot.sessionId);
-      },
-      (error) =>
-        setStartState((state) =>
-          settleStart(state, request, {
-            kind: "failed",
-            message: ipcErrorMessage(error) || "Couldn't start practice."
-          })
-        )
-    );
+  const { resumeError, resuming } = usePracticeResume({
+    sessionId,
+    desktop,
+    shownSession,
+    summary
   });
-
-  // "Refresh this decision" / "Rehearse from here": the preset's session starts as soon as the
-  // repertoire is known.
-  const loadedId = detail.data?.id ?? null;
-  const targetedInput = useMemo(
-    () => (loadedId && !sessionId ? autoStartPracticeInput(loadedId, preset) : null),
-    [loadedId, sessionId, preset]
-  );
-  const autoStartPending = Boolean(targetedInput && autoStarted !== preset);
-  /** Set before starting, so StrictMode's repeated effect can't start a second session. */
-  const autoStartedRef = useRef<PracticePreset | null>(null);
-  useEffect(() => {
-    if (!targetedInput || autoStarted === preset || autoStartedRef.current === preset) return;
-    autoStartedRef.current = preset;
-    setAutoStarted(preset);
-    startSession(targetedInput, true);
-  }, [targetedInput, autoStarted, preset, startSession]);
+  const { startState, startSession } = usePracticeStart({
+    repertoireId,
+    detail: detail.data,
+    onSessionStarted
+  });
+  const autoStartPending = usePresetAutoStart({
+    detail: detail.data,
+    sessionId,
+    preset,
+    startSession
+  });
 
   if (!desktop) {
     return (
@@ -258,30 +91,20 @@ export function RepertoirePracticePage({
   }
 
   if (summary && summary.sessionId === sessionId) {
-    const rehearsed = shownSession?.mode === "rehearse-lines" ? shownSession.scope : null;
-    // A rehearsal offers Rehearse again instead of Retry missed (its misses are lines, not cards).
-    const retry = rehearsed ? null : retryMissedPreset(summary);
     return (
       <PracticeSummaryView
         detail={detail.data}
         summary={summary}
-        cards={shownSession?.cards ?? []}
+        session={shownSession}
         note={endNote}
-        extraPractice={Boolean(shownSession && isExtraPractice(shownSession.scope))}
-        ungraded={shownSession?.scope.ungraded === true}
         onStudy={onStudy}
         onAgain={onSetup}
-        onRetryMissed={retry ? () => onRehearse(retry) : undefined}
-        onRehearseAgain={
-          rehearsed?.rehearse
-            ? () => onRehearse(rehearsePreset(rehearsed.rehearse!, rehearsed.maxDepthPlies))
-            : undefined
-        }
+        onRehearse={onRehearse}
       />
     );
   }
 
-  if ((sessionId && !shownSession) || finishedWithoutSummary) {
+  if (resuming) {
     return resumeError ? (
       <EmptyState
         className="self-center"
@@ -314,26 +137,38 @@ export function RepertoirePracticePage({
     return <Spinner label="Starting practice" />;
   }
 
+  const lastStart = lastStartFeedback(startState);
   return (
     <PracticeSetup
       key={detail.data.id}
       detail={detail.data}
       initial={initialPracticeInput(detail.data, preset)}
       starting={startState.status === "starting"}
-      error={
-        startState.status === "failed"
-          ? startState.message
-          : isEmptyTargetedStart(startState)
-            ? "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead."
-            : null
-      }
-      empty={
-        startState.status === "empty" && !isEmptyTargetedStart(startState) ? startState.input : null
-      }
+      error={lastStart.error}
+      empty={lastStart.empty}
       onStart={startSession}
       onStudy={onStudy}
     />
   );
+}
+
+/**
+ * What the setup says about the last start: why it failed, that a targeted queue came back
+ * empty, or the scope and mode that found nothing (`empty`, explained above the form).
+ */
+function lastStartFeedback(state: PracticeStart): {
+  error: string | null;
+  empty: StartPracticeInput | null;
+} {
+  if (state.status === "failed") return { error: state.message, empty: null };
+  if (isEmptyTargetedStart(state)) {
+    return {
+      error:
+        "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead.",
+      empty: null
+    };
+  }
+  return { error: null, empty: state.status === "empty" ? state.input : null };
 }
 
 function Spinner({ label }: { label: string }) {
@@ -342,604 +177,4 @@ function Spinner({ label }: { label: string }) {
       <Loader2 className="size-5 animate-spin text-fg-subtle" />
     </div>
   );
-}
-
-type PendingAttempt = { uci: string; attemptId: string; fenAfter: string };
-
-/** What Retry repeats after a failed write (the same attempt id keeps a resubmission idempotent). */
-type RetryTarget =
-  | { kind: "attempt"; attempt: PendingAttempt }
-  | { kind: "action"; action: PracticeAction["kind"] }
-  | { kind: "finish" };
-
-/** One running session: the hidden-answer board and the card's controls. */
-function PracticeSession({
-  detail,
-  session,
-  onRehearse
-}: {
-  detail: RepertoireDetail;
-  session: PracticeSessionSnapshot;
-  /** "Rehearse it from <chapter>": a rehearsal of another chapter from an occurrence there. */
-  onRehearse: (preset: PracticePreset) => void;
-}) {
-  const card = currentCard(session)!;
-  const {
-    hint,
-    hintUci,
-    message,
-    reveal,
-    answer,
-    leadUpIndex,
-    orientation,
-    rehearsal,
-    otherLine,
-    lineEnded
-  } = useRepertoirePracticeStore(
-    useShallow((state) => ({
-      hint: state.hint,
-      hintUci: state.hintUci,
-      message: state.message,
-      reveal: state.reveal,
-      answer: state.answer,
-      leadUpIndex: state.leadUpIndex,
-      orientation: state.orientation,
-      rehearsal: state.rehearsal,
-      otherLine: state.otherLine,
-      lineEnded: state.lineEnded
-    }))
-  );
-  const rehearsing = session.mode === "rehearse-lines";
-  const recordAttempt = useRecordAttemptMutation();
-  const recordAction = useRecordPracticeActionMutation();
-  const endPractice = useEndPracticeMutation();
-  const resume = useResumePracticeMutation();
-  const reducedMotion = usePrefersReducedMotion();
-  const settings = useSettingsQuery();
-  /** The submitted move shown while the main process grades it (cleared unless correct). */
-  const [pending, setPending] = useState<PendingAttempt | null>(null);
-  const [failed, setFailed] = useState<{ message: string; retry: RetryTarget } | null>(null);
-  const advanceTimer = useRef<number | null>(null);
-  const color: Color = detail.color;
-
-  // Per-card state resets when the card changes.
-  const [shownCard, setShownCard] = useState(card.queueItemId);
-  if (shownCard !== card.queueItemId) {
-    setShownCard(card.queueItemId);
-    setPending(null);
-    setFailed(null);
-  }
-
-  const finish = useEventCallback(() => {
-    setFailed(null);
-    endPractice.mutate(session.sessionId, {
-      onSuccess: (result) => practice().setSummary(result),
-      onError: (error) =>
-        setFailed({
-          message: ipcErrorMessage(error) || "Couldn't finish the session.",
-          retry: { kind: "finish" }
-        })
-    });
-  });
-
-  const goNext = useEventCallback(() => {
-    if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
-    advanceTimer.current = null;
-    if (practice().advance()) return;
-    if (!rehearsing) {
-      finish();
-      return;
-    }
-    // A rehearsal's queue grows in the main process: ask it whether another line is waiting
-    // before finishing.
-    setFailed(null);
-    resume.mutate(session.sessionId, {
-      onSuccess: (snapshot) => {
-        const index = snapshot.cards.findIndex((item) => item.state === "unanswered");
-        if (snapshot.status === "active" && index >= 0) {
-          practice().setSession({ ...snapshot, cursor: index });
-        } else finish();
-      },
-      onError: () => finish()
-    });
-  });
-
-  // Rehearsal: a brief confirmation, then the authored reply on the board (the board animates a
-  // one-move change unless motion is reduced), then the next decision or the line's end. With
-  // reduced motion the step is presented at once. Timers are cancelled when leaving the page.
-  useEffect(() => {
-    if (!rehearsal?.auto || lineEnded) return;
-    const reply = rehearsal.step.reply;
-    if (reducedMotion) {
-      practice().presentStep();
-      return;
-    }
-    const timer = window.setTimeout(
-      () => (reply && !rehearsal.replyShown ? practice().showReply() : practice().presentStep()),
-      reply && rehearsal.replyShown ? REHEARSAL_REPLY_MS : REHEARSAL_CONFIRM_MS
-    );
-    return () => window.clearTimeout(timer);
-  }, [rehearsal, lineEnded, reducedMotion]);
-
-  // Rehearsal: "Line complete" moves on to the next line by itself unless motion is reduced (then
-  // "Next line" waits for the player).
-  useEffect(() => {
-    if (!lineEnded || reducedMotion) return;
-    advanceTimer.current = window.setTimeout(goNext, LINE_ADVANCE_MS);
-    return () => {
-      if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
-      advanceTimer.current = null;
-    };
-  }, [lineEnded, reducedMotion, goNext]);
-
-  // A correct answer moves on by itself after the chosen delay, unless auto-advance is off or the
-  // answer has notes to read (cancelled when leaving the page).
-  const advanceDelay = autoAdvanceDelay(
-    settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs,
-    answer
-  );
-  useEffect(() => {
-    if (rehearsing || advanceDelay === null) return;
-    if (card.state !== "answered-correct" || message?.tone !== "success") return;
-    advanceTimer.current = window.setTimeout(goNext, advanceDelay);
-    return () => {
-      if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
-      advanceTimer.current = null;
-    };
-  }, [rehearsing, advanceDelay, card.state, card.queueItemId, message, goNext]);
-
-  // Lead-up replay: one move per step, then back to the card's position.
-  useEffect(() => {
-    if (leadUpIndex === null) return;
-    const timer = window.setTimeout(
-      () =>
-        practice().setLeadUpIndex(leadUpIndex + 1 < card.leadUp.length ? leadUpIndex + 1 : null),
-      reducedMotion ? REPLAY_STEP_REDUCED_MS : REPLAY_STEP_MS
-    );
-    return () => window.clearTimeout(timer);
-  }, [leadUpIndex, card.leadUp.length, reducedMotion]);
-
-  const submit = useEventCallback((attempt: PendingAttempt) => {
-    setFailed(null);
-    setPending(attempt);
-    recordAttempt.mutate(
-      {
-        sessionId: session.sessionId,
-        queueItemId: card.queueItemId,
-        attemptId: attempt.attemptId,
-        uci: attempt.uci
-      },
-      {
-        onSuccess: (result) => {
-          practice().applyAttempt(result);
-          // A correct move stays on the board; so does another line's choice, until the player
-          // follows it or tries again.
-          if (result.outcome !== "correct" && result.outcome !== "other-line") setPending(null);
-        },
-        onError: (error) => {
-          // Not graded: the card stays, the same attempt id makes the retry idempotent.
-          setPending(null);
-          setFailed({
-            message: ipcErrorMessage(error) || "Your move couldn't be recorded.",
-            retry: { kind: "attempt", attempt }
-          });
-        }
-      }
-    );
-  });
-
-  const onMove = useEventCallback((uci: string, _san: string, fenAfter: string) => {
-    submit({ uci, attemptId: nanoid(), fenAfter });
-  });
-
-  const act = useEventCallback((kind: PracticeAction["kind"]) => {
-    setFailed(null);
-    recordAction.mutate(
-      { sessionId: session.sessionId, queueItemId: card.queueItemId, action: { kind } },
-      {
-        onSuccess: (result) => {
-          practice().applyAction(kind, result);
-          if (kind === "skip") goNext();
-        },
-        onError: (error) =>
-          setFailed({
-            message: ipcErrorMessage(error) || "That couldn't be saved.",
-            retry: { kind: "action", action: kind }
-          })
-      }
-    );
-  });
-
-  const retryFailed = useEventCallback(() => {
-    const target = failed?.retry;
-    if (target?.kind === "attempt") submit(target.attempt);
-    else if (target?.kind === "action") act(target.action);
-    else if (target?.kind === "finish") finish();
-  });
-
-  const tryAgain = useEventCallback(() => {
-    setPending(null);
-    practice().dismissOtherLine();
-  });
-
-  const replaying = leadUpIndex !== null;
-  const finished = card.state !== "unanswered";
-  /** A rehearsal step, an other-line choice or a line's end holds the board still. */
-  const held = Boolean(rehearsal || otherLine || lineEnded);
-  const shownReply = rehearsal?.replyShown ? rehearsal.step.reply : null;
-  // After a wrong first answer the card stays playable (ungraded retries) until it's revealed or
-  // answered correctly; the grade was fixed by the first answer.
-  const retrying = card.state === "answered-wrong" && !reveal;
-  const canAnswer = (!finished || retrying) && !held;
-  const busy =
-    recordAttempt.isPending || recordAction.isPending || endPractice.isPending || resume.isPending;
-  const fen = replaying
-    ? card.leadUp[leadUpIndex]!.fen
-    : (shownReply?.fen ?? pending?.fenAfter ?? card.fen);
-  const lastMove = replaying
-    ? lastMoveOf(card.leadUp[leadUpIndex]?.uci)
-    : shownReply
-      ? lastMoveOf(shownReply.uci)
-      : pending
-        ? lastMoveOf(pending.uci)
-        : lastMoveOf(card.leadUp[card.leadUp.length - 1]?.uci);
-  const marks = useMemo(() => {
-    if (replaying) return { arrows: [], highlights: [] };
-    if (reveal) return { arrows: revealArrows(reveal.ucis, reveal.preferredUci), highlights: [] };
-    return hintMarks(card.hintStage, hintUci);
-  }, [replaying, reveal, card.hintStage, hintUci]);
-  const position = session.cards.indexOf(card) + 1;
-  const chapterTitles = new Map(detail.chapters.map((chapter) => [chapter.id, chapter.title]));
-  const rehearsedChapterId = session.scope.rehearse?.chapterId ?? card.chapterId;
-  const chapterTitle = chapterTitles.get(card.chapterId) ?? "Chapter";
-  const nextHintLabel = ["Hint", "Show piece", "Show move"][card.hintStage] ?? null;
-  // Words for what the board shows (arrows and highlights alone aren't accessible).
-  const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
-  // Every card is final: the next step is the summary.
-  const allFinal = nextUnansweredIndex(session.cards, session.cursor) < 0 && finished;
-  // The footer's way on. Rehearsal: continue after a reveal, skip the line after a move outside
-  // the repertoire (the board stays playable to try again), the next line after an ended one (or
-  // a skipped / stale card), or the summary. Otherwise the next card once this one is decided
-  // (also while a correct answer waits to move on by itself).
-  const nextAction: { label: string; onClick: () => void; skips?: true } | null = !rehearsing
-    ? finished
-      ? { label: allFinal ? "See summary" : "Next card", onClick: goNext }
-      : null
-    : rehearsal && !rehearsal.auto && !lineEnded
-      ? { label: "Continue line", onClick: () => practice().continueStep() }
-      : retrying && !held
-        ? { label: "Skip this line", onClick: () => act("skip"), skips: true }
-        : lineEnded || (finished && !rehearsal && !otherLine)
-          ? { label: "Next line", onClick: goNext }
-          : null;
-
-  // Space / Enter take the way on (never a skip): not while typing a move or in a dialog, and not
-  // on a focused button, which Space / Enter already press.
-  const onNextKey = useEventCallback((event: KeyboardEvent) => {
-    if (!nextAction || nextAction.skips || busy) return;
-    const active = document.activeElement;
-    const next = isPracticeNextKey(event, {
-      typing: isTyping(event.target) || isTyping(active),
-      blocked: Boolean(document.querySelector(OVERLAY_SELECTOR)),
-      onControl: pressesOnKey(event.target) || pressesOnKey(active)
-    });
-    if (!next) return;
-    event.preventDefault();
-    nextAction.onClick();
-  });
-  useEffect(() => {
-    window.addEventListener("keydown", onNextKey);
-    return () => window.removeEventListener("keydown", onNextKey);
-  }, [onNextKey]);
-
-  return (
-    <BoardWorkspace
-      panelLabel="Practice"
-      board={
-        <BoardStage
-          top={
-            <p className="flex h-8 min-w-0 items-center text-sm text-fg-secondary">
-              {rehearsing ? (
-                <span className="truncate">
-                  {rehearsalTitle(chapterTitle, session.cards, card)}
-                </span>
-              ) : (
-                <>
-                  {session.scope.ungraded
-                    ? "Extra practice, not scheduled · "
-                    : isExtraPractice(session.scope)
-                      ? "Extra practice · "
-                      : ""}
-                  {card.stage === "new" ? "New decision" : "Review"} ·{" "}
-                  {color === "white" ? "White" : "Black"} to play
-                </>
-              )}
-            </p>
-          }
-          bottom={
-            <p className="flex h-8 items-center text-xs text-fg-muted">
-              {replaying
-                ? `Lead-up move ${leadUpIndex + 1} of ${card.leadUp.length}`
-                : "Play your move on the board"}
-            </p>
-          }
-        >
-          <ControlledBoard
-            fen={fen}
-            orientation={orientation}
-            movable={canAnswer && !replaying && !pending && !busy ? color : "none"}
-            lastMove={lastMove}
-            arrows={marks.arrows}
-            highlights={marks.highlights}
-            onMove={onMove}
-          />
-        </BoardStage>
-      }
-      summary={
-        rehearsing ? (
-          <StatGroup className="w-full">
-            <Stat label="Progress" value={`step ${rehearsalStepNumber(card)}`} />
-            <Stat label="Correct" value={String(session.totals.correct)} />
-            <Stat label="Missed" value={String(session.totals.wrong + session.totals.revealed)} />
-          </StatGroup>
-        ) : (
-          <StatGroup className="w-full">
-            <Stat label="Card" value={`${position} of ${session.cards.length}`} />
-            <Stat label="Correct" value={String(session.totals.correct)} />
-            <Stat label="Left" value={String(session.totals.remaining)} />
-          </StatGroup>
-        )
-      }
-      notices={
-        failed ? (
-          <Notice
-            tone="danger"
-            action={
-              <Button type="button" variant="outline" size="xs" onClick={retryFailed}>
-                Retry
-              </Button>
-            }
-          >
-            {failed.message}
-          </Notice>
-        ) : null
-      }
-      footer={
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={finish}>
-            <Square />
-            End session
-          </Button>
-          {nextAction ? (
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              disabled={busy}
-              aria-keyshortcuts={nextAction.skips ? undefined : "Space Enter"}
-              title={nextAction.skips ? undefined : `${nextAction.label} (Space or Enter)`}
-              onClick={nextAction.onClick}
-            >
-              {nextAction.label}
-              <SkipForward />
-            </Button>
-          ) : null}
-        </div>
-      }
-    >
-      <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3">
-        {card.prompt ? (
-          <section aria-label="Prompt" className="grid gap-1">
-            <p className="text-xs text-fg-muted">Prompt</p>
-            <p className="text-sm text-fg">{card.prompt}</p>
-          </section>
-        ) : null}
-
-        <div aria-live="polite" className="grid gap-2">
-          {message ? (
-            <Notice
-              tone={
-                message.tone === "warn" ? "warn" : message.tone === "success" ? "success" : "info"
-              }
-              appear
-            >
-              {message.text}
-              {message.feedback ? (
-                <span className="block text-fg-muted">{message.feedback}</span>
-              ) : null}
-              {otherLine ? (
-                <span className="block text-fg-muted">
-                  In {otherLine.chapterTitle}:{" "}
-                  <span className="font-mono">{otherLine.path || "the start"}</span>
-                </span>
-              ) : null}
-            </Notice>
-          ) : null}
-          {card.hintStage >= 1 && hint && !reveal ? (
-            <Notice tone="info" icon={<Lightbulb />} title="Hint">
-              {hint}
-            </Notice>
-          ) : null}
-          {boardHintText ? (
-            <Notice tone="info" icon={<Lightbulb />} title="On the board">
-              {boardHintText}
-            </Notice>
-          ) : null}
-          {answer ? (
-            <AnswerNotes fen={card.fen} answer={answer} playedUci={pending?.uci ?? null} />
-          ) : null}
-        </div>
-
-        {otherLine ? (
-          <div className="flex flex-wrap gap-2">
-            {otherLine.chapterId === rehearsedChapterId ? (
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                disabled={busy}
-                onClick={() => act("follow-other-line")}
-              >
-                <Route />
-                Follow that line
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  onRehearse(
-                    rehearsePreset(
-                      { chapterId: otherLine.chapterId, fromNodeId: otherLine.nodeId },
-                      session.scope.maxDepthPlies
-                    )
-                  )
-                }
-              >
-                <Route />
-                Rehearse it from {otherLine.chapterTitle}
-              </Button>
-            )}
-            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={tryAgain}>
-              <RotateCcw />
-              Try again
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2">
-          {card.leadUp.length && !held ? (
-            replaying ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => practice().setLeadUpIndex(null)}
-              >
-                Skip replay
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => practice().setLeadUpIndex(0)}
-              >
-                <Play />
-                Replay lead-up
-              </Button>
-            )
-          ) : null}
-          {canAnswer ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || replaying || !nextHintLabel}
-                onClick={() => act("hint")}
-              >
-                <Lightbulb />
-                {nextHintLabel ?? "No more hints"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || replaying}
-                onClick={() => act("reveal")}
-              >
-                <Eye />
-                Reveal
-              </Button>
-              {finished ? null : (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy || replaying}
-                  onClick={() => act("skip")}
-                >
-                  <SkipForward />
-                  {rehearsing ? "Skip this line" : "Skip"}
-                </Button>
-              )}
-            </>
-          ) : null}
-        </div>
-        <CardStatus card={card} retrying={retrying} />
-      </div>
-    </BoardWorkspace>
-  );
-}
-
-/** Space / Enter already press this focused control (a button, link, switch…). */
-function pressesOnKey(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    Boolean(
-      target.closest(
-        'button, a[href], summary, [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="radio"], [role="tab"], [role="option"], [role="menuitem"]'
-      )
-    )
-  );
-}
-
-/**
- * A decided card's answer: the move played (or the reveal's words), the other accepted moves, the
- * position's explanation and the accepted moves' own comments. Rendered only from an answer the
- * main process gave out with the grade.
- */
-function AnswerNotes({
-  fen,
-  answer,
-  playedUci
-}: {
-  fen: string;
-  answer: PracticeAnswer;
-  playedUci: string | null;
-}) {
-  const view = answerView(fen, answer, playedUci);
-  return (
-    <>
-      <Notice tone="info" icon={<Eye />} title="Answer">
-        {view.answer}
-        {view.alternatives ? (
-          <span className="block text-fg-muted">{view.alternatives}</span>
-        ) : null}
-      </Notice>
-      {view.explanation ? (
-        <Notice tone="info" title="Why">
-          {view.explanation}
-        </Notice>
-      ) : null}
-      {view.moveNotes.length ? (
-        <Notice tone="info" title="Move notes">
-          <ul className="grid gap-1">
-            {view.moveNotes.map((note) => (
-              <li key={note.uci}>
-                <span className="font-mono">{note.san}</span> — {note.text}
-              </li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
-    </>
-  );
-}
-
-/** A plain sentence for the card's state (text, not colour alone). */
-function CardStatus({ card, retrying }: { card: PracticeCard; retrying: boolean }) {
-  const text: Record<PracticeCard["state"], string> = {
-    unanswered: card.attemptsSoFar
-      ? `${card.attemptsSoFar} attempt${card.attemptsSoFar === 1 ? "" : "s"} so far`
-      : "",
-    "answered-correct": card.hintStage ? "Answered with a hint (assisted)." : "Answered unaided.",
-    "answered-wrong": retrying ? "Missed — try again, or reveal the answer." : "Missed.",
-    revealed: "Revealed — counts as missed.",
-    skipped: "Skipped."
-  };
-  return text[card.state] ? <p className="text-xs text-fg-muted">{text[card.state]}</p> : null;
 }

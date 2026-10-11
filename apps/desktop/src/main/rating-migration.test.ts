@@ -14,23 +14,23 @@ function run(stored: { playerRatings?: unknown; reviewPlayerRating?: unknown }) 
 
 describe("migratePlayerRatings", () => {
   it("makes the old single rating every mode's typed-in rating", () => {
-    expect(run({ reviewPlayerRating: 1840 })).toEqual({
+    expect(run({ reviewPlayerRating: 1840 })).toStrictEqual({
       result: "migrated",
       written: [uniformRatings(1840)]
     });
-    expect(run({ reviewPlayerRating: 1840 }).written[0]?.correspondence).toEqual({
+    expect(run({ reviewPlayerRating: 1840 }).written[0]?.correspondence).toStrictEqual({
       source: "manual",
       rating: 1840
     });
   });
 
   it("holds an out-of-range old rating to the range", () => {
-    expect(run({ reviewPlayerRating: 9000 }).written).toEqual([uniformRatings(3500)]);
+    expect(run({ reviewPlayerRating: 9000 }).written).toStrictEqual([uniformRatings(3500)]);
   });
 
   it("leaves ratings already stored alone (it runs once)", () => {
     const ratings = { ...uniformRatings(1500), blitz: { source: "manual", rating: 1720 } };
-    expect(run({ playerRatings: ratings, reviewPlayerRating: 1840 })).toEqual({
+    expect(run({ playerRatings: ratings, reviewPlayerRating: 1840 })).toStrictEqual({
       result: "unchanged",
       written: []
     });
@@ -42,7 +42,7 @@ describe("migratePlayerRatings", () => {
       blitz: { source: "lichess", rating: 1720, syncedAt: 5, provisional: true },
       rapid: { source: "manual", rating: 1650, edited: true }
     };
-    expect(run({ playerRatings: stored })).toEqual({
+    expect(run({ playerRatings: stored })).toStrictEqual({
       result: "migrated",
       written: [
         {
@@ -55,12 +55,15 @@ describe("migratePlayerRatings", () => {
   });
 
   it("keeps the defaults when no rating was ever stored, or it can't be read", () => {
-    expect(run({})).toEqual({ result: "unchanged", written: [] });
-    expect(run({ reviewPlayerRating: "strong" })).toEqual({ result: "unchanged", written: [] });
+    expect(run({})).toStrictEqual({ result: "unchanged", written: [] });
+    expect(run({ reviewPlayerRating: "strong" })).toStrictEqual({
+      result: "unchanged",
+      written: []
+    });
   });
 
   it("replaces damaged stored ratings from the old rating", () => {
-    expect(run({ playerRatings: 1500, reviewPlayerRating: 1200 }).written).toEqual([
+    expect(run({ playerRatings: 1500, reviewPlayerRating: 1200 }).written).toStrictEqual([
       uniformRatings(1200)
     ]);
   });

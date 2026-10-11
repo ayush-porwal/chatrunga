@@ -65,6 +65,6 @@ describe("review event buffer", () => {
     buffer.move("r1", move("a"));
     buffer.move("r2", move("b"));
     vi.advanceTimersByTime(REVIEW_EVENT_FLUSH_MS);
-    expect(flush.mock.calls.map((call) => call[0].reviewId)).toEqual(["r1", "r2"]);
+    expect(flush.mock.calls.map((call) => call[0].reviewId)).toStrictEqual(["r1", "r2"]);
   });
 });

@@ -16,7 +16,7 @@ export type MovePosition =
   | { kind: "best"; cursor: BestLineCursor };
 
 /** One alternative at a branch point: a line of the tree from its first move, or a BEST line. */
-export type Alternative =
+type Alternative =
   | { kind: "line"; startId: string }
   | { kind: "best"; markedNodeId: string; anchorNodeId: string; moves: readonly BestLineStep[] };
 
@@ -35,34 +35,51 @@ export function alternativeGroup(
   bestLineOf: (nodeId: string) => readonly BestLineStep[]
 ): AlternativeGroup | null {
   const byId = new Map(tree.map((node) => [node.id, node]));
-  let start: TreeNode | undefined;
-  let depth = 0;
-  if (position.kind === "best") {
-    // A BEST line is played instead of its marked move.
-    start = byId.get(position.cursor.markedNodeId);
-    depth = position.cursor.index;
-  } else {
-    start = byId.get(position.nodeId);
-    // Up the line to its first move: a move that isn't its parent's first child. None (the main
-    // line): the move's own ply.
-    let node = start;
-    let steps = 0;
-    while (node?.parentId) {
-      const parent = byId.get(node.parentId);
-      if (!parent) break;
-      if (parent.children[0] !== node.id) {
-        start = node;
-        depth = steps;
-        break;
-      }
-      node = parent;
-      steps += 1;
-    }
-  }
+  // A BEST line is played instead of its marked move.
+  const { start, depth } =
+    position.kind === "best"
+      ? { start: byId.get(position.cursor.markedNodeId), depth: position.cursor.index }
+      : lineStart(byId, position.nodeId);
   const branch = start?.parentId ? byId.get(start.parentId) : undefined;
   const gameMove = branch?.children[0];
   if (!branch || !gameMove || !start) return null;
 
+  const alternatives = alternativesAt(branch, gameMove, bestLineOf);
+  const current =
+    position.kind === "best"
+      ? alternatives.findIndex((item) => item.kind === "best")
+      : alternatives.findIndex((item) => item.kind === "line" && item.startId === start.id);
+  if (current < 0) return null;
+  return { alternatives, current, depth };
+}
+
+/**
+ * Up the line from `nodeId` to its first move: a move that isn't its parent's first child, and how
+ * many moves `nodeId` is into it. None (the main line): the move itself, at depth 0.
+ */
+function lineStart(
+  byId: ReadonlyMap<string, TreeNode>,
+  nodeId: string
+): { start: TreeNode | undefined; depth: number } {
+  const own = byId.get(nodeId);
+  let node = own;
+  let steps = 0;
+  while (node?.parentId) {
+    const parent = byId.get(node.parentId);
+    if (!parent) break;
+    if (parent.children[0] !== node.id) return { start: node, depth: steps };
+    node = parent;
+    steps += 1;
+  }
+  return { start: own, depth: 0 };
+}
+
+/** The alternatives at `branch`: the game's move there, its BEST line, then the variations. */
+function alternativesAt(
+  branch: TreeNode,
+  gameMove: string,
+  bestLineOf: (nodeId: string) => readonly BestLineStep[]
+): Alternative[] {
   const alternatives: Alternative[] = [{ kind: "line", startId: gameMove }];
   const best = bestLineOf(gameMove);
   if (best.length)
@@ -73,13 +90,7 @@ export function alternativeGroup(
       moves: best
     });
   for (const id of branch.children.slice(1)) alternatives.push({ kind: "line", startId: id });
-
-  const current =
-    position.kind === "best"
-      ? alternatives.findIndex((item) => item.kind === "best")
-      : alternatives.findIndex((item) => item.kind === "line" && item.startId === start.id);
-  if (current < 0) return null;
-  return { alternatives, current, depth };
+  return alternatives;
 }
 
 /**
@@ -95,7 +106,7 @@ export function alternativeTarget(
   const group = alternativeGroup(tree, position, bestLineOf);
   if (!group || group.alternatives.length < 2) return null;
   const count = group.alternatives.length;
-  const target = group.alternatives[(group.current + delta + count) % count]!;
+  const target = group.alternatives[(group.current + delta + count) % count];
   if (target.kind === "best") {
     const cursor = openBestLine(
       target.markedNodeId,

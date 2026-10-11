@@ -111,10 +111,12 @@ function copyNode(source: MoveNode, id: string, parentId: string | null, ply: nu
  */
 function build(
   index: SourceIndex,
-  rootSource: MoveNode,
-  rootFen: string,
-  prefix: readonly MoveNode[],
-  subtree: boolean
+  {
+    rootSource,
+    rootFen,
+    prefix,
+    subtree
+  }: { rootSource: MoveNode; rootFen: string; prefix: readonly MoveNode[]; subtree: boolean }
 ): Omit<ExtractedScope, "contextNodeIds" | "startNodeId"> {
   const tree: MoveNode[] = [];
   const sourceToChapterIds: Record<string, string> = nullPrototypeRecord();
@@ -184,7 +186,12 @@ export function extractScope(
     case "path": {
       const path = pathTo(index, requireNode(index, scope.toNodeId));
       return {
-        ...build(index, index.root, source.rootFen, path.slice(1), false),
+        ...build(index, {
+          rootSource: index.root,
+          rootFen: source.rootFen,
+          prefix: path.slice(1),
+          subtree: false
+        }),
         contextNodeIds: [],
         startNodeId: null
       };
@@ -193,13 +200,18 @@ export function extractScope(
       const from = requireNode(index, scope.fromNodeId);
       if (scope.root === "standalone") {
         return {
-          ...build(index, from, from.fenAfter, [], true),
+          ...build(index, { rootSource: from, rootFen: from.fenAfter, prefix: [], subtree: true }),
           contextNodeIds: [],
           startNodeId: null
         };
       }
       const prefix = pathTo(index, from).slice(1);
-      const extracted = build(index, index.root, source.rootFen, prefix, true);
+      const extracted = build(index, {
+        rootSource: index.root,
+        rootFen: source.rootFen,
+        prefix,
+        subtree: true
+      });
       return {
         ...extracted,
         contextNodeIds: prefix.map((node) => node.id),
@@ -208,7 +220,12 @@ export function extractScope(
     }
     case "whole-game":
       return {
-        ...build(index, index.root, source.rootFen, [], true),
+        ...build(index, {
+          rootSource: index.root,
+          rootFen: source.rootFen,
+          prefix: [],
+          subtree: true
+        }),
         contextNodeIds: [],
         startNodeId: null
       };
@@ -260,7 +277,7 @@ export function proposePolicy(
 export function applyPolicy(
   extracted: ExtractedScope,
   policy: AddFromGamePolicy,
-  sourceToChapterIds: Record<string, string> = extracted.sourceToChapterIds
+  sourceToChapterIds: Partial<Record<string, string>> = extracted.sourceToChapterIds
 ): Record<string, RepertoireNodeMeta> {
   const included = new Set(policy.includedNodeIds);
   const covered = new Set(policy.coveredNodeIds);

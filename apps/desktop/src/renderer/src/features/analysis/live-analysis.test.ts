@@ -54,7 +54,7 @@ describe("liveAnalysisSubject", () => {
     expect(subject?.key).toBe(`${START}|a|${AFTER_E4}`);
     expect(subject?.rootFen).toBe(START);
     expect(subject?.fen).toBe(AFTER_E4);
-    expect(subject?.moves()).toEqual(["e2e4"]);
+    expect(subject?.moves()).toStrictEqual(["e2e4"]);
   });
 
   it("searches nothing outside analysis mode, in a decided game or at a finished position", () => {
@@ -100,7 +100,7 @@ describe("liveAnalysisSubject with a target", () => {
       expect(subject?.key).toBe(`target|chapter-1|${START}|m2|${AFTER_E4_E5}`);
       expect(subject?.rootFen).toBe(START);
       expect(subject?.fen).toBe(AFTER_E4_E5);
-      expect(subject?.moves()).toEqual(["e2e4", "e7e5"]);
+      expect(subject?.moves()).toStrictEqual(["e2e4", "e7e5"]);
     }
   });
 
@@ -136,7 +136,7 @@ describe("paused live analysis", () => {
   ];
 
   it("names the move that reached the paused position, none at the start", () => {
-    expect(pausedAnalysisAt(moveTree, "b", AFTER_E4_E5)).toEqual({
+    expect(pausedAnalysisAt(moveTree, "b", AFTER_E4_E5)).toStrictEqual({
       nodeId: "b",
       fen: AFTER_E4_E5,
       move: "1… e5"

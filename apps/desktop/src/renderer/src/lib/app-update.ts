@@ -196,7 +196,7 @@ export function inlineParts(text: string): InlinePart[] {
   let last = 0;
   const push = (part: InlinePart) => {
     if (!part.text) return;
-    const previous = parts[parts.length - 1];
+    const previous = parts.at(-1);
     if (previous && !previous.href && !part.href) previous.text += part.text;
     else parts.push(part);
   };

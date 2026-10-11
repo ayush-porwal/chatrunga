@@ -233,7 +233,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     .poll(() =>
       page.evaluate(async () => {
         const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-        const [game] = (await api.games.listPage({ limit: 1 })).items;
+        const game = (await api.games.listPage({ limit: 1 })).items.at(0);
         return game ? ((await api.games.get(game.id)).review?.assessmentPolicy ?? null) : null;
       })
     )

@@ -8,25 +8,19 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
-  type ChapterKind,
-  type PracticeCard,
-  type PracticeMode,
-  type PracticeScope,
   type RepertoireBackupChapter,
   type RepertoireChapter,
   type RepertoireChapterSummary,
   type RepertoireColor,
   type RepertoireDecision,
-  type RepertoireGameLink,
   type RepertoireListFilters,
   type RepertoireNodeMeta,
   type RepertoireProgress,
-  type RepertoireSummary,
-  type RepertoireWorkspaceState,
-  type StartPracticeInput
+  type RepertoireSummary
 } from "@chaturanga/shared/types/repertoire";
 import { repertoireDb } from "./connection";
-import { allRows, getRow, sqliteErrcode } from "../db/rows";
+import { queriesOn, rollbackIfOpen, sqliteErrcode } from "../db/rows";
+import { asColor, asKind, parseJson, stringArray, stringRecord } from "./columns";
 import { parseStoredJson } from "../stored-json";
 
 /** A stored chapter whose JSON can't be read. Recoverable: the row is left untouched. */
@@ -108,46 +102,6 @@ type ProgressRow = {
   suspended: number;
 };
 
-type SessionRow = {
-  id: string;
-  repertoire_id: string;
-  mode: string;
-  scope_json: string;
-  snapshot_revision: number;
-  queue_json: string;
-  card_state_json: string;
-  cursor: number;
-  status: string;
-  created_at: number;
-  updated_at: number;
-};
-
-type AttemptRow = {
-  attempt_id: string;
-  session_id: string;
-  queue_item_id: string;
-  sequence: number;
-  kind: AttemptKind;
-  uci: string | null;
-  legal: number;
-  correct: number;
-  is_final_grade: number;
-  outcome: string | null;
-  position_key: string;
-  fingerprint: string;
-  result_json: string | null;
-  at: number;
-};
-
-type WorkspaceRow = {
-  repertoire_id: string;
-  last_chapter_id: string | null;
-  last_node_id: string | null;
-  orientation: string;
-  practice_draft_json: string | null;
-  updated_at: number;
-};
-
 /** A repertoire's own columns (no aggregates). */
 export type RepertoireRecord = Omit<
   RepertoireSummary,
@@ -156,84 +110,6 @@ export type RepertoireRecord = Omit<
 
 /** A decision as stored, with the fingerprint of its effective set at the last reindex. */
 export type StoredDecision = RepertoireDecision & { acceptanceFingerprint: string };
-
-/** The frozen policy a practice card is graded against (design §8.3). */
-export type FrozenPolicy = {
-  acceptedUcis: string[];
-  preferredUci: string | null;
-  fingerprint: string;
-  hint: string | null;
-  wrongMoveFeedback: Record<string, string>;
-  /** The occurrence's comment, shown once the answer is revealed. */
-  explanation: string | null;
-  /**
-   * The authored comments of the accepted moves played from the occurrence, by UCI, shown with
-   * the answer once the grade is final. Absent from sessions frozen before they were kept.
-   */
-  moveComments?: Record<string, string>;
-  /** The decision's last graded attempt when the session froze it (null: never practised). */
-  progressAt?: number | null;
-};
-
-/**
- * Rehearse-lines session state (kept in `card_state_json` beside the frozen policies). A line is
- * identified by its end node (see chess/repertoire-rehearsal.ts).
- */
-export type RehearsalState = {
-  chapterId: string;
-  fromNodeId: string;
-  /** The chapter revision the session was planned against; a change ends the session. */
-  chapterRevision: number;
-  maxDepthPlies: number;
-  /** End node of the line being played. */
-  lineEnd: string;
-  /** How many times each opponent reply (node id) was supplied in this session. */
-  seen: Record<string, number>;
-  /** End nodes of the lines completed or skipped; they are not planned again. */
-  finished: string[];
-  linesStarted: number;
-  linesCompleted: number;
-  /** End nodes of the lines in the order they first appeared (a line's number is its index + 1). */
-  lineOrder?: string[];
-};
-
-/** Key of the rehearsal state inside `card_state_json` (queue item ids never start with `$`). */
-const REHEARSAL_KEY = "$rehearsal";
-
-export type PracticeSessionRecord = {
-  id: string;
-  repertoireId: string;
-  mode: PracticeMode;
-  scope: PracticeScope;
-  snapshotRevision: number;
-  cards: PracticeCard[];
-  policies: Record<string, FrozenPolicy>;
-  /** Rehearse-lines only. */
-  rehearsal?: RehearsalState;
-  cursor: number;
-  status: "active" | "finished";
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type AttemptKind = "attempt" | "hint" | "reveal" | "skip";
-
-export type AttemptRecord = {
-  attemptId: string;
-  sessionId: string;
-  queueItemId: string;
-  sequence: number;
-  kind: AttemptKind;
-  uci: string | null;
-  legal: boolean;
-  correct: boolean;
-  isFinalGrade: boolean;
-  outcome: string | null;
-  positionKey: string;
-  fingerprint: string;
-  resultJson: string | null;
-  at: number;
-};
 
 export type PositionIndexRow = {
   chapterId: string;
@@ -244,28 +120,16 @@ export type PositionIndexRow = {
   ply: number;
 };
 
-function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return allRows<T>(repertoireDb().prepare(sql), ...params);
-}
-
-function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return getRow<T>(repertoireDb().prepare(sql), ...params) ?? null;
-}
-
-function run(sql: string, ...params: SQLInputValue[]): void {
-  repertoireDb()
-    .prepare(sql)
-    .run(...params);
-}
+const { all, get, run } = queriesOn(repertoireDb);
 
 /** How a transaction locks: reads never take the write lock; writes take it up front. */
 export type TransactionMode = "read" | "write";
 
 /** The message a busy database gives the user (the write lock stayed held past the timeout). */
-export const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try again.";
+const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try again.";
 
 /** True for SQLite's BUSY error (any extended code), as node:sqlite reports it. */
-export function isBusyError(error: unknown): boolean {
+function isBusyError(error: unknown): boolean {
   const code = sqliteErrcode(error);
   return code !== undefined && (code & 0xff) === 5;
 }
@@ -296,40 +160,10 @@ export function transaction<T>(work: () => T, mode: TransactionMode = "write"): 
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    if (db.isTransaction) db.exec("ROLLBACK");
+    rollbackIfOpen(db);
     throw actionableBusyError(error);
   }
 }
-
-/** Parses a JSON column, returning `fallback` when it is unreadable (non-critical columns). */
-function parseJson<T>(text: string | null, fallback: T): T {
-  if (text === null) return fallback;
-  try {
-    return parseStoredJson<T>(text);
-  } catch {
-    return fallback;
-  }
-}
-
-function stringArray(text: string): string[] {
-  const parsed = parseJson<unknown>(text, []);
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-function stringRecord(text: string | null): Record<string, string> {
-  const parsed = parseJson<unknown>(text, {});
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  return Object.fromEntries(
-    Object.entries(parsed).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string"
-    )
-  );
-}
-
-const asColor = (value: string): RepertoireColor => (value === "black" ? "black" : "white");
-const asKind = (value: string): ChapterKind => (value === "reference" ? "reference" : "opening");
 
 function toRecord(row: RepertoireRow): RepertoireRecord {
   return {
@@ -446,58 +280,6 @@ function toProgress(row: ProgressRow): RepertoireProgress {
     acceptanceFingerprint: row.acceptance_fingerprint,
     schedulerVersion: row.scheduler_version,
     suspended: row.suspended === 1
-  };
-}
-
-function sessionMode(mode: string): PracticeMode {
-  return mode === "learn-new" || mode === "rehearse-lines" ? mode : "review-due";
-}
-
-function toSession(row: SessionRow): PracticeSessionRecord {
-  const { [REHEARSAL_KEY]: rehearsal, ...policies } = parseJson<
-    Record<string, FrozenPolicy> & { [REHEARSAL_KEY]?: RehearsalState }
-  >(row.card_state_json, {});
-  return {
-    id: row.id,
-    repertoireId: row.repertoire_id,
-    mode: sessionMode(row.mode),
-    scope: parseJson<PracticeScope>(row.scope_json, { repertoireId: row.repertoire_id }),
-    snapshotRevision: row.snapshot_revision,
-    cards: parseJson<PracticeCard[]>(row.queue_json, []),
-    policies: policies as Record<string, FrozenPolicy>,
-    ...(rehearsal ? { rehearsal: rehearsal as RehearsalState } : {}),
-    cursor: row.cursor,
-    status: row.status === "finished" ? "finished" : "active",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function toAttempt(row: AttemptRow): AttemptRecord {
-  return {
-    attemptId: row.attempt_id,
-    sessionId: row.session_id,
-    queueItemId: row.queue_item_id,
-    sequence: row.sequence,
-    kind: row.kind,
-    uci: row.uci,
-    legal: row.legal === 1,
-    correct: row.correct === 1,
-    isFinalGrade: row.is_final_grade === 1,
-    outcome: row.outcome,
-    positionKey: row.position_key,
-    fingerprint: row.fingerprint,
-    resultJson: row.result_json,
-    at: row.at
-  };
-}
-
-function toWorkspace(row: WorkspaceRow): RepertoireWorkspaceState {
-  return {
-    lastChapterId: row.last_chapter_id,
-    lastNodeId: row.last_node_id,
-    orientation: asColor(row.orientation),
-    practiceDraft: parseJson<StartPracticeInput | null>(row.practice_draft_json, null)
   };
 }
 
@@ -1156,320 +938,3 @@ export const positionIndexRepository = {
     }));
   }
 };
-
-export const sessionRepository = {
-  /** How many practice sessions a repertoire has, optionally only active ones. */
-  count(repertoireId: string, status?: "active"): number {
-    const row = get<{ value: number }>(
-      status
-        ? "SELECT COUNT(*) AS value FROM repertoire_practice_sessions WHERE repertoire_id = ? AND status = ?"
-        : "SELECT COUNT(*) AS value FROM repertoire_practice_sessions WHERE repertoire_id = ?",
-      ...(status ? [repertoireId, status] : [repertoireId])
-    );
-    return row?.value ?? 0;
-  },
-
-  /** A repertoire's session rows exactly as stored (the retained backup's forensic history). */
-  rawRows(repertoireId: string): Record<string, unknown>[] {
-    return all<Record<string, unknown>>(
-      "SELECT * FROM repertoire_practice_sessions WHERE repertoire_id = ? ORDER BY created_at, id",
-      repertoireId
-    ).map((row) => ({ ...row }));
-  },
-
-  get(id: string): PracticeSessionRecord | null {
-    const row = get<SessionRow>("SELECT * FROM repertoire_practice_sessions WHERE id = ?", id);
-    return row ? toSession(row) : null;
-  },
-
-  /** The most recently updated active session of a repertoire that isn't archived. */
-  lastActive(): {
-    id: string;
-    repertoireId: string;
-    mode: PracticeMode;
-    repertoireName: string;
-    color: RepertoireColor;
-  } | null {
-    const row = get<{
-      id: string;
-      repertoire_id: string;
-      mode: string;
-      name: string;
-      color: string;
-    }>(
-      `SELECT s.id, s.repertoire_id, s.mode, r.name, r.color FROM repertoire_practice_sessions s
-        JOIN repertoires r ON r.id = s.repertoire_id
-        WHERE s.status = 'active' AND r.archived_at IS NULL
-        ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1`
-    );
-    return row
-      ? {
-          id: row.id,
-          repertoireId: row.repertoire_id,
-          mode: sessionMode(row.mode),
-          repertoireName: row.name,
-          color: asColor(row.color)
-        }
-      : null;
-  },
-
-  /** Inserts or replaces a session's mutable state. */
-  save(session: PracticeSessionRecord): void {
-    run(
-      `INSERT INTO repertoire_practice_sessions (id, repertoire_id, mode, scope_json, snapshot_revision,
-        queue_json, card_state_json, cursor, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET snapshot_revision = excluded.snapshot_revision,
-        queue_json = excluded.queue_json, card_state_json = excluded.card_state_json,
-        cursor = excluded.cursor, status = excluded.status, updated_at = excluded.updated_at`,
-      session.id,
-      session.repertoireId,
-      session.mode,
-      JSON.stringify(session.scope),
-      session.snapshotRevision,
-      JSON.stringify(session.cards),
-      JSON.stringify(
-        session.rehearsal
-          ? { ...session.policies, [REHEARSAL_KEY]: session.rehearsal }
-          : session.policies
-      ),
-      session.cursor,
-      session.status,
-      session.createdAt,
-      session.updatedAt
-    );
-  }
-};
-
-export const attemptRepository = {
-  /** Every attempt row of a repertoire's sessions exactly as stored (forensic history). */
-  rawRowsForRepertoire(repertoireId: string): Record<string, unknown>[] {
-    return all<Record<string, unknown>>(
-      `SELECT a.* FROM repertoire_attempts a
-        JOIN repertoire_practice_sessions s ON s.id = a.session_id
-        WHERE s.repertoire_id = ? ORDER BY a.session_id, a.sequence, a.at`,
-      repertoireId
-    ).map((row) => ({ ...row }));
-  },
-
-  get(attemptId: string): AttemptRecord | null {
-    const row = get<AttemptRow>(
-      "SELECT * FROM repertoire_attempts WHERE attempt_id = ?",
-      attemptId
-    );
-    return row ? toAttempt(row) : null;
-  },
-
-  /** A session's actions in order (one card's when `queueItemId` is given). */
-  list(sessionId: string, queueItemId?: string): AttemptRecord[] {
-    const rows =
-      queueItemId === undefined
-        ? all<AttemptRow>(
-            "SELECT * FROM repertoire_attempts WHERE session_id = ? ORDER BY sequence, at",
-            sessionId
-          )
-        : all<AttemptRow>(
-            `SELECT * FROM repertoire_attempts WHERE session_id = ? AND queue_item_id = ?
-              ORDER BY sequence`,
-            sessionId,
-            queueItemId
-          );
-    return rows.map(toAttempt);
-  },
-
-  /** The latest action time in a session (scheduling never goes back before it). */
-  lastAt(sessionId: string): number | null {
-    return (
-      get<{ value: number | null }>(
-        "SELECT MAX(at) AS value FROM repertoire_attempts WHERE session_id = ?",
-        sessionId
-      )?.value ?? null
-    );
-  },
-
-  insert(attempt: AttemptRecord): void {
-    run(
-      `INSERT INTO repertoire_attempts (attempt_id, session_id, queue_item_id, sequence, kind, uci, legal,
-        correct, is_final_grade, outcome, position_key, fingerprint, result_json, at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      attempt.attemptId,
-      attempt.sessionId,
-      attempt.queueItemId,
-      attempt.sequence,
-      attempt.kind,
-      attempt.uci,
-      attempt.legal ? 1 : 0,
-      attempt.correct ? 1 : 0,
-      attempt.isFinalGrade ? 1 : 0,
-      attempt.outcome,
-      attempt.positionKey,
-      attempt.fingerprint,
-      attempt.resultJson,
-      attempt.at
-    );
-  },
-
-  setResult(attemptId: string, resultJson: string): void {
-    run(
-      "UPDATE repertoire_attempts SET result_json = ? WHERE attempt_id = ?",
-      resultJson,
-      attemptId
-    );
-  }
-};
-
-export const workspaceRepository = {
-  get(repertoireId: string): RepertoireWorkspaceState | null {
-    const row = get<WorkspaceRow>(
-      "SELECT * FROM repertoire_workspace_state WHERE repertoire_id = ?",
-      repertoireId
-    );
-    return row ? toWorkspace(row) : null;
-  },
-
-  /**
-   * Stores the workspace. `studied` false (a practice-setup write) keeps the stored study time
-   * (0 for a new row), which orders "Continue studying" and the last-studied date.
-   */
-  save(
-    repertoireId: string,
-    workspace: RepertoireWorkspaceState,
-    now: number,
-    studied = true
-  ): void {
-    run(
-      `INSERT INTO repertoire_workspace_state (repertoire_id, last_chapter_id, last_node_id, orientation,
-        practice_draft_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(repertoire_id) DO UPDATE SET last_chapter_id = excluded.last_chapter_id,
-        last_node_id = excluded.last_node_id, orientation = excluded.orientation,
-        practice_draft_json = excluded.practice_draft_json,
-        updated_at = CASE WHEN ? THEN excluded.updated_at ELSE repertoire_workspace_state.updated_at END`,
-      repertoireId,
-      workspace.lastChapterId,
-      workspace.lastNodeId,
-      workspace.orientation,
-      workspace.practiceDraft ? JSON.stringify(workspace.practiceDraft) : null,
-      studied ? now : 0,
-      studied ? 1 : 0
-    );
-  }
-};
-
-type GameLinkRow = {
-  id: string;
-  repertoire_id: string;
-  chapter_id: string | null;
-  game_id: string | null;
-  unsaved: number;
-  game_node_id: string | null;
-  kind: string;
-  headers_json: string;
-  captured_path: string;
-  created_at: number;
-};
-
-function toGameLink(row: GameLinkRow): RepertoireGameLink {
-  return {
-    id: row.id,
-    repertoireId: row.repertoire_id,
-    chapterId: row.chapter_id,
-    gameId: row.game_id,
-    unsaved: row.unsaved === 1,
-    gameNodeId: row.game_node_id,
-    kind: row.kind === "model" || row.kind === "played" ? row.kind : "source",
-    headers: stringRecord(row.headers_json),
-    capturedPath: row.captured_path,
-    createdAt: row.created_at
-  };
-}
-
-/** Provenance links (design §6.2, §6.5); a deleted game or chapter leaves a null reference. */
-export const gameLinkRepository = {
-  insert(link: RepertoireGameLink): void {
-    run(
-      `INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, unsaved, game_node_id,
-        kind, headers_json, captured_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      link.id,
-      link.repertoireId,
-      link.chapterId,
-      link.gameId,
-      link.unsaved ? 1 : 0,
-      link.gameNodeId,
-      link.kind,
-      JSON.stringify(link.headers),
-      link.capturedPath,
-      link.createdAt
-    );
-  },
-
-  get(id: string): RepertoireGameLink | null {
-    const row = get<GameLinkRow>("SELECT * FROM repertoire_game_links WHERE id = ?", id);
-    return row ? toGameLink(row) : null;
-  },
-
-  /** A repertoire's links (optionally one chapter's), oldest first. */
-  list(repertoireId: string, chapterId?: string): RepertoireGameLink[] {
-    const rows =
-      chapterId === undefined
-        ? all<GameLinkRow>(
-            "SELECT * FROM repertoire_game_links WHERE repertoire_id = ? ORDER BY created_at, id",
-            repertoireId
-          )
-        : all<GameLinkRow>(
-            `SELECT * FROM repertoire_game_links WHERE repertoire_id = ? AND chapter_id = ?
-              ORDER BY created_at, id`,
-            repertoireId,
-            chapterId
-          );
-    return rows.map(toGameLink);
-  },
-
-  /** The oldest link of this kind between the repertoire and the game, if any. */
-  find(
-    repertoireId: string,
-    gameId: string,
-    kind: RepertoireGameLink["kind"]
-  ): RepertoireGameLink | null {
-    const row = get<GameLinkRow>(
-      `SELECT * FROM repertoire_game_links WHERE repertoire_id = ? AND game_id = ? AND kind = ?
-        ORDER BY created_at, id LIMIT 1`,
-      repertoireId,
-      gameId,
-      kind
-    );
-    return row ? toGameLink(row) : null;
-  },
-
-  /** Re-points a link at another chapter/node/path; headers and creation time stay. */
-  updateTarget(
-    id: string,
-    target: Pick<RepertoireGameLink, "chapterId" | "gameNodeId" | "capturedPath">
-  ): void {
-    run(
-      `UPDATE repertoire_game_links SET chapter_id = ?, game_node_id = ?, captured_path = ?
-        WHERE id = ?`,
-      target.chapterId,
-      target.gameNodeId,
-      target.capturedPath,
-      id
-    );
-  },
-
-  /** Replaces a link's copied headers (a played game that has since finished). */
-  updateHeaders(id: string, headers: RepertoireGameLink["headers"]): void {
-    run(
-      "UPDATE repertoire_game_links SET headers_json = ? WHERE id = ?",
-      JSON.stringify(headers),
-      id
-    );
-  },
-
-  remove(id: string): void {
-    run("DELETE FROM repertoire_game_links WHERE id = ?", id);
-  }
-};
-
-/** Whether the library has a game with this id (provenance links reference it). */
-export function libraryGameExists(gameId: string): boolean {
-  return get<{ id: string }>("SELECT id FROM games WHERE id = ?", gameId) !== null;
-}

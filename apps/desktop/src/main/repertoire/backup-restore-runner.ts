@@ -17,7 +17,7 @@ import {
 import { missingWorkerError } from "./import-runner";
 
 /** The worker bundled next to the main entry (electron.vite.config.ts). */
-export const BACKUP_RESTORE_WORKER = join(
+const BACKUP_RESTORE_WORKER = join(
   dirname(fileURLToPath(import.meta.url)),
   "repertoire-backup-restore-worker.js"
 );

@@ -25,7 +25,7 @@ import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { nullPrototypeRecord } from "@chaturanga/shared/types/record";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
-export const MAX_TREE_NODES = 100_000;
+const MAX_TREE_NODES = 100_000;
 const MAX_NAME = 200;
 export const MAX_DESCRIPTION = 5_000;
 const MAX_TAGS = 32;
@@ -178,6 +178,56 @@ function sanitizeNode(value: unknown, index: number): MoveNode {
   };
 }
 
+/** The nodes by id; an id listed twice throws. */
+function nodesById(tree: readonly MoveNode[]): Map<string, MoveNode> {
+  const byId = new Map<string, MoveNode>();
+  for (const node of tree) {
+    if (byId.has(node.id)) treeError(node.id, "is listed twice");
+    byId.set(node.id, node);
+  }
+  return byId;
+}
+
+/** The root, checked (no parent, no move, the chapter's position) and set to the root FEN. */
+function placeRoot(byId: ReadonlyMap<string, MoveNode>, rootFen: string): MoveNode {
+  const root = byId.get(REPERTOIRE_ROOT_NODE_ID);
+  if (!root) throw new Error(`Invalid chapter tree: node "${REPERTOIRE_ROOT_NODE_ID}" is missing`);
+  if (root.parentId !== null || root.uci !== null) {
+    treeError(root.id, "must have no parent and no move");
+  }
+  if (!sameFen(root.fenAfter, rootFen))
+    treeError(root.id, "doesn't start at the chapter's root FEN");
+  root.fenBefore = rootFen;
+  root.fenAfter = rootFen;
+  root.ply = rootPly(rootFen);
+  root.san = null;
+  return root;
+}
+
+/**
+ * Replays `child`'s move from its parent's position: it must be legal, lead to the child's
+ * `fenAfter` and differ from the moves of the siblings before it (`siblingMoves`, which it joins).
+ * The child then gets its stored UCI, SAN, positions and ply from the replay.
+ */
+function replayChild(parent: MoveNode, child: MoveNode, siblingMoves: Set<string>): void {
+  if (!child.uci || !UCI_MOVE.test(child.uci.toLowerCase()))
+    treeError(child.id, "has no valid UCI move");
+  const uci = normalizeUci(parent.fenAfter, child.uci);
+  const played = playMove(parent.fenAfter, uci);
+  if (!played) treeError(child.id, `plays an illegal move (${child.uci})`);
+  const fen = played.fen;
+  if (child.fenAfter !== fen && !sameFen(child.fenAfter, fen)) {
+    treeError(child.id, "has a fenAfter that doesn't follow from its move");
+  }
+  if (siblingMoves.has(uci)) treeError(child.id, `repeats a sibling's move (${uci})`);
+  siblingMoves.add(uci);
+  child.uci = uci;
+  child.san = played.san;
+  child.fenBefore = parent.fenAfter;
+  child.fenAfter = fen;
+  child.ply = parent.ply + 1;
+}
+
 /**
  * Validates and normalises a chapter tree rooted at `rootFen`: root id `"root"` without a parent
  * or move, consistent parent/child links, every node reachable once, every move legal from its
@@ -191,48 +241,19 @@ export function validateTree(nodes: readonly unknown[], rootFen: string): MoveNo
     throw new Error(`Invalid chapter tree: more than ${MAX_TREE_NODES} nodes`);
   }
   const tree = nodes.map(sanitizeNode);
-  const byId = new Map<string, MoveNode>();
-  for (const node of tree) {
-    if (byId.has(node.id)) treeError(node.id, "is listed twice");
-    byId.set(node.id, node);
-  }
-  const root = byId.get(REPERTOIRE_ROOT_NODE_ID);
-  if (!root) throw new Error(`Invalid chapter tree: node "${REPERTOIRE_ROOT_NODE_ID}" is missing`);
-  if (root.parentId !== null || root.uci !== null) {
-    treeError(root.id, "must have no parent and no move");
-  }
-  if (!sameFen(root.fenAfter, rootFen))
-    treeError(root.id, "doesn't start at the chapter's root FEN");
-  root.fenBefore = rootFen;
-  root.fenAfter = rootFen;
-  root.ply = rootPly(rootFen);
-  root.san = null;
+  const byId = nodesById(tree);
+  const root = placeRoot(byId, rootFen);
 
   const reached = new Set([root.id]);
   const pending = [root];
   for (let node = pending.pop(); node; node = pending.pop()) {
-    const seenMoves = new Set<string>();
+    const siblingMoves = new Set<string>();
     for (const childId of node.children) {
       const child = byId.get(childId);
       if (!child) treeError(node.id, `lists a missing child "${childId}"`);
       if (child.parentId !== node.id) treeError(childId, "has the wrong parent");
       if (reached.has(childId)) treeError(childId, "is reachable twice");
-      if (!child.uci || !UCI_MOVE.test(child.uci.toLowerCase()))
-        treeError(childId, "has no valid UCI move");
-      const uci = normalizeUci(node.fenAfter, child.uci);
-      const played = playMove(node.fenAfter, uci);
-      if (!played) treeError(childId, `plays an illegal move (${child.uci})`);
-      const fen = played.fen;
-      if (child.fenAfter !== fen && !sameFen(child.fenAfter, fen)) {
-        treeError(childId, "has a fenAfter that doesn't follow from its move");
-      }
-      if (seenMoves.has(uci)) treeError(childId, `repeats a sibling's move (${uci})`);
-      seenMoves.add(uci);
-      child.uci = uci;
-      child.san = played.san;
-      child.fenBefore = node.fenAfter;
-      child.fenAfter = fen;
-      child.ply = node.ply + 1;
+      replayChild(node, child, siblingMoves);
       reached.add(childId);
       pending.push(child);
     }
@@ -245,7 +266,7 @@ export function validateTree(nodes: readonly unknown[], rootFen: string): MoveNo
 }
 
 /** Metadata for nodes of `tree` only (entries for removed nodes are dropped). */
-export function sanitizeNodeMeta(
+function sanitizeNodeMeta(
   value: unknown,
   tree: readonly MoveNode[]
 ): Record<string, RepertoireNodeMeta> {
@@ -302,9 +323,6 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
   const rootFen = typeof chapter.rootFen === "string" ? chapter.rootFen.trim() : "";
   if (!rootFen || !isValidFen(rootFen))
     throw new Error("Invalid chapter rootFen: not a legal position");
-  if (chapter.kind !== "opening" && chapter.kind !== "reference") {
-    throw new Error("Invalid chapter kind: expected opening or reference");
-  }
   if (!Array.isArray(chapter.tree)) throw new Error("Invalid chapter tree: expected an array");
   const tree = validateTree(chapter.tree, rootFen);
   return {
@@ -312,14 +330,14 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
     title: chapterTitle(chapter.title),
     sortOrder: Number.isFinite(chapter.sortOrder) ? Math.trunc(chapter.sortOrder) : 0,
     kind: chapter.kind,
-    enabled: chapter.enabled !== false,
+    enabled: chapter.enabled,
     rootFen,
     revision,
     nodeCount: tree.length - 1,
     dueCount: 0,
     headers: sanitizeHeaders(chapter.headers),
     tree,
-    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta ?? {}, tree)
+    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta, tree)
   };
 }
 

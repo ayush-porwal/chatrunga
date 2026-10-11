@@ -135,14 +135,14 @@ describe("compareGameToRepertoire", () => {
     const result = compare("white", [ruy], ["e4", "e5", "Nf3", "Nc6", "Bb5"]);
     expect(result.issue).toBeNull();
     expect(result.matchedPlies).toBe(5);
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "player-choice",
       "covered-reply",
       "player-choice",
       "covered-reply",
       "player-choice"
     ]);
-    expect(result.moves.map((move) => move.san)).toEqual(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+    expect(result.moves.map((move) => move.san)).toStrictEqual(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
     expect(result.moves[2]).toMatchObject({ ply: 3, chapterId: "a", nodeId: "e4/e5" });
     expect(result).toMatchObject({
       repertoireId: "r1",
@@ -163,7 +163,7 @@ describe("compareGameToRepertoire", () => {
     // Both chapters recognize 2.Nc3's position; chapter b supplied the move, so it's credited.
     expect(result.moves[2]).toMatchObject({ status: "player-choice", chapterId: "b" });
     expect(result.moves[3]).toMatchObject({ status: "covered-reply", chapterId: "b" });
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a", "b"]);
   });
 
   it("reports a player deviation with the repertoire-wide accepted set", () => {
@@ -171,7 +171,7 @@ describe("compareGameToRepertoire", () => {
     const b = chapter("white", "b", [["e4", "e5", "Nc3"]], { sortOrder: 1 });
     const result = compare("white", [a, b], ["e4", "e5", "Bc4", "Nf6"]);
     expect(result.matchedPlies).toBe(2);
-    expect(result.issue).toEqual({
+    expect(result.issue).toStrictEqual({
       status: "player-deviation",
       ply: 3,
       fenBefore: fenAfter(["e4", "e5"]),
@@ -185,7 +185,7 @@ describe("compareGameToRepertoire", () => {
       chapterTitle: "Chapter a",
       nodeId: "e4/e5"
     });
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "player-choice",
       "covered-reply",
       "deviation",
@@ -206,7 +206,7 @@ describe("compareGameToRepertoire", () => {
       chapterId: "a",
       nodeId: "root"
     });
-    expect(result.moves.map((move) => move.status)).toEqual(["deviation", "outside-scope"]);
+    expect(result.moves.map((move) => move.status)).toStrictEqual(["deviation", "outside-scope"]);
   });
 
   it("reports an uncovered opponent reply with the covered ones", () => {
@@ -245,12 +245,12 @@ describe("compareGameToRepertoire", () => {
       nodeId: "e4/e5/Nf3"
     });
     // Positions after the stop are context only: the route's continuation isn't transposed-back.
-    expect(result.moves.slice(3).map((move) => move.status)).toEqual([
+    expect(result.moves.slice(3).map((move) => move.status)).toStrictEqual([
       "after-end",
       "after-end",
       "after-end"
     ]);
-    expect(result.returnedByTransposition).toEqual([]);
+    expect(result.returnedByTransposition).toStrictEqual([]);
   });
 
   it("preparation ends at a leaf, on either side's turn", () => {
@@ -281,7 +281,7 @@ describe("compareGameToRepertoire", () => {
       chapterId: "b",
       nodeId: "root"
     });
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "player-choice",
       "covered-reply",
       "player-choice",
@@ -290,7 +290,7 @@ describe("compareGameToRepertoire", () => {
       "after-end",
       "deviation"
     ]);
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a", "b"]);
   });
 
   it("falls back to preparation-ends when a later recognized stretch has no issue", () => {
@@ -325,8 +325,8 @@ describe("compareGameToRepertoire", () => {
     const b = chapter("white", "b", [["d4", "d5", "c4"]], { sortOrder: 1 });
     const result = compare("white", [a, b], ["d4", "d5"]);
     expect(result.issue).toBeNull();
-    expect(result.moves.map((move) => move.chapterId)).toEqual(["b", "b"]);
-    expect(result.chaptersUsed).toEqual([{ chapterId: "b", title: "Chapter b" }]);
+    expect(result.moves.map((move) => move.chapterId)).toStrictEqual(["b", "b"]);
+    expect(result.chaptersUsed).toStrictEqual([{ chapterId: "b", title: "Chapter b" }]);
   });
 
   it("counts an opponent reply that transposes into prepared material as covered", () => {
@@ -335,7 +335,7 @@ describe("compareGameToRepertoire", () => {
     const result = compare("white", [a, b], ["d4", "d5", "c4", "e6", "Nc3"]);
     expect(result.issue).toBeNull();
     expect(result.matchedPlies).toBe(5);
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "player-choice",
       "covered-reply",
       "player-choice",
@@ -345,7 +345,7 @@ describe("compareGameToRepertoire", () => {
     // 2…e6 isn't a covered edge after 2.c4 in chapter a; it lands on chapter b's 2…d5 position.
     expect(result.moves[3]).toMatchObject({ chapterId: "b", nodeId: "d4/e6/c4/d5" });
     expect(result.moves[4]).toMatchObject({ chapterId: "b", nodeId: "d4/e6/c4/d5" });
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a", "b"]);
   });
 
   it("a transposed reply after a leaf continues in the chapter it lands on", () => {
@@ -366,7 +366,7 @@ describe("compareGameToRepertoire", () => {
     expect(result.issue).toBeNull();
     expect(result.matchedPlies).toBe(0);
     expect(result.moves.every((move) => move.status === "outside-scope")).toBe(true);
-    expect(result.chaptersUsed).toEqual([{ chapterId: "a", title: "Chapter a" }]);
+    expect(result.chaptersUsed).toStrictEqual([{ chapterId: "a", title: "Chapter a" }]);
   });
 
   it("reports no applicable chapter when nothing matches", () => {
@@ -375,7 +375,7 @@ describe("compareGameToRepertoire", () => {
     const result = compare("black", [qgd], ["e4", "e5", "Nf3"]);
     expect(result.matchedPlies).toBe(0);
     expect(result.moves.every((move) => move.status === "outside-scope")).toBe(true);
-    expect(result.issue).toEqual({
+    expect(result.issue).toStrictEqual({
       status: "no-applicable-chapter",
       ply: 1,
       fenBefore: START_FEN,
@@ -389,7 +389,7 @@ describe("compareGameToRepertoire", () => {
       chapterTitle: null,
       nodeId: null
     });
-    expect(result.chaptersUsed).toEqual([]);
+    expect(result.chaptersUsed).toStrictEqual([]);
   });
 
   it("a custom-root Black-to-move chapter applies mid-game; earlier moves are outside its scope", () => {
@@ -404,7 +404,7 @@ describe("compareGameToRepertoire", () => {
       { rootFen: root }
     );
     const result = compare("white", [custom], ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"]);
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "outside-scope",
       "outside-scope",
       "outside-scope",
@@ -425,7 +425,7 @@ describe("compareGameToRepertoire", () => {
     });
     const result = compare("white", [opening, reference], ["e4", "c5", "Nf3"]);
     expect(result.issue).toMatchObject({ status: "uncovered-opponent", expectedUcis: ["e7e5"] });
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a"]);
 
     const withEdge = chapter(
       "white",
@@ -447,7 +447,7 @@ describe("compareGameToRepertoire", () => {
     const result = compare("white", [a], ["c4", "Nf6", "d4", "e6", "Nc3", "Bb4"]);
     expect(result.issue).toMatchObject({ status: "player-deviation", ply: 1, playedSan: "c4" });
     expect(result.matchedPlies).toBe(0);
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "deviation",
       "outside-scope",
       "outside-scope",
@@ -455,10 +455,10 @@ describe("compareGameToRepertoire", () => {
       "transposed-back",
       "transposed-back"
     ]);
-    expect(result.returnedByTransposition).toEqual([
+    expect(result.returnedByTransposition).toStrictEqual([
       { ply: 4, chapterId: "a", chapterTitle: "Chapter a", nodeId: "d4/Nf6/c4" }
     ]);
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a"]);
   });
 
   it("notes a return that starts right after the issue", () => {
@@ -466,22 +466,22 @@ describe("compareGameToRepertoire", () => {
     const b = chapter("white", "b", [["d5", "d4"]], { rootFen: fenAfter(["Nf3"]), sortOrder: 1 });
     const result = compare("white", [a, b], ["Nf3", "d5", "d4"]);
     expect(result.issue).toMatchObject({ status: "player-deviation", ply: 1, chapterId: "a" });
-    expect(result.moves.map((move) => move.status)).toEqual([
+    expect(result.moves.map((move) => move.status)).toStrictEqual([
       "deviation",
       "transposed-back",
       "transposed-back"
     ]);
-    expect(result.returnedByTransposition).toEqual([
+    expect(result.returnedByTransposition).toStrictEqual([
       { ply: 2, chapterId: "b", chapterTitle: "Chapter b", nodeId: "root" }
     ]);
-    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a"]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toStrictEqual(["a"]);
   });
 
   it("takes whose move it is from the position, not ply parity", () => {
     const root = fenAfter(["e4"]);
     const sicilian = chapter("black", "a", [["c5", "Nf3", "d6", "d4"]], { rootFen: root });
     const asBlack = compare("black", [sicilian], ["c5", "Nf3", "d6", "d4"], root);
-    expect(asBlack.moves.map((move) => [move.ply, move.status])).toEqual([
+    expect(asBlack.moves.map((move) => [move.ply, move.status])).toStrictEqual([
       [2, "player-choice"],
       [3, "covered-reply"],
       [4, "player-choice"],

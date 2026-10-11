@@ -58,7 +58,7 @@ describe("resolveUpdateMode", () => {
     for (const platform of ["win32", "darwin", "linux"] as const) {
       expect(
         resolveUpdateMode(env({ isPackaged: false, platform, macSigned: true, appImage: "/a" }))
-      ).toEqual({
+      ).toStrictEqual({
         mode: "disabled",
         reason: DEV_BUILD_MESSAGE,
         bundleSwap: false
@@ -71,7 +71,7 @@ describe("resolveUpdateMode", () => {
   });
 
   it("updates signed macOS builds through electron-updater", () => {
-    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: true }))).toEqual({
+    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: true }))).toStrictEqual({
       mode: "auto",
       reason: null,
       bundleSwap: false
@@ -81,7 +81,7 @@ describe("resolveUpdateMode", () => {
   it("updates unsigned macOS builds in place by swapping the bundle", () => {
     expect(
       resolveUpdateMode(env({ platform: "darwin", macSigned: false, macBundleReplaceable: true }))
-    ).toEqual({
+    ).toStrictEqual({
       mode: "auto",
       reason: null,
       bundleSwap: true
@@ -91,7 +91,7 @@ describe("resolveUpdateMode", () => {
   it("asks unsigned macOS builds that can't be replaced to move to Applications", () => {
     expect(
       resolveUpdateMode(env({ platform: "darwin", macSigned: false, macBundleReplaceable: false }))
-    ).toEqual({
+    ).toStrictEqual({
       mode: "manual",
       reason: MAC_NOT_REPLACEABLE_MESSAGE,
       bundleSwap: false
@@ -147,16 +147,16 @@ describe("parseAppUpdateConfig", () => {
   it("reads the GitHub feed electron-builder writes from build.publish", () => {
     const yml =
       "owner: ayush-porwal\nrepo: chatrunga\nprovider: github\nreleaseType: release\nupdaterCacheDirName: chaturanga-desktop-updater\n";
-    expect(parseAppUpdateConfig(yml)).toEqual(github);
+    expect(parseAppUpdateConfig(yml)).toStrictEqual(github);
   });
 
   it("reads a generic feed and strips quotes", () => {
-    expect(parseAppUpdateConfig("provider: generic\nurl: 'https://example.com/updates'\n")).toEqual(
-      {
-        provider: "generic",
-        url: "https://example.com/updates"
-      }
-    );
+    expect(
+      parseAppUpdateConfig("provider: generic\nurl: 'https://example.com/updates'\n")
+    ).toStrictEqual({
+      provider: "generic",
+      url: "https://example.com/updates"
+    });
   });
 
   it("returns null for incomplete or unknown feeds", () => {
@@ -346,9 +346,9 @@ describe("reduceUpdateStatus", () => {
 
   it("walks the automatic path: checking → available → downloading → ready", () => {
     let status = reduceUpdateStatus(idle, { type: "checking" });
-    expect(status).toEqual({ kind: "checking" });
+    expect(status).toStrictEqual({ kind: "checking" });
     status = reduceUpdateStatus(status, { type: "available", info, manualUrl: null });
-    expect(status).toEqual({
+    expect(status).toStrictEqual({
       kind: "available",
       version: "0.2.0",
       notes: "- new",
@@ -370,7 +370,7 @@ describe("reduceUpdateStatus", () => {
     });
     expect(status).toMatchObject({ kind: "downloading", percent: 100, transferredBytes: 900 });
     status = reduceUpdateStatus(status, { type: "downloaded", info });
-    expect(status).toEqual({
+    expect(status).toStrictEqual({
       kind: "ready",
       version: "0.2.0",
       notes: "- new",
@@ -405,7 +405,7 @@ describe("reduceUpdateStatus", () => {
   });
 
   it("reports up to date", () => {
-    expect(reduceUpdateStatus({ kind: "checking" }, { type: "not-available" })).toEqual({
+    expect(reduceUpdateStatus({ kind: "checking" }, { type: "not-available" })).toStrictEqual({
       kind: "up-to-date"
     });
   });
@@ -432,7 +432,7 @@ describe("reduceUpdateStatus", () => {
         { kind: "checking" },
         { type: "error", error: new Error("net::ERR_NAME_NOT_RESOLVED") }
       )
-    ).toEqual({
+    ).toStrictEqual({
       kind: "error",
       message: `${CHECK_FAILED_MESSAGE}: you appear to be offline.`
     });
@@ -445,7 +445,9 @@ describe("reduceUpdateStatus", () => {
       transferredBytes: 1,
       totalBytes: 10
     };
-    expect(reduceUpdateStatus(downloading, { type: "error", error: new Error("boom") })).toEqual({
+    expect(
+      reduceUpdateStatus(downloading, { type: "error", error: new Error("boom") })
+    ).toStrictEqual({
       kind: "error",
       message: "Couldn’t download the update."
     });
@@ -486,7 +488,7 @@ describe("macUpdateZip", () => {
   const update = { version: "0.2.0", files };
 
   it("picks the release ZIP for this CPU with its checksum", () => {
-    expect(macUpdateZip(github, update, "arm64")).toEqual({
+    expect(macUpdateZip(github, update, "arm64")).toStrictEqual({
       url: "https://github.com/ayush-porwal/chatrunga/releases/download/v0.2.0/Chaturanga-0.2.0-mac-arm64.zip",
       sha512: "sha-Chaturanga-0.2.0-mac-arm64.zip",
       size: 110
@@ -542,7 +544,7 @@ describe("BUNDLE_SWAP_SCRIPT", () => {
     expect(result.stdout.trim()).toBe("installed");
     expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("new");
     expect(existsSync(staged)).toBe(false);
-    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
+    expect(readdirSync(join(target, ".."))).toStrictEqual(["Chaturanga.app"]);
   });
 
   it("leaves the app untouched when the new version can't be staged next to it", () => {
@@ -554,7 +556,7 @@ describe("BUNDLE_SWAP_SCRIPT", () => {
     );
     expect(result.stdout.trim()).toBe("failed: could not copy the new version next to the app");
     expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("old");
-    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
+    expect(readdirSync(join(target, ".."))).toStrictEqual(["Chaturanga.app"]);
   });
 
   it("isn't confused by leftovers from an earlier run", () => {
@@ -583,8 +585,8 @@ describe("BUNDLE_SWAP_SCRIPT", () => {
 
 describe("swapResult", () => {
   it("reads the result line the swap script ends with", () => {
-    expect(swapResult("installed\n")).toEqual({ installed: true, detail: "installed" });
-    expect(swapResult("noise\nfailed: could not move the current version aside\n")).toEqual({
+    expect(swapResult("installed\n")).toStrictEqual({ installed: true, detail: "installed" });
+    expect(swapResult("noise\nfailed: could not move the current version aside\n")).toStrictEqual({
       installed: false,
       detail: "could not move the current version aside"
     });

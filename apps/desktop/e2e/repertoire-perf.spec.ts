@@ -146,10 +146,10 @@ test(
     const file = join(profile, "backup.json");
     await app.evaluate(({ dialog }, file) => {
       const previous = dialog.showSaveDialog.bind(dialog);
-      dialog.showSaveDialog = (async () => {
+      dialog.showSaveDialog = async () => {
         dialog.showSaveDialog = previous;
         return { canceled: false, filePath: file };
-      }) as typeof dialog.showSaveDialog;
+      };
     }, file);
     const exported = await page.evaluate(
       (id) =>

@@ -97,12 +97,13 @@ export function classifyOpening(
   let named: { move: BookLineMove; name: OpeningName } | null = null;
   for (let index = last; index >= 0 && !named; index -= 1) {
     const move = moves[index];
-    const name = move && inLine[index] ? openingAt(book, move.fenAfter) : null;
-    if (move && name) named = { move, name };
+    const name = inLine[index] ? openingAt(book, move.fenAfter) : null;
+    if (name) named = { move, name };
   }
+  if (!named) return { book: inLine, opening: null };
+  // A named book move means `last` indexes a move; the one after it may be past the end.
   const end = moves[last];
-  if (!named || !end) return { book: inLine, opening: null };
-  const next = moves[last + 1];
+  const next = moves.at(last + 1);
   return {
     book: inLine,
     opening: {

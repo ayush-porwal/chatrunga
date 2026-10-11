@@ -79,7 +79,7 @@ export type TreeShape = {
  * leave from random earlier nodes (so lines branch off lines, at every depth). Moves are random
  * legal moves, unique per parent.
  */
-export function generateTree(random: () => number, shape: TreeShape): MoveNode[] {
+function generateTree(random: () => number, shape: TreeShape): MoveNode[] {
   const root: MoveNode = {
     id: "root",
     parentId: null,

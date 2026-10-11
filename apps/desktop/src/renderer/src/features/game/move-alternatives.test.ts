@@ -32,7 +32,7 @@ const bestLineOf = (nodeId: string) => (nodeId === nxe5.id ? best : []);
 function press(position: MovePosition, delta: 1 | -1, tree = trap.tree, lines = bestLineOf) {
   const target = alternativeTarget(tree, position, lines, delta);
   if (!target) return null;
-  if (target.kind === "best") return `best ${target.cursor.moves[target.cursor.index]!.san}`;
+  if (target.kind === "best") return `best ${target.cursor.moves[target.cursor.index].san}`;
   return tree.find((node) => node.id === target.nodeId)!.san;
 }
 const node = (moveNode: MoveNode): MovePosition => ({ kind: "node", nodeId: moveNode.id });
@@ -44,7 +44,12 @@ const onBest = (index: number): MovePosition => ({
 describe("alternativeGroup", () => {
   it("lists the game's move, its BEST line, then the variations played instead of it", () => {
     const group = alternativeGroup(trap.tree, node(nxe5), bestLineOf)!;
-    expect(group.alternatives.map((item) => item.kind)).toEqual(["line", "best", "line", "line"]);
+    expect(group.alternatives.map((item) => item.kind)).toStrictEqual([
+      "line",
+      "best",
+      "line",
+      "line"
+    ]);
     expect(group.current).toBe(0);
     expect(group.depth).toBe(0);
   });

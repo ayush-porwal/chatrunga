@@ -10,6 +10,36 @@ import {
 
 const T0 = Date.UTC(2026, 9, 2, 9, 30);
 
+type Database = ReturnType<typeof telemetryDatabase>;
+
+/** The database, except that running a statement starting with `prefix` throws while `failing`. */
+function failingExec(db: Database, prefix: string, message: string, failing: () => boolean) {
+  return {
+    prepare: (sql: string) => db.prepare(sql),
+    exec: (sql: string) => {
+      if (failing() && sql.startsWith(prefix)) throw new Error(message);
+      return db.exec(sql);
+    }
+  } as unknown as Database;
+}
+
+/** The database, except that preparing a statement starting with `prefix` throws while `failing`. */
+function failingPrepare(db: Database, prefix: string, message: string, failing: () => boolean) {
+  return {
+    prepare: (sql: string) => {
+      if (failing() && sql.startsWith(prefix)) throw new Error(message);
+      return db.prepare(sql);
+    },
+    exec: (sql: string) => db.exec(sql)
+  } as unknown as Database;
+}
+
+/** The day (user_active) or milestone (activation_milestone) a counting event names. */
+function dayOrMilestone(payloadJson: string): string | undefined {
+  const payload = JSON.parse(payloadJson) as { utc_day?: string; milestone?: string };
+  return payload.utc_day ?? payload.milestone;
+}
+
 describe("TelemetryService delivery", () => {
   it("keeps events offline across a restart and resends them with the same uuid and time", async () => {
     const db = telemetryDatabase();
@@ -35,14 +65,14 @@ describe("TelemetryService delivery", () => {
     const second = makeService({ db, fetchImpl: endpoint.fetchImpl, now: () => now });
     second.start();
     await second.drain();
-    expect(endpoint.events()).toEqual([
+    expect(endpoint.events()).toStrictEqual([
       expect.objectContaining({
         uuid: queued.uuid,
         event: "review_started",
         timestamp: new Date(T0).toISOString()
       })
     ]);
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
   });
 
   it("sends a stable pseudonymous identity and no person profile or location", async () => {
@@ -92,7 +122,7 @@ describe("TelemetryService delivery", () => {
     service.record("review_completed");
     await Promise.all([service.drain(), service.drain(), service.drain()]);
     expect(endpoint.fetchImpl).toHaveBeenCalledTimes(1);
-    expect(endpoint.events().map((event) => event.event)).toEqual([
+    expect(endpoint.events().map((event) => event.event)).toStrictEqual([
       "review_started",
       "review_completed"
     ]);
@@ -120,7 +150,7 @@ describe("TelemetryService delivery", () => {
     now += 60_000;
     endpoint.setStatus(400);
     await service.drain();
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
 
     // A batch failing every time is given up after OUTBOX_MAX_ATTEMPTS.
     endpoint.setStatus(429);
@@ -129,7 +159,7 @@ describe("TelemetryService delivery", () => {
       now += 2 * 60 * 60 * 1000;
       await service.drain();
     }
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
   });
 
   it("applies the queue's size and age limits", async () => {
@@ -142,7 +172,7 @@ describe("TelemetryService delivery", () => {
     now += OUTBOX_MAX_AGE_MS + 1;
     service.record("review_completed");
     await service.drain();
-    expect(outboxRows(db).map((row) => row.event)).toEqual(["review_completed"]);
+    expect(outboxRows(db).map((row) => row.event)).toStrictEqual(["review_completed"]);
 
     const insert = db.prepare(
       "INSERT INTO telemetry_outbox (uuid, event, occurred_at, payload_json) VALUES (?, 'x', ?, '{}')"
@@ -150,7 +180,7 @@ describe("TelemetryService delivery", () => {
     for (let index = 0; index < OUTBOX_MAX_EVENTS + 5; index += 1)
       insert.run(`bulk-${index}`, now - 1_000 + index);
     await service.drain();
-    expect(db.prepare("SELECT COUNT(*) AS n FROM telemetry_outbox").get()).toEqual({
+    expect({ ...db.prepare("SELECT COUNT(*) AS n FROM telemetry_outbox").get() }).toStrictEqual({
       n: OUTBOX_MAX_EVENTS
     });
   });
@@ -166,7 +196,7 @@ describe("TelemetryService collection controls", () => {
     service.markActive("study");
     service.milestone("engine_ready");
     await service.drain();
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     expect(endpoint.fetchImpl).not.toHaveBeenCalled();
     expect(service.gameRef("game-1")).toBeNull();
   });
@@ -183,16 +213,16 @@ describe("TelemetryService collection controls", () => {
 
     consent = false;
     service.refreshConsent();
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     service.record("review_started");
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     expect(service.status()).toMatchObject({ available: true, enabled: false, pending: 0 });
 
     // Turned on again later: collection resumes, nothing old comes back.
     consent = true;
     service.refreshConsent();
     service.record("review_opened");
-    expect(outboxRows(db).map((row) => row.event)).toEqual(["review_opened"]);
+    expect(outboxRows(db).map((row) => row.event)).toStrictEqual(["review_opened"]);
   });
 
   it("a hard disable (or no project) purges what an earlier run queued and never sends", async () => {
@@ -211,7 +241,7 @@ describe("TelemetryService collection controls", () => {
     disabled.start();
     disabled.record("review_completed");
     await disabled.drain();
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     expect(endpoint.fetchImpl).not.toHaveBeenCalled();
     expect(disabled.status()).toMatchObject({
       available: false,
@@ -224,13 +254,7 @@ describe("TelemetryService opt-out deletion", () => {
   it("a failed deletion is retried, and collection doesn't resume until it succeeds", async () => {
     const db = telemetryDatabase();
     let failDeletes = true;
-    const flaky = {
-      prepare: (sql: string) => db.prepare(sql),
-      exec: (sql: string) => {
-        if (failDeletes && sql.startsWith("DELETE")) throw new Error("SQLITE_BUSY");
-        return db.exec(sql);
-      }
-    } as unknown as typeof db;
+    const flaky = failingExec(db, "DELETE", "SQLITE_BUSY", () => failDeletes);
     const endpoint = fakeEndpoint();
     let consent = true;
     const service = makeService({
@@ -255,7 +279,7 @@ describe("TelemetryService opt-out deletion", () => {
 
     failDeletes = false;
     service.refreshConsent();
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     expect(service.enabled).toBe(true);
   });
 });
@@ -278,12 +302,7 @@ describe("TelemetryService counting helpers", () => {
       event: string;
       payload_json: string;
     }[];
-    expect(
-      rows.map((row) => {
-        const payload = JSON.parse(row.payload_json) as { utc_day?: string; milestone?: string };
-        return [row.event, payload.utc_day ?? payload.milestone];
-      })
-    ).toEqual([
+    expect(rows.map((row) => [row.event, dayOrMilestone(row.payload_json)])).toStrictEqual([
       ["user_active", "2026-10-02"],
       ["activation_milestone", "review_completed"],
       ["user_active", "2026-10-03"]
@@ -293,27 +312,28 @@ describe("TelemetryService counting helpers", () => {
   it("a day or milestone whose event couldn't be queued is recorded on the next try", () => {
     const db = telemetryDatabase();
     let failInserts = true;
-    const flaky = {
-      prepare: (sql: string) => {
-        if (failInserts && sql.startsWith("INSERT OR IGNORE INTO telemetry_outbox"))
-          throw new Error("SQLITE_FULL");
-        return db.prepare(sql);
-      },
-      exec: (sql: string) => db.exec(sql)
-    } as unknown as typeof db;
+    const flaky = failingPrepare(
+      db,
+      "INSERT OR IGNORE INTO telemetry_outbox",
+      "SQLITE_FULL",
+      () => failInserts
+    );
     const service = makeService({ db, database: () => flaky, now: () => T0, log: () => undefined });
     service.start();
     // Not counted: the renderer is told, so its throttle lets the next report through.
     expect(service.markActive("study")).toBe(false);
     service.milestone("engine_ready");
-    expect(outboxRows(db)).toEqual([]);
+    expect(outboxRows(db)).toStrictEqual([]);
     failInserts = false;
     expect(service.markActive("study")).toBe(true);
     // Already counted today: still true (nothing more to report).
     expect(service.markActive("play")).toBe(true);
     service.markActive("study");
     service.milestone("engine_ready");
-    expect(outboxRows(db).map((row) => row.event)).toEqual(["user_active", "activation_milestone"]);
+    expect(outboxRows(db).map((row) => row.event)).toStrictEqual([
+      "user_active",
+      "activation_milestone"
+    ]);
   });
 
   it("derives a stable game pseudonym that isn't the library id", () => {
@@ -382,7 +402,7 @@ describe("TelemetryService failure isolation and shutdown", () => {
     service.start();
     service.record("review_completed");
     await service.shutdown();
-    expect(endpoint.events().map((event) => event.event)).toEqual(["review_completed"]);
-    expect(outboxRows(db)).toEqual([]);
+    expect(endpoint.events().map((event) => event.event)).toStrictEqual(["review_completed"]);
+    expect(outboxRows(db)).toStrictEqual([]);
   });
 });

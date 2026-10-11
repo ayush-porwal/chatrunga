@@ -24,6 +24,19 @@ const lookup = buildChapterLookup({
   tree: addLine([rootNode()], "root", ["e2e4", "c7c5", "g1f3", "d7d6"], "s").tree
 });
 
+/** A read that records what it was asked and answers `answer`; `duringFirst` runs during the first. */
+function recordingRead(
+  reads: string[][],
+  answer: Record<string, string[]>,
+  duringFirst: () => void
+) {
+  return async (asked: string[]) => {
+    reads.push(asked);
+    if (reads.length === 1) duringFirst();
+    return answer;
+  };
+}
+
 describe("moveLabel", () => {
   it("numbers a move as it reads on its own", () => {
     expect(moveLabel(lookup, "s0")).toBe("1. e4");
@@ -158,7 +171,7 @@ describe("practiceEmptyExplanation", () => {
   };
 
   it("names the chapter and the cause when nothing in scope practises anything", () => {
-    expect(practiceEmptyExplanation("rehearse-lines", [reference], false)).toEqual({
+    expect(practiceEmptyExplanation("rehearse-lines", [reference], false)).toStrictEqual({
       title: "Nothing to practise in “Chapter 1”",
       detail: "1. e4 is reference only, so nothing from it on is asked.",
       more: "Moves you play in Study start as reference.",
@@ -182,7 +195,7 @@ describe("practiceEmptyExplanation", () => {
   });
 
   it("otherwise explains what each mode found", () => {
-    expect(practiceEmptyExplanation("review-due", [], true)).toEqual({
+    expect(practiceEmptyExplanation("review-due", [], true)).toStrictEqual({
       title: "No reviews due",
       detail: "Everything in this scope is scheduled for later.",
       offerLearnNew: true
@@ -236,7 +249,7 @@ describe("studyPracticeAvailability", () => {
         paused,
         rehearsableLines: 0
       })
-    ).toEqual({
+    ).toStrictEqual({
       practice: "Nothing to practise yet: your moves here are kept as reference.",
       rehearse: "Nothing to practise yet: your moves here are kept as reference."
     });
@@ -258,7 +271,7 @@ describe("studyPracticeAvailability", () => {
         paused,
         rehearsableLines: 0
       })
-    ).toEqual({
+    ).toStrictEqual({
       practice: "Every decision in this chapter is paused (see Notes).",
       rehearse: "Every decision in this chapter is paused (see Notes)."
     });
@@ -269,7 +282,7 @@ describe("studyPracticeAvailability", () => {
         paused,
         rehearsableLines: 0
       })
-    ).toEqual({ practice: null, rehearse: "No line in this chapter asks a move of yours." });
+    ).toStrictEqual({ practice: null, rehearse: "No line in this chapter asks a move of yours." });
     expect(
       studyPracticeAvailability({
         blocker: null,
@@ -277,19 +290,19 @@ describe("studyPracticeAvailability", () => {
         paused,
         rehearsableLines: 2
       })
-    ).toEqual({ practice: null, rehearse: null });
+    ).toStrictEqual({ practice: null, rehearse: null });
   });
 });
 
 describe("importPracticeNote", () => {
   it("says what a game will practise as each kind of chapter", () => {
-    expect(importPracticeNote("reference", 4, "white")).toEqual({
+    expect(importPracticeNote("reference", 4, "white")).toStrictEqual({
       text: "Reference: kept for study only, never practised.",
       warn: false
     });
     expect(importPracticeNote("opening", 4, "white").text).toMatch(/^4 decisions to practise/);
     expect(importPracticeNote("opening", 1, "white").text).toMatch(/^1 decision to practise/);
-    expect(importPracticeNote("opening", 0, "black")).toEqual({
+    expect(importPracticeNote("opening", 0, "black")).toStrictEqual({
       text: "No moves of yours (Black) to practise in this game.",
       warn: true
     });
@@ -322,16 +335,16 @@ describe("includeInPracticePlan", () => {
     });
     // The positions on the first moves' lines; Nc3 is practised after 1... c5, so then the
     // position after 2... Nc6 too.
-    expect(reads).toEqual([[keys.get("root"), keys.get("s1")], [keys.get("v1")]]);
-    expect(plan.widened).toEqual([]);
-    expect(plan.acceptedAt(keys.get("s1")!)).toEqual(["b1c3"]);
+    expect(reads).toStrictEqual([[keys.get("root"), keys.get("s1")], [keys.get("v1")]]);
+    expect(plan.widened).toStrictEqual([]);
+    expect(plan.acceptedAt(keys.get("s1")!)).toStrictEqual(["b1c3"]);
   });
 
   it("lists the picks that add a move where other chapters practise another, and asks about them", async () => {
     const plan = await includeInPracticePlan("white", chapter, async () => ({
       [keys.get("s1")!]: ["f2f4"]
     }));
-    expect(plan.widened.map((pick) => pick.childId)).toEqual(["s2"]);
+    expect(plan.widened.map((pick) => pick.childId)).toStrictEqual(["s2"]);
     expect(wideningQuestion(buildChapterLookup(chapter), plan.widened)).toBe(
       "Your other chapters play a different move after 1. e4 c5. Including also accepts 2. Nf3 there."
     );
@@ -361,19 +374,17 @@ describe("includeInPracticePlan", () => {
     const plan = await currentIncludePlan(
       "white",
       () => open,
-      async (asked) => {
-        reads.push(asked);
-        // 2. Nc3 Nc6 3. g3 is added while the first read runs.
-        if (reads.length === 1) open = { chapter, generation: 2 };
-        return { [keys.get("s1")!]: ["b1c3"] };
-      }
+      // 2. Nc3 Nc6 3. g3 is added while the first read runs.
+      recordingRead(reads, { [keys.get("s1")!]: ["b1c3"] }, () => {
+        open = { chapter, generation: 2 };
+      })
     );
     expect(plan?.chapter).toBe(chapter);
     expect(plan?.generation).toBe(2);
     // The edited chapter's positions are read, the one its new line reaches included.
-    expect(reads.at(-1)).toEqual([keys.get("v1")]);
-    expect(plan?.acceptedAt(keys.get("s1")!)).toEqual(["b1c3"]);
-    expect(plan?.widened).toEqual([]);
+    expect(reads.at(-1)).toStrictEqual([keys.get("v1")]);
+    expect(plan?.acceptedAt(keys.get("s1")!)).toStrictEqual(["b1c3"]);
+    expect(plan?.widened).toStrictEqual([]);
 
     let shown: IncludeSnapshot<typeof chapter> = { chapter, generation: 1 };
     const closed = await currentIncludePlan(

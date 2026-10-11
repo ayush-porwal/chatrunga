@@ -134,7 +134,7 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     rejected: reason
   });
 
-  const variant = headers.Variant?.trim();
+  const variant = game.headers.get("Variant")?.trim();
   if (variant && !SUPPORTED_VARIANTS.has(variant.toLowerCase())) {
     return rejectedGame(`Unsupported variant "${variant}": only standard chess can be imported.`);
   }
@@ -160,7 +160,7 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     root.comment = rootAnnotation.text;
     root.arrows = rootAnnotation.arrows;
     root.highlights = rootAnnotation.highlights;
-    for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
+    for (const child of game.moves.children) appendMove(builder, root, [], child);
   } catch (error) {
     // The move limit can be reached before this game's over-long comment is read: the comment
     // still rejects the game alone (its moves don't count), rather than failing the import.
@@ -255,11 +255,11 @@ function appendMove(
   builder: TreeBuilder,
   parent: MoveNode,
   path: MoveNode[],
-  child: ChildNode<PgnNodeData>,
-  depth: number
+  child: ChildNode<PgnNodeData>
 ): void {
   const { budget } = builder;
-  if (depth > budget.maxDepth) {
+  // The path holds the moves before this one.
+  if (path.length + 1 > budget.maxDepth) {
     throw new Error(
       `A line is longer than ${budget.maxDepth} moves (at ${formatPath(path) || "the start"}). ` +
         "Repertoire chapters hold opening lines; trim the game before importing it."
@@ -319,7 +319,7 @@ function appendMove(
 
   const nextPath = [...path, node];
   for (const grandChild of child.children) {
-    appendMove(builder, node, nextPath, grandChild, depth + 1);
+    appendMove(builder, node, nextPath, grandChild);
   }
 }
 
@@ -389,10 +389,13 @@ export function exportRepertoirePgn(chapters: readonly ExportableChapter[]): str
 function exportChapter(chapter: ExportableChapter): string {
   const tag = (name: string, value: string) => `[${name} "${escapeHeader(value)}"]`;
   const lines = [tag("Event", chapter.title)];
+  // A chapter holds only the tags its PGN had: any of these may be missing.
+  const headers: Partial<Record<string, string>> = chapter.headers;
   for (const name of ROSTER_TAGS) {
-    if (chapter.headers[name] !== undefined) lines.push(tag(name, chapter.headers[name]));
+    const value = headers[name];
+    if (value !== undefined) lines.push(tag(name, value));
   }
-  const result = chapter.headers.Result?.trim() || "*";
+  const result = headers.Result?.trim() || "*";
   lines.push(tag("Result", result));
   for (const [name, value] of Object.entries(chapter.headers)) {
     if (OWNED_TAGS.has(name) || ROSTER_TAGS.includes(name)) continue;

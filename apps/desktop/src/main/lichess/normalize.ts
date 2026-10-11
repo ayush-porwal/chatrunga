@@ -81,7 +81,7 @@ export function normalizeAccount(
 }
 
 /** A game player (`GameEventPlayer`) or challenge user; the Lichess AI has only `aiLevel`. */
-export function normalizePlayer(value: unknown): LichessPlayer {
+function normalizePlayer(value: unknown): LichessPlayer {
   const json = asJson(value);
   const aiLevel = int(json.aiLevel);
   if (aiLevel !== null) {
@@ -247,7 +247,7 @@ export function eventFromStream(value: unknown, myId: string): LichessEvent | nu
  * Lichess estimates a game's length as `limit + 40 × increment` seconds; below 8 minutes it is
  * blitz or faster, which third-party apps may not seek or play through the Board API.
  */
-export const RAPID_MIN_ESTIMATE_SECONDS = 480;
+const RAPID_MIN_ESTIMATE_SECONDS = 480;
 
 export function estimatedGameSeconds(minutes: number, incrementSec: number): number {
   return minutes * 60 + 40 * incrementSec;

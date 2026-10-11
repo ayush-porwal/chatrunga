@@ -130,15 +130,15 @@ describe("pickInProgress", () => {
 
 describe("savedEngineGameSides", () => {
   it("finds you by the name Play writes, on exactly one side", () => {
-    expect(savedEngineGameSides("You", "Maia 1500 (managed)")).toEqual({
+    expect(savedEngineGameSides("You", "Maia 1500 (managed)")).toStrictEqual({
       human: "white",
       engine: "Maia 1500"
     });
-    expect(savedEngineGameSides("Stockfish", "you")).toEqual({
+    expect(savedEngineGameSides("Stockfish", "you")).toStrictEqual({
       human: "black",
       engine: "Stockfish"
     });
-    expect(savedEngineGameSides("You", null)).toEqual({ human: "white", engine: "Engine" });
+    expect(savedEngineGameSides("You", null)).toStrictEqual({ human: "white", engine: "Engine" });
     expect(savedEngineGameSides("Alice", null)).toBeNull();
     expect(savedEngineGameSides("You", "you")).toBeNull();
   });
@@ -168,11 +168,11 @@ describe("mainlineSummary", () => {
       node("side", "root", "d2d4", []),
       node("b", "a", "e7e5", [])
     ];
-    expect(mainlineSummary(tree)).toEqual({ fen: "b-fen", lastMove: "e7e5", plies: 2 });
+    expect(mainlineSummary(tree)).toStrictEqual({ fen: "b-fen", lastMove: "e7e5", plies: 2 });
   });
 
   it("is the root position, without a last move, for a game with no moves", () => {
-    expect(mainlineSummary([node("root", null, null, [])])).toEqual({
+    expect(mainlineSummary([node("root", null, null, [])])).toStrictEqual({
       fen: "root-fen",
       lastMove: null,
       plies: 0

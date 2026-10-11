@@ -12,7 +12,7 @@ export const RUY_LOPEZ_PGN = `[Event "E2E smoke"]
 `;
 
 /** King and pawn against king, white to move: three pieces on the board. */
-export const ENDGAME_FEN = "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1";
+const ENDGAME_FEN = "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1";
 export const ENDGAME_PGN = `[Event "E2E position"]
 [SetUp "1"]
 [FEN "${ENDGAME_FEN}"]

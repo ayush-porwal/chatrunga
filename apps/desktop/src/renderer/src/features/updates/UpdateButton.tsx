@@ -5,7 +5,9 @@ import {
   useRef,
   useState,
   type FocusEvent,
-  type MouseEvent
+  type MouseEvent,
+  type ReactNode,
+  type Ref
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -218,62 +220,105 @@ export const UpdateButton = memo(function UpdateButton({
             onPointerLeave={hoverOut}
             onFocus={onFocus}
             onBlur={onBlur}
-            className={cn(
-              "relative text-fg-secondary [-webkit-app-region:no-drag] hover:bg-control hover:text-fg aria-expanded:bg-control",
-              accent && "text-accent hover:text-accent aria-expanded:text-accent",
-              disabled &&
-                "cursor-default text-fg-subtle hover:bg-transparent hover:text-fg-subtle active:scale-100",
-              className
-            )}
+            className={updateButtonClass({ accent, disabled }, className)}
           >
             <UpdateIcon view={view} />
           </Button>
         </TooltipTrigger>
         {view.hasUpdate ? null : (
           <TooltipContent side={tooltipSide} className="max-w-64">
-            <span className="grid gap-0.5">
-              <span className={cn(view.visual === "up-to-date" && "text-accent-fg")}>
-                {view.label}
-              </span>
-              {view.detail ? <span className="text-fg-muted">{view.detail}</span> : null}
-            </span>
+            <UpdateTooltipText view={view} />
           </TooltipContent>
         )}
       </Tooltip>
       {present && anchor && state
         ? createPortal(
-            // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the hover card stays open while the pointer is on it
-            <div
+            <UpdateCardPopover
               ref={cardRef}
-              role="dialog"
-              aria-label={view.label}
-              tabIndex={-1}
-              data-state={presence}
-              onPointerEnter={hoverIn}
-              onPointerLeave={hoverOut}
-              onBlur={onBlur}
-              className={cn(
-                "fixed z-[80] w-[min(21.25rem,calc(100vw-80px))] outline-none",
-                presence === "closed" && "pointer-events-none"
-              )}
-              style={{ left: anchor.left, bottom: anchor.bottom }}
+              label={view.label}
+              anchor={anchor}
+              presence={presence}
+              hover={{ onPointerEnter: hoverIn, onPointerLeave: hoverOut, onBlur }}
             >
-              <span
-                aria-hidden="true"
-                data-state={presence}
-                className={cn(
-                  frost,
-                  "rounded-xl animate-fade-in data-[state=closed]:animate-fade-out"
-                )}
-              />
               <ChangelogCard state={state} presence={presence} onBrowserOpened={closeCard} />
-            </div>,
+            </UpdateCardPopover>,
             document.body
           )
         : null}
     </>
   );
 });
+
+/** The button's classes: accent with an update, dimmed where updates don't work (development). */
+function updateButtonClass(
+  { accent, disabled }: { accent: boolean; disabled: boolean },
+  className: string | undefined
+): string {
+  return cn(
+    "relative text-fg-secondary [-webkit-app-region:no-drag] hover:bg-control hover:text-fg aria-expanded:bg-control",
+    accent && "text-accent hover:text-accent aria-expanded:text-accent",
+    disabled &&
+      "cursor-default text-fg-subtle hover:bg-transparent hover:text-fg-subtle active:scale-100",
+    className
+  );
+}
+
+/** The tooltip without an update: the state ("You're up to date" in accent) and its detail. */
+function UpdateTooltipText({ view }: { view: UpdateButtonView }) {
+  return (
+    <span className="grid gap-0.5">
+      <span className={cn(view.visual === "up-to-date" && "text-accent-fg")}>{view.label}</span>
+      {view.detail ? <span className="text-fg-muted">{view.detail}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * The changelog card's floating frame beside the button (`anchor`), fading with `presence`; it
+ * stays open while the pointer is on it (`hover`).
+ */
+function UpdateCardPopover({
+  ref,
+  label,
+  anchor,
+  presence,
+  hover,
+  children
+}: {
+  ref: Ref<HTMLDivElement>;
+  label: string;
+  anchor: { left: number; bottom: number };
+  presence: ReturnType<typeof usePresence>["state"];
+  hover: {
+    onPointerEnter: () => void;
+    onPointerLeave: () => void;
+    onBlur: (event: FocusEvent<HTMLElement>) => void;
+  };
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={label}
+      tabIndex={-1}
+      data-state={presence}
+      {...hover}
+      className={cn(
+        "fixed z-[80] w-[min(21.25rem,calc(100vw-80px))] outline-none",
+        presence === "closed" && "pointer-events-none"
+      )}
+      style={{ left: anchor.left, bottom: anchor.bottom }}
+    >
+      <span
+        aria-hidden="true"
+        data-state={presence}
+        className={cn(frost, "rounded-xl animate-fade-in data-[state=closed]:animate-fade-out")}
+      />
+      {children}
+    </div>
+  );
+}
 
 function UpdateIcon({ view }: { view: UpdateButtonView }) {
   switch (view.visual) {

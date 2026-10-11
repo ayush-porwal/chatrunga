@@ -3,7 +3,10 @@ import type {
   ExplainPuzzleInput,
   ExplainPuzzleResult
 } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
+import type {
+  PuzzleInsightPayload,
+  PuzzleOutcomeKind
+} from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type {
   AnalysePositionsInput,
@@ -17,7 +20,8 @@ import { usePuzzleStore, type PuzzleWrongMove } from "../../stores/puzzle-store"
 import {
   buildPuzzleExplanationPayload,
   explainSearchPlan,
-  puzzleIdentity
+  puzzleIdentity,
+  type ExplainAnalysis
 } from "./puzzle-explanation";
 import { nonSolutionSan } from "./puzzle-prose";
 
@@ -28,7 +32,7 @@ import { nonSolutionSan } from "./puzzle-prose";
  * previous one.
  */
 
-export type ExplainPhase = "analysing" | "writing" | "ready" | "error";
+type ExplainPhase = "analysing" | "writing" | "ready" | "error";
 
 export type ExplainEntry = {
   phase: ExplainPhase;
@@ -46,9 +50,11 @@ export type ExplainEntry = {
   cancel: (() => void) | null;
 };
 
-export const usePuzzleExplanationStore = create<{ entries: Record<string, ExplainEntry> }>(() => ({
-  entries: {}
-}));
+export const usePuzzleExplanationStore = create<{ entries: Partial<Record<string, ExplainEntry>> }>(
+  () => ({
+    entries: {}
+  })
+);
 
 /** What a request talks to: the desktop bridge, or a test double. */
 export type ExplainDeps = {
@@ -98,7 +104,7 @@ function patchEntry(key: string, requestId: string, patch: Partial<ExplainEntry>
 
 function desktopDeps(): ExplainDeps | null {
   const api = window.chaturanga;
-  if (!api?.engines.analysePositions || !api.commentary.explainPuzzle) return null;
+  if (!api) return null;
   return {
     analysePositions: (input) => api.engines.analysePositions(input),
     explainPuzzle: (input) => api.commentary.explainPuzzle(input),
@@ -106,6 +112,20 @@ function desktopDeps(): ExplainDeps | null {
     cancelWriting: (requestId) =>
       void api.commentary.cancelPuzzleExplanation(requestId).catch(() => undefined),
     newId: () => crypto.randomUUID()
+  };
+}
+
+/** The lines the search found for each position of its plan (none for a position not searched). */
+function searchedLines(
+  analysis: AnalysePositionsResult,
+  plan: ReturnType<typeof explainSearchPlan>
+): ExplainAnalysis {
+  const at = (index: number | null) => (index === null ? null : (analysis.lines[index] ?? []));
+  return {
+    engineName: analysis.engineName,
+    start: at(plan.start) ?? [],
+    beforeMistake: at(plan.beforeMistake),
+    afterMistake: at(plan.afterMistake)
   };
 }
 
@@ -138,7 +158,8 @@ export async function requestPuzzleExplanation(
     });
     return;
   }
-  if (!request.engine) {
+  const engine = request.engine;
+  if (!engine) {
     setEntry(key, {
       ...base,
       phase: "error",
@@ -165,7 +186,7 @@ export async function requestPuzzleExplanation(
   try {
     analysis = await deps.analysePositions({
       requestId,
-      engineId: request.engine.id,
+      engineId: engine.id,
       moveTimeMs: request.settings.reviewSearchTimeMs,
       positions: plan.positions
     });
@@ -175,27 +196,40 @@ export async function requestPuzzleExplanation(
     );
     return;
   }
-  const at = (index: number | null) => (index === null ? null : (analysis.lines[index] ?? []));
-  const payload = buildPuzzleExplanationPayload({
-    puzzle,
-    kind: request.kind,
-    wrong: request.wrong,
-    analysis: {
-      engineName: analysis.engineName,
-      start: at(plan.start) ?? [],
-      beforeMistake: at(plan.beforeMistake),
-      afterMistake: at(plan.afterMistake)
-    },
-    settings: request.settings
-  });
+  let payload: PuzzleInsightPayload | null;
+  try {
+    payload = await buildPuzzleExplanationPayload({
+      puzzle,
+      kind: request.kind,
+      wrong: request.wrong,
+      analysis: searchedLines(analysis, plan),
+      settings: request.settings
+    });
+  } catch {
+    // The schema loads with the first explanation; a chunk that can't load (a stale or partial
+    // update) ends on the error with Retry, like a failed request.
+    fail(REQUEST_ERROR);
+    return;
+  }
   if (!payload) {
     fail(THIN_FACTS_ERROR);
     return;
   }
   if (!patchEntry(key, requestId, { phase: "writing", otherSan: nonSolutionSan(payload) })) return;
+  await writeExplanation(key, requestId, payload, deps.explainPuzzle);
+}
 
+/** The coach writes the explanation of `payload`: the entry ends ready, or failed with why. */
+async function writeExplanation(
+  key: string,
+  requestId: string,
+  payload: PuzzleInsightPayload,
+  explainPuzzle: ExplainDeps["explainPuzzle"]
+): Promise<void> {
+  const fail = (error: string) =>
+    patchEntry(key, requestId, { phase: "error", requestId: null, error, cancel: null });
   try {
-    const answer = await deps.explainPuzzle({ requestId, payload });
+    const answer = await explainPuzzle({ requestId, payload });
     if (answer.cancelled) return;
     if (!answer.explanation) {
       fail(answer.error ?? NO_ANSWER_ERROR);
@@ -219,7 +253,7 @@ export async function requestPuzzleExplanation(
  */
 export function cancelPuzzleExplanations(puzzle: string | null): void {
   for (const [key, entry] of Object.entries(usePuzzleExplanationStore.getState().entries)) {
-    if (entry.puzzle === puzzle || !entry.requestId) continue;
+    if (!entry || entry.puzzle === puzzle || !entry.requestId) continue;
     entry.cancel?.();
     setEntry(key, null);
   }

@@ -49,8 +49,10 @@ describe("promoteToMainline", () => {
   it("keeps every move and its id, so the selected move stays selected", () => {
     const nodes = tree("1. e4 e5 (1... c5 2. Nf3) 2. Nf3 *");
     const promoted = promoteToMainline(nodes, idOf(nodes, "c5"))!;
-    expect(promoted.map((node) => node.id).sort()).toEqual(nodes.map((node) => node.id).sort());
-    expect(promoted.find((node) => node.san === "c5")).toEqual(
+    expect(promoted.map((node) => node.id).sort()).toStrictEqual(
+      nodes.map((node) => node.id).sort()
+    );
+    expect(promoted.find((node) => node.san === "c5")).toStrictEqual(
       nodes.find((node) => node.san === "c5")
     );
   });

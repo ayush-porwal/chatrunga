@@ -150,20 +150,12 @@ export function BoardWorkspace({
     // bar off, its column is gone from that cap too (and from the stage below).
     <div
       ref={rootRef}
-      className={cn(
-        "board-workspace h-full min-h-0 min-w-0 [container-type:size]",
-        resizedEdge !== null && "board-resized",
-        easing && "transition-[padding] duration-emphasis ease-standard",
-        // Centred across: the content panel starts after the sidebar rail but ends only 0.5rem (its
-        // mr-2) short of the window's edge, so the difference pads the right; the eval column's width
-        // pads the side away from the bar, so the square itself (not square + bar) is centred. From
-        // the rail's own variable, not a measurement: it is already the rail's width while the sidebar
-        // eases shut, so this eases once to its final value with everything else.
-        centred &&
-          (evalBarRight
-            ? "pr-[calc(var(--sidebar-width)-0.5rem)] pl-(--workspace-eval)"
-            : "pr-[calc(var(--sidebar-width)-0.5rem+var(--workspace-eval))]")
-      )}
+      className={workspaceRootClass({
+        resized: resizedEdge !== null,
+        easing,
+        centred,
+        evalBarRight
+      })}
       style={rootStyle}
     >
       {/* Measures the largest edge a resize can reach (the grip's limit). */}
@@ -181,24 +173,7 @@ export function BoardWorkspace({
         )}
         aria-hidden="true"
       />
-      <div
-        ref={gridRef}
-        className={cn(
-          "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
-          // Same track count in both states, so the column, the gap and the cap ease together — like the
-          // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
-          // left on would make the board trail a live window resize.
-          easing &&
-            "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
-          // Centred down (useFocusCentring): here rather than on the size container above, whose
-          // height the width cap is computed from — changing it mid-ease would restart that transition.
-          centred &&
-            "pt-[calc(var(--workspace-pad)+var(--centre-inset-top,0px))] pb-[calc(var(--workspace-pad)+var(--centre-inset-bottom,0px))]",
-          panelVisible
-            ? "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
-            : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
-        )}
-      >
+      <div ref={gridRef} className={workspaceGridClass({ easing, centred, panelVisible })}>
         {/* The board block (player rows + board) is centred down its cell, so a board shorter than
             the space splits the spare height above and below. A resized board's cell is exactly its
             width (app.css), anchored at the content's left edge. Over the splitter beside it, so the
@@ -243,32 +218,19 @@ export function BoardWorkspace({
                 only reading text keeps `--workspace-panel-measure` (the notices, by
                 `.workspace-panel-body` in app.css). */}
             {header ? <div className="shrink-0 px-3">{header}</div> : null}
-            <div
+            <PanelBody
               id={bodyId}
-              hidden={bodyCollapsed}
-              className={cn("flex min-h-0 flex-col", bodyCollapsed ? "hidden" : "flex-1")}
+              collapsed={bodyCollapsed}
+              tabBar={tabBar}
+              tabs={tabs}
+              underHeader={Boolean(header)}
+              summary={summary}
+              flush={flushBody}
+              notices={notices}
+              tabPanel={tabPanel}
             >
-              {tabBar ? <div className="shrink-0">{tabBar}</div> : null}
-              {tabs ? (
-                <div className={cn("shrink-0 px-3", header ? "pt-1" : "pt-3")}>{tabs}</div>
-              ) : null}
-              {summary === undefined ? null : (
-                <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
-                  <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
-                </div>
-              )}
-              <div
-                className={cn(
-                  "flex min-h-0 flex-1 flex-col",
-                  !flushBody && "workspace-panel-body gap-3 p-3"
-                )}
-              >
-                {notices}
-                <div className="min-h-0 flex-1" {...tabPanel}>
-                  {children}
-                </div>
-              </div>
-            </div>
+              {children}
+            </PanelBody>
             {footer ? (
               <div
                 className={cn(
@@ -284,6 +246,116 @@ export function BoardWorkspace({
               </div>
             ) : null}
           </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The size container's classes: resized, easing, and centred on the window in focus mode. */
+function workspaceRootClass({
+  resized,
+  easing,
+  centred,
+  evalBarRight
+}: {
+  resized: boolean;
+  easing: boolean;
+  centred: boolean;
+  evalBarRight: boolean;
+}): string {
+  return cn(
+    "board-workspace h-full min-h-0 min-w-0 [container-type:size]",
+    resized && "board-resized",
+    easing && "transition-[padding] duration-emphasis ease-standard",
+    // Centred across: the content panel starts after the sidebar rail but ends only 0.5rem (its
+    // mr-2) short of the window's edge, so the difference pads the right; the eval column's width
+    // pads the side away from the bar, so the square itself (not square + bar) is centred. From
+    // the rail's own variable, not a measurement: it is already the rail's width while the sidebar
+    // eases shut, so this eases once to its final value with everything else.
+    centred &&
+      (evalBarRight
+        ? "pr-[calc(var(--sidebar-width)-0.5rem)] pl-(--workspace-eval)"
+        : "pr-[calc(var(--sidebar-width)-0.5rem+var(--workspace-eval))]")
+  );
+}
+
+/** The board-and-panel grid's classes: its tracks and width cap with the panel shown or not. */
+function workspaceGridClass({
+  easing,
+  centred,
+  panelVisible
+}: {
+  easing: boolean;
+  centred: boolean;
+  panelVisible: boolean;
+}): string {
+  return cn(
+    "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
+    // Same track count in both states, so the column, the gap and the cap ease together — like the
+    // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
+    // left on would make the board trail a live window resize.
+    easing &&
+      "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
+    // Centred down (useFocusCentring): here rather than on the size container above, whose
+    // height the width cap is computed from — changing it mid-ease would restart that transition.
+    centred &&
+      "pt-[calc(var(--workspace-pad)+var(--centre-inset-top,0px))] pb-[calc(var(--workspace-pad)+var(--centre-inset-bottom,0px))]",
+    panelVisible
+      ? "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
+      : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
+  );
+}
+
+/**
+ * The panel's body, folded away with the header's toggle (`collapsed`): the title-bar tabs, the
+ * panel tabs (`underHeader`: tucked under a header row), the summary strip, then the notices over
+ * the active tab's content (`flush`: no padding of its own).
+ */
+function PanelBody({
+  id,
+  collapsed,
+  tabBar,
+  tabs,
+  underHeader,
+  summary,
+  flush,
+  notices,
+  tabPanel,
+  children
+}: {
+  id: string | undefined;
+  collapsed: boolean;
+  tabBar: ReactNode;
+  tabs: ReactNode;
+  underHeader: boolean;
+  summary: ReactNode;
+  flush: boolean;
+  notices: ReactNode;
+  tabPanel: { id: string; role: "tabpanel"; "aria-labelledby": string } | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      id={id}
+      hidden={collapsed}
+      className={cn("flex min-h-0 flex-col", collapsed ? "hidden" : "flex-1")}
+    >
+      {tabBar ? <div className="shrink-0">{tabBar}</div> : null}
+      {tabs ? (
+        <div className={cn("shrink-0 px-3", underHeader ? "pt-1" : "pt-3")}>{tabs}</div>
+      ) : null}
+      {summary === undefined ? null : (
+        <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
+          <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
+        </div>
+      )}
+      <div
+        className={cn("flex min-h-0 flex-1 flex-col", !flush && "workspace-panel-body gap-3 p-3")}
+      >
+        {notices}
+        <div className="min-h-0 flex-1" {...tabPanel}>
+          {children}
         </div>
       </div>
     </div>

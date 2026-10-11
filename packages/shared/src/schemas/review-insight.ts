@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { tacticalFactSchema } from "./tactical-fact";
 import { engineSignalSchema } from "./engine-signal";
+import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "./constants";
 import { ratingCurveSchema, maiaRatingBucketSchema } from "./rating-curve";
 
 /**
@@ -218,12 +219,7 @@ const reviewInsightContextSchema = z.object({
     .optional()
 });
 
-/**
- * The coach payload's version. 2: `annotation` (nullable) and its evidence replaced the one-label
- * `classification` every move used to get. Saved commentary records the version it was written
- * from (ReviewCommentary.payloadVersion).
- */
-export const REVIEW_INSIGHT_PAYLOAD_VERSION = 2 as const;
+export { REVIEW_INSIGHT_PAYLOAD_VERSION } from "./constants";
 
 export const reviewInsightPayloadSchema = z.object({
   schemaVersion: z.literal(REVIEW_INSIGHT_PAYLOAD_VERSION),

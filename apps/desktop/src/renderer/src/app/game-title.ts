@@ -34,7 +34,7 @@ export function resultBadgeLabel(
   if (!decided) return null;
   const how = terminationReason(termination?.trim() ?? "");
   if (!how || UNINFORMATIVE_TERMINATIONS.has(how.toLowerCase())) return decided;
-  const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0]!.toUpperCase() + how.slice(1);
+  const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0].toUpperCase() + how.slice(1);
   return `${decided} · ${label}`;
 }
 
@@ -49,7 +49,9 @@ const RESULT_SENTENCE = /\b(?:won|drawn)\b(?:\s+(by|on)\s+(.+))?$/i;
 function terminationReason(termination: string): string {
   const sentence = RESULT_SENTENCE.exec(termination);
   if (!sentence) return termination;
-  const [, preposition, reason] = sentence;
+  // The "by/on …" group is optional: unmatched, its captures are undefined.
+  const preposition = sentence.at(1);
+  const reason = sentence.at(2);
   if (!reason) return "";
   return preposition?.toLowerCase() === "on" ? `on ${reason}` : reason;
 }

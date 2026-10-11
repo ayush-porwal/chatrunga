@@ -6,7 +6,7 @@
 export async function* readNdjson(
   body: ReadableStream<Uint8Array>,
   onChunk?: () => void
-): AsyncGenerator<unknown> {
+): AsyncGenerator {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

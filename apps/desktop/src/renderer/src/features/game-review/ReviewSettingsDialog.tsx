@@ -9,7 +9,7 @@ import { ReviewSettingsPanel, type ReviewSideSetting } from "./ReviewSettingsPan
  * Whether the review settings dialog is open. A store, so App can open it too (Analyze without a
  * usable engine sends the user there).
  */
-export const useReviewSettingsDialog = create<{ open: boolean; setOpen: (open: boolean) => void }>(
+const useReviewSettingsDialog = create<{ open: boolean; setOpen: (open: boolean) => void }>(
   (set) => ({ open: false, setOpen: (open) => set({ open }) })
 );
 

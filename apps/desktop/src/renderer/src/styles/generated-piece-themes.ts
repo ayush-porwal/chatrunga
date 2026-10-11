@@ -69,8 +69,8 @@ export function pieceSetCss(style: PieceStyle, set: PieceSetDrawings): string {
   return PIECES.map(([role, color], p) => {
     const piece = `piece.${role}.${color}`;
     return (
-      `.cg-wrap.piece-set-${style} ${piece}{background-image:${toDataUrl(set.ladder[p]!)}}` +
-      `.cg-wrap.piece-set-${style}.piece-sizes-uniform ${piece}{background-image:${toDataUrl(set.uniform[p]!)}}`
+      `.cg-wrap.piece-set-${style} ${piece}{background-image:${toDataUrl(set.ladder[p])}}` +
+      `.cg-wrap.piece-set-${style}.piece-sizes-uniform ${piece}{background-image:${toDataUrl(set.uniform[p])}}`
     );
   }).join("");
 }
@@ -122,7 +122,7 @@ export async function ensurePieceSet(style: PieceStyle, attempt = 0): Promise<vo
   } catch (error) {
     added.delete(style);
     console.error(`piece set ${style} failed to load:`, error);
-    const wait = PIECE_SET_RETRY_MS[attempt];
+    const wait = PIECE_SET_RETRY_MS.at(attempt);
     if (wait !== undefined) setTimeout(() => void ensurePieceSet(style, attempt + 1), wait);
   }
 }

@@ -3,10 +3,13 @@ import type { PuzzleSessionConfig } from "./PuzzlePage";
 import { ratingRangeFor } from "@chaturanga/shared/chess/puzzle-rating";
 import { DEFAULT_PUZZLE_FILTERS } from "../../stores/puzzle-draft-store";
 import {
+  activeFilterLabels,
+  drawnRatingRange,
   formatPuzzleTag,
   puzzleDatabasesKey,
   puzzleDatabasesOf,
   puzzleDatasetLabel,
+  puzzleFiltersChanged,
   puzzleSetConfig,
   puzzleSetSummary,
   selectedPuzzleDatabase
@@ -103,7 +106,7 @@ describe("puzzle set", () => {
       { id: "pos", sourceId: "chess-positions", kind: "position" as const },
       { id: "lp", sourceId: "lichess-puzzles", kind: "puzzle" as const }
     ]);
-    expect(installed.map((item) => item.id)).toEqual(["pos", "lp"]);
+    expect(installed.map((item) => item.id)).toStrictEqual(["pos", "lp"]);
     expect(selectedPuzzleDatabase(installed, "pos")?.id).toBe("pos");
     // Not chosen, or chosen and removed since.
     expect(selectedPuzzleDatabase(installed, "")?.id).toBe("lp");
@@ -136,6 +139,48 @@ describe("puzzle set", () => {
       difficulty: null,
       position: { difficultyMin: 1 }
     });
+  });
+});
+
+describe("the Puzzles page's set summary", () => {
+  const draft = { databaseId: "", ...DEFAULT_PUZZLE_FILTERS };
+
+  it("lists a Lichess set's filters, the range around the rating when asked", () => {
+    const own = drawnRatingRange(draft, true, 1700);
+    expect(own).toStrictEqual({ ratingMin: 600, ratingMax: 2800, aroundRating: false });
+    expect(activeFilterLabels(draft, true, own)).toStrictEqual([
+      "Rated 600–2800",
+      "Either side to move",
+      "Any theme"
+    ]);
+    const harder = { ...draft, difficulty: "harder" as const, side: "black" as const };
+    const around = drawnRatingRange(harder, true, 1700);
+    expect(around).toStrictEqual({ ...ratingRangeFor(1700, "harder"), aroundRating: true });
+    expect(
+      activeFilterLabels({ ...harder, themes: ["fork"], popularityMin: 50 }, true, around)
+    ).toStrictEqual([
+      `Rated ${around.ratingMin}–${around.ratingMax}`,
+      "Harder, around your rating",
+      "Black to move",
+      "Popularity 50+",
+      "fork"
+    ]);
+    // A position set has no rating to draw around.
+    expect(drawnRatingRange(harder, false, 1700).aroundRating).toBe(false);
+    expect(activeFilterLabels({ ...draft, positionTags: [] }, false, own)).toStrictEqual([
+      "Difficulty 1–4",
+      "Any tag"
+    ]);
+  });
+
+  it("offers Reset filters once the set's own filters leave the defaults", () => {
+    expect(puzzleFiltersChanged(draft, true)).toBe(false);
+    expect(puzzleFiltersChanged(draft, false)).toBe(false);
+    expect(puzzleFiltersChanged({ ...draft, themes: ["pin"] }, true)).toBe(true);
+    // A Lichess filter doesn't count for a position set, nor a position one for Lichess.
+    expect(puzzleFiltersChanged({ ...draft, themes: ["pin"] }, false)).toBe(false);
+    expect(puzzleFiltersChanged({ ...draft, difficultyMax: 3 }, true)).toBe(false);
+    expect(puzzleFiltersChanged({ ...draft, difficultyMax: 3 }, false)).toBe(true);
   });
 });
 

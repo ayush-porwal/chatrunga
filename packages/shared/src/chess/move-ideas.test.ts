@@ -20,7 +20,7 @@ describe("buildIdeaFacts", () => {
     expect(ideas).not.toBeNull();
     expect(ideas!.board.white).toBe("K h1; Q d1; R f1; P g2 h2");
     expect(ideas!.played.san).toBe("Qd4");
-    expect(ideas!.played.facts).toEqual(
+    expect(ideas!.played.facts).toStrictEqual(
       expect.arrayContaining([
         expect.stringMatching(
           /^stops protecting the rook on f1 \(the queen used to guard it; attacked by the bishop on a6, undefended\)/
@@ -45,7 +45,7 @@ describe("buildIdeaFacts", () => {
       bestUci: "d5c7",
       bestLine: ["d5c7", "e8d7", "c7a8"]
     });
-    expect(ideas!.played.facts).toEqual(
+    expect(ideas!.played.facts).toStrictEqual(
       expect.arrayContaining([
         "gives check",
         "forks the rook on a8 and the king on e8",
@@ -113,10 +113,10 @@ describe("position features", () => {
   it("computes static exchanges both ways", () => {
     // Pawn d5 attacked by the c3 knight, defended by the e6 pawn: not winnable.
     const defended = positionFromFen("4k3/8/4p3/3p4/8/2N5/8/4K3 w - - 0 1");
-    expect(exchangeGain(defended, parseSquare("d5")!)).toBeLessThanOrEqual(0);
+    expect(exchangeGain(defended, parseSquare("d5"))).toBeLessThanOrEqual(0);
     // Knight d5 attacked by the e4 pawn, defended by a pawn: still wins material (3 for 1).
     const knight = positionFromFen("4k3/8/4p3/3n4/4P3/8/8/4K3 w - - 0 1");
-    expect(exchangeGain(knight, parseSquare("d5")!)).toBe(2);
+    expect(exchangeGain(knight, parseSquare("d5"))).toBe(2);
   });
 
   it("summarizes material over a line", () => {

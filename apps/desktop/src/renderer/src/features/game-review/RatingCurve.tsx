@@ -1,4 +1,5 @@
-import { MAIA_BUCKETS, type RatingCurve as RatingCurveType } from "@chaturanga/shared/schemas";
+import { MAIA_BUCKETS } from "@chaturanga/shared/schemas/constants";
+import type { RatingCurve as RatingCurveType } from "@chaturanga/shared/schemas";
 import { SectionHeader } from "@/components/ui/page";
 import { cn } from "@/lib/utils";
 

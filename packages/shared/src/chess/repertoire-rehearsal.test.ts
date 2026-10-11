@@ -12,7 +12,8 @@ import {
   lineIdOf,
   nextOnRoute,
   planRoute,
-  rehearsalContext
+  rehearsalContext,
+  type RehearsalContext
 } from "./repertoire-rehearsal";
 
 /** Builds a tree from SAN lines; shared prefixes share nodes. Ids are the SAN path (`e4/e5`). */
@@ -73,7 +74,7 @@ function contextOf(
   return rehearsalContext(
     { kind: "opening", enabled: true, tree: treeFromLines(lines), nodeMeta },
     color,
-    depth
+    { maxDepthPlies: depth }
   );
 }
 
@@ -85,7 +86,7 @@ describe("enumerateLines", () => {
       ["e4", "e5", "Nf3"]
     ]);
     const lines = enumerateLines(context, "root");
-    expect(lines.map((line) => [line.endNodeId, line.endReason])).toEqual([
+    expect(lines.map((line) => [line.endNodeId, line.endReason])).toStrictEqual([
       ["e4/c5/Nf3/d6", "leaf"],
       ["e4/c5/Nf3/Nc6", "leaf"],
       ["e4/e5/Nf3", "leaf"]
@@ -105,21 +106,18 @@ describe("enumerateLines", () => {
     const chapter = { kind: "opening" as const, enabled: true, tree, nodeMeta: {} };
     const lookup = buildChapterLookup(chapter);
     const keyOf = (id: string) => lookup.positionKeys.get(id)!;
-    const context = rehearsalContext(
-      chapter,
-      "white",
-      undefined,
+    const context = rehearsalContext(chapter, "white", {
       lookup,
-      new Set([keyOf("e4/c5"), keyOf("e4/e5")])
-    );
+      paused: new Set([keyOf("e4/c5"), keyOf("e4/e5")])
+    });
     expect(isDecisionNode(context, "e4/c5")).toBe(false);
     expect(isDecisionNode(context, "e4/c5/Nf3/d6")).toBe(true);
-    expect(enumerateLines(context, "root").map((line) => line.decisionNodeIds)).toEqual([
+    expect(enumerateLines(context, "root").map((line) => line.decisionNodeIds)).toStrictEqual([
       ["root", "e4/c5/Nf3/d6"],
       ["root"]
     ]);
     // From 1... e5 the only decision left is paused: nothing to rehearse there.
-    expect(enumerateLines(context, "e4/e5")).toEqual([]);
+    expect(enumerateLines(context, "e4/e5")).toStrictEqual([]);
     expect(canRehearseFrom(context, "e4/e5")).toBe(false);
     expect(canRehearseFrom(context, "e4/c5")).toBe(true);
   });
@@ -133,12 +131,12 @@ describe("enumerateLines", () => {
       { "e4/c5": { edge: "covered", trainingStop: true } },
       { depth: 3 }
     );
-    expect(enumerateLines(context, "root").map((line) => [line.endNodeId, line.endReason])).toEqual(
-      [
-        ["e4/c5", "stop"],
-        ["e4/e5/Nf3", "depth"]
-      ]
-    );
+    expect(
+      enumerateLines(context, "root").map((line) => [line.endNodeId, line.endReason])
+    ).toStrictEqual([
+      ["e4/c5", "stop"],
+      ["e4/e5/Nf3", "depth"]
+    ]);
   });
 
   it("leaves out disabled and reference branches, and lines without a player move", () => {
@@ -152,11 +150,11 @@ describe("enumerateLines", () => {
     );
     const lines = enumerateLines(context, "root");
     // e4 d5 ends at a leaf (its only continuation is reference); it still has the 1.e4 decision.
-    expect(lines.map((line) => line.endNodeId)).toEqual(["e4/c5/Nf3", "e4/d5"]);
+    expect(lines.map((line) => line.endNodeId)).toStrictEqual(["e4/c5/Nf3", "e4/d5"]);
     // From an opponent-to-move position whose replies end immediately, nothing is rehearsable.
-    expect(enumerateLines(context, "e4/d5")).toEqual([]);
-    expect(enumerateLines(context, "missing")).toEqual([]);
-    expect(continuations(context, "e4/e5")).toEqual({ children: [], end: "leaf" });
+    expect(enumerateLines(context, "e4/d5")).toStrictEqual([]);
+    expect(enumerateLines(context, "missing")).toStrictEqual([]);
+    expect(continuations(context, "e4/e5")).toStrictEqual({ children: [], end: "leaf" });
   });
 
   it("passes through the lead-up above a start marker without testing it", () => {
@@ -168,17 +166,17 @@ describe("enumerateLines", () => {
     ];
     const context = contextOf(lines, { "e4/c5": { edge: "included", trainingStart: true } });
     const fromRoot = enumerateLines(context, "root");
-    expect(fromRoot.map((line) => line.endNodeId)).toEqual(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
+    expect(fromRoot.map((line) => line.endNodeId)).toStrictEqual(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
     expect(fromRoot[0]).toMatchObject({
       nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"],
       decisionNodeIds: ["e4/c5"]
     });
     // From inside the lead-up too; a lead-up branch that never reaches training scope is no line.
-    expect(enumerateLines(context, "e4").map((line) => line.endNodeId)).toEqual([
+    expect(enumerateLines(context, "e4").map((line) => line.endNodeId)).toStrictEqual([
       "e4/c5/Nf3/d6",
       "e4/c5/Nf3/Nc6"
     ]);
-    expect(planRoute(context, "root", new Set(), {})).toMatchObject({
+    expect(planRoute(context, "root", { pending: new Set(), seen: {} })).toMatchObject({
       endNodeId: "e4/c5/Nf3/d6",
       nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"]
     });
@@ -196,7 +194,7 @@ describe("enumerateLines", () => {
       { "e4/c5/Nf3": { edge: "included", trainingStop: true } }
     );
     for (const start of ["root", "e4", "e4/c5", "d4", "c4", "missing"]) {
-      expect(lineEnds(context, start)).toEqual(
+      expect(lineEnds(context, start)).toStrictEqual(
         enumerateLines(context, start).map((line) => line.endNodeId)
       );
     }
@@ -213,11 +211,11 @@ describe("enumerateLines", () => {
         "e4/c5": { edge: "included", trainingStart: true }
       }
     );
-    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toEqual([
+    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toStrictEqual([
       "d4/d5/c4",
       "e4/c5/Nf3"
     ]);
-    expect(continuations(context, "root")).toEqual({ children: ["d4", "e4"], end: null });
+    expect(continuations(context, "root")).toStrictEqual({ children: ["d4", "e4"], end: null });
   });
 
   it("offers a rehearsal only in training scope and within the depth limit", () => {
@@ -264,7 +262,7 @@ describe("enumerateLines", () => {
       ],
       { d4: { edge: "covered" } }
     );
-    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toEqual(["e4/e5"]);
+    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toStrictEqual(["e4/e5"]);
   });
 });
 
@@ -275,44 +273,57 @@ describe("planRoute", () => {
     ["e4", "e5", "Nf3"]
   ];
 
+  /** Plays the planned line as a session would: its replies count as seen, its end is done. */
+  function playPlanned(
+    context: RehearsalContext,
+    pending: Set<string>,
+    seen: Record<string, number>
+  ): string {
+    const plan = planRoute(context, "root", { pending, seen });
+    // Ids are SAN paths: an even number of moves ends on the opponent's reply.
+    const replies = plan.nodeIds.filter((id) => id.split("/").length % 2 === 0);
+    for (const id of replies) seen[id] = (seen[id] ?? 0) + 1;
+    pending.delete(plan.endNodeId);
+    return plan.endNodeId;
+  }
+
   it("prefers replies not yet seen, then authored order, deterministically", () => {
     const context = contextOf(lines);
     const pending = new Set(enumerateLines(context, "root").map((line) => line.endNodeId));
     const seen: Record<string, number> = {};
-    const play = () => {
-      const plan = planRoute(context, "root", pending, seen);
-      for (const id of plan.nodeIds) {
-        if (id.split("/").length % 2 === 0) seen[id] = (seen[id] ?? 0) + 1;
-      }
-      pending.delete(plan.endNodeId);
-      return plan.endNodeId;
-    };
+    const play = () => playPlanned(context, pending, seen);
     // Second run: 1...e5 has never been seen, so it comes before the other 1...c5 line.
-    expect([play(), play(), play()]).toEqual(["e4/c5/Nf3/d6", "e4/e5/Nf3", "e4/c5/Nf3/Nc6"]);
+    expect([play(), play(), play()]).toStrictEqual(["e4/c5/Nf3/d6", "e4/e5/Nf3", "e4/c5/Nf3/Nc6"]);
     // Nothing pending: rotation alone (fewest times seen, then authored order).
-    expect(planRoute(context, "root", pending, seen).endNodeId).toBe("e4/e5/Nf3");
-    expect(planRoute(context, "root", new Set(), { "e4/c5": 2, "e4/e5": 2 })).toMatchObject({
+    expect(planRoute(context, "root", { pending, seen }).endNodeId).toBe("e4/e5/Nf3");
+    expect(
+      planRoute(context, "root", { pending: new Set(), seen: { "e4/c5": 2, "e4/e5": 2 } })
+    ).toMatchObject({
       endNodeId: "e4/c5/Nf3/d6",
       endReason: "leaf"
     });
     // Same inputs, same plan.
     const again = contextOf(lines);
-    expect(planRoute(again, "root", new Set(), { "e4/c5": 2, "e4/e5": 2 }).endNodeId).toBe(
-      "e4/c5/Nf3/d6"
-    );
+    expect(
+      planRoute(again, "root", { pending: new Set(), seen: { "e4/c5": 2, "e4/e5": 2 } }).endNodeId
+    ).toBe("e4/c5/Nf3/d6");
   });
 
   it("avoids lines already finished when nothing pending is below", () => {
     const context = contextOf(lines);
     const finished = new Set(["e4/c5/Nf3/d6"]);
     // Rotation alone would pick 1...c5 2.Nf3 d6 again; the unfinished sibling comes first.
-    expect(planRoute(context, "e4", new Set(), {}, finished).endNodeId).toBe("e4/c5/Nf3/Nc6");
-    expect(planRoute(context, "e4/c5/Nf3", new Set(), {}, finished).endNodeId).toBe(
+    expect(planRoute(context, "e4", { pending: new Set(), seen: {}, finished }).endNodeId).toBe(
       "e4/c5/Nf3/Nc6"
     );
+    expect(
+      planRoute(context, "e4/c5/Nf3", { pending: new Set(), seen: {}, finished }).endNodeId
+    ).toBe("e4/c5/Nf3/Nc6");
     // Everything below finished: the rotation still plans a line.
     const all = new Set(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
-    expect(planRoute(context, "e4/c5", new Set(), {}, all).endNodeId).toBe("e4/c5/Nf3/d6");
+    expect(
+      planRoute(context, "e4/c5", { pending: new Set(), seen: {}, finished: all }).endNodeId
+    ).toBe("e4/c5/Nf3/d6");
   });
 
   it("finds the move on a route", () => {

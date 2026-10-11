@@ -58,32 +58,19 @@ const bottomColumns = "play-columns-bottom grid items-stretch gap-4";
  */
 export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   const { desktopApiAvailable } = props;
-  const engines = useEnginesQuery();
-  const settings = useSettingsQuery();
-  const lichessLoaded = useLichessStore((state) => state.loaded);
-  const hasAccount = useLichessStore((state) => Boolean(state.status.account));
-  const due = useRepertoireDueSummaryQuery();
-  const inProgress = useInProgressCard();
-  const puzzle = usePuzzleOfTheDay();
+  const page = usePlayPageData();
+  const { puzzle } = page;
   const games = useRecentGamesQuery();
-
-  // The final layout depends on all of these: until they are read, skeletons hold its place.
-  const settled =
-    !engines.isPending &&
-    !settings.isPending &&
-    (lichessLoaded || !window.chaturanga) &&
-    !due.isPending &&
-    inProgress.settled &&
-    puzzle.settled;
-  const loading = desktopApiAvailable && !settled;
+  const loading = desktopApiAvailable && !page.settled;
   // Fade the cards in only when they replace the skeleton.
   const [mountedWhileLoading] = useState(loading);
   const reveal = mountedWhileLoading ? "animate-fade-in" : undefined;
 
-  const firstRun = isFirstRun({ engineCount: engines.data?.length ?? 0, hasAccount });
-  const card = firstRun ? null : inProgress.card;
-  const repertoire = desktopApiAvailable && !firstRun ? repertoireCardContent(due.data) : null;
-  const puzzleOfTheDay = firstRun ? null : puzzle.puzzle;
+  const firstRun = isFirstRun({ engineCount: page.engineCount, hasAccount: page.hasAccount });
+  const { card, repertoire, puzzleOfTheDay } = boardCardsFor(page, {
+    firstRun,
+    desktopApiAvailable
+  });
   const excludeGameId = card?.excludeGameId ?? null;
   // An empty library: the table stretches to the bottom of the window.
   const fill = games.isSuccess && recentRows(games.data, excludeGameId).length === 0;
@@ -187,6 +174,50 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
     </div>
   );
 });
+
+/**
+ * What the page shows and whether all of it has been read (`settled`): the final layout depends on
+ * all of it, so until then skeletons hold its place.
+ */
+function usePlayPageData() {
+  const engines = useEnginesQuery();
+  const settings = useSettingsQuery();
+  const lichessLoaded = useLichessStore((state) => state.loaded);
+  const hasAccount = useLichessStore((state) => Boolean(state.status.account));
+  const due = useRepertoireDueSummaryQuery();
+  const inProgress = useInProgressCard();
+  const puzzle = usePuzzleOfTheDay();
+  return {
+    engineCount: engines.data?.length ?? 0,
+    hasAccount,
+    due: due.data,
+    inProgress: inProgress.card,
+    puzzle,
+    settled:
+      !engines.isPending &&
+      !settings.isPending &&
+      (lichessLoaded || !window.chaturanga) &&
+      !due.isPending &&
+      inProgress.settled &&
+      puzzle.settled
+  };
+}
+
+/**
+ * The board cards with something to pick up (none on a first run, and no repertoire without the
+ * app).
+ */
+function boardCardsFor(
+  page: ReturnType<typeof usePlayPageData>,
+  { firstRun, desktopApiAvailable }: { firstRun: boolean; desktopApiAvailable: boolean }
+) {
+  if (firstRun) return { card: null, repertoire: null, puzzleOfTheDay: null };
+  return {
+    card: page.inProgress,
+    repertoire: desktopApiAvailable ? repertoireCardContent(page.due) : null,
+    puzzleOfTheDay: page.puzzle.puzzle
+  };
+}
 
 /** Rejoin: back to the game on the board, resume your Lichess game, or open the saved one. */
 function rejoin(card: InProgressCard, props: PlayPageProps) {

@@ -200,6 +200,29 @@ export function EnginePerformanceRows({
   );
 }
 
+type EngineAssets = ReturnType<typeof useEngineAssets>;
+
+/** What the engine list shows: placeholders while it loads, the empty state, the rows, or nothing. */
+type EngineListView = "loading" | "empty" | "rows" | "none";
+
+function engineListView({
+  desktopApiAvailable,
+  engines,
+  assets,
+  rowCount
+}: {
+  desktopApiAvailable: boolean;
+  engines: { isPending: boolean; isSuccess: boolean };
+  assets: Pick<EngineAssets, "status" | "error">;
+  rowCount: number;
+}): EngineListView {
+  // Downloads join the list once their status is read; a failed read leaves just the engines.
+  const loading = desktopApiAvailable && (engines.isPending || (!assets.status && !assets.error));
+  if (loading) return "loading";
+  if (rowCount) return "rows";
+  return engines.isSuccess ? "empty" : "none";
+}
+
 export function EnginesSection({ appearance }: { appearance: AppSettings }) {
   const engines = useEnginesQuery();
   const createEngine = useCreateEngineMutation();
@@ -212,12 +235,7 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
   const [testResult, setTestResult] = useState<TestResult>(null);
   const engineList = engines.data ?? [];
   const rows = engineListRows(assets.status, engineList);
-  // Downloads join the list once their status is read; a failed read leaves just the engines.
-  const loading = desktopApiAvailable && (engines.isPending || (!assets.status && !assets.error));
-  const noEngines = !loading && engines.isSuccess && rows.length === 0;
-  const statuses = assets.status ? Object.values(assets.status) : [];
-  const checkError = statuses.find((entry) => entry.checkError)?.checkError ?? null;
-  const lastChecked = latestCheckedAt(statuses);
+  const view = engineListView({ desktopApiAvailable, engines, assets, rowCount: rows.length });
 
   async function addEngine() {
     if (!desktopApiAvailable) return;
@@ -252,80 +270,23 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         title="Engines"
         description="Engines for analysis, review and engine games. Downloaded ones stay up to date when you ask."
         actions={
-          <>
-            {desktopApiAvailable ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void assets.checkForUpdates()}
-                disabled={assets.checking || !assets.status}
-              >
-                <RefreshCw className={cn(assets.checking && "animate-spin")} />
-                {assets.checking ? "Checking…" : "Check for updates"}
-              </Button>
-            ) : null}
-            {assets.missing.length > 0 ? (
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={() => void assets.downloadMissing()}
-              >
-                <Download />
-                Download missing ({assets.missing.length})
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-expanded={adding}
-              disabled={!desktopApiAvailable}
-              onClick={() => setAdding((value) => !value)}
-            >
-              <Plus />
-              Add engine
-            </Button>
-          </>
+          <EnginesSectionActions
+            assets={assets}
+            adding={adding}
+            onToggleAdding={() => setAdding((value) => !value)}
+          />
         }
       />
 
       {adding ? (
-        <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
-          <p className="text-sm font-medium text-fg">New UCI engine</p>
-          <EngineForm
-            idPrefix="new-engine"
-            draft={draft}
-            onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))}
-          />
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void testDraft()}
-              disabled={!desktopApiAvailable || !draft.executablePath.trim()}
-            >
-              <Play />
-              Test
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => void addEngine()}
-              disabled={
-                !desktopApiAvailable || !draft.executablePath.trim() || createEngine.isPending
-              }
-            >
-              Add engine
-            </Button>
-          </div>
-        </div>
+        <NewEnginePanel
+          draft={draft}
+          onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))}
+          pending={createEngine.isPending}
+          onCancel={() => setAdding(false)}
+          onTest={() => void testDraft()}
+          onAdd={() => void addEngine()}
+        />
       ) : null}
 
       {maiaNeedsLc0(assets.status) ? (
@@ -336,7 +297,7 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         </Notice>
       ) : null}
 
-      {loading ? (
+      {view === "loading" ? (
         <div className="grid gap-1.5" aria-busy="true" aria-label="Loading engines">
           {[0, 1, 2].map((index) => (
             <div key={index} className={listRow}>
@@ -368,11 +329,11 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         </Notice>
       ) : null}
 
-      {noEngines && !adding ? (
+      {view === "empty" && !adding ? (
         <EmptyState compact title="No engines yet. Add a UCI engine you already have." />
       ) : null}
 
-      {!loading && rows.length ? (
+      {view === "rows" ? (
         <div className="grid gap-1.5">
           {rows.map((row) =>
             row.kind === "asset" ? (
@@ -418,28 +379,137 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
 
       {assets.error ? <Notice tone="danger">{assets.error}</Notice> : null}
 
-      {desktopApiAvailable ? (
-        <p className={fieldHint}>
-          {checkError
-            ? `Couldn't reach GitHub (${checkError}); showing the last known releases. `
-            : null}
-          {lastChecked ? `Releases checked ${lastChecked}. ` : null}
-          Maia networks by{" "}
-          <a
-            href="https://github.com/CSSLab/maia-chess"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-info hover:underline"
-          >
-            CSSLab
-          </a>{" "}
-          (CC BY). Stockfish is GPL-3.0.
-        </p>
-      ) : null}
+      {desktopApiAvailable ? <EngineSourcesNote status={assets.status} /> : null}
 
       <div className={divider} />
       <EnginePerformanceSettings appearance={appearance} />
     </section>
+  );
+}
+
+/** The section's header buttons: Check for updates, Download missing, Add engine. */
+function EnginesSectionActions({
+  assets,
+  adding,
+  onToggleAdding
+}: {
+  assets: EngineAssets;
+  adding: boolean;
+  onToggleAdding: () => void;
+}) {
+  const desktopApiAvailable = hasDesktopApi();
+  return (
+    <>
+      {desktopApiAvailable ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void assets.checkForUpdates()}
+          disabled={assets.checking || !assets.status}
+        >
+          <RefreshCw className={cn(assets.checking && "animate-spin")} />
+          {assets.checking ? "Checking…" : "Check for updates"}
+        </Button>
+      ) : null}
+      {assets.missing.length > 0 ? (
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={() => void assets.downloadMissing()}
+        >
+          <Download />
+          Download missing ({assets.missing.length})
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-expanded={adding}
+        disabled={!desktopApiAvailable}
+        onClick={onToggleAdding}
+      >
+        <Plus />
+        Add engine
+      </Button>
+    </>
+  );
+}
+
+/** The form for a new UCI engine, with Cancel, Test and Add engine. */
+function NewEnginePanel({
+  draft,
+  onChange,
+  pending,
+  onCancel,
+  onTest,
+  onAdd
+}: {
+  draft: EngineDraft;
+  onChange: (patch: Partial<EngineDraft>) => void;
+  /** The engine is being added. */
+  pending: boolean;
+  onCancel: () => void;
+  onTest: () => void;
+  onAdd: () => void;
+}) {
+  const desktopApiAvailable = hasDesktopApi();
+  return (
+    <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
+      <p className="text-sm font-medium text-fg">New UCI engine</p>
+      <EngineForm idPrefix="new-engine" draft={draft} onChange={onChange} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onTest}
+          disabled={!desktopApiAvailable || !draft.executablePath.trim()}
+        >
+          <Play />
+          Test
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={onAdd}
+          disabled={!desktopApiAvailable || !draft.executablePath.trim() || pending}
+        >
+          Add engine
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** When the releases were last checked (or why GitHub couldn't be reached), and the credits. */
+function EngineSourcesNote({ status }: { status: EngineAssets["status"] }) {
+  const statuses = status ? Object.values(status) : [];
+  const checkError = statuses.find((entry) => entry.checkError)?.checkError ?? null;
+  const lastChecked = latestCheckedAt(statuses);
+  return (
+    <p className={fieldHint}>
+      {checkError
+        ? `Couldn't reach GitHub (${checkError}); showing the last known releases. `
+        : null}
+      {lastChecked ? `Releases checked ${lastChecked}. ` : null}
+      Maia networks by{" "}
+      <a
+        href="https://github.com/CSSLab/maia-chess"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-info hover:underline"
+      >
+        CSSLab
+      </a>{" "}
+      (CC BY). Stockfish is GPL-3.0.
+    </p>
   );
 }
 

@@ -86,10 +86,10 @@ describe("useMoveSounds", () => {
     const mainline = game.moveTree.filter((item) => item.san).map((item) => item.id);
     useGameStore.getState().goToNode("root");
     useMoveSounds({ enabled: true, volume: 1 });
-    useGameStore.getState().goToNode(mainline[0]!);
-    withoutMoveSounds(() => useGameStore.getState().goToNode(mainline[3]!));
-    useGameStore.getState().goToNode(mainline[2]!);
-    expect(played).toEqual(["move", "move"]);
+    useGameStore.getState().goToNode(mainline[0]);
+    withoutMoveSounds(() => useGameStore.getState().goToNode(mainline[3]));
+    useGameStore.getState().goToNode(mainline[2]);
+    expect(played).toStrictEqual(["move", "move"]);
     for (const cleanup of cleanups.splice(0)) cleanup();
   });
 });

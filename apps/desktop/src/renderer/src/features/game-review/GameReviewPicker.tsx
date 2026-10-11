@@ -53,28 +53,43 @@ function subtitleFor(game: Pick<GameSummary, "source" | "event" | "result" | "da
     .join(" · ");
 }
 
+/** The game on the board as the picker's pinned row: reviewable once it has moves. */
+function useCurrentGameRow() {
+  const currentGame: CurrentGame = {
+    id: useGameStore((state) => state.gameId),
+    source: useGameStore((state) => state.source),
+    white: useGameStore((state) => state.headers.white) ?? null,
+    black: useGameStore((state) => state.headers.black) ?? null,
+    result: useGameStore((state) => state.headers.result) ?? null,
+    event: useGameStore((state) => state.headers.event) ?? null,
+    moveCount: useGameStore((state) => Math.max(0, state.moveTree.length - 1))
+  };
+  const canReview = currentGame.moveCount > 0;
+  return {
+    canReview,
+    label: currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game",
+    subtitle: canReview
+      ? [
+          sourceLabel(currentGame.source),
+          currentGame.event,
+          currentGame.result,
+          `${currentGame.moveCount} plies`
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : ""
+  };
+}
+
 export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPickerProps) {
   const currentGameId = useGameStore((state) => state.gameId);
   const currentSource = useGameStore((state) => state.source);
-  const currentWhite = useGameStore((state) => state.headers.white);
-  const currentBlack = useGameStore((state) => state.headers.black);
-  const currentResult = useGameStore((state) => state.headers.result);
-  const currentEvent = useGameStore((state) => state.headers.event);
-  const currentMoveCount = useGameStore((state) => Math.max(0, state.moveTree.length - 1));
-  const currentGame: CurrentGame = {
-    id: currentGameId,
-    source: currentSource,
-    white: currentWhite ?? null,
-    black: currentBlack ?? null,
-    result: currentResult ?? null,
-    event: currentEvent ?? null,
-    moveCount: currentMoveCount
-  };
+  const current = useCurrentGameRow();
   const [query, setQuery] = useState("");
   const [reviewedOnly, setReviewedOnly] = useState(false);
   // One source at a time (its tab), and Reviewed on top of it; the current game stays pinned.
-  const { facets, counts, tabs, tab, choose } = useLibraryTabs(currentSource, currentGameId);
-  const reviewedCount = tab ? counts[tab].reviewed : 0;
+  const library = useLibraryTabs(currentSource, currentGameId);
+  const { facets, tab } = library;
   // Searched and filtered in the database, a page at a time. Clearing the box applies at once;
   // typing waits for a pause. The box stops at the longest search the library takes (main
   // refuses longer).
@@ -90,21 +105,6 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
     // The tab is known once the counts are.
     { enabled: !facets.isPending }
   );
-  const filteredGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
-
-  const currentCanReview = currentGame.moveCount > 0;
-  const currentLabel =
-    currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
-  const currentSubtitle = currentCanReview
-    ? [
-        sourceLabel(currentGame.source),
-        currentGame.event,
-        currentGame.result,
-        `${currentGame.moveCount} plies`
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
 
   const hasSavedGames = facets.data?.hasGames ?? false;
 
@@ -129,38 +129,11 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
-      {tab && (tabs.length > 1 || reviewedCount > 0 || reviewedOnly) ? (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          {tabs.length > 1 ? (
-            <SegmentedControl
-              ariaLabel="Game source"
-              size="sm"
-              value={tab}
-              onChange={choose}
-              options={tabs.map((value) => ({
-                value,
-                label: LIBRARY_TAB_LABELS[value],
-                count: counts[value].games
-              }))}
-              className="w-fit max-w-full shrink-0"
-            />
-          ) : (
-            <span />
-          )}
-          {reviewedCount > 0 || reviewedOnly ? (
-            <ChipButton
-              selected={reviewedOnly}
-              onClick={() => setReviewedOnly((on) => !on)}
-              className="ml-auto"
-            >
-              Reviewed
-              <span className={cn("tabular-nums", !reviewedOnly && "text-fg-subtle")}>
-                {reviewedCount}
-              </span>
-            </ChipButton>
-          ) : null}
-        </div>
-      ) : null}
+      <PickerFilters
+        library={library}
+        reviewedOnly={reviewedOnly}
+        onReviewedOnly={setReviewedOnly}
+      />
       {hasSavedGames || query ? (
         <div className="relative shrink-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
@@ -177,69 +150,145 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
       ) : null}
 
       <div className="scroll-area -mr-1 grid min-h-0 flex-1 content-start gap-4 overflow-y-auto pr-1">
-        {currentCanReview ? (
+        {current.canReview ? (
           <section className="grid gap-2">
             <Eyebrow>Current game</Eyebrow>
             <GameRow
-              title={currentLabel}
-              meta={currentSubtitle}
+              title={current.label}
+              meta={current.subtitle}
               selected
               onClick={() => onSelect("current")}
             />
           </section>
         ) : null}
 
-        <section className="grid gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <Eyebrow>Saved games</Eyebrow>
-            {games.isLoading || games.isPlaceholderData ? (
-              <span className="text-2xs text-fg-subtle">Loading…</span>
-            ) : null}
-          </div>
-          {games.isError ? (
-            <Notice tone="warn">
-              Saved games could not be loaded. Try opening Game review again.
-            </Notice>
-          ) : null}
-          {filteredGames.length ? (
-            <div className="grid gap-1.5">
-              {filteredGames.map((game) => (
-                <GameRow
-                  key={game.id}
-                  title={titleFor(game)}
-                  meta={subtitleFor(game)}
-                  analyses={game.reviewCount}
-                  onClick={() => onSelect(game.id)}
-                />
-              ))}
-              {games.hasNextPage ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="justify-self-center"
-                  disabled={games.isFetchingNextPage}
-                  onClick={() => void games.fetchNextPage()}
-                >
-                  {games.isFetchingNextPage ? "Loading…" : "Show more"}
-                </Button>
-              ) : null}
-            </div>
-          ) : games.isPending ? null : (
-            <EmptyState
-              compact
-              title={
-                query || reviewedOnly
-                  ? "No saved games match this search."
-                  : currentCanReview
-                    ? "No other saved games."
-                    : "No saved games yet — import a PGN or play a game first."
-              }
-            />
-          )}
-        </section>
+        <SavedGames
+          games={games}
+          filtered={Boolean(query) || reviewedOnly}
+          hasCurrent={current.canReview}
+          onSelect={onSelect}
+        />
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * The library's source tabs (when there is more than one) and the Reviewed filter (while there are
+ * reviewed games, or it is on); nothing until the tab is known.
+ */
+function PickerFilters({
+  library,
+  reviewedOnly,
+  onReviewedOnly
+}: {
+  library: ReturnType<typeof useLibraryTabs>;
+  reviewedOnly: boolean;
+  onReviewedOnly: (update: (on: boolean) => boolean) => void;
+}) {
+  const { counts, tabs, tab, choose } = library;
+  if (!tab) return null;
+  const reviewedCount = counts[tab].reviewed;
+  const reviewedShown = reviewedCount > 0 || reviewedOnly;
+  if (tabs.length <= 1 && !reviewedShown) return null;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+      {tabs.length > 1 ? (
+        <SegmentedControl
+          ariaLabel="Game source"
+          size="sm"
+          value={tab}
+          onChange={choose}
+          options={tabs.map((value) => ({
+            value,
+            label: LIBRARY_TAB_LABELS[value],
+            count: counts[value].games
+          }))}
+          className="w-fit max-w-full shrink-0"
+        />
+      ) : (
+        <span />
+      )}
+      {reviewedShown ? (
+        <ChipButton
+          selected={reviewedOnly}
+          onClick={() => onReviewedOnly((on) => !on)}
+          className="ml-auto"
+        >
+          Reviewed
+          <span className={cn("tabular-nums", !reviewedOnly && "text-fg-subtle")}>
+            {reviewedCount}
+          </span>
+        </ChipButton>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The saved games matching the search and filters, a page at a time (Show more), or why there are
+ * none: `filtered` (a search or Reviewed is on), or only the current game (`hasCurrent`).
+ */
+function SavedGames({
+  games,
+  filtered,
+  hasCurrent,
+  onSelect
+}: {
+  games: ReturnType<typeof useGamePagesQuery>;
+  filtered: boolean;
+  hasCurrent: boolean;
+  onSelect: (gameId: string) => void;
+}) {
+  const savedGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
+  return (
+    <section className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Eyebrow>Saved games</Eyebrow>
+        {games.isLoading || games.isPlaceholderData ? (
+          <span className="text-2xs text-fg-subtle">Loading…</span>
+        ) : null}
+      </div>
+      {games.isError ? (
+        <Notice tone="warn">Saved games could not be loaded. Try opening Game review again.</Notice>
+      ) : null}
+      {savedGames.length ? (
+        <div className="grid gap-1.5">
+          {savedGames.map((game) => (
+            <GameRow
+              key={game.id}
+              title={titleFor(game)}
+              meta={subtitleFor(game)}
+              analyses={game.reviewCount}
+              onClick={() => onSelect(game.id)}
+            />
+          ))}
+          {games.hasNextPage ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="justify-self-center"
+              disabled={games.isFetchingNextPage}
+              onClick={() => void games.fetchNextPage()}
+            >
+              {games.isFetchingNextPage ? "Loading…" : "Show more"}
+            </Button>
+          ) : null}
+        </div>
+      ) : games.isPending ? null : (
+        <EmptyState
+          compact
+          title={
+            filtered
+              ? "No saved games match this search."
+              : hasCurrent
+                ? "No other saved games."
+                : "No saved games yet — import a PGN or play a game first."
+          }
+        />
+      )}
+    </section>
   );
 }
 

@@ -79,6 +79,9 @@ const SIZE = FULL
       runs: 3
     };
 
+/** Runs of the workloads timed whole, once each (the import parse, a restore). */
+const REPEATS = FULL ? 3 : 1;
+
 const SMALL_SHAPE = (nodes: number): TreeShape => ({
   nodes,
   mainline: Math.min(24, nodes),
@@ -147,9 +150,8 @@ function probeEventLoop(): { stop: () => Promise<number> } {
   };
 }
 
-afterAll(() => {
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
+/** Prints the results table (and writes it as JSON to `PERF_OUT` when set). */
+function reportResults(): void {
   const machine = `${type()} ${release()} ${arch()}, ${cpus()[0]?.model ?? "?"} × ${cpus().length}, ${Math.round(totalmem() / 2 ** 30)} GiB, Node ${process.version}`;
   const lines = [
     `Repertoire benchmark (${FULL ? "full size" : "smoke size"}) — ${machine}`,
@@ -169,9 +171,82 @@ afterAll(() => {
       JSON.stringify({ machine, full: FULL, results, facts }, null, 2)
     );
   }
-});
+}
+
+type RepertoireDetail = ReturnType<typeof service.createRepertoire>;
+
+/**
+ * Generates a new repertoire's chapters, one per shape, and stores them as the app would: the
+ * first takes the place of the repertoire's own first chapter and is saved through the service
+ * (after the others go straight to the repository and the repertoire is reindexed).
+ */
+function seedChapters(
+  random: () => number,
+  detail: RepertoireDetail,
+  plan: { shapes: readonly TreeShape[]; idPrefix: string }
+): { chapters: RepertoireChapter[]; saved: ReturnType<typeof service.saveChapter> } {
+  const [firstShape, ...otherShapes] = plan.shapes;
+  const chapterAt = (shape: TreeShape, c: number, id: string) =>
+    generateChapter(random, shape, {
+      id,
+      title: `Chapter ${c + 1}`,
+      sortOrder: c,
+      color: detail.color
+    });
+  const chapters = [chapterAt(firstShape, 0, detail.chapters[0].id)];
+  otherShapes.forEach((shape, index) => {
+    const c = index + 1;
+    const chapter = chapterAt(shape, c, `${plan.idPrefix}${c}`);
+    chapters.push(chapter);
+    chapterRepository.upsert(detail.id, chapter, Date.now());
+  });
+  reindexSeeded(detail.id);
+  const saved = service.saveChapter({
+    repertoireId: detail.id,
+    chapter: chapters[0],
+    expectedRevision: detail.revision
+  });
+  return { chapters, saved };
+}
+
+/**
+ * The benchmark's collection: repertoires of alternating colour, each with small chapters; the
+ * first chapter of the first repertoire is the large one.
+ */
+function seedCollection(random: () => number): Map<string, RepertoireChapter[]> {
+  const chaptersByRepertoire = new Map<string, RepertoireChapter[]>();
+  for (let r = 0; r < SIZE.repertoires; r++) {
+    const color = r % 2 ? "black" : "white";
+    const detail = service.createRepertoire({ name: `Repertoire ${r + 1}`, color });
+    const shapes = Array.from({ length: SIZE.chaptersPer }, () =>
+      SMALL_SHAPE(SIZE.movesPerChapter)
+    );
+    if (r === 0) shapes[0] = BIG_SHAPE(SIZE.bigChapter);
+    const { chapters, saved } = seedChapters(random, detail, { shapes, idPrefix: `r${r}c` });
+    chapters[0] = saved.chapter;
+    chaptersByRepertoire.set(detail.id, chapters);
+  }
+  return chaptersByRepertoire;
+}
+
+/** The node at the greatest ply (the first such in lookup order). */
+function deepestNode(lookup: ReturnType<typeof buildChapterLookup>): string {
+  const plyOf = (id: string) => lookup.nodesById.get(id)!.ply;
+  return lookup.order.reduce((best, id) => (plyOf(id) > plyOf(best) ? id : best));
+}
+
+/** The tree with the root's comment replaced. */
+function withRootComment(tree: readonly RepertoireChapter["tree"][number][], comment: string) {
+  return tree.map((node) => (node.id === "root" ? { ...node, comment } : node));
+}
 
 describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
+  afterAll(() => {
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+    reportResults();
+  });
+
   const random = seededRandom(20261003);
   const repertoireIds: string[] = [];
   const chaptersByRepertoire = new Map<string, RepertoireChapter[]>();
@@ -179,38 +254,14 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
 
   it("seeds a representative collection through the real repository", () => {
     const started = performance.now();
-    let occurrences = 0;
-    for (let r = 0; r < SIZE.repertoires; r++) {
-      const color = r % 2 ? "black" : "white";
-      const detail = service.createRepertoire({ name: `Repertoire ${r + 1}`, color });
-      const chapters: RepertoireChapter[] = [];
-      for (let c = 0; c < SIZE.chaptersPer; c++) {
-        const big = r === 0 && c === 0;
-        const chapter = generateChapter(
-          random,
-          big ? BIG_SHAPE(SIZE.bigChapter) : SMALL_SHAPE(SIZE.movesPerChapter),
-          {
-            id: c === 0 ? detail.chapters[0].id : `r${r}c${c}`,
-            title: `Chapter ${c + 1}`,
-            sortOrder: c,
-            color
-          }
-        );
-        chapters.push(chapter);
-        occurrences += chapter.tree.length;
-        if (c > 0) chapterRepository.upsert(detail.id, chapter, Date.now());
-      }
-      reindexSeeded(detail.id);
-      const saved = service.saveChapter({
-        repertoireId: detail.id,
-        chapter: chapters[0],
-        expectedRevision: detail.revision
-      });
-      chapters[0] = saved.chapter;
-      repertoireIds.push(detail.id);
-      chaptersByRepertoire.set(detail.id, chapters);
+    for (const [id, chapters] of seedCollection(random)) {
+      repertoireIds.push(id);
+      chaptersByRepertoire.set(id, chapters);
     }
     bigChapter = chaptersByRepertoire.get(repertoireIds[0])![0];
+    const occurrences = [...chaptersByRepertoire.values()]
+      .flat()
+      .reduce((sum, chapter) => sum + chapter.tree.length, 0);
     facts["repertoires"] = SIZE.repertoires;
     facts["chapters"] = SIZE.repertoires * SIZE.chaptersPer;
     facts["occurrences (tree nodes, roots included)"] = occurrences;
@@ -253,9 +304,7 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     facts["chapter open, sum of p95 steps (target < 300 ms)"] = round(total);
 
     // Selecting a deep node: the path is expanded, the model recomputed.
-    const deepest = lookup.order.reduce((best, id) =>
-      lookup.nodesById.get(id)!.ply > lookup.nodesById.get(best)!.ply ? id : best
-    );
+    const deepest = deepestNode(lookup);
     measure("Select a deep node: collapseStudyTree + buildTreeModel", () =>
       buildTreeModel(
         collapseStudyTree(lookup, { expanded: expandPathTo(new Set(), lookup, deepest), sizes })
@@ -328,7 +377,7 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     const pgn = exportRepertoirePgn(chapters);
     facts["import PGN size, MiB"] = round(Buffer.byteLength(pgn) / 2 ** 20);
 
-    const runs = FULL ? 3 : 1;
+    const runs = REPEATS;
     const durations: number[] = [];
     let maxBlock = 0;
     let maxProgressGap = 0;
@@ -372,23 +421,12 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
   it("saves one chapter of a single large repertoire without stalling the main thread", async () => {
     // One repertoire holding every chapter: a save used to reindex all of them (audit R02).
     const detail = service.createRepertoire({ name: "Single large repertoire", color: "white" });
-    const chapters: RepertoireChapter[] = [];
-    for (let c = 0; c < SIZE.singleChapters; c++) {
-      const chapter = generateChapter(random, SMALL_SHAPE(SIZE.singleMoves), {
-        id: c === 0 ? detail.chapters[0].id : `single${c}`,
-        title: `Chapter ${c + 1}`,
-        sortOrder: c,
-        color: "white"
-      });
-      chapters.push(chapter);
-      if (c > 0) chapterRepository.upsert(detail.id, chapter, Date.now());
-    }
-    reindexSeeded(detail.id);
-    let saved = service.saveChapter({
-      repertoireId: detail.id,
-      chapter: chapters[0],
-      expectedRevision: detail.revision
+    const seeded = seedChapters(random, detail, {
+      shapes: Array.from({ length: SIZE.singleChapters }, () => SMALL_SHAPE(SIZE.singleMoves)),
+      idPrefix: "single"
     });
+    const { chapters } = seeded;
+    let saved = seeded.saved;
     const occurrences = chapters.reduce((sum, chapter) => sum + chapter.tree.length, 0);
     facts["single repertoire: chapters × moves"] =
       `${SIZE.singleChapters} × ${SIZE.singleMoves} (${occurrences} occurrences)`;
@@ -408,12 +446,7 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     let edit = 0;
     const commentOnly = () => {
       edit += 1;
-      save({
-        ...chapter,
-        tree: chapter.tree.map((node) =>
-          node.id === "root" ? { ...node, comment: `Edit ${edit}` } : node
-        )
-      });
+      save({ ...chapter, tree: withRootComment(chapter.tree, `Edit ${edit}`) });
     };
     const addMove = () => save({ ...chapter, tree: extendLeaf(random, chapter.tree) });
     measure("Single repertoire: comment-only saveChapter", commentOnly);
@@ -469,7 +502,7 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
       "read"
     );
     const restores: number[] = [];
-    for (let run = 0; run < (FULL ? 3 : 1); run++) {
+    for (let run = 0; run < REPEATS; run++) {
       const preview = (await service.previewBackupImport({ json }))!;
       const started = performance.now();
       await service.restoreBackup({

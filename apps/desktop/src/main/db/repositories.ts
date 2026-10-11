@@ -1,7 +1,5 @@
 import { nanoid } from "nanoid";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
-import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { withCurrentAssessments } from "@chaturanga/shared/chess/move-assessment";
 import { openingBook } from "../engine/opening-book";
 import { getDb } from "./index";
@@ -46,16 +44,11 @@ import type {
   SavedGame,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
-import type {
-  ExternalDatabaseFormat,
-  ExternalDatabaseKind,
-  ExternalDatabaseSource,
-  InstalledDatabase
-} from "@chaturanga/shared/types/database";
 import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
-import { allRows, getRow, sqliteErrcode } from "./rows";
+import { allRows, queriesOn, rollbackIfOpen, sqliteErrcode } from "./rows";
 import { parseStoredJson } from "../stored-json";
-import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
+import { parseMoveTree, rebuiltCursor, remapReviewToTree, storedHeaders } from "./stored-game";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 import {
   emptyTabCounts,
   isGameSource,
@@ -108,8 +101,8 @@ type GameSummaryRow = Pick<
 > & { review_count?: number | null; last_reviewed_at?: number | null };
 
 /** Library pages: `limit` when absent, and the most one page may hold. */
-export const GAME_PAGE_DEFAULT = 50;
-export const GAME_PAGE_MAX = 200;
+const GAME_PAGE_DEFAULT = 50;
+const GAME_PAGE_MAX = 200;
 
 const GAME_SUMMARY_COLUMNS = `id, source, white, black, event, result, date, current_fen, updated_at`;
 
@@ -154,23 +147,6 @@ type SettingRow = {
   value: string;
 };
 
-type ExternalDatabaseRow = {
-  id: string;
-  source_id: string;
-  name: string;
-  provider: string;
-  kind: ExternalDatabaseKind;
-  format: ExternalDatabaseFormat;
-  file_path: string;
-  file_size_bytes: number;
-  record_count: number | null;
-  source_url: string;
-  page_url: string;
-  license: string;
-  downloaded_at: number;
-  updated_at: number;
-};
-
 const now = () => Date.now();
 
 function parseArgs(args: string | null): string[] {
@@ -183,13 +159,7 @@ function parseArgs(args: string | null): string[] {
   }
 }
 
-function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return allRows<T>(getDb().prepare(sql), ...params);
-}
-
-function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
-}
+const { all, get, run } = queriesOn(getDb);
 
 /**
  * Runs `work` as one transaction: all of its writes land, or none do. Every caller writes, so it
@@ -206,16 +176,14 @@ export function transaction<T>(work: () => T): T {
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    // SQLite may already have ended the transaction (a failed COMMIT, or an error that rolls back
-    // by itself); a ROLLBACK then throws "no transaction is active" and would hide `error`, such
-    // as the BUSY that retryOnceIfBusy retries on.
-    if (db.isTransaction) db.exec("ROLLBACK");
+    // Rethrown unchanged: a BUSY here is what retryOnceIfBusy retries on.
+    rollbackIfOpen(db);
     throw error;
   }
 }
 
 /** Pause before retrying a write that found the database busy. */
-export const BUSY_RETRY_DELAY_MS = 300;
+const BUSY_RETRY_DELAY_MS = 300;
 
 /**
  * Runs a write; if SQLite reports BUSY (another connection, such as the repertoire import writer,
@@ -253,12 +221,6 @@ export function saveGameRetrying(
     if (refusal) throw refusal;
     return gameRepository.save(withId);
   }, delayMs);
-}
-
-function run(sql: string, ...params: SQLInputValue[]): void {
-  getDb()
-    .prepare(sql)
-    .run(...params);
 }
 
 /** Explicit rating column, else a `maia-1500`-style engine name / weights file. */
@@ -301,185 +263,6 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
     reviewCount: row.review_count ?? 0,
     lastReviewedAt: row.last_reviewed_at ?? null
   };
-}
-
-/**
- * The stored move tree. A damaged one is rebuilt from the row's PGN; if that fails too, opening
- * the game fails, rather than showing an empty board that autosave would then write over the
- * stored PGN (the only copy left of the moves).
- */
-function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean } {
-  try {
-    const parsed: unknown = JSON.parse(row.move_tree_json);
-    if (Array.isArray(parsed) && isConsistentTree(parsed))
-      return { moveTree: parsed, rebuilt: false };
-  } catch {
-    // Fall through to the PGN.
-  }
-  try {
-    // Strict: a PGN with a move that can't be played would rebuild only part of the game.
-    return { moveTree: importPgnText(row.pgn, { strict: true }).game.moveTree, rebuilt: true };
-  } catch {
-    throw new Error("This saved game is damaged and can't be opened.");
-  }
-}
-
-/**
- * A review saved with a tree that had to be rebuilt: its moves point at the old node ids, so they
- * are moved onto the rebuilt main line by ply (the position after each move must match). A review
- * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
- */
-export function remapReviewToTree(
-  review: GameReview,
-  moveTree: readonly MoveNode[]
-): GameReview | null {
-  // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
-  const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
-  const moves = [];
-  // The review is stored JSON: a damaged entry drops the review (it can't be placed), never the game.
-  for (const move of review.moves) {
-    if (!isRecord(move)) return null;
-    const { ply, fenAfter }: { ply: unknown; fenAfter: unknown } = move;
-    if (typeof ply !== "number" || !Number.isInteger(ply) || typeof fenAfter !== "string")
-      return null;
-    const target = byPly.get(ply);
-    if (!target || target.fenAfter !== fenAfter) return null;
-    moves.push({ ...move, nodeId: target.id });
-  }
-  return { ...review, moves };
-}
-
-/** Root, then the first child at every step. */
-function mainlineOf(moveTree: readonly MoveNode[]): MoveNode[] {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const line: MoveNode[] = [];
-  let node = moveTree.find((item) => item.parentId === null);
-  while (node) {
-    line.push(node);
-    node = node.children[0] ? byId.get(node.children[0]) : undefined;
-  }
-  return line;
-}
-
-/**
- * The cursor in a tree rebuilt from the PGN: the old node id is gone, and which occurrence of a
- * repeated position it was can't be told from a damaged tree. The main-line node showing the saved
- * position (its last occurrence), else the end of the main line.
- */
-export function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string): string | null {
-  const line = mainlineOf(moveTree);
-  for (let index = line.length - 1; index >= 0; index -= 1) {
-    if (line[index].fenAfter === currentFen) return line[index].id;
-  }
-  return line.at(-1)?.id ?? null;
-}
-
-/** The root's id in every tree the app builds (createEmptyGame, importPgnText). */
-const ROOT_NODE_ID = "root";
-
-const isString = (value: unknown): value is string => typeof value === "string";
-const isStringOrNull = (value: unknown): value is string | null =>
-  value === null || typeof value === "string";
-
-/** Every field a move node needs, with its type. Only the root has no move (san/uci null). */
-const SQUARE = /^[a-h][1-8]$/;
-const ANNOTATION_COLORS: readonly unknown[] = ["green", "red", "yellow", "blue"];
-
-function isArrow(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    SQUARE.test(String(value.orig)) &&
-    SQUARE.test(String(value.dest)) &&
-    ANNOTATION_COLORS.includes(value.color)
-  );
-}
-
-function isHighlight(value: unknown): boolean {
-  return (
-    isRecord(value) && SQUARE.test(String(value.square)) && ANNOTATION_COLORS.includes(value.color)
-  );
-}
-
-/** A position the board can show (the board and move list read it as soon as the node is selected). */
-function isPlayableFen(fen: unknown, checked: Map<string, boolean>): boolean {
-  if (typeof fen !== "string") return false;
-  let ok = checked.get(fen);
-  if (ok === undefined) {
-    try {
-      positionFromFen(fen);
-      ok = true;
-    } catch {
-      ok = false;
-    }
-    checked.set(fen, ok);
-  }
-  return ok;
-}
-
-function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()): value is MoveNode {
-  if (!isRecord(value)) return false;
-  const node = value;
-  const root = node.id === ROOT_NODE_ID;
-  return (
-    isString(node.id) &&
-    (root ? node.parentId === null : isString(node.parentId)) &&
-    (root
-      ? isStringOrNull(node.san) && isStringOrNull(node.uci)
-      : isString(node.san) && isString(node.uci)) &&
-    isPlayableFen(node.fenBefore, fens) &&
-    isPlayableFen(node.fenAfter, fens) &&
-    Number.isInteger(node.ply) &&
-    Array.isArray(node.nags) &&
-    node.nags.every(isString) &&
-    isStringOrNull(node.comment) &&
-    (node.clockAfter === undefined || isStringOrNull(node.clockAfter)) &&
-    (node.playedAt === undefined ||
-      (typeof node.playedAt === "number" && Number.isFinite(node.playedAt))) &&
-    Array.isArray(node.arrows) &&
-    node.arrows.every(isArrow) &&
-    Array.isArray(node.highlights) &&
-    node.highlights.every(isHighlight) &&
-    Array.isArray(node.children) &&
-    node.children.every(isString)
-  );
-}
-
-/**
- * A tree the app can use as it is: well-formed nodes with unique ids, the canonical root, and every
- * node reached from it exactly once by following children whose parent links point back — so no
- * duplicate child, cycle or stray node, and walks up through parents always end at the root.
- */
-export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
-  // FENs repeat (each node's fenBefore is its parent's fenAfter): each is parsed once.
-  const fens = new Map<string, boolean>();
-  if (!nodes.every((node) => isMoveNodeLike(node, fens))) return false;
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const root = byId.get(ROOT_NODE_ID);
-  if (!root || byId.size !== nodes.length) return false;
-  const reached = new Set([root.id]);
-  const pending = [root];
-  for (let node = pending.pop(); node; node = pending.pop()) {
-    for (const childId of node.children) {
-      const child = byId.get(childId);
-      if (!child || child.parentId !== node.id || reached.has(childId)) return false;
-      reached.add(childId);
-      pending.push(child);
-    }
-  }
-  return reached.size === nodes.length;
-}
-
-/**
- * Stored headers the renderer can use: every value a string or null (orientationHint a colour).
- * Anything else drops the whole set, and opening falls back to the headers in the row's PGN.
- */
-function isHeaders(value: unknown): value is GameHeaders {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.entries(value).every(([key, item]) =>
-    key === "orientationHint"
-      ? item === null || item === "white" || item === "black"
-      : isStringOrNull(item)
-  );
 }
 
 /**
@@ -531,17 +314,6 @@ function settingsRatingFor(row: GameRow): number {
   }).rating;
 }
 
-/** The row's stored headers, or null when it has none (older rows) or they can't be read. */
-function storedHeaders(headersJson: string | null): GameHeaders | null {
-  if (!headersJson) return null;
-  try {
-    const parsed: unknown = JSON.parse(headersJson);
-    return isHeaders(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 function toSavedGame(row: GameRow): SavedGame {
   const { moveTree, rebuilt } = parseMoveTree(row);
 
@@ -571,28 +343,29 @@ function toSavedGame(row: GameRow): SavedGame {
     reviews: listed.map(toSavedReviewInfo),
     reviewCount: listed.length,
     lastReviewedAt: listed[0]?.created_at ?? null,
-    ...(row.analysis_board === null || row.analysis_board === undefined
-      ? {}
-      : { analysisBoard: row.analysis_board === 1 })
+    ...(row.analysis_board === null ? {} : { analysisBoard: row.analysis_board === 1 })
   };
 }
 
-function toInstalledDatabase(row: ExternalDatabaseRow): InstalledDatabase {
+/** An optional path in a patch: absent keeps `current`, empty clears it, otherwise trimmed. */
+function patchedPath(value: string | null | undefined, current: string | null): string | null {
+  if (value === undefined) return current;
+  return value ? value.trim() : null;
+}
+
+/** The engine's stored fields with the patch applied: fields the patch leaves out keep their value. */
+function patchedEngine(existing: EngineConfig, patch: UpdateEngineInput) {
   return {
-    id: row.id,
-    sourceId: row.source_id,
-    name: row.name,
-    provider: row.provider,
-    kind: row.kind as ExternalDatabaseKind,
-    format: row.format as ExternalDatabaseFormat,
-    filePath: row.file_path,
-    fileSizeBytes: row.file_size_bytes,
-    recordCount: row.record_count,
-    sourceUrl: row.source_url,
-    pageUrl: row.page_url,
-    license: row.license,
-    downloadedAt: row.downloaded_at,
-    updatedAt: row.updated_at
+    name: patch.name ?? existing.name,
+    executablePath: patch.executablePath ?? existing.executablePath,
+    workingDirectory:
+      patch.workingDirectory === undefined ? existing.workingDirectory : patch.workingDirectory,
+    weightsPath: patchedPath(patch.weightsPath, existing.weightsPath),
+    imagePath: patchedPath(patch.imagePath, existing.imagePath),
+    args: patch.args ?? existing.args,
+    isDefault: patch.isDefault ?? existing.isDefault,
+    isHumanPrediction: patch.isHumanPrediction ?? existing.isHumanPrediction,
+    maiaRating: patch.maiaRating ?? existing.maiaRating ?? null
   };
 }
 
@@ -654,6 +427,7 @@ export const engineRepository = {
   update(id: string, patch: UpdateEngineInput): EngineConfig {
     const existing = this.get(id);
     if (!existing) throw new Error("Engine not found");
+    const next = patchedEngine(existing, patch);
     transaction(() => {
       if (patch.isDefault) this.clearDefault();
 
@@ -670,29 +444,15 @@ export const engineRepository = {
           maia_rating = ?,
           updated_at = ?
         WHERE id = ?`,
-        patch.name === undefined ? existing.name : patch.name,
-        patch.executablePath === undefined ? existing.executablePath : patch.executablePath,
-        patch.workingDirectory === undefined ? existing.workingDirectory : patch.workingDirectory,
-        patch.weightsPath === undefined
-          ? existing.weightsPath
-          : patch.weightsPath
-            ? patch.weightsPath.trim()
-            : null,
-        patch.imagePath === undefined
-          ? existing.imagePath
-          : patch.imagePath
-            ? patch.imagePath.trim()
-            : null,
-        patch.args === undefined ? JSON.stringify(existing.args) : JSON.stringify(patch.args),
-        (patch.isDefault === undefined ? existing.isDefault : patch.isDefault) ? 1 : 0,
-        (
-          patch.isHumanPrediction === undefined
-            ? existing.isHumanPrediction
-            : patch.isHumanPrediction
-        )
-          ? 1
-          : 0,
-        patch.maiaRating === undefined ? (existing.maiaRating ?? null) : patch.maiaRating,
+        next.name,
+        next.executablePath,
+        next.workingDirectory,
+        next.weightsPath,
+        next.imagePath,
+        JSON.stringify(next.args),
+        next.isDefault ? 1 : 0,
+        next.isHumanPrediction ? 1 : 0,
+        next.maiaRating,
         now(),
         id
       );
@@ -1129,82 +889,5 @@ export const settingsRepository = {
       JSON.stringify(value),
       now()
     );
-  }
-};
-
-export const externalDatabaseRepository = {
-  list(): InstalledDatabase[] {
-    return all<ExternalDatabaseRow>(
-      "SELECT * FROM external_databases ORDER BY downloaded_at DESC"
-    ).map(toInstalledDatabase);
-  },
-
-  get(id: string): InstalledDatabase | null {
-    const row = get<ExternalDatabaseRow>("SELECT * FROM external_databases WHERE id = ?", id);
-    return row ? toInstalledDatabase(row) : null;
-  },
-
-  getBySource(sourceId: string): InstalledDatabase | null {
-    const row = get<ExternalDatabaseRow>(
-      "SELECT * FROM external_databases WHERE source_id = ?",
-      sourceId
-    );
-    return row ? toInstalledDatabase(row) : null;
-  },
-
-  saveDownloaded(input: {
-    source: ExternalDatabaseSource;
-    filePath: string;
-    fileSizeBytes: number;
-    recordCount?: number | null;
-  }): InstalledDatabase {
-    const timestamp = now();
-    const existing = this.getBySource(input.source.id);
-    const id = existing?.id ?? nanoid();
-    const downloadedAt = existing?.downloadedAt ?? timestamp;
-    run(
-      `INSERT INTO external_databases (
-        id, source_id, name, provider, kind, format, file_path, file_size_bytes, record_count,
-        source_url, page_url, license, downloaded_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(source_id) DO UPDATE SET
-        name = excluded.name,
-        provider = excluded.provider,
-        kind = excluded.kind,
-        format = excluded.format,
-        file_path = excluded.file_path,
-        file_size_bytes = excluded.file_size_bytes,
-        record_count = excluded.record_count,
-        source_url = excluded.source_url,
-        page_url = excluded.page_url,
-        license = excluded.license,
-        updated_at = excluded.updated_at`,
-      id,
-      input.source.id,
-      input.source.name,
-      input.source.provider,
-      input.source.kind,
-      input.source.format,
-      input.filePath,
-      input.fileSizeBytes,
-      input.recordCount ?? input.source.expectedRecords ?? null,
-      input.source.url,
-      input.source.pageUrl,
-      input.source.license,
-      downloadedAt,
-      timestamp
-    );
-    const saved = this.get(id) ?? this.getBySource(input.source.id);
-    if (!saved) throw new Error("Failed to save database metadata");
-    return saved;
-  },
-
-  remove(id: string): void {
-    run("DELETE FROM external_databases WHERE id = ?", id);
-  },
-
-  /** The file moved (see dataset-location.ts). */
-  updateFilePath(id: string, filePath: string): void {
-    run("UPDATE external_databases SET file_path = ? WHERE id = ?", filePath, id);
   }
 };

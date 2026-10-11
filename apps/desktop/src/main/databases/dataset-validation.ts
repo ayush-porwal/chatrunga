@@ -82,63 +82,100 @@ export async function validateDataset(
 /** zstd's largest block (RFC 8878 §3.1.1.2.3). */
 const MAX_BLOCK_SIZE = 128 * 1024;
 
+/** Reads `length` header bytes at `position`: null past the end of the file or on a short read. */
+type HeaderReader = {
+  size: number;
+  read: (position: number, length: number) => Promise<Buffer | null>;
+};
+
+/** Where a frame (or its blocks) ends, or what is wrong with it. */
+type FrameWalk = { end: number } | { problem: string };
+
 /**
  * Walks every frame of a zstd file by its headers (RFC 8878 §3.1): skippable frames by their
  * length, zstd frames block by block to the last one and its checksum. Reads only headers (a few
  * bytes per 128 KiB block) and decompresses nothing. Returns what is wrong, or null when every
  * frame is whole and the file ends exactly after the last one.
  */
-export async function zstdStructureProblem(filePath: string): Promise<string | null> {
+async function zstdStructureProblem(filePath: string): Promise<string | null> {
   const file = await open(filePath, "r");
   try {
     const { size } = await file.stat();
     const header = Buffer.alloc(18);
-    const read = async (position: number, length: number): Promise<Buffer | null> => {
-      if (position + length > size) return null;
-      const { bytesRead } = await file.read(header, 0, length, position);
-      return bytesRead === length ? header : null;
+    const reader: HeaderReader = {
+      size,
+      read: async (position, length) => {
+        if (position + length > size) return null;
+        const { bytesRead } = await file.read(header, 0, length, position);
+        return bytesRead === length ? header : null;
+      }
     };
-    const cutShort = (offset: number) =>
-      `it ends in the middle of the compressed data (byte ${offset} of ${size})`;
     let offset = 0;
     while (offset < size) {
-      const start = await read(offset, 4);
-      if (!start) return cutShort(offset);
-      const magic = start.readUInt32LE(0);
-      if (isSkippableFrameMagic(magic)) {
-        const length = await read(offset + 4, 4);
-        if (!length) return cutShort(offset);
-        offset += 8 + length.readUInt32LE(0);
-        if (offset > size) return cutShort(size);
-        continue;
-      }
-      if (magic !== ZSTD_FRAME_MAGIC) return `it has unexpected data at byte ${offset}`;
-      const descriptor = await read(offset + 4, 1);
-      if (!descriptor) return cutShort(offset);
-      const flags = descriptor[0];
-      if (flags & 0x08) return `it has a damaged frame at byte ${offset}`;
-      const singleSegment = (flags >> 5) & 1;
-      const contentSizeBytes = [singleSegment ? 1 : 0, 2, 4, 8][flags >> 6];
-      const dictionaryIdBytes = [0, 1, 2, 4][flags & 3];
-      let position = offset + 5 + (singleSegment ? 0 : 1) + dictionaryIdBytes + contentSizeBytes;
-      for (;;) {
-        const block = await read(position, 3);
-        if (!block) return cutShort(position);
-        const value = block.readUIntLE(0, 3);
-        const type = (value >> 1) & 3;
-        const blockSize = value >>> 3;
-        if (type === 3 || blockSize > MAX_BLOCK_SIZE)
-          return `it has a damaged block at byte ${position}`;
-        position += 3 + (type === 1 ? 1 : blockSize);
-        if (position > size) return cutShort(size);
-        if (value & 1) break;
-      }
-      if (flags & 0x04) position += 4;
-      if (position > size) return cutShort(size);
-      offset = position;
+      const frame = await walkFrame(reader, offset);
+      if ("problem" in frame) return frame.problem;
+      offset = frame.end;
     }
     return null;
   } finally {
     await file.close();
+  }
+}
+
+function cutShort(reader: HeaderReader, offset: number): FrameWalk {
+  return {
+    problem: `it ends in the middle of the compressed data (byte ${offset} of ${reader.size})`
+  };
+}
+
+/** An end past the file is a frame cut short. */
+function endWithin(reader: HeaderReader, end: number): FrameWalk {
+  return end > reader.size ? cutShort(reader, reader.size) : { end };
+}
+
+/** The frame at `offset`: a skippable one by its length, a zstd one block by block. */
+async function walkFrame(reader: HeaderReader, offset: number): Promise<FrameWalk> {
+  const start = await reader.read(offset, 4);
+  if (!start) return cutShort(reader, offset);
+  const magic = start.readUInt32LE(0);
+  if (isSkippableFrameMagic(magic)) {
+    const length = await reader.read(offset + 4, 4);
+    if (!length) return cutShort(reader, offset);
+    return endWithin(reader, offset + 8 + length.readUInt32LE(0));
+  }
+  if (magic !== ZSTD_FRAME_MAGIC) return { problem: `it has unexpected data at byte ${offset}` };
+  return walkZstdFrame(reader, offset);
+}
+
+/** A zstd frame: its header (sized by the descriptor's flags), its blocks, then its checksum. */
+async function walkZstdFrame(reader: HeaderReader, offset: number): Promise<FrameWalk> {
+  const descriptor = await reader.read(offset + 4, 1);
+  if (!descriptor) return cutShort(reader, offset);
+  const flags = descriptor[0];
+  if (flags & 0x08) return { problem: `it has a damaged frame at byte ${offset}` };
+  const singleSegment = (flags >> 5) & 1;
+  const contentSizeBytes = [singleSegment ? 1 : 0, 2, 4, 8][flags >> 6];
+  const dictionaryIdBytes = [0, 1, 2, 4][flags & 3];
+  const blocks = await walkBlocks(
+    reader,
+    offset + 5 + (singleSegment ? 0 : 1) + dictionaryIdBytes + contentSizeBytes
+  );
+  if ("problem" in blocks) return blocks;
+  return endWithin(reader, blocks.end + (flags & 0x04 ? 4 : 0));
+}
+
+/** The blocks from `position` to the one flagged last. */
+async function walkBlocks(reader: HeaderReader, position: number): Promise<FrameWalk> {
+  for (;;) {
+    const block = await reader.read(position, 3);
+    if (!block) return cutShort(reader, position);
+    const value = block.readUIntLE(0, 3);
+    const type = (value >> 1) & 3;
+    const blockSize = value >>> 3;
+    if (type === 3 || blockSize > MAX_BLOCK_SIZE)
+      return { problem: `it has a damaged block at byte ${position}` };
+    position += 3 + (type === 1 ? 1 : blockSize);
+    if (position > reader.size) return cutShort(reader, reader.size);
+    if (value & 1) return { end: position };
   }
 }

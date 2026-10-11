@@ -110,7 +110,7 @@ function variationRows(
     }
     if (moves.length) rows.push({ id: start.id, depth: start.depth, moves });
     // Pre-order: this row's nested rows come next, in the order they branch along it.
-    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]!);
+    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]);
   }
   return rows;
 }
@@ -153,7 +153,7 @@ export function buildTreeModel(nodes: readonly MoveNode[], rootId = DEFAULT_ROOT
   // with Black (a position set up with Black to move) opens with a row that has no White move.
   const mainline: TreeMainlineRow[] = [];
   for (const node of mainlineNodes) {
-    const row = mainline[mainline.length - 1];
+    const row = mainline.at(-1);
     if (nodeColor(node) === "white") mainline.push({ number: moveNumber(node), white: node });
     else if (row && !row.black && row.number === moveNumber(node)) row.black = node;
     else mainline.push({ number: moveNumber(node), black: node });

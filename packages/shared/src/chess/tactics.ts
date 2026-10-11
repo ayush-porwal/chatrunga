@@ -207,7 +207,7 @@ function* xRayLines(pos: Chess, mover: Color): Generator<XRayLine> {
 function pinOn(pos: Chess, line: XRayLine): TacticalFact | null {
   const { attackerSq, attacker, frontSq, front, behindSq, behind } = line;
   if (PIECE_VALUE[behind.role] <= PIECE_VALUE[front.role]) return null;
-  if (!isMeaningfulPin(pos, attackerSq, attacker, frontSq, front, behind)) return null;
+  if (!isMeaningfulPin(pos, line)) return null;
   return {
     kind: "pin",
     pinned: { role: front.role, square: makeSquare(frontSq) },
@@ -223,7 +223,7 @@ function pinOn(pos: Chess, line: XRayLine): TacticalFact | null {
 function skewerOn(pos: Chess, line: XRayLine): TacticalFact | null {
   const { attackerSq, attacker, frontSq, front, behindSq, behind } = line;
   if (PIECE_VALUE[front.role] <= PIECE_VALUE[behind.role]) return null;
-  if (!isMeaningfulSkewer(pos, attackerSq, attacker, front, behindSq, behind)) return null;
+  if (!isMeaningfulSkewer(pos, line)) return null;
   return {
     kind: "skewer",
     attacker: { role: attacker.role, square: makeSquare(attackerSq) },
@@ -241,14 +241,8 @@ function skewerOn(pos: Chess, line: XRayLine): TacticalFact | null {
  *    the pinned piece and the pinner (so breaking the pin loses material), or
  *    the pinned piece itself is already en prise.
  */
-function isMeaningfulPin(
-  pos: Chess,
-  pinnerSq: Square,
-  pinner: Piece,
-  pinnedSq: Square,
-  pinned: Piece,
-  behind: Piece
-): boolean {
+function isMeaningfulPin(pos: Chess, line: XRayLine): boolean {
+  const { attackerSq: pinnerSq, attacker: pinner, frontSq: pinnedSq, front: pinned, behind } = line;
   if (pinned.role === "pawn") return false;
   if (exchangeGain(pos, pinnerSq) > 0) return false;
   if (behind.role === "king") return true;
@@ -261,14 +255,8 @@ function isMeaningfulPin(
  * than the attacker) and the piece behind can then be won: it is undefended or
  * worth more than the attacker. The attacker must not be capturable for free.
  */
-function isMeaningfulSkewer(
-  pos: Chess,
-  attackerSq: Square,
-  attacker: Piece,
-  front: Piece,
-  behindSq: Square,
-  behind: Piece
-): boolean {
+function isMeaningfulSkewer(pos: Chess, line: XRayLine): boolean {
+  const { attackerSq, attacker, front, behindSq, behind } = line;
   if (exchangeGain(pos, attackerSq) > 0) return false;
   if (front.role !== "king" && PIECE_VALUE[front.role] <= PIECE_VALUE[attacker.role]) return false;
   if (behind.role === "pawn") return false;

@@ -2,19 +2,13 @@ import { describe, expect, it } from "vitest";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import { REPERTOIRE_METADATA_LIMITS } from "@chaturanga/shared/types/repertoire";
 import {
-  asAbsolutePath,
-  asFen,
-  asId,
   asLichessId,
   asLichessUci,
-  asUciMoves,
-  parseAddFromGameInput,
   parseAnalysePositionsInput,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
-  parseGameLinkQuery,
   parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
@@ -22,23 +16,28 @@ import {
   parseDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
-  parsePractisedElsewhereInput,
-  parsePreviewImportInput,
   parseProbeEvalInput,
   parseListLimit,
   parsePuzzleOfTheDayInput,
   parsePuzzleSampleInput,
   parseRecordPuzzleAttemptInput,
-  parseRemoveGameLink,
-  parseLinkGameInput,
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
   parseSettingsPatch,
-  parseUpdateRepertoireMetadataInput,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
+import { asAbsolutePath, asFen, asId, asUciMoves } from "./fields";
+import {
+  parseAddFromGameInput,
+  parseGameLinkQuery,
+  parsePractisedElsewhereInput,
+  parsePreviewImportInput,
+  parseRemoveGameLink,
+  parseLinkGameInput,
+  parseUpdateRepertoireMetadataInput
+} from "./validate-repertoire";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
@@ -67,7 +66,7 @@ describe("primitive validators", () => {
   });
 
   it("accepts UCI moves only", () => {
-    expect(asUciMoves(["e2e4", "e7e8q", "e1h1"])).toEqual(["e2e4", "e7e8q", "e1h1"]);
+    expect(asUciMoves(["e2e4", "e7e8q", "e1h1"])).toStrictEqual(["e2e4", "e7e8q", "e1h1"]);
     expect(() => asUciMoves(["e4"])).toThrow(/UCI move/);
     expect(() => asUciMoves(["e2e4 quit"])).toThrow(/Invalid moves\[0\]: too long/);
     expect(() => asUciMoves("e2e4")).toThrow(/Invalid moves: expected an array/);
@@ -88,7 +87,7 @@ describe("engine inputs", () => {
         maiaRating: 1500,
         unknown: "dropped"
       })
-    ).toEqual({
+    ).toStrictEqual({
       name: "UCI Engine",
       executablePath: "/opt/lc0",
       workingDirectory: null,
@@ -109,8 +108,8 @@ describe("engine inputs", () => {
   });
 
   it("keeps only the fields a patch sets", () => {
-    expect(parseEnginePatch({ isDefault: true })).toEqual({ isDefault: true });
-    expect(parseEnginePatch({ weightsPath: null, imagePath: "" })).toEqual({
+    expect(parseEnginePatch({ isDefault: true })).toStrictEqual({ isDefault: true });
+    expect(parseEnginePatch({ weightsPath: null, imagePath: "" })).toStrictEqual({
       weightsPath: null,
       imagePath: null
     });
@@ -129,9 +128,10 @@ describe("engine session inputs", () => {
         moves: ["e2e4"],
         clock: { wtime: 1, btime: 2, winc: 0, binc: 0 }
       })
-    ).toEqual({
+    ).toStrictEqual({
       engineId: "sf",
       searchId: "s1",
+      gameKey: undefined,
       side: "black",
       fen: START,
       moves: ["e2e4"],
@@ -214,7 +214,7 @@ describe("engine session inputs", () => {
       predictionEngineIds: ["maia-1", ""],
       multipv: 3
     });
-    expect(review.predictionEngineIds).toEqual(["maia-1"]);
+    expect(review.predictionEngineIds).toStrictEqual(["maia-1"]);
     expect(review.moves[0]).toMatchObject({ uci: "e2e4", clockAfter: null });
     expect(review.nodes).toBeNull();
     expect(parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [] }).reviewId).toMatch(
@@ -233,7 +233,7 @@ describe("engine session inputs", () => {
         ...base,
         rating: { side: "black", whiteElo: 1810, blackElo: null, speed: "blitz" }
       }).rating
-    ).toEqual({ side: "black", whiteElo: 1810, blackElo: null, speed: "blitz" });
+    ).toStrictEqual({ side: "black", whiteElo: 1810, blackElo: null, speed: "blitz" });
     expect(parseReviewGameInput({ ...base, rating: null }).rating).toBeNull();
     expect(() =>
       parseReviewGameInput({ ...base, rating: { side: "red", whiteElo: null, blackElo: null } })
@@ -261,7 +261,7 @@ describe("engine session inputs", () => {
         positions: [{ fen: START, multipv: 3 }, { fen: AFTER_E4 }],
         extra: true
       })
-    ).toEqual({
+    ).toStrictEqual({
       requestId: "p1",
       engineId: "sf",
       moveTimeMs: 60_000,
@@ -333,7 +333,7 @@ describe("library inputs", () => {
     // An engine game keeps its engine's id; unknown headers are dropped.
     expect(
       parseSaveGameInput({ ...game, headers: { engineId: "sf-1", rogue: "x" } }).headers
-    ).toEqual({ engineId: "sf-1" });
+    ).toStrictEqual({ engineId: "sf-1" });
     expect(() => parseSaveGameInput({ ...game, headers: { engineId: 7 } })).toThrow(/engineId/);
   });
 
@@ -345,8 +345,8 @@ describe("library inputs", () => {
   });
 
   it("parses dialog inputs", () => {
-    expect(parseDialogFilters(undefined)).toEqual([]);
-    expect(parseDialogFilters([{ name: "Images", extensions: ["png"] }])).toEqual([
+    expect(parseDialogFilters(undefined)).toStrictEqual([]);
+    expect(parseDialogFilters([{ name: "Images", extensions: ["png"] }])).toStrictEqual([
       { name: "Images", extensions: ["png"] }
     ]);
     expect(() => parseDialogFilters([{ name: "x" }])).toThrow(/Invalid file filter extensions/);
@@ -373,7 +373,10 @@ describe("library inputs", () => {
     expect(() =>
       parsePuzzleSampleInput({ databaseId: "db", lichess: { ratingMin: "low" } })
     ).toThrow(/Invalid ratingMin/);
-    expect(parsePuzzleSampleInput({ databaseId: "db", ids: ["a", "b"] }).ids).toEqual(["a", "b"]);
+    expect(parsePuzzleSampleInput({ databaseId: "db", ids: ["a", "b"] }).ids).toStrictEqual([
+      "a",
+      "b"
+    ]);
     expect(parsePuzzleSampleInput({ databaseId: "db" })).not.toHaveProperty("ids");
     expect(() => parsePuzzleSampleInput({ databaseId: "db", ids: "a" })).toThrow(/puzzle ids/);
   });
@@ -394,7 +397,7 @@ describe("library inputs", () => {
       decidedAt: 2000,
       completedAt: null
     };
-    expect(parseRecordPuzzleAttemptInput(attempt)).toEqual(attempt);
+    expect(parseRecordPuzzleAttemptInput(attempt)).toStrictEqual(attempt);
     // An unrated set's puzzle has no rating; the themes may be left out.
     expect(
       parseRecordPuzzleAttemptInput({
@@ -420,8 +423,8 @@ describe("library inputs", () => {
   });
 
   it("accepts a real calendar day for the puzzle of the day", () => {
-    expect(parsePuzzleOfTheDayInput({ date: "2026-10-10" })).toEqual({ date: "2026-10-10" });
-    expect(parsePuzzleOfTheDayInput({ date: "2028-02-29", extra: 1 })).toEqual({
+    expect(parsePuzzleOfTheDayInput({ date: "2026-10-10" })).toStrictEqual({ date: "2026-10-10" });
+    expect(parsePuzzleOfTheDayInput({ date: "2028-02-29", extra: 1 })).toStrictEqual({
       date: "2028-02-29"
     });
     for (const date of [
@@ -466,8 +469,8 @@ describe("Lichess inputs", () => {
         rated: true,
         ratingRange: [1400, 1800]
       })
-    ).toEqual({ minutes: 10, incrementSec: 5, rated: true });
-    expect(parseLichessSeekInput({ minutes: 1.5, incrementSec: 0, rated: false })).toEqual({
+    ).toStrictEqual({ minutes: 10, incrementSec: 5, rated: true });
+    expect(parseLichessSeekInput({ minutes: 1.5, incrementSec: 0, rated: false })).toStrictEqual({
       minutes: 1.5,
       incrementSec: 0,
       rated: false
@@ -492,7 +495,7 @@ describe("Lichess inputs", () => {
         rated: false,
         color: "black"
       })
-    ).toEqual({
+    ).toStrictEqual({
       username: "Georges_1",
       minutes: 15,
       incrementSec: 10,
@@ -510,7 +513,7 @@ describe("Lichess inputs", () => {
   it("parses AI challenges and disconnect options", () => {
     expect(
       parseLichessAiChallengeInput({ level: 3, minutes: 10, incrementSec: 0, color: "white" })
-    ).toEqual({
+    ).toStrictEqual({
       level: 3,
       minutes: 10,
       incrementSec: 0,
@@ -519,15 +522,15 @@ describe("Lichess inputs", () => {
     expect(() =>
       parseLichessAiChallengeInput({ level: 9, minutes: 10, incrementSec: 0, color: "white" })
     ).toThrow(/level/);
-    expect(parseDisconnectInput({ removeGames: true })).toEqual({ removeGames: true });
+    expect(parseDisconnectInput({ removeGames: true })).toStrictEqual({ removeGames: true });
     expect(() => parseDisconnectInput({})).toThrow(/removeGames/);
   });
 
   it("parses a chess.com username and the first import's reach", () => {
     expect(
       parseChesscomConnectInput({ username: " Ayush_p64 ", firstImport: "year", extra: 1 })
-    ).toEqual({ username: "Ayush_p64", firstImport: "year" });
-    expect(parseChesscomConnectInput({ username: "a-b", firstImport: "all" })).toEqual({
+    ).toStrictEqual({ username: "Ayush_p64", firstImport: "year" });
+    expect(parseChesscomConnectInput({ username: "a-b", firstImport: "all" })).toStrictEqual({
       username: "a-b",
       firstImport: "all"
     });
@@ -556,7 +559,7 @@ describe("parseSaveGameInput headers", () => {
         injected: "x"
       }
     });
-    expect(input.headers).toEqual({
+    expect(input.headers).toStrictEqual({
       white: "A",
       whiteElo: "2000",
       termination: null,
@@ -576,15 +579,17 @@ describe("parseSaveGameInput headers", () => {
 
 describe("parseSettingsPatch", () => {
   it("keeps known keys and refuses unknown or empty patches", () => {
-    expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toEqual({
+    expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toStrictEqual({
       boardTheme: "green",
       boardSquareLight: null
     });
     // An older combined piece set id is stored as its current set.
-    expect(parseSettingsPatch({ pieceStyle: "cburnettSoft", pieceSizes: "uniform" })).toEqual({
-      pieceStyle: "cburnett",
-      pieceSizes: "uniform"
-    });
+    expect(parseSettingsPatch({ pieceStyle: "cburnettSoft", pieceSizes: "uniform" })).toStrictEqual(
+      {
+        pieceStyle: "cburnett",
+        pieceSizes: "uniform"
+      }
+    );
     // The removed piece look is no longer a setting.
     expect(() => parseSettingsPatch({ piecePresentation: "soft" })).toThrow(/unknown key/);
     expect(() => parseSettingsPatch({ nope: 1 })).toThrow(/Invalid setting: unknown key/);
@@ -593,7 +598,7 @@ describe("parseSettingsPatch", () => {
   });
 
   it("parses a library page request from known fields only", () => {
-    expect(parseGameListQuery(undefined)).toEqual({
+    expect(parseGameListQuery(undefined)).toStrictEqual({
       cursor: null,
       limit: undefined,
       search: undefined,
@@ -611,7 +616,7 @@ describe("parseSettingsPatch", () => {
         excludeId: "board",
         sql: "DROP TABLE games"
       })
-    ).toEqual({
+    ).toStrictEqual({
       cursor: { updatedAt: 5, id: "g1" },
       limit: 50,
       search: "carlsen",
@@ -648,16 +653,16 @@ describe("add-from-game inputs", () => {
   };
 
   it("parses the discriminated scope and destination and the policy ids", () => {
-    expect(parseAddFromGameInput(valid)).toEqual(valid);
+    expect(parseAddFromGameInput(valid)).toStrictEqual(valid);
     expect(
       parseAddFromGameInput({ ...valid, scope: { kind: "whole-game", extra: 1 } }).scope
-    ).toEqual({ kind: "whole-game" });
+    ).toStrictEqual({ kind: "whole-game" });
     expect(
       parseAddFromGameInput({
         ...valid,
         destination: { kind: "existing-chapter", chapterId: "c1" }
       }).destination
-    ).toEqual({ kind: "existing-chapter", chapterId: "c1" });
+    ).toStrictEqual({ kind: "existing-chapter", chapterId: "c1" });
     expect(
       parseAddFromGameInput({ ...valid, source: { ...valid.source, gameId: undefined } }).source
         .gameId
@@ -694,12 +699,12 @@ describe("add-from-game inputs", () => {
   });
 
   it("parses link queries and removals", () => {
-    expect(parseGameLinkQuery({ repertoireId: "r1" })).toEqual({ repertoireId: "r1" });
-    expect(parseGameLinkQuery({ repertoireId: "r1", chapterId: "c1" })).toEqual({
+    expect(parseGameLinkQuery({ repertoireId: "r1" })).toStrictEqual({ repertoireId: "r1" });
+    expect(parseGameLinkQuery({ repertoireId: "r1", chapterId: "c1" })).toStrictEqual({
       repertoireId: "r1",
       chapterId: "c1"
     });
-    expect(parseRemoveGameLink({ repertoireId: "r1", linkId: "l1" })).toEqual({
+    expect(parseRemoveGameLink({ repertoireId: "r1", linkId: "l1" })).toStrictEqual({
       repertoireId: "r1",
       linkId: "l1"
     });
@@ -715,7 +720,7 @@ describe("add-from-game inputs", () => {
       kind: "played",
       capturedPath: "1. e4"
     };
-    expect(parseLinkGameInput(valid)).toEqual(valid);
+    expect(parseLinkGameInput(valid)).toStrictEqual(valid);
     expect(
       parseLinkGameInput({ ...valid, chapterId: "c1", gameNodeId: undefined, kind: "model" })
     ).toMatchObject({
@@ -740,7 +745,7 @@ describe("parsePractisedElsewhereInput", () => {
         chapterId: "c1",
         positionKeys: [" v1:a "]
       })
-    ).toEqual({ repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:a"] });
+    ).toStrictEqual({ repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:a"] });
     expect(() =>
       parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: "v1:a" })
     ).toThrow("positionKeys");
@@ -758,7 +763,7 @@ describe("parsePreviewImportInput", () => {
     expect(() => parsePreviewImportInput({ pgn: "x".repeat(20 * 1024 * 1024 + 1) })).toThrow(
       "This PGN is larger than 20 MiB; split it and import it in parts."
     );
-    expect(parsePreviewImportInput({ pgn: "1. e4 *", jobId: "job-1" })).toEqual({
+    expect(parsePreviewImportInput({ pgn: "1. e4 *", jobId: "job-1" })).toStrictEqual({
       pgn: "1. e4 *",
       jobId: "job-1"
     });
@@ -775,7 +780,11 @@ describe("parseUpdateRepertoireMetadataInput", () => {
     expect(
       parse({ name: "n".repeat(limits.name), description: "d".repeat(limits.description), tags })
         .patch
-    ).toEqual({ name: "n".repeat(limits.name), description: "d".repeat(limits.description), tags });
+    ).toStrictEqual({
+      name: "n".repeat(limits.name),
+      description: "d".repeat(limits.description),
+      tags
+    });
   });
 
   it("refuses metadata past them", () => {

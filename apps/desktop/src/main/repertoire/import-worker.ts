@@ -24,8 +24,8 @@ let resume: (() => void) | null = null;
 const post = (message: ImportWorkerMessage) => parentPort?.postMessage(message);
 
 parentPort?.on("message", (request: ImportWorkerRequest) => {
-  if (request?.type === "cancel") cancelled = true;
-  if (request?.type === "more") {
+  if (request.type === "cancel") cancelled = true;
+  if (request.type === "more") {
     resume?.();
     resume = null;
   }

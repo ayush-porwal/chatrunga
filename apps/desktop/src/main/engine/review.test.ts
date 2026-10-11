@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type {
   EngineConfig,
   MaiaRating,
+  MoveReview,
   ReviewMoveInputItem
 } from "@chaturanga/shared/types/engine";
 import { applySan, fenAfterUci } from "@chaturanga/shared/chess/position";
@@ -15,6 +16,16 @@ const FAKE = join(__dirname, "__fixtures__", "fake-uci.mjs");
 /** The scripted engine with review lines for the Blackburne Shilling trap (see its "review" modes). */
 const SCRIPTED = join(__dirname, "__fixtures__", "fake-live-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+/** A reviewed move's annotation (null when it was left unassessed). */
+const annotationOf = (move: MoveReview) => move.assessment?.annotation ?? null;
+
+/** A move-completed listener that runs `then` once move `index` is done. */
+const afterMove =
+  (index: number, then: () => void) =>
+  ({ moveIndex }: { moveIndex: number }) => {
+    if (moveIndex === index) then();
+  };
 
 function fakeEngine(
   id: string,
@@ -120,25 +131,24 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
         moveTimeMs: 50
       },
       { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
-      [maia1100, broken],
-      { threads: 2, hashMb: 64, playerRating: 1200 }
+      { maiaConfigs: [maia1100, broken], threads: 2, hashMb: 64, playerRating: 1200 }
     );
 
     expect(review.schemaVersion).toBe(3);
     expect(review.assessmentPolicy).toBe(MOVE_ASSESSMENT_POLICY);
     expect(review.engineName).toBe("Fake sf");
-    expect(review.engineSettings).toEqual({
+    expect(review.engineSettings).toStrictEqual({
       multipv: 3,
       moveTimeMs: 50,
       depth: null,
       threads: 2,
       hashMb: 64
     });
-    expect(review.maiaEngines).toEqual([
+    expect(review.maiaEngines).toStrictEqual([
       { rating: 1100, engineId: "maia-1100", name: "maia-1100" }
     ]);
     // One progress event per phase per move; no "after" phase for the mating move.
-    expect(phases).toEqual([
+    expect(phases).toStrictEqual([
       "0:before",
       "0:after",
       "1:before",
@@ -150,34 +160,34 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
 
     const first = review.moves[0];
     expect(first.topLines).toHaveLength(3);
-    expect(first.topLines[0].wdl).toEqual({ win: 300, draw: 500, loss: 200 });
+    expect(first.topLines[0].wdl).toStrictEqual({ win: 300, draw: 500, loss: 200 });
     expect(first.replyLines).toHaveLength(3);
-    expect(first.wdlBefore).toEqual({ win: 300, draw: 500, loss: 200 });
+    expect(first.wdlBefore).toStrictEqual({ win: 300, draw: 500, loss: 200 });
     expect(first.humanPredictions).toHaveLength(1);
     expect(first.humanPredictions![0].rating).toBe(1100);
     expect(first.humanPredictions![0].topMoves[0].prob).toBeCloseTo(0.2375, 4);
     // g2g4 is the fake engine's 2nd line → same-search rank and score.
     const third = review.moves[2];
     expect(third.playedRank).toBe(2);
-    expect(third.playedLineScore).toEqual({ type: "cp", value: 20 });
+    expect(third.playedLineScore).toStrictEqual({ type: "cp", value: 20 });
     expect(third.evalLoss).toBe(20);
 
     const last = review.moves[3];
     expect(last.terminal).toBe("checkmate");
-    expect(last.evalAfter).toEqual({ type: "mate", value: 0 });
-    expect(last.replyLines).toEqual([]);
-    expect(last.wdlAfter).toEqual({ win: 0, draw: 0, loss: 1000 });
+    expect(last.evalAfter).toStrictEqual({ type: "mate", value: 0 });
+    expect(last.replyLines).toStrictEqual([]);
+    expect(last.wdlAfter).toStrictEqual({ win: 0, draw: 0, loss: 1000 });
     expect(last.evalLoss).toBe(0);
     // Fool's mate is a named line of the opening book, mate and all: every move is Book, none an
     // error, and the game's opening is its name.
-    expect(review.moves.map((move) => move.assessment?.annotation)).toEqual([
+    expect(review.moves.map((move) => move.assessment?.annotation)).toStrictEqual([
       "book",
       "book",
       "book",
       "book"
     ]);
     expect(last.assessment).toMatchObject({ severity: null, annotation: "book" });
-    expect(review.opening).toEqual({
+    expect(review.opening).toStrictEqual({
       eco: "A00",
       name: "Barnes Opening: Fool's Mate",
       ply: 4,
@@ -206,7 +216,7 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       { onMoveCompleted: ({ moveIndex, opening }) => streamed.push({ moveIndex, opening }) }
     );
     // The first six moves are opening theory: 3… Nd4 is the Blackburne–Kostić Gambit, so Book.
-    expect(review.moves.map((move) => [move.san, move.assessment?.annotation ?? null])).toEqual([
+    expect(review.moves.map((move) => [move.san, annotationOf(move)])).toStrictEqual([
       ["e4", "book"],
       ["e5", "book"],
       ["Nf3", "book"],
@@ -223,17 +233,17 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       ["Nf3#", null]
     ]);
     const qg5 = review.moves[7];
-    expect(qg5.verification?.deeperLines?.map((line) => line.pv[0])).toEqual([
+    expect(qg5.verification?.deeperLines?.map((line) => line.pv[0])).toStrictEqual([
       "d8g5",
       "d8e7",
       "d4c2"
     ]);
-    expect(qg5.assessment?.tags).toEqual(
+    expect(qg5.assessment?.tags).toStrictEqual(
       expect.arrayContaining(["engine_top", "punishes_error", "only_move"])
     );
     expect(review.moves[12].assessment?.tags).toContain("mate_created");
     // Only the critical find needed a check; the routine moves and the clear errors didn't.
-    expect(review.moves.filter((move) => move.verification).map((move) => move.san)).toEqual([
+    expect(review.moves.filter((move) => move.verification).map((move) => move.san)).toStrictEqual([
       "Qg5"
     ]);
     expect(review.summary).toMatchObject({
@@ -251,7 +261,7 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       firstNonBookMove: { ply: 7, san: "Nxe5" }
     });
     // Each finished move carries the opening, so a running review can name it from the first.
-    expect(streamed).toEqual(
+    expect(streamed).toStrictEqual(
       review.moves.map((_, moveIndex) => ({ moveIndex, opening: review.opening }))
     );
   }, 30_000);
@@ -301,7 +311,6 @@ describe("review checks", () => {
         moveTimeMs: 40
       },
       {},
-      [],
       { checkTimeoutMs: 300 }
     );
     const qg5 = review.moves[7];
@@ -310,7 +319,7 @@ describe("review checks", () => {
     expect(qg5.assessment?.annotation).toBe("good");
     expect(qg5.assessment?.tags).toContain("unverified");
     // The searches after it read their own answers.
-    expect(review.moves.slice(8).map((move) => move.assessment?.annotation ?? null)).toEqual([
+    expect(review.moves.slice(8).map(annotationOf)).toStrictEqual([
       "blunder",
       "good",
       null,
@@ -336,13 +345,10 @@ describe("review checks", () => {
           moveTimeMs: 40
         },
         {
-          onMoveCompleted: ({ moveIndex }) => {
-            // Qg5 (move 8) is checked right after Nxe5 completes: cancel while it hangs.
-            if (moveIndex === 6) setTimeout(() => (cancelled = true), 200);
-          },
+          // Qg5 (move 8) is checked right after Nxe5 completes: cancel while it hangs.
+          onMoveCompleted: afterMove(6, () => setTimeout(() => (cancelled = true), 200)),
           shouldCancel: () => cancelled
         },
-        [],
         { checkTimeoutMs: 20_000 }
       )
     ).rejects.toThrow("Review cancelled");
@@ -372,13 +378,13 @@ describe("review reuse", () => {
     expect(first.phases.length).toBeGreaterThan(0);
 
     const again = await run(77);
-    expect(again.phases).toEqual([]);
-    expect(again.review.moves.map((move) => [move.nodeId, move.assessment])).toEqual(
+    expect(again.phases).toStrictEqual([]);
+    expect(again.review.moves.map((move) => [move.nodeId, move.assessment])).toStrictEqual(
       first.review.moves.map((move) => [move.nodeId, move.assessment])
     );
 
     const otherBudget = await run(78);
-    expect(otherBudget.phases.length).toBe(first.phases.length);
+    expect(otherBudget.phases).toHaveLength(first.phases.length);
   });
 
   // A shell wrapper stands in for the engine binary, so it can be replaced at the same path.
@@ -411,10 +417,10 @@ describe("review reuse", () => {
       };
       const first = await run();
       expect(first.length).toBeGreaterThan(0);
-      expect(await run()).toEqual([]);
+      expect(await run()).toStrictEqual([]);
 
       install("v2 (updated)");
-      expect((await run()).length).toBe(first.length);
+      expect(await run()).toHaveLength(first.length);
     }
   );
 
@@ -447,14 +453,14 @@ describe("review reuse", () => {
         return phases;
       };
       const first = await run();
-      expect((await run()).length).toBe(first.length);
+      expect(await run()).toHaveLength(first.length);
     }
   );
 });
 
 describe("analysePositionsWithEngine", () => {
   it("searches each position with its own line count and skips a finished one", async () => {
-    const mated = foolsMate()[3]!.fenAfter;
+    const mated = foolsMate()[3].fenAfter;
     const result = await analysePositionsWithEngine(
       fakeEngine("sf", "sf"),
       {
@@ -468,8 +474,8 @@ describe("analysePositionsWithEngine", () => {
       { threads: 1, hashMb: 16 }
     );
     expect(result.engineName).toBe("Fake sf");
-    expect(result.lines.map((lines) => lines.length)).toEqual([3, 0, 1]);
-    expect(result.lines[0]![0]).toMatchObject({
+    expect(result.lines.map((lines) => lines.length)).toStrictEqual([3, 0, 1]);
+    expect(result.lines[0][0]).toMatchObject({
       multipv: 1,
       pv: ["d1h5"],
       scoreWhite: { type: "cp", value: 40 }

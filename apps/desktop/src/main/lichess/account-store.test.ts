@@ -7,14 +7,6 @@ import { LichessAccountStore } from "./account-store";
 
 const temporaryDirectories: string[] = [];
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true }))
-  );
-});
-
 async function storePath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "chaturanga-lichess-"));
   temporaryDirectories.push(directory);
@@ -39,6 +31,14 @@ const ACCOUNT: LichessAccount = {
 };
 
 describe("LichessAccountStore", () => {
+  afterEach(async () => {
+    await Promise.all(
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true }))
+    );
+  });
+
   it("stores the token encrypted in a private file", async () => {
     const path = await storePath();
     const store = new LichessAccountStore(path, secureStorage());
@@ -50,8 +50,13 @@ describe("LichessAccountStore", () => {
       account: { id: "kenneth" },
       encryptedToken: expect.any(String)
     });
-    // oxlint-disable-next-line vitest/no-conditional-expect -- Windows has no POSIX file modes
-    if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  // Windows has no POSIX file modes.
+  it.skipIf(process.platform === "win32")("makes the file readable by its owner only", async () => {
+    const path = await storePath();
+    await new LichessAccountStore(path, secureStorage()).save(ACCOUNT, "lip_test-token");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
   it("reports the account without touching secure storage (no macOS keychain prompt)", async () => {
@@ -60,7 +65,7 @@ describe("LichessAccountStore", () => {
 
     const storage = secureStorage();
     const store = new LichessAccountStore(path, storage);
-    expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: false });
+    expect(await store.status()).toStrictEqual({ account: ACCOUNT, tokenRejected: false });
     expect(await store.hasUsableToken()).toBe(true);
     await store.recordSync(5000, 4001);
     expect(storage.isEncryptionAvailable).not.toHaveBeenCalled();
@@ -75,7 +80,7 @@ describe("LichessAccountStore", () => {
     const store = new LichessAccountStore(await storePath(), secureStorage());
     await store.save(ACCOUNT, "lip_test-token");
     await store.markTokenRejected();
-    expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true });
+    expect(await store.status()).toStrictEqual({ account: ACCOUNT, tokenRejected: true });
     expect(await store.getToken()).toBeNull();
     expect(await store.hasUsableToken()).toBe(false);
 
@@ -102,7 +107,7 @@ describe("LichessAccountStore", () => {
     const store = new LichessAccountStore(path, secureStorage());
     await store.save(ACCOUNT, "t1");
     await store.clear();
-    expect(await store.status()).toEqual({ account: null, tokenRejected: false });
+    expect(await store.status()).toStrictEqual({ account: null, tokenRejected: false });
     await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
 
     const unavailable = new LichessAccountStore(path, {
@@ -110,7 +115,7 @@ describe("LichessAccountStore", () => {
       isEncryptionAvailable: () => false
     });
     await expect(unavailable.save(ACCOUNT, "plain")).rejects.toThrow(/Secure key storage/);
-    expect(await unavailable.status()).toEqual({ account: null, tokenRejected: false });
+    expect(await unavailable.status()).toStrictEqual({ account: null, tokenRejected: false });
   });
 
   it("fails when the credential can't be removed, but not when it's already gone", async () => {

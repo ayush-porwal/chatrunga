@@ -80,34 +80,34 @@ describe("library tab", () => {
 
     it("counts the games it lists: every source's, one source's, or their reviewed ones", () => {
       const all = libraryFilterState(library, DEFAULT_LIBRARY_FILTER);
-      expect(all.options).toEqual([
+      expect(all.options).toStrictEqual([
         { tab: null, label: "All games", count: 586 },
         { tab: "lichess", label: "Lichess", count: 571 },
         { tab: "chesscom", label: "Chess.com", count: 12 },
         { tab: "engine", label: "Engine", count: 3 }
       ]);
-      expect([all.total, all.reviewed]).toEqual([586, 42]);
+      expect([all.total, all.reviewed]).toStrictEqual([586, 42]);
       const reviewed = libraryFilterState(library, { tab: null, reviewed: true });
-      expect([reviewed.total, reviewed.reviewed]).toEqual([42, 42]);
+      expect([reviewed.total, reviewed.reviewed]).toStrictEqual([42, 42]);
       const chesscom = libraryFilterState(library, { tab: "chesscom", reviewed: false });
-      expect([chesscom.total, chesscom.reviewed]).toEqual([12, 2]);
+      expect([chesscom.total, chesscom.reviewed]).toStrictEqual([12, 2]);
       expect(libraryFilterState(library, { tab: "chesscom", reviewed: true }).total).toBe(2);
     });
 
     it("lists every game once the chosen source has none left (no dot), keeping Reviewed", () => {
       const gone = libraryFilterState(library, { tab: "imported", reviewed: false });
-      expect(gone.filter).toEqual(DEFAULT_LIBRARY_FILTER);
+      expect(gone.filter).toStrictEqual(DEFAULT_LIBRARY_FILTER);
       expect(libraryFilterApplies(gone.filter)).toBe(false);
       expect(gone.total).toBe(586);
       const reviewed = libraryFilterState(library, { tab: "imported", reviewed: true });
-      expect(reviewed.filter).toEqual({ tab: null, reviewed: true });
+      expect(reviewed.filter).toStrictEqual({ tab: null, reviewed: true });
       expect(reviewed.total).toBe(42);
     });
 
     it("counts an empty library as no games", () => {
       const empty = libraryFilterState(emptyTabCounts(), DEFAULT_LIBRARY_FILTER);
-      expect(empty.options).toEqual([{ tab: null, label: "All games", count: 0 }]);
-      expect([empty.total, empty.reviewed]).toEqual([0, 0]);
+      expect(empty.options).toStrictEqual([{ tab: null, label: "All games", count: 0 }]);
+      expect([empty.total, empty.reviewed]).toStrictEqual([0, 0]);
     });
   });
 

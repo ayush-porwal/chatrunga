@@ -56,10 +56,9 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     const expected = rateAttempt(
       DEFAULT_PUZZLE_RATING,
       { rating: 1500, deviation: 75 },
-      true,
-      input.decidedAt
+      { solved: true, at: input.decidedAt }
     );
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       attemptId: input.attemptId,
       rated: true,
       unratedReason: null,
@@ -88,7 +87,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     });
     expect(second.before!.deviation).toBeCloseTo(first.after!.deviation, 3); // widened for a second only
     expect(second.delta).toBeLessThan(0);
-    expect(repository.history().map((point) => point.rating)).toEqual([
+    expect(repository.history().map((point) => point.rating)).toStrictEqual([
       first.after!.rating,
       second.after!.rating
     ]);
@@ -105,23 +104,26 @@ describe("puzzleAttemptRepository (SQLite)", () => {
       solutionViewed: true,
       completedAt: input.decidedAt + 5000
     });
-    expect(again).toEqual(first);
+    expect(again).toStrictEqual(first);
     expect(repository.summary().ratedCount).toBe(1);
-    const row = () =>
-      getDb()
+    const row = () => ({
+      ...getDb()
         .prepare(
           "SELECT outcome, wrong_move_count, solution_viewed, completed_at FROM puzzle_attempts WHERE id = ?"
         )
-        .get(input.attemptId);
-    expect(row()).toEqual({
+        .get(input.attemptId)
+    });
+    expect(row()).toStrictEqual({
       outcome: "failed",
       wrong_move_count: 3,
       solution_viewed: 1,
       completed_at: input.decidedAt + 5000
     });
     // An older copy arriving late takes nothing away.
-    expect(repository.record({ ...input, completedAt: input.decidedAt + 9000 })).toEqual(first);
-    expect(row()).toEqual({
+    expect(repository.record({ ...input, completedAt: input.decidedAt + 9000 })).toStrictEqual(
+      first
+    );
+    expect(row()).toStrictEqual({
       outcome: "failed",
       wrong_move_count: 3,
       solution_viewed: 1,
@@ -167,16 +169,18 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     const second = repository.record(input, T0 + 60 * DAY);
     const before = ratingAfterIdle(first.after!, T0, T0 + 60 * DAY);
     expect(before.deviation).toBeGreaterThan(first.after!.deviation);
-    expect(second.before).toEqual(before);
-    expect(second.after).toEqual(
-      rateAttempt(before, { rating: 1500, deviation: 75 }, true, input.decidedAt)
+    expect(second.before).toStrictEqual(before);
+    expect(second.after).toStrictEqual(
+      rateAttempt(before, { rating: 1500, deviation: 75 }, { solved: true, at: input.decidedAt })
     );
-    const row = getDb()
-      .prepare(
-        "SELECT rating_before, rd_before, volatility_before FROM puzzle_attempts WHERE id = ?"
-      )
-      .get(input.attemptId);
-    expect(row).toEqual({
+    const row = {
+      ...getDb()
+        .prepare(
+          "SELECT rating_before, rd_before, volatility_before FROM puzzle_attempts WHERE id = ?"
+        )
+        .get(input.attemptId)
+    };
+    expect(row).toStrictEqual({
       rating_before: before.rating,
       rd_before: before.deviation,
       volatility_before: before.volatility
@@ -196,9 +200,13 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     const early = attempt({ decidedAt: T0 });
     const first = repository.record(later, T0 + 10 * DAY);
     const late = repository.record(early, T0 + 10 * DAY);
-    expect(late.before).toEqual(first.after);
-    expect(late.after).toEqual(
-      rateAttempt(first.after!, { rating: 1500, deviation: 75 }, true, later.decidedAt)
+    expect(late.before).toStrictEqual(first.after);
+    expect(late.after).toStrictEqual(
+      rateAttempt(
+        first.after!,
+        { rating: 1500, deviation: 75 },
+        { solved: true, at: later.decidedAt }
+      )
     );
     expect(repository.summary(T0 + 10 * DAY)).toMatchObject({
       ...late.after,
@@ -206,7 +214,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
       lastRatedAt: later.decidedAt
     });
     // The chain is in the order recorded.
-    expect(repository.history().map((point) => point.rating)).toEqual([
+    expect(repository.history().map((point) => point.rating)).toStrictEqual([
       first.after!.rating,
       late.after!.rating
     ]);
@@ -240,7 +248,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
         puzzleRatingDeviation: null
       })
     );
-    expect(repository.themeStats()).toEqual([
+    expect(repository.themeStats()).toStrictEqual([
       { theme: "fork", attempts: 2, solved: 1, performance: 1500 - 500 + 500 },
       { theme: "pin", attempts: 1, solved: 1, performance: 2000 },
       { theme: "short", attempts: 1, solved: 1, performance: 1900 }
@@ -260,8 +268,10 @@ describe("puzzleAttemptRepository (SQLite)", () => {
         puzzleRating: null
       })
     );
-    expect(repository.failed("lichess-puzzles").map((puzzle) => puzzle.puzzleId)).toEqual(["b"]);
-    expect(repository.failed(null).map((puzzle) => puzzle.puzzleId)).toEqual(["x", "b"]);
+    expect(repository.failed("lichess-puzzles").map((puzzle) => puzzle.puzzleId)).toStrictEqual([
+      "b"
+    ]);
+    expect(repository.failed(null).map((puzzle) => puzzle.puzzleId)).toStrictEqual(["x", "b"]);
     expect(repository.failed(null, 1)).toHaveLength(1);
     expect(repository.failed("lichess-puzzles")[0]).toMatchObject({
       sourceId: "lichess-puzzles",
@@ -280,7 +290,9 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     // Decided at the same moment: the one recorded last.
     repository.record(attempt({ puzzleId: "c", outcome: "solved", decidedAt: T0 }));
     repository.record(attempt({ puzzleId: "c", outcome: "failed", decidedAt: T0 }));
-    expect(repository.failed(null).map((puzzle) => [puzzle.puzzleId, puzzle.failedAt])).toEqual([
+    expect(
+      repository.failed(null).map((puzzle) => [puzzle.puzzleId, puzzle.failedAt])
+    ).toStrictEqual([
       ["b", T0 + 2 * DAY],
       ["c", T0]
     ]);
