@@ -22,18 +22,23 @@ export function LiveBadge({
         className
       )}
     >
-      <LiveDot />
+      <LiveDot pulse />
       {children}
     </span>
   );
 }
 
-export function LiveDot({ className }: { className?: string }) {
+/** The red dot of something live; `pulse` rings it (kept for a few prominent ones, not lists). */
+export function LiveDot({ pulse = false, className }: { pulse?: boolean; className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn("size-1.5 shrink-0 rounded-full bg-danger", className)}
-    />
+      className={cn("relative size-1.5 shrink-0 rounded-full bg-danger", className)}
+    >
+      {pulse ? (
+        <span className="absolute inset-0 animate-live-ping rounded-full bg-danger motion-reduce:hidden" />
+      ) : null}
+    </span>
   );
 }
 
@@ -173,8 +178,8 @@ export const BoardCard = memo(function BoardCard({
       onClick={() => onOpen(board.id)}
       aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
       className={cn(
-        "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow] duration-micro ease-standard",
-        "hover:border-accent focus-visible:ring-2 focus-visible:ring-accent/70",
+        "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow,translate] duration-standard ease-enter",
+        "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] focus-visible:ring-2 focus-visible:ring-accent/70 active:translate-y-0",
         highlighted ? "border-accent shadow-[0_0_0_3px_rgb(143_182_111/0.18)]" : "border-line"
       )}
     >

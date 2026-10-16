@@ -419,20 +419,16 @@
 }
 
 /*
- * The page's columns. At 1440×900 the Play card is 392px and the three board cards share the rest.
- * In a smaller window the Play card gives up some width first, down to 320px (where the
- * time-control labels still fit), and the side cards' column under the last board card never gets
- * narrower than 15rem (their labels must fit).
+ * The page's columns (app.css: --lead-column, and --side-column on .page-frame). At 1440×900 the Play card is 392px
+ * and the three board cards share the rest. In a smaller window the Play card gives up some width
+ * first, down to 320px (where the time-control labels still fit), and the side column (the last
+ * board card, the side cards under it) never gets narrower than 20rem (every page's side column
+ * has that floor): the other two board cards narrow instead, so its edges line up top and bottom.
  */
-.play-columns,
-.play-columns-bottom {
-  --play-column: clamp(320px, 32.8%, 392px);
-}
-
 .play-columns {
-  grid-template-columns: var(--play-column) repeat(3, minmax(0, 1fr));
+  grid-template-columns: var(--lead-column) repeat(2, minmax(0, 1fr)) var(--side-column);
 }
 
 .play-columns-bottom {
-  grid-template-columns: minmax(0, 1fr) max(15rem, calc((100% - var(--play-column) - 3rem) / 3));
+  grid-template-columns: minmax(0, 1fr) var(--side-column);
 }

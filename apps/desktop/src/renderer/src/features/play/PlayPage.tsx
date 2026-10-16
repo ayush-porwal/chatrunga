@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { useRepertoireDueSummaryQuery } from "../../queries/repertoire";
 import { useLichessStore } from "../../stores/lichess-store";
+import { LiveBroadcastsCard } from "../broadcasts/LiveBroadcastsCard";
+import type { TournamentTarget } from "../broadcasts/navigation";
 import type { ResumePracticeTarget, StudyTarget } from "../repertoire/repertoire-chapters";
 import {
   BoardCardSkeleton,
@@ -43,6 +45,9 @@ export type PlayPageProps = {
   onImportPgn: () => void;
   /** Databases (the filler card's way to get a puzzle database). */
   onOpenDatabases: () => void;
+  /** The Broadcasts page, and a tournament of it (the Live broadcasts card). */
+  onOpenBroadcasts: () => void;
+  onOpenBroadcastTournament: (target: TournamentTarget) => void;
 };
 
 /** The top row: the Play card's column, then three (play.css: `.play-columns`). */
@@ -160,14 +165,21 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
               onReviewGame={props.onReviewGame}
             />
           </div>
-          <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-h-0 min-w-0 flex-col gap-4">
             <StartSomethingNewCard
               desktopApiAvailable={desktopApiAvailable}
               onAnalyze={props.onAnalyze}
               onPuzzles={props.onPuzzles}
               onImportPgn={props.onImportPgn}
             />
-            {firstRun || loading ? null : <ChallengesCard grow />}
+            {firstRun || loading ? null : <ChallengesCard />}
+            {loading || !desktopApiAvailable ? null : (
+              <LiveBroadcastsCard
+                className="flex-1"
+                onOpenTournament={props.onOpenBroadcastTournament}
+                onOpenBroadcasts={props.onOpenBroadcasts}
+              />
+            )}
           </div>
         </div>
       </div>

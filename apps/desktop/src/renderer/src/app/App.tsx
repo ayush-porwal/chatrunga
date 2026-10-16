@@ -483,7 +483,10 @@ export function App() {
         />
 
         <main
-          className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}
+          className={cn(
+            contentPanel,
+            "page-frame col-start-2 row-start-2 [view-transition-name:app-content]"
+          )}
         >
           <AppNotices desktopApiAvailable={desktopApiAvailable} />
           <div className="grid min-h-0 flex-1">

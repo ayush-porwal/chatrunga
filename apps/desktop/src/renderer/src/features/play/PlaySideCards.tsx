@@ -60,13 +60,9 @@ export const StartSomethingNewCard = memo(function StartSomethingNewCard({
 /**
  * Play's "Challenges for you": each incoming Lichess challenge as an inner card (who, clock,
  * rated, your colour; Accept / Decline). With none, a black king says so ("Account not connected"
- * without a Lichess account). `grow`: the card reaches the bottom of the column.
+ * without a Lichess account).
  */
-export const ChallengesCard = memo(function ChallengesCard({
-  grow
-}: {
-  grow: boolean;
-}): JSX.Element {
+export const ChallengesCard = memo(function ChallengesCard(): JSX.Element {
   const loaded = useLichessStore((state) => state.loaded);
   const connected = useLichessStore(
     (state) => Boolean(state.status.account) && !state.status.tokenRejected
@@ -78,7 +74,7 @@ export const ChallengesCard = memo(function ChallengesCard({
   const settled = loaded || !window.chaturanga;
 
   return (
-    <section aria-labelledby="play-challenges-title" className={cn(sideCard, grow && "flex-1")}>
+    <section aria-labelledby="play-challenges-title" className={cn(sideCard, "shrink-0")}>
       <CardTitleBar
         id="play-challenges-title"
         title="Challenges for you"

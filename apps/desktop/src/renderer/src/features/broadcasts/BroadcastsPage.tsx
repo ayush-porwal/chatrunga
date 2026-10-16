@@ -11,7 +11,7 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCell, StatStrip } from "@/components/ui/stat-strip";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { pageShell, sectionTitle } from "@/lib/ui";
+import { sectionTitle } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { useBroadcastRoundQuery, useBroadcastTopQuery } from "../../queries/broadcasts";
@@ -29,7 +29,8 @@ import type { TournamentTarget } from "./navigation";
 
 /** Lichess's broadcast calendar (every upcoming event, beyond the few listed here). */
 const CALENDAR_URL = "https://lichess.org/broadcast/calendar";
-const PAST_SHOWN = 6;
+/** A recently finished event's card, in the section's sideways row. */
+const PAST_CARD_WIDTH = "w-56";
 /** How often a live event's top board is read again on the hub. */
 const PREVIEW_REFRESH_MS = 3 * 60_000;
 /**
@@ -37,8 +38,15 @@ const PREVIEW_REFRESH_MS = 3 * 60_000;
  * request every few minutes, from an anonymous budget of about 30 per 3 minutes for every page.
  */
 const PREVIEWED_LIVE = 6;
+/** A live card's banner and board: one height, so the row's edges line up. */
+const LIVE_CARD_MEDIA = "h-44";
+/** Shown for a live event whose top board isn't read. */
+const EMPTY_BOARD_FEN = "8/8/8/8/8/8/8/8 w - - 0 1";
 
 const cardFrame = "rounded-xl border border-line bg-surface";
+/** A banner inside a hovered `group` card leans in a little. */
+const zoomOnHover =
+  "[&_img]:transition-transform [&_img]:duration-emphasis [&_img]:ease-enter group-hover:[&_img]:scale-[1.04]";
 
 /**
  * Broadcasts: over-the-board events relayed live by Lichess. A workspace like Play (it fills the
@@ -62,36 +70,35 @@ export function BroadcastsPage({
     });
 
   return (
-    <div className={pageShell}>
-      <div className="flex min-h-full flex-col gap-4 p-6">
-        <h1 className="sr-only">Broadcasts</h1>
-        <BroadcastSearch
-          liveRoundIds={
-            sections?.live.flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
+    // The page fits the panel (it never scrolls): its sections scroll inside.
+    <div className="pointer-cursors flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
+      <h1 className="sr-only">Broadcasts</h1>
+      <BroadcastSearch
+        liveRoundIds={
+          sections?.live.flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
+        }
+        onOpen={onOpenTournament}
+      />
+      {top.isError ? (
+        <Notice
+          tone="danger"
+          title="Couldn't load broadcasts"
+          action={
+            <Button size="xs" onClick={() => void top.refetch()}>
+              <RotateCcw />
+              Try again
+            </Button>
           }
-          onOpen={onOpenTournament}
-        />
-        {top.isError ? (
-          <Notice
-            tone="danger"
-            title="Couldn't load broadcasts"
-            action={
-              <Button size="xs" onClick={() => void top.refetch()}>
-                <RotateCcw />
-                Try again
-              </Button>
-            }
-          >
-            {ipcErrorMessage(top.error)}
-          </Notice>
-        ) : null}
-        <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="flex min-w-0 flex-col gap-5">
-            <LiveSection sections={sections} loading={loading} onOpen={open} />
-            <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
-          </div>
-          <UpcomingRail upcoming={sections?.upcoming ?? null} loading={loading} onOpen={open} />
+        >
+          {ipcErrorMessage(top.error)}
+        </Notice>
+      ) : null}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_var(--side-column)] gap-4">
+        <div className="flex min-h-0 min-w-0 flex-col gap-4">
+          <LiveSection sections={sections} loading={loading} onOpen={open} />
+          <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
         </div>
+        <UpcomingRail upcoming={sections?.upcoming ?? null} loading={loading} onOpen={open} />
       </div>
     </div>
   );
@@ -147,6 +154,7 @@ function LiveSection({
     <SectionCard
       id="broadcasts-live"
       title="Live now"
+      className="min-h-0 flex-1"
       aside={
         sections ? (
           <span className="text-xs text-fg-subtle">
@@ -155,35 +163,37 @@ function LiveSection({
         ) : null
       }
     >
-      {!sections ? (
-        loading ? (
-          <>
-            <LiveEventSkeleton />
-            <LiveEventSkeleton />
-          </>
+      <div className="scroll-area grid min-h-0 flex-1 content-start overflow-y-auto">
+        {!sections ? (
+          loading ? (
+            <>
+              <LiveEventSkeleton />
+              <LiveEventSkeleton />
+            </>
+          ) : (
+            NOT_LOADED
+          )
+        ) : sections.live.length ? (
+          sections.live.map((listing, index) => (
+            <LiveEventCard
+              key={listing.tour.id}
+              listing={listing}
+              index={index}
+              onOpen={() => onOpen(listing)}
+            />
+          ))
         ) : (
-          NOT_LOADED
-        )
-      ) : sections.live.length ? (
-        sections.live.map((listing, index) => (
-          <LiveEventCard
-            key={listing.tour.id}
-            listing={listing}
-            preview={index < PREVIEWED_LIVE}
-            onOpen={() => onOpen(listing)}
+          <EmptyState
+            icon={<Radio />}
+            title="No events are live right now"
+            description={
+              next && nextStart !== null
+                ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`
+                : undefined
+            }
           />
-        ))
-      ) : (
-        <EmptyState
-          icon={<Radio />}
-          title="No events are live right now"
-          description={
-            next && nextStart !== null
-              ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`
-              : undefined
-          }
-        />
-      )}
+        )}
+      </div>
     </SectionCard>
   );
 }
@@ -201,6 +211,7 @@ function PastSection({
     <SectionCard
       id="broadcasts-past"
       title="Recently finished"
+      className="shrink-0"
       aside={
         <Button asChild variant="ghost" size="xs" className="-mr-2">
           <a href="https://lichess.org/broadcast" target="_blank" rel="noreferrer">
@@ -215,18 +226,19 @@ function PastSection({
       ) : !past && !loading ? (
         NOT_LOADED
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-4">
+        // One row, scrolling sideways.
+        <div className="scroll-area flex gap-4 overflow-x-auto p-4">
           {past
-            ? past
-                .slice(0, PAST_SHOWN)
-                .map((listing) => (
-                  <PastEventCard
-                    key={listing.tour.id}
-                    listing={listing}
-                    onOpen={() => onOpen(listing)}
-                  />
-                ))
-            : [0, 1, 2].map((key) => <Skeleton key={key} className="aspect-[2/1] rounded-lg" />)}
+            ? past.map((listing) => (
+                <PastEventCard
+                  key={listing.tour.id}
+                  listing={listing}
+                  onOpen={() => onOpen(listing)}
+                />
+              ))
+            : [0, 1, 2].map((key) => (
+                <Skeleton key={key} className={cn(PAST_CARD_WIDTH, "aspect-[2/1] rounded-lg")} />
+              ))}
         </div>
       )}
     </SectionCard>
@@ -249,7 +261,7 @@ function UpcomingRail({
       id="broadcasts-upcoming"
       title="Upcoming"
       aside={<span className="text-xs text-fg-subtle">Your time zone</span>}
-      className="min-h-0 lg:max-h-[calc(100vh-9.5rem)]"
+      className="min-h-0"
     >
       <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
         {!upcoming && !loading ? (
@@ -270,14 +282,14 @@ function UpcomingRail({
               key={listing.tour.id}
               type="button"
               onClick={() => onOpen(listing)}
-              className="flex w-full items-center gap-3 border-b border-line-subtle px-4 py-2.5 text-left transition-colors hover:bg-control focus-visible:bg-control focus-visible:outline-none"
+              className="group flex w-full items-center gap-3 border-b border-line-subtle px-4 py-2.5 text-left transition-colors hover:bg-control focus-visible:bg-control focus-visible:outline-none"
             >
               <TourImage
                 src={listing.tour.image}
-                className="h-9 w-16 rounded-md [&>svg]:size-3.5"
+                className={cn("h-9 w-16 rounded-md [&>svg]:size-3.5", zoomOnHover)}
               />
               <span className="grid min-w-0 flex-1 gap-0.5">
-                <span className="truncate text-[0.8125rem] font-semibold text-fg-secondary">
+                <span className="truncate text-[0.8125rem] font-semibold text-fg-secondary transition-colors group-hover:text-fg">
                   {listing.tour.name}
                 </span>
                 <span className="truncate text-xs text-fg-muted">
@@ -316,14 +328,16 @@ function UpcomingRail({
  */
 function LiveEventCard({
   listing,
-  preview,
+  index,
   onOpen
 }: {
   listing: BroadcastListing;
-  preview: boolean;
+  /** Its place in the list: the first few preview their top board, and they rise in in turn. */
+  index: number;
   onOpen: () => void;
 }) {
   const { tour, round } = listing;
+  const preview = index < PREVIEWED_LIVE;
   const detail = useBroadcastRoundQuery(preview ? (round?.id ?? null) : null, {
     refetchIntervalMs: PREVIEW_REFRESH_MS
   });
@@ -333,16 +347,27 @@ function LiveEventCard({
     <button
       type="button"
       onClick={onOpen}
-      className="flex gap-4 p-4 text-left transition-colors duration-micro hover:bg-control/40 focus-visible:bg-control/40 focus-visible:outline-none [&+&]:border-t [&+&]:border-line-subtle"
+      style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}
+      className="group relative flex animate-rise-in gap-4 p-4 text-left transition-colors duration-standard hover:bg-control/50 focus-visible:bg-control/50 focus-visible:outline-none [&+&]:border-t [&+&]:border-line-subtle"
     >
-      <TourImage src={tour.image} className="aspect-video w-[min(300px,34%)] rounded-lg">
+      {/* An accent edge slides in on hover. */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-3 left-0 w-0.5 origin-center scale-y-0 rounded-full bg-accent transition-transform duration-standard ease-enter group-hover:scale-y-100 group-focus-visible:scale-y-100"
+      />
+      <TourImage
+        src={tour.image}
+        className={cn(LIVE_CARD_MEDIA, "w-[min(300px,34%)] rounded-lg", zoomOnHover)}
+      >
         <LiveBadge className="absolute top-2.5 left-2.5">
           {round ? `Live · ${round.name}` : "Live"}
         </LiveBadge>
       </TourImage>
       <span className="flex min-w-0 flex-1 flex-col gap-2.5">
         <span className="grid gap-1.5">
-          <span className="truncate text-[0.9375rem] font-semibold text-fg">{tour.name}</span>
+          <span className="truncate text-[0.9375rem] font-semibold text-fg transition-colors group-hover:text-accent-fg">
+            {tour.name}
+          </span>
           <TourFacts tour={tour} />
         </span>
         {topBoard ? (
@@ -358,17 +383,31 @@ function LiveEventCard({
         ) : null}
         <RoundStats listing={listing} games={detail.data?.games ?? null} />
       </span>
-      {topBoard ? (
-        <span className="hidden w-[min(170px,22%)] shrink-0 xl:block">
-          <BoardThumbnail
-            fen={topBoard.fen}
-            lastMove={topBoard.lastMove}
-            rounded="md"
-            label={`Top board: ${topBoard.white.name} against ${topBoard.black.name}`}
-          />
-        </span>
-      ) : null}
+      <LiveCardBoard board={topBoard ?? null} loading={preview && detail.isPending} />
     </button>
+  );
+}
+
+/** A live card's top board, as tall as the banner: an empty board until (or unless) it's read. */
+function LiveCardBoard({ board, loading }: { board: BroadcastGame | null; loading: boolean }) {
+  return (
+    <span
+      className={cn(
+        LIVE_CARD_MEDIA,
+        "hidden aspect-square shrink-0 rounded-md transition-[translate,box-shadow] duration-standard ease-enter group-hover:-translate-y-0.5 group-hover:shadow-[0_10px_24px_-12px_rgb(0_0_0/0.6)] xl:block"
+      )}
+    >
+      {loading ? (
+        <Skeleton className="size-full rounded-md" />
+      ) : (
+        <BoardThumbnail
+          fen={board?.fen ?? EMPTY_BOARD_FEN}
+          lastMove={board?.lastMove ?? null}
+          rounded="md"
+          label={board ? `Top board: ${board.white.name} against ${board.black.name}` : undefined}
+        />
+      )}
+    </span>
   );
 }
 
@@ -376,17 +415,17 @@ function LiveEventCard({
 function TourFacts({ tour }: { tour: BroadcastTour }) {
   const tc = timeControlText(tour);
   return (
-    <span className="flex flex-wrap gap-x-3.5 gap-y-1 text-xs text-fg-muted">
+    <span className="flex min-w-0 gap-x-3.5 overflow-hidden text-xs whitespace-nowrap text-fg-muted">
       {tour.info.location ? (
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex shrink-0 items-center gap-1.5">
           <MapPin aria-hidden="true" className="size-3.25" />
           {tour.info.location}
         </span>
       ) : null}
       {tc ? (
-        <span className="inline-flex items-center gap-1.5">
-          <Clock aria-hidden="true" className="size-3.25" />
-          {tc}
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Clock aria-hidden="true" className="size-3.25 shrink-0" />
+          <span className="truncate">{tc}</span>
         </span>
       ) : null}
     </span>
@@ -424,12 +463,13 @@ const DAY_MONTH = new Intl.DateTimeFormat("en", { month: "short", day: "numeric"
 function LiveEventSkeleton() {
   return (
     <div className="flex gap-4 p-4 [&+&]:border-t [&+&]:border-line-subtle" aria-hidden="true">
-      <Skeleton className="aspect-video w-[min(300px,34%)] rounded-lg" />
+      <Skeleton className={cn(LIVE_CARD_MEDIA, "w-[min(300px,34%)] rounded-lg")} />
       <div className="grid flex-1 content-start gap-3">
         <Skeleton className="h-4 w-1/2" />
         <Skeleton className="h-3 w-2/5" />
         <Skeleton className="h-3 w-3/5" />
       </div>
+      <Skeleton className={cn(LIVE_CARD_MEDIA, "hidden aspect-square rounded-md xl:block")} />
     </div>
   );
 }
@@ -443,14 +483,22 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
     <button
       type="button"
       onClick={onOpen}
-      className="group flex flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+      className={cn(
+        PAST_CARD_WIDTH,
+        "group flex shrink-0 flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+      )}
     >
       <TourImage
         src={tour.image}
-        className="aspect-[2/1] w-full rounded-lg transition-opacity duration-micro group-hover:opacity-85"
+        className={cn(
+          "aspect-[2/1] w-full rounded-lg ring-1 ring-transparent transition-shadow group-hover:ring-accent/60",
+          zoomOnHover
+        )}
       />
       <span className="grid gap-0.5 px-0.5">
-        <span className="truncate text-sm font-semibold text-fg-secondary">{tour.name}</span>
+        <span className="truncate text-sm font-semibold text-fg-secondary transition-colors group-hover:text-fg">
+          {tour.name}
+        </span>
         <span className="truncate text-xs text-fg-muted">{meta || tour.info.location || " "}</span>
       </span>
     </button>

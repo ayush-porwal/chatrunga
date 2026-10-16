@@ -226,6 +226,8 @@ export function AppPages({
             onRepertoireStudy={on.openRepertoireStudy}
             onSolvePuzzleOfTheDay={on.solvePuzzleOfTheDay}
             onOpenDatabases={on.databases}
+            onOpenBroadcasts={on.broadcasts}
+            onOpenBroadcastTournament={on.openBroadcastTournament}
             onOpenGame={on.openGame}
             onReviewGame={on.reviewGame}
             onAnalyze={on.liveAnalysis}

@@ -168,7 +168,7 @@ export const PuzzlePage = memo(function PuzzlePage({
   return (
     <PuzzlesPage>
       <div className="@container">
-        <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_var(--side-column)]">
           <section className={cn(cardPadded, "grid gap-5")} aria-label="Filters">
             <DatabaseField
               databases={puzzleDatabases}
@@ -437,7 +437,7 @@ function PuzzleSetActions({
 function PuzzleSetupSkeleton() {
   return (
     <div className="@container" aria-busy="true" aria-label="Loading databases">
-      <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
+      <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_var(--side-column)]">
         <div className={cn(cardPadded, "grid gap-5")}>
           <div className="grid gap-2">
             <Skeleton className="h-3 w-20" />

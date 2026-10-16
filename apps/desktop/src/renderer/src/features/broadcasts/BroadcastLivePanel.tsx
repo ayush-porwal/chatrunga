@@ -91,7 +91,10 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
           {resultText(follow.result)}
         </span>
       ) : (
-        <LiveDot className="size-2 shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-danger)_18%,transparent)]" />
+        <LiveDot
+          pulse
+          className="size-2 shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-danger)_18%,transparent)]"
+        />
       )}
       <span className="font-semibold text-fg">{over ? "Game over" : "Following live"}</span>
       <span className="truncate text-fg-subtle">{follow.roundName}</span>
@@ -104,7 +107,7 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
       )}
       {cleared ? (
-        <Button size="xs" onClick={undoBackToLive}>
+        <Button size="xs" className="cursor-pointer" onClick={undoBackToLive}>
           <Undo2 />
           Undo
         </Button>
@@ -158,7 +161,7 @@ function ExploringStrip({
       <Button
         variant="primary"
         size="sm"
-        className="justify-start"
+        className="cursor-pointer justify-start"
         aria-keyshortcuts={BACK_TO_LIVE_KEY}
         onClick={() => backToLive()}
       >
