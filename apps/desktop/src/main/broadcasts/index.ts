@@ -39,11 +39,19 @@ function broadcastAlert(value: unknown): BroadcastAlert {
   return { title: asString(alert.title, "title", 120), body: asString(alert.body, "body", 300) };
 }
 
+/** The notifications on screen: held until they go, so their click handler isn't collected. */
+const shown = new Set<Notification>();
+
 /** Shows `alert` as a desktop notification; clicking it brings the window to the front. */
 function notify(alert: BroadcastAlert): void {
   if (!Notification.isSupported()) return;
   const notification = new Notification({ title: alert.title, body: alert.body, silent: false });
+  shown.add(notification);
+  const forget = () => shown.delete(notification);
+  notification.on("close", forget);
+  notification.on("failed", forget);
   notification.on("click", () => {
+    forget();
     const window = BrowserWindow.getAllWindows().at(0);
     if (!window) return;
     if (window.isMinimized()) window.restore();

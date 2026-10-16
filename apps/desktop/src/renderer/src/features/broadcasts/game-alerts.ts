@@ -6,7 +6,11 @@ import { resultText } from "./broadcast-text";
 
 type Games = Partial<Record<string, StreamedGame>>;
 
-/** The games with an alert that have just ended: in progress before, a result now. */
+/**
+ * The games with an alert that have just ended: a result now that wasn't there before (a bell is
+ * only offered while a game is live, so a first sighting with a result is an ending too; a fired
+ * alert is dropped, so the same result never fires twice).
+ */
 export function endedAlerts(
   alerts: Partial<Record<string, GameAlert>>,
   games: Games,
@@ -14,7 +18,8 @@ export function endedAlerts(
 ): { gameId: string; alert: GameAlert; result: BroadcastResult }[] {
   return Object.entries(alerts).flatMap(([gameId, alert]) => {
     const game = games[gameId];
-    if (!alert || !game || game.result === "*" || previous[gameId]?.result !== "*") return [];
+    if (!alert || !game || game.result === "*" || previous[gameId]?.result === game.result)
+      return [];
     return [{ gameId, alert, result: game.result }];
   });
 }

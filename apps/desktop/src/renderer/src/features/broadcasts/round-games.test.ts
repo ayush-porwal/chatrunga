@@ -4,7 +4,7 @@ import type {
   BroadcastRoundDetail,
   BroadcastTour
 } from "@chaturanga/shared/types/broadcast";
-import { toggledFollow } from "./followed-players";
+import { followWriter, toggledFollow } from "./followed-players";
 import { playsIn, roundGamesWhere } from "./round-games";
 
 const player = (name: string) => ({
@@ -49,7 +49,9 @@ const ROUND = {
 
 describe("round games", () => {
   it("lists a followed player's games, those being played first, with where they are", () => {
-    const entries = roundGamesWhere([ROUND], {}, (item) => playsIn(item, ["Gukesh D"]));
+    const entries = roundGamesWhere([ROUND], {}, (item) => playsIn(item, ["gukesh d"]));
+    // Whole names only: following "Li" isn't following Alireza.
+    expect(roundGamesWhere([ROUND], {}, (item) => playsIn(item, ["Li"]))).toStrictEqual([]);
     expect(entries.map((entry) => [entry.gameId, entry.live])).toStrictEqual([
       ["Game0003", true],
       ["Game0001", false]
@@ -59,6 +61,23 @@ describe("round games", () => {
       status: "Live",
       target: { tourId: "Tour0001", roundId: "Round001", focusGameId: "Game0003" }
     });
+  });
+
+  it("keeps a follow still being written when another star is clicked", () => {
+    const writes: string[][] = [];
+    const settles: (() => void)[] = [];
+    const toggle = followWriter((followed, settled) => {
+      writes.push(followed);
+      settles.push(settled);
+    });
+    // Both clicks see the settings as they were (nothing followed yet).
+    toggle([], "Gukesh D");
+    toggle([], "Carlsen, Magnus");
+    expect(writes.at(-1)).toStrictEqual(["Gukesh D", "Carlsen, Magnus"]);
+    for (const settled of settles) settled();
+    // Written: the settings are read again.
+    toggle(["Gukesh D", "Carlsen, Magnus"], "Gukesh D");
+    expect(writes.at(-1)).toStrictEqual(["Carlsen, Magnus"]);
   });
 
   it("follows a player, and unfollows them the second time", () => {

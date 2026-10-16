@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type {
   BroadcastRound,
@@ -7,15 +8,23 @@ import type {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { roundQueryOptions } from "../../queries/broadcasts";
+import { useBroadcastStore } from "../../stores/broadcast-store";
 import { scoreText } from "./broadcast-text";
-import { crosstable, type CrossCell } from "./crosstable";
+import { crosstable, type CrossCell } from "./crosstable-model";
 
-/** A finished round never changes: read once, kept while the app runs. */
-const LIVE_ROUND_STALE_MS = 5 * 60_000;
+/** A round being played is read again this often while the crosstable is open. */
+const LIVE_ROUND_REFRESH_MS = 3 * 60_000;
+/**
+ * The pause after a round read from Lichess before the next is asked for: the rounds come one
+ * after another, not in a burst (round and tournament reads share a budget of about 30 per 3
+ * minutes). Rounds read before come at once.
+ */
+const ROUND_GAP_MS = 1500;
 
 /**
  * Every player's game of every round (the started ones), opponents by their place in the
- * standings; a game opens on the board. Each round is read once (finished ones are kept).
+ * standings; a game opens on the board. Each round is read once (finished ones are kept), in
+ * turn; the streamed games' results are the latest.
  */
 export function Crosstable({
   standings,
@@ -26,18 +35,34 @@ export function Crosstable({
   rounds: readonly BroadcastRound[];
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
+  const [unlocked, setUnlocked] = useState(1);
+  const streamed = useBroadcastStore((state) => state.games);
   const reads = useQueries({
-    queries: rounds.map((round) => ({
+    queries: rounds.map((round, index) => ({
       ...roundQueryOptions(round.id),
-      staleTime: round.finished ? Number.POSITIVE_INFINITY : LIVE_ROUND_STALE_MS
+      enabled: index < unlocked,
+      staleTime: round.finished ? Number.POSITIVE_INFINITY : LIVE_ROUND_REFRESH_MS,
+      refetchInterval: round.finished ? false : LIVE_ROUND_REFRESH_MS
     })),
     combine: (results) => ({
       details: results.map((result) => result.data ?? null),
-      failed: results.map((result) => result.isError)
+      failed: results.map((result) => result.isError),
+      settled: results.map((result) => result.data !== undefined || result.isError),
+      fetched: results.map((result) => result.isFetchedAfterMount)
     })
   });
   const { details, failed } = reads;
-  const rows = crosstable(standings, details);
+  const lastSettled = reads.settled[unlocked - 1] ?? false;
+  const lastFetched = reads.fetched[unlocked - 1] ?? false;
+  useEffect(() => {
+    if (unlocked >= rounds.length || !lastSettled) return;
+    const timer = setTimeout(
+      () => setUnlocked((count) => count + 1),
+      lastFetched ? ROUND_GAP_MS : 0
+    );
+    return () => clearTimeout(timer);
+  }, [unlocked, rounds.length, lastSettled, lastFetched]);
+  const rows = crosstable(standings, details, streamed);
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full border-collapse text-[0.8125rem]">

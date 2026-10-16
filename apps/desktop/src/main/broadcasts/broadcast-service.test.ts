@@ -88,6 +88,20 @@ describe("BroadcastService", () => {
     expect(requests.at(-1)?.headers.authorization).toBeUndefined();
   });
 
+  it("tries a token saved after the refused one", async () => {
+    const { fetch, requests } = fakeFetch({
+      "GET /api/broadcast/abcdefgh": refusedSignedIn,
+      "GET /api/broadcast/top": () => json({ active: [], past: { currentPageResults: [] } })
+    });
+    let token = "lip_old";
+    const service = new BroadcastService({ fetch, getToken: async () => token });
+    await expect(service.tournament("abcdefgh")).rejects.toThrow("Not found");
+    // Signed in again: the new token goes along.
+    token = "lip_new";
+    await service.top();
+    expect(requests.at(-1)?.headers.authorization).toBe("Bearer lip_new");
+  });
+
   it("rejects with a readable message when Lichess limits requests", async () => {
     const { service } = setup({
       "GET /api/broadcast/abcdefgh": () => json({ error: "Too many requests" }, 429)

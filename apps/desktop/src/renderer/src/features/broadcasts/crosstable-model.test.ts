@@ -5,7 +5,7 @@ import type {
   BroadcastStanding,
   BroadcastTour
 } from "@chaturanga/shared/types/broadcast";
-import { crosstable, type CrossCell } from "./crosstable";
+import { crosstable, type CrossCell } from "./crosstable-model";
 
 const person = (name: string) => ({
   name,
@@ -69,5 +69,10 @@ describe("crosstable", () => {
       ["b1 0", "w? *", "-"],
       ["-", "w1 ½", "-"]
     ]);
+    // A game that ended since its round was read: the stream's result.
+    const live = crosstable([standing("B")], [round([game("B", "X", "*")])], {
+      BX: { result: "0-1" }
+    });
+    expect(live[0]?.cells.map(cellText)).toStrictEqual(["w? 0"]);
   });
 });

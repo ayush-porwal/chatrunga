@@ -66,8 +66,8 @@ export type BroadcastServiceOptions = {
 export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> {
   private readonly client: LichessClient;
   private readonly watches = new Map<string, RoundWatch>();
-  /** Lichess refused the token here: anonymous from now on. */
-  private tokenRefused = false;
+  /** The token Lichess refused here (401): anonymous while it is the one saved. */
+  private refusedToken: string | null = null;
 
   constructor(private readonly options: BroadcastServiceOptions = {}) {
     super();
@@ -141,24 +141,28 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
       const response = await this.client.request(path, signedIn);
       return await response.json();
     } catch (error) {
-      if (!this.refusedToken(signedIn, error)) throw error;
+      if (!this.tokenWasRefused(signedIn, error)) throw error;
       return this.json(path);
     }
   }
 
   /** How a request goes: with the token that may read studies, or anonymously. */
   private async signedIn(): Promise<SignedIn> {
-    if (this.tokenRefused || !this.options.getToken) return { auth: false };
+    if (!this.options.getToken) return { auth: false };
     const token = await this.options.getToken().catch(() => null);
-    return token ? { token } : { auth: false };
+    // A token refused before stays out; one saved since (signed in again) is tried.
+    return token && token !== this.refusedToken ? { token } : { auth: false };
   }
 
-  /** Whether `error` is Lichess refusing the token a request sent (it is dropped: anonymous now). */
-  private refusedToken(sent: SignedIn, error: unknown): boolean {
-    if (!("token" in sent) || !(error instanceof LichessHttpError)) return false;
-    if (error.status !== 401 && error.status !== 403) return false;
+  /**
+   * Whether `error` is Lichess refusing the token a request sent (401: a 403 may be a block page
+   * or a private broadcast, not the token). It is set aside: anonymous until another is saved.
+   */
+  private tokenWasRefused(sent: SignedIn, error: unknown): boolean {
+    if (!("token" in sent) || !(error instanceof LichessHttpError) || error.status !== 401)
+      return false;
     logger.warn("broadcasts", "Lichess refused the token; going on anonymously");
-    this.tokenRefused = true;
+    this.refusedToken = sent.token;
     return true;
   }
 
@@ -187,7 +191,7 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
         if (signal.aborted) return;
         // Refused signed in: straight back, anonymously.
-        if (this.refusedToken(signedIn, error)) continue;
+        if (this.tokenWasRefused(signedIn, error)) continue;
         logger.warn("broadcasts", `round ${roundId} stream dropped:`, error);
         dropError = error;
       }

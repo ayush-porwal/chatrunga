@@ -38,7 +38,13 @@ import {
 } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useBoardEvals, useEvalEngine } from "./board-evals";
-import { boardModel, isLive, useSecondClock, type BoardModel } from "./board-state";
+import {
+  boardModel,
+  dateFromSummary,
+  isLive,
+  useSecondClock,
+  type BoardModel
+} from "./board-state";
 import { BoardCard, LiveBadge, LiveDot, TourImage } from "./broadcast-parts";
 import {
   elapsedText,
@@ -81,6 +87,8 @@ function useFollowNextRound(
   const after = roundAfter(rounds, roundId);
   const nextStarted = after?.started ? after.round.id : null;
   useEffect(() => {
+    // Gone to another round: the live one was left before it finished.
+    if (watchedLive.current !== roundId) watchedLive.current = null;
     if (ongoing) {
       watchedLive.current = roundId;
       return;
@@ -121,18 +129,6 @@ function NextRoundNote({
       {round.name}: {startsText(round.startsAt, now).toLowerCase()}
     </span>
   );
-}
-
-/**
- * The analysis board's clock runs from the last move: date a streamed game's from the round
- * summary (read at `readAt`) when the stream can't.
- */
-function dateFromSummary(detail: BroadcastRoundDetail, gameId: string, readAt: number): void {
-  const game = detail.games.find((item) => item.id === gameId);
-  if (!game) return;
-  const store = useBroadcastStore.getState();
-  const board = boardModel(game, store.games[gameId], readAt);
-  if (board.lastMoveAt !== null) store.dateLastMove(gameId, board.lastMove, board.lastMoveAt);
 }
 
 /**
@@ -369,6 +365,16 @@ function BoardsTab({
   const evalsOn = useBroadcastStore((state) => state.evalsOn);
   const evals = useBroadcastStore((state) => state.evals);
   const evalEngine = useEvalEngine();
+  const evalsEngine = useBroadcastStore((state) => state.evalsEngine);
+  const evalError = useBroadcastStore((state) => state.evalError);
+  // A board's evaluation: its score, or on its way (a live board, while evaluating goes on);
+  // nothing for a position that won't be searched, or another engine's score.
+  const boardEvaluation = (board: BoardModel) => {
+    if (!evalsOn) return undefined;
+    const score = evalsEngine === evalEngine ? evals[board.fen] : undefined;
+    if (score !== undefined) return { score };
+    return isLive(board) && !evalError ? { score: null } : undefined;
+  };
   const [player, setPlayer] = useState("");
   const detail = roundQuery.data;
   const boards = useMemo(
@@ -465,7 +471,7 @@ function BoardsTab({
               roundId={detail.round.id}
               now={now}
               highlighted={board.id === focusGameId}
-              evaluation={evalsOn ? { score: evals[board.fen] ?? null } : undefined}
+              evaluation={boardEvaluation(board)}
               onOpen={(gameId) => onOpenGame(detail, gameId)}
             />
           ))}

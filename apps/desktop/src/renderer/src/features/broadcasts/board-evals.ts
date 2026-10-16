@@ -55,7 +55,9 @@ class BoardEvalQueue {
     const store = useBroadcastStore.getState();
     try {
       for (;;) {
-        const batch = nextEvalBatch(this.wanted, useBroadcastStore.getState().evals);
+        const { evals, evalsEngine } = useBroadcastStore.getState();
+        // Another engine's evaluations don't count: its positions are searched again.
+        const batch = nextEvalBatch(this.wanted, evalsEngine === this.engineId ? evals : {});
         if (!batch.length || this.isStopped()) break;
         this.requestId = crypto.randomUUID();
         const result = await api.analysePositions({
@@ -66,6 +68,7 @@ class BoardEvalQueue {
         });
         if (this.isStopped()) break;
         store.addEvals(
+          this.engineId,
           batch.map((fen, index) => [fen, result.lines[index]?.[0]?.scoreWhite ?? null])
         );
       }

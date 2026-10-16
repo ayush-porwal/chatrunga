@@ -3,7 +3,7 @@ import type { BroadcastGame, BroadcastRoundDetail } from "@chaturanga/shared/typ
 import { roundQueryOptions } from "../../queries/broadcasts";
 import type { StreamedGame } from "../../stores/broadcast-store";
 import { boardModel } from "./board-state";
-import { nameMatches, playerLabel, resultText } from "./broadcast-text";
+import { playerLabel, resultText, samePlayer } from "./broadcast-text";
 import type { TournamentTarget } from "./navigation";
 
 /** A game of a round already read, as a list shows it (the streamed position when there is one). */
@@ -50,10 +50,10 @@ export function roundGamesWhere(
   return entries.sort((a, b) => Number(b.live) - Number(a.live));
 }
 
-/** Whether a game's white or black player is one of `names`. */
+/** Whether a game's white or black player is one of `names` (whole names, not a search). */
 export function playsIn(game: BroadcastGame, names: readonly string[]): boolean {
   return names.some(
-    (name) => nameMatches(game.white.name, name) || nameMatches(game.black.name, name)
+    (name) => samePlayer(game.white.name, name) || samePlayer(game.black.name, name)
   );
 }
 

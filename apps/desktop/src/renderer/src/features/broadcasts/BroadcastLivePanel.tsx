@@ -19,7 +19,7 @@ import { BoardThumbnail } from "../settings/board-thumbnail";
 import { backToLive, followedCopy, undoBackToLive } from "./broadcast-follow";
 import { AlertBell, LiveDot } from "./broadcast-parts";
 import { elapsedText, resultText } from "./broadcast-text";
-import { clockToMs, LOW_TIME_MS, useSecondClock } from "./board-state";
+import { clockToMs, dateFromSummary, LOW_TIME_MS, useSecondClock } from "./board-state";
 import { ownMoveCount } from "./live-line";
 
 /** The key that goes back to the live position. */
@@ -122,7 +122,11 @@ function GameBar({
         <Select
           aria-label="Switch to another game of the round"
           value={follow.gameId}
-          onChange={(event) => onOpenGame(detail, event.target.value)}
+          onChange={(event) => {
+            // Its clock runs from its last move: dated from the round summary if need be.
+            dateFromSummary(detail, event.target.value, round.dataUpdatedAt);
+            onOpenGame(detail, event.target.value);
+          }}
           className="h-7 min-w-0 flex-1 text-xs"
         >
           {detail.games.map((game, index) => (

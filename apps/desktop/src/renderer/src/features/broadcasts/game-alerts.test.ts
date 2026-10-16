@@ -16,6 +16,10 @@ describe("game-end alerts", () => {
     ]);
     // Seen ended already (a stream sending every game anew): no second alert.
     expect(endedAlerts(alerts, after, after)).toStrictEqual([]);
+    // The bell rung from the round summary, and the game's first streamed sighting is its end.
+    expect(endedAlerts({ Game0001: ALERT }, after, {})).toStrictEqual([
+      { gameId: "Game0001", alert: ALERT, result: "1-0" }
+    ]);
     expect(alertMessage(ALERT, "½-½")).toStrictEqual({
       title: "GM Carlsen – GM Gukesh",
       body: "Game over: ½–½"

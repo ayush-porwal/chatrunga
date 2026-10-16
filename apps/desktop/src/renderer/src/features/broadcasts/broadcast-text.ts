@@ -133,13 +133,21 @@ export function playerLabel(player: BroadcastPlayer): string {
   return player.title ? `${player.title} ${player.name}` : player.name;
 }
 
+/** A name to compare: no accents, lower case. */
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+/** Whether two names are the same player's (whole names, case- and accent-insensitive). */
+export function samePlayer(a: string, b: string): boolean {
+  return fold(a).trim() === fold(b).trim();
+}
+
 /** Whether a player's name matches a search (case- and accent-insensitive, any word order part). */
 export function nameMatches(name: string, query: string): boolean {
-  const fold = (text: string) =>
-    text
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .toLowerCase();
   const haystack = fold(name);
   return fold(query)
     .split(/[\s,]+/)

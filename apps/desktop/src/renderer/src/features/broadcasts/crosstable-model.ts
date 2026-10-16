@@ -27,11 +27,13 @@ function scoreFor(result: BroadcastResult, color: Color): CrossCell["score"] {
 
 /**
  * The tournament's crosstable: the standings in their order, and for each round (`rounds` in
- * order, null for one not read yet) the game each player played in it.
+ * order, null for one not read yet) the game each player played in it, its result the streamed
+ * one when there is one (`streamed`, by game id: newer than the round as read).
  */
 export function crosstable(
   standings: readonly BroadcastStanding[],
-  rounds: readonly (BroadcastRoundDetail | null)[]
+  rounds: readonly (BroadcastRoundDetail | null)[],
+  streamed: Partial<Record<string, { result: BroadcastResult }>> = {}
 ): CrossRow[] {
   const places = new Map(standings.map((player, index) => [player.name, index + 1]));
   return standings.map((player, index) => ({
@@ -48,7 +50,7 @@ export function crosstable(
         game,
         color,
         opponent: places.get(opponent.name) ?? null,
-        score: scoreFor(game.result, color)
+        score: scoreFor(streamed[game.id]?.result ?? game.result, color)
       };
     })
   }));

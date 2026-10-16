@@ -50,6 +50,8 @@ type BroadcastStore = {
   evalsOn: boolean;
   /** Engine evaluations by FEN, White's side (null: none, a finished position). */
   evals: Partial<Record<string, EngineScore | null>>;
+  /** The engine `evals` come from (another engine's start afresh). */
+  evalsEngine: string | null;
   /** Why evaluating stopped, if it did (the engine failed). */
   evalError: string | null;
   receiveGame: (game: BroadcastLiveGame) => void;
@@ -66,7 +68,7 @@ type BroadcastStore = {
   /** Asks for an alert when the game ends (`alert`), or drops it (null). */
   setAlert: (gameId: string, alert: GameAlert | null) => void;
   setEvalsOn: (on: boolean) => void;
-  addEvals: (entries: readonly (readonly [string, EngineScore | null])[]) => void;
+  addEvals: (engineId: string, entries: readonly (readonly [string, EngineScore | null])[]) => void;
   setEvalError: (error: string | null) => void;
 };
 
@@ -82,6 +84,7 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   alerts: {},
   evalsOn: false,
   evals: {},
+  evalsEngine: null,
   evalError: null,
   receiveGame: (game) =>
     set((state) => {
@@ -109,10 +112,17 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   setCleared: (cleared) => set({ cleared }),
   setHubFilter: (hubFilter) => set({ hubFilter }),
   setEvalsOn: (evalsOn) => set({ evalsOn, evalError: null }),
-  addEvals: (entries) =>
+  addEvals: (engineId, entries) =>
     set((state) => {
-      const kept = Object.entries(state.evals).slice(-(MAX_EVALS - entries.length));
-      return { evals: Object.fromEntries([...kept, ...entries]) };
+      const kept =
+        state.evalsEngine === engineId
+          ? Object.entries(state.evals).slice(-(MAX_EVALS - entries.length))
+          : [];
+      return {
+        evals: Object.fromEntries([...kept, ...entries]),
+        evalsEngine: engineId,
+        evalError: null
+      };
     }),
   setEvalError: (evalError) => set({ evalError }),
   setAlert: (gameId, alert) =>

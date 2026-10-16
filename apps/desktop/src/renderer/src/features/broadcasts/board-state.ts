@@ -4,10 +4,11 @@ import type {
   BroadcastGame,
   BroadcastLiveGame,
   BroadcastPlayer,
-  BroadcastResult
+  BroadcastResult,
+  BroadcastRoundDetail
 } from "@chaturanga/shared/types/broadcast";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { StreamedGame } from "../../stores/broadcast-store";
+import { useBroadcastStore, type StreamedGame } from "../../stores/broadcast-store";
 
 /** A board of a round as its card shows it: the summary's, brought up to date by the stream. */
 export type BoardModel = {
@@ -134,4 +135,20 @@ export function useSecondClock(): number {
     return () => window.clearInterval(timer);
   }, []);
   return now;
+}
+
+/**
+ * The analysis board's clock runs from the last move: date a streamed game's from the round
+ * summary (read at `readAt`) when the stream can't.
+ */
+export function dateFromSummary(
+  detail: BroadcastRoundDetail,
+  gameId: string,
+  readAt: number
+): void {
+  const game = detail.games.find((item) => item.id === gameId);
+  if (!game) return;
+  const store = useBroadcastStore.getState();
+  const board = boardModel(game, store.games[gameId], readAt);
+  if (board.lastMoveAt !== null) store.dateLastMove(gameId, board.lastMove, board.lastMoveAt);
 }
