@@ -48,7 +48,7 @@ function PlayerIdentity({
 /**
  * The clock box beside a player row: a quiet sunken box, lit (the light side box) for the side to
  * move (`active`). Fixed minimum width and tabular digits so the text never shifts as it counts;
- * `low` (little time left) turns the time red and, while it runs, pulses gently.
+ * `low` (little time left) turns the time red; `running` marks a clock counting down.
  */
 export function ClockFace({
   color,

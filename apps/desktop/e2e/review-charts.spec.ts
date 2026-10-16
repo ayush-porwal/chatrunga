@@ -346,19 +346,27 @@ test("dragged up, the charts stop where the move list keeps its room under the e
   await page.mouse.move(handle.x + handle.width / 2, 0, { steps: 8 });
   await page.mouse.up();
 
-  // Top to bottom without overlapping: the engine lines, the move list (its minimum room kept),
-  // then the charts.
-  const box = async (locator: Locator) => {
-    const found = await locator.boundingBox();
-    if (!found) throw new Error("not laid out");
-    return found;
-  };
+  // Top to bottom without overlapping: the engine lines, the move list, then the charts. The move
+  // list keeps its minimum room, unless the window is too short for that and the charts are down to
+  // their own minimum.
   await expect(async () => {
     const lines = await box(engine);
     const moves = await box(page.locator("[data-panel-yields]"));
     const chartsBox = await box(charts(page));
     expect(lines.y + lines.height).toBeLessThanOrEqual(moves.y + 0.5);
-    expect(moves.height).toBeGreaterThanOrEqual(159);
     expect(moves.y + moves.height).toBeLessThanOrEqual(chartsBox.y + 0.5);
+    expect(await keepsMoveListRoom(page, moves.height)).toBe(true);
   }).toPass();
 });
+
+async function box(locator: Locator) {
+  const found = await locator.boundingBox();
+  if (!found) throw new Error("not laid out");
+  return found;
+}
+
+/** The move list has its 160 px, or the charts gave up all they can (at their minimum height). */
+async function keepsMoveListRoom(page: Page, movesHeight: number): Promise<boolean> {
+  const value = (name: string) => splitter(page).getAttribute(name).then(Number);
+  return movesHeight >= 159 || (await value("aria-valuenow")) <= (await value("aria-valuemin"));
+}
