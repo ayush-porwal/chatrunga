@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { BroadcastLiveGame, BroadcastResult } from "@chaturanga/shared/types/broadcast";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
+import { NO_HUB_FILTER, type HubFilter } from "../features/broadcasts/broadcast-text";
 
 /** A streamed game and when its last move arrived (for the clock of the side to move). */
 export type StreamedGame = BroadcastLiveGame & {
@@ -37,6 +38,8 @@ type BroadcastStore = {
   connections: Partial<Record<string, RoundConnection>>;
   follow: BroadcastFollow | null;
   cleared: ClearedMoves | null;
+  /** The hub's filter, kept while the app runs (into a tournament and back). */
+  hubFilter: HubFilter;
   receiveGame: (game: BroadcastLiveGame) => void;
   /**
    * When a streamed game's last move was played, from the round summary's think time (the stream
@@ -47,6 +50,7 @@ type BroadcastStore = {
   setFollow: (follow: BroadcastFollow | null) => void;
   patchFollow: (patch: Partial<Omit<BroadcastFollow, "board">>) => void;
   setCleared: (cleared: ClearedMoves | null) => void;
+  setHubFilter: (filter: HubFilter) => void;
 };
 
 export const useBroadcastStore = create<BroadcastStore>((set) => ({
@@ -54,6 +58,7 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   connections: {},
   follow: null,
   cleared: null,
+  hubFilter: NO_HUB_FILTER,
   receiveGame: (game) =>
     set((state) => {
       const previous = state.games[game.id];
@@ -77,5 +82,6 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   setFollow: (follow) => set({ follow, cleared: null }),
   patchFollow: (patch) =>
     set((state) => (state.follow ? { follow: { ...state.follow, ...patch } } : state)),
-  setCleared: (cleared) => set({ cleared })
+  setCleared: (cleared) => set({ cleared }),
+  setHubFilter: (hubFilter) => set({ hubFilter })
 }));

@@ -91,7 +91,7 @@ export function BroadcastSearch({
   liveRoundIds,
   onOpen
 }: {
-  /** The live events' rounds: read when the box is first used, so their players can be found. */
+  /** The live events' rounds the hub reads (their players are searched here, at no extra request). */
   liveRoundIds: readonly string[];
   onOpen: (target: TournamentTarget) => void;
 }) {

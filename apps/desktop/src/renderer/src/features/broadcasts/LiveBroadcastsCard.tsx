@@ -41,7 +41,7 @@ export function LiveBroadcastsCard({
         count={live?.length ?? null}
         className="border-b border-line-subtle"
         actions={
-          <Button variant="ghost" size="xs" className="cursor-pointer" onClick={onOpenBroadcasts}>
+          <Button variant="ghost" size="xs" onClick={onOpenBroadcasts}>
             See all
             <ChevronRight />
           </Button>
@@ -90,7 +90,7 @@ function LiveEventRow({ listing, onOpen }: { listing: BroadcastListing; onOpen: 
     <button
       type="button"
       onClick={onOpen}
-      className="group flex cursor-pointer items-center gap-3 rounded-[9px] px-2.5 py-2 text-left outline-none transition-colors duration-micro hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/50"
+      className="group flex items-center gap-3 rounded-[9px] px-2.5 py-2 text-left outline-none transition-colors duration-micro hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       <TourImage
         src={tour.image}

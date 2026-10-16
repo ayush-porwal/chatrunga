@@ -8,20 +8,25 @@ import type {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCell, StatStrip } from "@/components/ui/stat-strip";
+import { Switch } from "@/components/ui/switch";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { sectionTitle } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { useBroadcastRoundQuery, useBroadcastTopQuery } from "../../queries/broadcasts";
+import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { LiveBadge, PlayerLine, TourImage } from "./broadcast-parts";
 import {
+  filterHub,
   hubSections,
   startsText,
   timeControlText,
   tourDates,
+  type HubFilter,
   type HubSections
 } from "./broadcast-text";
 import { BroadcastSearch } from "./BroadcastSearch";
@@ -59,7 +64,8 @@ export function BroadcastsPage({
   onOpenTournament: (target: TournamentTarget) => void;
 }) {
   const top = useBroadcastTopQuery();
-  const sections = top.data ? hubSections(top.data) : null;
+  const filter = useBroadcastStore((state) => state.hubFilter);
+  const sections = top.data ? filterHub(hubSections(top.data), filter) : null;
   // Skeletons only while loading: after a failure the notice above says why.
   const loading = !sections && !top.isError;
   const open = (listing: BroadcastListing) =>
@@ -71,14 +77,22 @@ export function BroadcastsPage({
 
   return (
     // The page fits the panel (it never scrolls): its sections scroll inside.
-    <div className="pointer-cursors flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
       <h1 className="sr-only">Broadcasts</h1>
-      <BroadcastSearch
-        liveRoundIds={
-          sections?.live.flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
-        }
-        onOpen={onOpenTournament}
-      />
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <BroadcastSearch
+            liveRoundIds={
+              // The rounds the live cards already read (no request of the search's own).
+              sections?.live
+                .slice(0, PREVIEWED_LIVE)
+                .flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
+            }
+            onOpen={onOpenTournament}
+          />
+        </div>
+        <HubFilters filter={filter} />
+      </div>
       {top.isError ? (
         <Notice
           tone="danger"
@@ -95,12 +109,47 @@ export function BroadcastsPage({
       ) : null}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_var(--side-column)] gap-4">
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
-          <LiveSection sections={sections} loading={loading} onOpen={open} />
+          <LiveSection
+            sections={sections}
+            loading={loading}
+            filtered={filter.speed !== "all" || filter.officialOnly}
+            onOpen={open}
+          />
           <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
         </div>
         <UpcomingRail upcoming={sections?.upcoming ?? null} loading={loading} onOpen={open} />
       </div>
     </div>
+  );
+}
+
+const SPEEDS: { value: HubFilter["speed"]; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "standard", label: "Classical" },
+  { value: "rapid", label: "Rapid" },
+  { value: "blitz", label: "Blitz" }
+];
+
+/** Which events every section shows: one speed or all, and only Lichess's official ones. */
+function HubFilters({ filter }: { filter: HubFilter }) {
+  const setFilter = useBroadcastStore((state) => state.setHubFilter);
+  return (
+    <>
+      <SegmentedControl<HubFilter["speed"]>
+        ariaLabel="Speed"
+        size="sm"
+        value={filter.speed}
+        onChange={(speed) => setFilter({ ...filter, speed })}
+        options={SPEEDS}
+      />
+      <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
+        <Switch
+          checked={filter.officialOnly}
+          onCheckedChange={(officialOnly) => setFilter({ ...filter, officialOnly })}
+        />
+        Official only
+      </label>
+    </>
   );
 }
 
@@ -141,10 +190,13 @@ const NOT_LOADED = <EmptyState compact title="Not loaded." className="px-4 py-3"
 function LiveSection({
   sections,
   loading,
+  filtered,
   onOpen
 }: {
   sections: HubSections | null;
   loading: boolean;
+  /** The hub's filter hides some events. */
+  filtered: boolean;
   onOpen: (listing: BroadcastListing) => void;
 }) {
   const now = useMinuteClock();
@@ -185,7 +237,7 @@ function LiveSection({
         ) : (
           <EmptyState
             icon={<Radio />}
-            title="No events are live right now"
+            title={filtered ? "No live events match the filter" : "No events are live right now"}
             description={
               next && nextStart !== null
                 ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`

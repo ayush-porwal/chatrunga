@@ -103,7 +103,7 @@ export function TournamentPage({
 
   return (
     <div className={pageShell}>
-      <div className="pointer-cursors flex min-h-full flex-col gap-4 p-6">
+      <div className="flex min-h-full flex-col gap-4 p-6">
         {tour ? (
           <TournamentHeader tour={tour} live={rounds.some((item) => item.ongoing)} />
         ) : (

@@ -17,13 +17,7 @@ export function TournamentTitle({
       aria-label="Broadcast location"
       className="flex min-w-0 items-center gap-1 text-sm [-webkit-app-region:no-drag]"
     >
-      <Button
-        type="button"
-        variant="link"
-        size="xs"
-        className="cursor-pointer text-sm"
-        onClick={onBroadcasts}
-      >
+      <Button type="button" variant="link" size="xs" className="text-sm" onClick={onBroadcasts}>
         Broadcasts
       </Button>
       {name ? (

@@ -1,4 +1,5 @@
 import type {
+  BroadcastFideTimeControl,
   BroadcastListing,
   BroadcastPlayer,
   BroadcastResult,
@@ -24,6 +25,23 @@ export function hubSections(page: BroadcastTopPage): HubSections {
     .filter((listing) => !listing.round?.ongoing)
     .sort((a, b) => startOf(a) - startOf(b));
   return { live, upcoming, past: page.past };
+}
+
+/** What the hub shows: one speed (FIDE's category) or all, and only Lichess's official events. */
+export type HubFilter = { speed: BroadcastFideTimeControl | "all"; officialOnly: boolean };
+
+export const NO_HUB_FILTER: HubFilter = { speed: "all", officialOnly: false };
+
+/** The sections with only the events `filter` keeps (official: ranked by Lichess). */
+export function filterHub(sections: HubSections, filter: HubFilter): HubSections {
+  const keep = ({ tour }: BroadcastListing) =>
+    (filter.speed === "all" || tour.info.fideTimeControl === filter.speed) &&
+    (!filter.officialOnly || tour.tier !== null);
+  return {
+    live: sections.live.filter(keep),
+    upcoming: sections.upcoming.filter(keep),
+    past: sections.past.filter(keep)
+  };
 }
 
 function startOf(listing: BroadcastListing): number {

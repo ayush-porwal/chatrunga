@@ -107,7 +107,7 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
       )}
       {cleared ? (
-        <Button size="xs" className="cursor-pointer" onClick={undoBackToLive}>
+        <Button size="xs" onClick={undoBackToLive}>
           <Undo2 />
           Undo
         </Button>
@@ -161,7 +161,7 @@ function ExploringStrip({
       <Button
         variant="primary"
         size="sm"
-        className="cursor-pointer justify-start"
+        className="justify-start"
         aria-keyshortcuts={BACK_TO_LIVE_KEY}
         onClick={() => backToLive()}
       >

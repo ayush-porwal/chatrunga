@@ -6,7 +6,9 @@ import type {
 } from "@chaturanga/shared/types/broadcast";
 import {
   elapsedText,
+  filterHub,
   hubSections,
+  NO_HUB_FILTER,
   nameMatches,
   roundStatus,
   startsText,
@@ -56,6 +58,33 @@ const listing = (id: string, ongoing: boolean, startsAt: number | null): Broadca
 const at = (local: string) => new Date(local).getTime();
 
 describe("broadcast text", () => {
+  it("keeps the events of one speed, or only the official ones", () => {
+    const blitz = tour({ id: "Blitz001", info: { ...tour().info, fideTimeControl: "blitz" } });
+    const official = tour({
+      id: "Offic001",
+      tier: 4,
+      info: { ...tour().info, fideTimeControl: "standard" }
+    });
+    const sections = {
+      live: [{ tour: blitz, round: ROUND, group: null }],
+      upcoming: [{ tour: official, round: ROUND, group: null }],
+      past: [{ tour: tour(), round: null, group: null }]
+    };
+    const ids = (filtered: ReturnType<typeof filterHub>) =>
+      [...filtered.live, ...filtered.upcoming, ...filtered.past].map((item) => item.tour.id);
+    expect(ids(filterHub(sections, NO_HUB_FILTER))).toStrictEqual([
+      "Blitz001",
+      "Offic001",
+      "Tour0001"
+    ]);
+    expect(ids(filterHub(sections, { speed: "blitz", officialOnly: false }))).toStrictEqual([
+      "Blitz001"
+    ]);
+    expect(ids(filterHub(sections, { speed: "all", officialOnly: true }))).toStrictEqual([
+      "Offic001"
+    ]);
+  });
+
   it("splits the active list into live and upcoming, soonest first", () => {
     const sections = hubSections({
       active: [

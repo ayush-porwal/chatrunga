@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { clockNowMs, clockText, isLive, LOW_TIME_MS, type BoardModel } from "./board-state";
 import { playerLabel, resultText } from "./broadcast-text";
+import { moveFocusInGrid } from "./grid-keys";
 
 /** The red "Live" pill (a dot and its text). */
 export function LiveBadge({
@@ -176,6 +177,8 @@ export const BoardCard = memo(function BoardCard({
     <button
       type="button"
       onClick={() => onOpen(board.id)}
+      // The arrow keys move between the grid's boards (Enter opens one).
+      onKeyDown={moveFocusInGrid}
       aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
       className={cn(
         "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow,translate] duration-standard ease-enter",
