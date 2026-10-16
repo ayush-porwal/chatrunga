@@ -1,12 +1,11 @@
 import { useEffect } from "react";
-import { BookmarkPlus, Radio, Undo2 } from "lucide-react";
+import { BookmarkPlus, ChevronDown, Radio, Undo2 } from "lucide-react";
 import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode } from "@chaturanga/shared/chess/pgn";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { Select } from "@/components/ui/input";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { useSaveGameMutation } from "../../queries/api";
@@ -107,6 +106,7 @@ function GameBar({
   const streamed = useBroadcastStore((state) => state.games);
   const save = useSaveGameMutation();
   const detail = round.data;
+  const game = streamed[follow.gameId];
   const saveCopy = () => {
     const copy = followedCopy();
     if (!copy) return;
@@ -117,27 +117,37 @@ function GameBar({
     );
   };
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line-subtle px-3">
+    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line-subtle pr-2 pl-4 text-[0.8125rem]">
       {detail && onOpenGame ? (
-        <Select
-          aria-label="Switch to another game of the round"
-          value={follow.gameId}
-          onChange={(event) => {
-            // Its clock runs from its last move: dated from the round summary if need be.
-            dateFromSummary(detail, event.target.value, round.dataUpdatedAt);
-            onOpenGame(detail, event.target.value);
-          }}
-          className="h-7 min-w-0 flex-1 text-xs"
-        >
-          {detail.games.map((game, index) => (
-            <option key={game.id} value={game.id}>
-              Board {index + 1} · {game.white.name} – {game.black.name} ·{" "}
-              {resultText(streamed[game.id]?.result ?? game.result)}
-            </option>
-          ))}
-        </Select>
+        // The game shown, as plain text: picking another opens it (followed in its turn).
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <select
+            aria-label="Switch to another game of the round"
+            value={follow.gameId}
+            onChange={(event) => {
+              // Its clock runs from its last move: dated from the round summary if need be.
+              dateFromSummary(detail, event.target.value, round.dataUpdatedAt);
+              onOpenGame(detail, event.target.value);
+            }}
+            className="h-8 min-w-0 flex-1 appearance-none truncate rounded-md bg-transparent pr-6 font-medium text-fg-secondary outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            {detail.games.map((item, index) => (
+              <option key={item.id} value={item.id}>
+                Board {index + 1} · {item.white.name} – {item.black.name} ·{" "}
+                {resultText(streamed[item.id]?.result ?? item.result)}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-1 size-3.5 text-fg-subtle"
+          />
+        </div>
       ) : (
-        <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{follow.tourName}</span>
+        <span className="min-w-0 flex-1 truncate text-fg-muted">{follow.tourName}</span>
+      )}
+      {follow.result !== "*" || !game ? null : (
+        <AlertBell board={game} roundId={follow.roundId} className="size-7 opacity-100" />
       )}
       <IconButton
         label="Save a copy to the library"
@@ -153,8 +163,7 @@ function GameBar({
 /** On the live position: following it (how long the side to move has thought), or its result. */
 function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: string | null }) {
   const cleared = useBroadcastStore((state) => state.cleared);
-  const game = useBroadcastStore((state) => state.games[follow.gameId]);
-  const lastMoveAt = game?.lastMoveAt ?? null;
+  const lastMoveAt = useBroadcastStore((state) => state.games[follow.gameId]?.lastMoveAt ?? null);
   const connection = useBroadcastStore((state) => state.connections[follow.roundId] ?? null);
   const over = follow.result !== "*";
   return (
@@ -175,6 +184,13 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
       <span className="font-semibold text-fg">{over ? "Game over" : "Following live"}</span>
       <span className="truncate text-fg-subtle">{follow.roundName}</span>
       <span className="flex-1" />
+      {cleared ? (
+        <Button size="xs" onClick={undoBackToLive}>
+          <Undo2 />
+          Undo
+        </Button>
+      ) : null}
+      {/* Last: how long the side to move has thought (or the stream's trouble). */}
       {over ? null : connection ? (
         <span className="shrink-0 text-xs text-warn">
           {connection.retrying ? "Reconnecting…" : "Live updates stopped"}
@@ -182,15 +198,6 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
       ) : (
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
       )}
-      {over || !game ? null : (
-        <AlertBell board={game} roundId={follow.roundId} className="size-6 opacity-100" />
-      )}
-      {cleared ? (
-        <Button size="xs" onClick={undoBackToLive}>
-          <Undo2 />
-          Undo
-        </Button>
-      ) : null}
     </div>
   );
 }

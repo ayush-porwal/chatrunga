@@ -74,7 +74,7 @@ export function ClockFace({
         active
           ? "border-transparent bg-side-white text-side-white-fg"
           : "border-line bg-surface-sunken text-fg-muted",
-        low && cn("board-clock-low", active ? "text-mark-blunder" : "text-danger")
+        low && (active ? "text-mark-blunder" : "text-danger")
       )}
     >
       {text}

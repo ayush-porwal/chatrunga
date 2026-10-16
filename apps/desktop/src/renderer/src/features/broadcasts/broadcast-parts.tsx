@@ -4,6 +4,7 @@ import type { BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
 import { formatEngineScore } from "@chaturanga/shared/chess/review";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineScore } from "@chaturanga/shared/types/engine";
+import type { EvalBarSide } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { evalShare } from "../board/EvalBar";
@@ -166,6 +167,7 @@ export const BoardCard = memo(function BoardCard({
   now,
   highlighted,
   evaluation,
+  evalSide = "left",
   onOpen
 }: {
   board: BoardModel;
@@ -176,6 +178,8 @@ export const BoardCard = memo(function BoardCard({
   highlighted: boolean;
   /** The engine's look at the position (`score` null: on its way, or none); absent: not shown. */
   evaluation?: { score: EngineScore | null };
+  /** Which side of the board its evaluation bar sits (the eval bar's setting). */
+  evalSide?: EvalBarSide;
   onOpen: (gameId: string) => void;
 }) {
   const live = isLive(board);
@@ -205,8 +209,13 @@ export const BoardCard = memo(function BoardCard({
           <PlayerLine player={board.black} dim={blackLost} size="sm" />
           <ClockBox board={board} color="black" now={now} />
         </span>
-        <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
-        {evaluation ? <EvalStrip score={evaluation.score} /> : null}
+        {/* The evaluation beside the board, on the side the board settings put the eval bar. */}
+        <span className={cn("flex gap-1", evalSide === "right" && "flex-row-reverse")}>
+          {evaluation ? <EvalGauge score={evaluation.score} /> : null}
+          <span className="min-w-0 flex-1">
+            <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
+          </span>
+        </span>
         <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
           <PlayerLine player={board.white} dim={whiteLost} size="sm" />
           <ClockBox board={board} color="white" now={now} />
@@ -214,6 +223,11 @@ export const BoardCard = memo(function BoardCard({
       </button>
       <span className="flex h-5.5 items-center justify-between gap-1.5 border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
         <span>Board {number}</span>
+        {evaluation?.score ? (
+          <span className="font-mono text-fg-muted tabular-nums">
+            {formatEngineScore(evaluation.score)}
+          </span>
+        ) : null}
         <span className="flex-1" />
         {live ? <AlertBell board={board} number={number} roundId={roundId} /> : null}
         {live ? (
@@ -236,26 +250,22 @@ export const BoardCard = memo(function BoardCard({
   );
 });
 
-/** A card's evaluation: White's share of a thin bar, and the score (pulsing while on its way). */
-function EvalStrip({ score }: { score: EngineScore | null }) {
+/** A card's evaluation: White's share of a slim bar up the board's side (pulsing while on its way). */
+function EvalGauge({ score }: { score: EngineScore | null }) {
   return (
     <span
       role="img"
       aria-label={score ? `Evaluation ${formatEngineScore(score)}` : "Evaluating"}
-      className="flex h-3.5 items-center gap-1.5"
+      title={score ? formatEngineScore(score) : "Evaluating"}
+      className="relative w-1.5 shrink-0 overflow-hidden rounded-full bg-piece-black ring-1 ring-line-strong"
     >
-      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-piece-black ring-1 ring-line-strong">
-        <span
-          className={cn(
-            "block h-full bg-piece-white transition-[width] duration-emphasis ease-standard",
-            !score && "animate-pulse opacity-40"
-          )}
-          style={{ width: `${score ? evalShare(score) : 50}%` }}
-        />
-      </span>
-      <span className="w-10 shrink-0 text-right font-mono text-2xs text-fg-muted tabular-nums">
-        {score ? formatEngineScore(score) : ""}
-      </span>
+      <span
+        className={cn(
+          "absolute inset-x-0 bottom-0 bg-piece-white transition-[height] duration-emphasis ease-standard",
+          !score && "animate-pulse opacity-40"
+        )}
+        style={{ height: `${score ? evalShare(score) : 50}%` }}
+      />
     </span>
   );
 }

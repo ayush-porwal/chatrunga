@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   CalendarDays,
   ChevronLeft,
@@ -36,6 +37,7 @@ import {
   useBroadcastTournamentQuery,
   useRoundStream
 } from "../../queries/broadcasts";
+import { useSettingsQuery } from "../../queries/api";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useBoardEvals, useEvalEngine } from "./board-evals";
 import {
@@ -49,13 +51,12 @@ import { BoardCard, LiveBadge, LiveDot, TourImage } from "./broadcast-parts";
 import {
   elapsedText,
   nameMatches,
-  roundAfter,
   roundStatus,
-  startsText,
   timeControlText,
   tourDates
 } from "./broadcast-text";
 import { Crosstable } from "./Crosstable";
+import { NextRoundNote, useFollowNextRound } from "./NextRoundNote";
 import { useFollowedPlayers } from "./followed-players";
 import type { BroadcastScreen, TournamentTab } from "./navigation";
 
@@ -71,64 +72,6 @@ export function shownRoundId(
   if (defaultRoundId) return defaultRoundId;
   const started = rounds.filter((round) => round.ongoing || round.finished);
   return started.at(-1)?.id ?? rounds.at(0)?.id ?? null;
-}
-
-/**
- * Watching a round live as it finishes, the page moves on to the next round when it starts. A
- * round looked at after it finished stays put (the note offers the next one).
- */
-function useFollowNextRound(
-  rounds: readonly BroadcastRound[],
-  roundId: string | null,
-  setRound: (id: string) => void
-): void {
-  const watchedLive = useRef<string | null>(null);
-  const ongoing = rounds.some((item) => item.id === roundId && item.ongoing);
-  const after = roundAfter(rounds, roundId);
-  const nextStarted = after?.started ? after.round.id : null;
-  useEffect(() => {
-    // Gone to another round: the live one was left before it finished.
-    if (watchedLive.current !== roundId) watchedLive.current = null;
-    if (ongoing) {
-      watchedLive.current = roundId;
-      return;
-    }
-    if (nextStarted && watchedLive.current === roundId) {
-      watchedLive.current = null;
-      setRound(nextStarted);
-    }
-  }, [ongoing, nextStarted, roundId, setRound]);
-}
-
-/** After a finished round: the next one has started (and a way to it), or when it starts. */
-function NextRoundNote({
-  rounds,
-  roundId,
-  onGo
-}: {
-  rounds: readonly BroadcastRound[];
-  roundId: string | null;
-  onGo: (roundId: string) => void;
-}) {
-  const now = useMinuteClock();
-  const after = roundAfter(rounds, roundId);
-  if (!after) return null;
-  const { round, started } = after;
-  if (started)
-    return (
-      <Button size="xs" variant="primary" onClick={() => onGo(round.id)}>
-        <LiveDot pulse />
-        {round.name} has started
-        <ChevronRight />
-      </Button>
-    );
-  if (round.startsAt === null) return null;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
-      <Clock aria-hidden="true" className="size-3.5" />
-      {round.name}: {startsText(round.startsAt, now).toLowerCase()}
-    </span>
-  );
 }
 
 /**
@@ -160,6 +103,8 @@ export function TournamentPage({
     onOpenGame(detail, gameId);
   };
   useFollowNextRound(rounds, roundId, setRound);
+  // Where the shown tab puts its own controls: in the round and tabs row.
+  const [toolsSlot, setToolsSlot] = useState<HTMLDivElement | null>(null);
 
   return (
     <div className={pageShell}>
@@ -183,6 +128,7 @@ export function TournamentPage({
             {ipcErrorMessage(tournament.error)}
           </Notice>
         ) : null}
+        {/* One row: the round, the tabs, then the shown tab's own controls (its slot). */}
         <div className="flex flex-wrap items-center gap-3">
           <RoundStepper rounds={rounds} roundId={roundId} onChange={setRound} />
           <NextRoundNote rounds={rounds} roundId={roundId} onGo={setRound} />
@@ -197,16 +143,19 @@ export function TournamentPage({
               { value: "about", label: "About" }
             ]}
           />
+          <div ref={setToolsSlot} className="flex min-w-0 flex-wrap items-center gap-3" />
         </div>
         {screen.tab === "boards" ? (
           <BoardsTab
             roundQuery={round}
             roundId={roundId}
             focusGameId={screen.focusGameId}
+            toolsSlot={toolsSlot}
             onOpenGame={openGame}
           />
         ) : screen.tab === "players" ? (
           <PlayersTab
+            toolsSlot={toolsSlot}
             tourId={screen.tourId}
             round={round.data ?? null}
             rounds={rounds.filter((item) => item.ongoing || item.finished)}
@@ -230,6 +179,16 @@ function TournamentHeader({ tour, live }: { tour: BroadcastTour; live: boolean }
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className="truncate text-xl font-semibold text-fg">{tour.name}</h1>
           {live ? <LiveBadge /> : null}
+          <a
+            href={tour.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open on Lichess"
+            title="Open on Lichess"
+            className="grid size-7 shrink-0 place-items-center rounded-md text-fg-subtle outline-none transition-colors hover:bg-control hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <ExternalLink aria-hidden="true" className="size-3.75" />
+          </a>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[0.78125rem] text-fg-muted">
           {tour.info.location ? (
@@ -258,12 +217,6 @@ function TournamentHeader({ tour, live }: { tour: BroadcastTour; live: boolean }
           ) : null}
         </div>
       </div>
-      <Button asChild variant="outline" size="sm">
-        <a href={tour.url} target="_blank" rel="noreferrer">
-          <ExternalLink />
-          Open on Lichess
-        </a>
-      </Button>
     </header>
   );
 }
@@ -351,11 +304,13 @@ function BoardsTab({
   roundQuery,
   roundId,
   focusGameId,
+  toolsSlot,
   onOpenGame
 }: {
   roundQuery: ReturnType<typeof useBroadcastRoundQuery>;
   roundId: string | null;
   focusGameId: string | null;
+  toolsSlot: HTMLElement | null;
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   const now = useSecondClock();
@@ -365,6 +320,7 @@ function BoardsTab({
   const evalsOn = useBroadcastStore((state) => state.evalsOn);
   const evals = useBroadcastStore((state) => state.evals);
   const evalEngine = useEvalEngine();
+  const evalSide = useSettingsQuery().data?.analysisEvalBarSide ?? "left";
   const evalsEngine = useBroadcastStore((state) => state.evalsEngine);
   const evalError = useBroadcastStore((state) => state.evalError);
   // A board's evaluation: its score, or on its way (a live board, while evaluating goes on);
@@ -421,7 +377,7 @@ function BoardsTab({
   }
   return (
     <section aria-label="Boards" className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-3">
+      <TabTools slot={toolsSlot}>
         <SegmentedControl<BoardFilter>
           ariaLabel="Show boards"
           size="sm"
@@ -455,15 +411,15 @@ function BoardsTab({
             {connection.error ? ` (${connection.error})` : ""}
           </span>
         ) : null}
-      </div>
+      </TabTools>
       {!detail ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
           {Array.from({ length: 10 }, (_, key) => (
             <Skeleton key={key} className="aspect-[3/4] rounded-[10px]" />
           ))}
         </div>
       ) : shown.length ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
           {shown.map(({ number, board }) => (
             <BoardCard
               key={board.id}
@@ -473,6 +429,7 @@ function BoardsTab({
               now={now}
               highlighted={board.id === focusGameId}
               evaluation={boardEvaluation(board)}
+              evalSide={evalSide}
               onOpen={(gameId) => onOpenGame(detail, gameId)}
             />
           ))}
@@ -511,13 +468,21 @@ function EvalSwitch() {
   );
 }
 
+/** A tab's own controls: in the page's round and tabs row (`slot`), else above the tab. */
+function TabTools({ slot, children }: { slot: HTMLElement | null; children: ReactNode }) {
+  if (slot) return createPortal(children, slot);
+  return <div className="flex flex-wrap items-center gap-3">{children}</div>;
+}
+
 /** The standings (each player's game in the round shown opens), or the crosstable. */
 function PlayersTab({
   tourId,
   round,
   rounds,
+  toolsSlot,
   onOpenGame
 }: {
+  toolsSlot: HTMLElement | null;
   tourId: string;
   round: BroadcastRoundDetail | null;
   /** The tournament's started rounds, in order (the crosstable's columns). */
@@ -539,7 +504,7 @@ function PlayersTab({
   );
   return (
     <section aria-label="Standings" className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-3">
+      <TabTools slot={toolsSlot}>
         <SegmentedControl<"standings" | "crosstable">
           ariaLabel="Players view"
           size="sm"
@@ -563,7 +528,7 @@ function PlayersTab({
             />
           </label>
         ) : null}
-      </div>
+      </TabTools>
       {view === "crosstable" && players.data ? (
         <Crosstable standings={players.data} rounds={rounds} onOpenGame={onOpenGame} />
       ) : (

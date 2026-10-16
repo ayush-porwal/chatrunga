@@ -235,18 +235,4 @@ cg-board square.cg-flash-wrong {
 
 /* ---------------------------------------------------------------- clocks */
 
-.board-clock-low[data-running="true"] {
-  animation: board-clock-low 1s ease-in-out infinite;
-}
-
-@keyframes board-clock-low {
-  50% {
-    background-color: rgb(255 154 141 / 0.2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .board-clock-low[data-running="true"] {
-    animation: none;
-  }
-}
+/* A clock in time trouble is told by its red figures (PlayerIdentity's ClockFace): it doesn't blink. */
