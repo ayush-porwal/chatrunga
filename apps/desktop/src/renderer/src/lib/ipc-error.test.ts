@@ -7,6 +7,12 @@ describe("ipcErrorMessage", () => {
       ipcErrorMessage(new Error("Error invoking remote method 'games:save': Error: Disk full"))
     ).toBe("Disk full");
     expect(ipcErrorMessage(new Error("Error invoking remote method 'x': plain"))).toBe("plain");
+    // A named error class (main's LichessHttpError) is the wrapper's too.
+    expect(
+      ipcErrorMessage(
+        new Error("Error invoking remote method 'broadcasts:top': LichessHttpError: Refused")
+      )
+    ).toBe("Refused");
   });
 
   it("keeps other messages", () => {

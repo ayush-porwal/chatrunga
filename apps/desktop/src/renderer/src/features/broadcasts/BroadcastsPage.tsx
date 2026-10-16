@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { CalendarDays, ChevronRight, Clock, MapPin, Radio, RotateCcw } from "lucide-react";
 import type {
   BroadcastGame,
@@ -46,6 +47,8 @@ export function BroadcastsPage({
 }) {
   const top = useBroadcastTopQuery();
   const sections = top.data ? hubSections(top.data) : null;
+  // Skeletons only while loading: after a failure the notice above says why.
+  const loading = !sections && !top.isError;
   const open = (listing: BroadcastListing) =>
     onOpenTournament({
       tourId: listing.tour.id,
@@ -79,128 +82,169 @@ export function BroadcastsPage({
         ) : null}
         <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
-            <LiveSection sections={sections} onOpen={open} />
-            <PastSection past={sections?.past ?? null} onOpen={open} />
+            <LiveSection sections={sections} loading={loading} onOpen={open} />
+            <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
           </div>
-          <UpcomingRail upcoming={sections?.upcoming ?? null} onOpen={open} />
+          <UpcomingRail upcoming={sections?.upcoming ?? null} loading={loading} onOpen={open} />
         </div>
       </div>
     </div>
   );
 }
 
+/** A hub section: a card with its title bar (title, then `aside` at the end) over its content. */
+function SectionCard({
+  id,
+  title,
+  aside,
+  className,
+  children
+}: {
+  id: string;
+  title: string;
+  aside?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      aria-labelledby={id}
+      className={cn(cardFrame, "flex flex-col overflow-hidden", className)}
+    >
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line-subtle px-4">
+        <h2 id={id} className={sectionTitle}>
+          {title}
+        </h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Nothing to show in a section that couldn't load (the page's notice says why). */
+const NOT_LOADED = <EmptyState compact title="Not loaded." className="px-4 py-3" />;
+
 /** The events with a round being played, or what comes next when none is. */
 function LiveSection({
   sections,
+  loading,
   onOpen
 }: {
   sections: HubSections | null;
+  loading: boolean;
   onOpen: (listing: BroadcastListing) => void;
 }) {
   const now = useMinuteClock();
   const next = sections?.upcoming.at(0);
   const nextStart = next?.round?.startsAt ?? null;
   return (
-    <section aria-labelledby="broadcasts-live" className="grid gap-2.5">
-      <div className="flex min-h-7 items-center gap-2">
-        <h2 id="broadcasts-live" className={sectionTitle}>
-          Live now
-        </h2>
-        {sections ? (
-          <span className="text-xs text-fg-muted">
+    <SectionCard
+      id="broadcasts-live"
+      title="Live now"
+      aside={
+        sections ? (
+          <span className="text-xs text-fg-subtle">
             {sections.live.length === 1 ? "1 event" : `${sections.live.length} events`}
           </span>
-        ) : null}
-      </div>
+        ) : null
+      }
+    >
       {!sections ? (
-        <>
-          <LiveEventSkeleton />
-          <LiveEventSkeleton />
-        </>
+        loading ? (
+          <>
+            <LiveEventSkeleton />
+            <LiveEventSkeleton />
+          </>
+        ) : (
+          NOT_LOADED
+        )
       ) : sections.live.length ? (
         sections.live.map((listing) => (
           <LiveEventCard key={listing.tour.id} listing={listing} onOpen={() => onOpen(listing)} />
         ))
       ) : (
-        <div className={cardFrame}>
-          <EmptyState
-            icon={<Radio />}
-            title="No events are live right now"
-            description={
-              next && nextStart !== null
-                ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`
-                : undefined
-            }
-          />
-        </div>
+        <EmptyState
+          icon={<Radio />}
+          title="No events are live right now"
+          description={
+            next && nextStart !== null
+              ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`
+              : undefined
+          }
+        />
       )}
-    </section>
+    </SectionCard>
   );
 }
 
 function PastSection({
   past,
+  loading,
   onOpen
 }: {
   past: BroadcastListing[] | null;
+  loading: boolean;
   onOpen: (listing: BroadcastListing) => void;
 }) {
   return (
-    <section aria-labelledby="broadcasts-past" className="grid gap-2.5">
-      <div className="flex min-h-7 items-center justify-between">
-        <h2 id="broadcasts-past" className={sectionTitle}>
-          Recently finished
-        </h2>
-        <Button asChild variant="ghost" size="xs">
+    <SectionCard
+      id="broadcasts-past"
+      title="Recently finished"
+      aside={
+        <Button asChild variant="ghost" size="xs" className="-mr-2">
           <a href="https://lichess.org/broadcast" target="_blank" rel="noreferrer">
             See all
             <ChevronRight />
           </a>
         </Button>
-      </div>
-      {past && !past.length ? <EmptyState compact title="No events finished recently." /> : null}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-        {past
-          ? past
-              .slice(0, PAST_SHOWN)
-              .map((listing) => (
-                <PastEventCard
-                  key={listing.tour.id}
-                  listing={listing}
-                  onOpen={() => onOpen(listing)}
-                />
-              ))
-          : [0, 1, 2].map((key) => <Skeleton key={key} className="h-48 rounded-xl" />)}
-      </div>
-    </section>
+      }
+    >
+      {past && !past.length ? (
+        <EmptyState compact title="No events finished recently." className="px-4 py-3" />
+      ) : !past && !loading ? (
+        NOT_LOADED
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-4">
+          {past
+            ? past
+                .slice(0, PAST_SHOWN)
+                .map((listing) => (
+                  <PastEventCard
+                    key={listing.tour.id}
+                    listing={listing}
+                    onOpen={() => onOpen(listing)}
+                  />
+                ))
+            : [0, 1, 2].map((key) => <Skeleton key={key} className="aspect-[2/1] rounded-lg" />)}
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
 /** What starts next, soonest first, down the right. */
 function UpcomingRail({
   upcoming,
+  loading,
   onOpen
 }: {
   upcoming: BroadcastListing[] | null;
+  loading: boolean;
   onOpen: (listing: BroadcastListing) => void;
 }) {
   const now = useMinuteClock();
   return (
-    <section
-      aria-labelledby="broadcasts-upcoming"
-      className={cn(
-        cardFrame,
-        "flex min-h-0 flex-col overflow-hidden lg:max-h-[calc(100vh-9.5rem)]"
-      )}
+    <SectionCard
+      id="broadcasts-upcoming"
+      title="Upcoming"
+      aside={<span className="text-xs text-fg-subtle">Your time zone</span>}
+      className="min-h-0 lg:max-h-[calc(100vh-9.5rem)]"
     >
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-line-subtle px-4">
-        <h2 id="broadcasts-upcoming" className={sectionTitle}>
-          Upcoming
-        </h2>
-        <span className="text-xs text-fg-subtle">Your time zone</span>
-      </div>
       <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
-        {!upcoming ? (
+        {!upcoming && !loading ? (
+          NOT_LOADED
+        ) : !upcoming ? (
           [0, 1, 2, 3].map((key) => (
             <div
               key={key}
@@ -251,7 +295,7 @@ function UpcomingRail({
           Full calendar
         </a>
       </Button>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -271,10 +315,7 @@ function LiveEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
     <button
       type="button"
       onClick={onOpen}
-      className={cn(
-        cardFrame,
-        "flex gap-4 p-4 text-left transition-[border-color] duration-micro hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-      )}
+      className="flex gap-4 p-4 text-left transition-colors duration-micro hover:bg-control/40 focus-visible:bg-control/40 focus-visible:outline-none [&+&]:border-t [&+&]:border-line-subtle"
     >
       <TourImage src={tour.image} className="aspect-video w-[min(300px,34%)] rounded-lg">
         <LiveBadge className="absolute top-2.5 left-2.5">
@@ -364,7 +405,7 @@ const DAY_MONTH = new Intl.DateTimeFormat("en", { month: "short", day: "numeric"
 
 function LiveEventSkeleton() {
   return (
-    <div className={cn(cardFrame, "flex gap-4 p-4")} aria-hidden="true">
+    <div className="flex gap-4 p-4 [&+&]:border-t [&+&]:border-line-subtle" aria-hidden="true">
       <Skeleton className="aspect-video w-[min(300px,34%)] rounded-lg" />
       <div className="grid flex-1 content-start gap-3">
         <Skeleton className="h-4 w-1/2" />
@@ -384,13 +425,13 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
     <button
       type="button"
       onClick={onOpen}
-      className={cn(
-        cardFrame,
-        "flex flex-col overflow-hidden text-left transition-[border-color] duration-micro hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-      )}
+      className="group flex flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
     >
-      <TourImage src={tour.image} className="aspect-[2/1] w-full" />
-      <span className="grid gap-0.5 px-3.5 pt-2.5 pb-3">
+      <TourImage
+        src={tour.image}
+        className="aspect-[2/1] w-full rounded-lg transition-opacity duration-micro group-hover:opacity-85"
+      />
+      <span className="grid gap-0.5 px-0.5">
         <span className="truncate text-sm font-semibold text-fg-secondary">{tour.name}</span>
         <span className="truncate text-xs text-fg-muted">{meta || tour.info.location || " "}</span>
       </span>
