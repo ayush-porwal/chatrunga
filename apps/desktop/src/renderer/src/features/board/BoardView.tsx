@@ -29,6 +29,8 @@ import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
 import { BoardStage } from "./BoardWorkspace";
+import { useBroadcastStore } from "../../stores/broadcast-store";
+import { BroadcastClock } from "../broadcasts/BroadcastLivePanel";
 import { EngineClock } from "./EngineClock";
 import { boardClocksAt, timeControlLabel } from "./board-clocks";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
@@ -67,6 +69,12 @@ export function BoardView() {
   const engineSide = useGameStore((state) => state.engineSide);
   const hasLiveClock = useGameStore((state) => Boolean(state.engineClock && state.engineClockLive));
   const gameOutcome = useGameStore((state) => state.gameOutcome);
+  const board = useGameStore((state) => state.board);
+  const broadcastLiveTip = useBroadcastStore((state) =>
+    state.follow?.board === board && state.follow.result === "*"
+      ? (state.follow.liveIds.at(-1) ?? null)
+      : null
+  );
   const moveTree = useGameStore((state) => state.moveTree);
   const makeMove = useGameStore((state) => state.makeMove);
   const setPendingPromotion = useGameStore((state) => state.setPendingPromotion);
@@ -477,12 +485,23 @@ export function BoardView() {
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
   const liveClocks = isMatchMode(mode) && hasLiveClock;
+  // A followed broadcast game on its live position: the side to move's clock runs.
+  const broadcastRunning = (color: Color) =>
+    broadcastLiveTip === currentNodeId && status.turn === color && !status.isEnd;
   const playerRow = (player: BoardPlayer, hint?: string | null) => (
     <PlayerRow
       color={player.color}
       name={nameFor(player.color, player.name)}
       elo={player.elo}
-      clock={liveClocks ? <EngineClock color={player.color} /> : player.clock}
+      clock={
+        liveClocks ? (
+          <EngineClock color={player.color} />
+        ) : player.clock && broadcastRunning(player.color) ? (
+          <BroadcastClock color={player.color} fallback={player.clock} />
+        ) : (
+          player.clock
+        )
+      }
       clockActive={status.turn === player.color && !status.isEnd}
       engine={mode === "engine" && engineSide === player.color ? activeEngine : null}
       hint={hint}

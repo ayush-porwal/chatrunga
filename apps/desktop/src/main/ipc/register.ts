@@ -44,6 +44,7 @@ import {
   reportUnsent
 } from "../commentary/openrouter-commentary";
 import { getLichessService } from "../lichess";
+import { registerBroadcastIpc } from "../broadcasts";
 import { getChesscomService } from "../chesscom";
 import { getAccountRatings } from "../accounts";
 import { errorMessage, logger } from "../logger";
@@ -156,6 +157,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   registerChesscomIpc();
+  registerBroadcastIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
   registerPuzzleIpc();

@@ -27,6 +27,7 @@ import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
 import { shutdownLichess } from "./lichess";
+import { shutdownBroadcasts } from "./broadcasts";
 import { shutdownChesscom } from "./chesscom";
 import { startAccountRatingSyncs } from "./accounts";
 import { errorMessage, logger } from "./logger";
@@ -241,6 +242,7 @@ function shutdown(): Promise<void> {
     const steps: [string, () => void | Promise<void>][] = [
       ["lichess", shutdownLichess],
       ["chess.com", shutdownChesscom],
+      ["broadcasts", shutdownBroadcasts],
       ["reviews", () => engineManager.cancelAllReviews()],
       ["engines", () => void engineManager.dispose()],
       ["engine processes", killAllEngineProcesses],

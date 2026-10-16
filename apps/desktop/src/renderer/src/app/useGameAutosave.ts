@@ -3,6 +3,7 @@ import { statusForFen } from "@chaturanga/shared/chess/position";
 import { exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { isBroadcastBoard } from "../features/broadcasts/broadcast-follow";
 import { mainlineEnd } from "../features/game/move-tree-model";
 import { isSaveSuppressed, useSaveGameMutation } from "../queries/api";
 import { useGameStore } from "../stores/game-store";
@@ -209,6 +210,8 @@ export function useGameAutosave(): void {
       // Puzzle practice is ephemeral: never persist it as a "saved game" / recent entry.
       if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return lastWrite;
       if (game.moveTree.length <= 1 && !game.gameId) return lastWrite;
+      // A broadcast game follows Lichess: a copy is kept with Export PGN, not in the library.
+      if (isBroadcastBoard(game.board)) return lastWrite;
       // An unsaved copy (Play from here's engine game) waits for its first change.
       if (unchangedSinceBaseline(unsavedBaseline, game)) return lastWrite;
       const review = useReviewStore.getState().review;
@@ -255,6 +258,7 @@ export function useGameAutosave(): void {
       // Puzzle practice is never saved (its board has no library id).
       if ((previous.mode === "puzzle" || previous.source === "puzzle") && !previous.gameId) return;
       if (previous.moveTree.length <= 1 && !previous.gameId) return;
+      if (isBroadcastBoard(previous.board)) return;
       if (unchangedSinceBaseline(unsavedBaseline, previous)) return;
       const review = boardReview?.board === board ? boardReview.review : undefined;
       if (stored && sameDocument(stored, documentOf(previous, review ?? stored.review))) return;

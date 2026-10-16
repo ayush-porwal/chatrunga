@@ -49,3 +49,155 @@ export function writeLichessPuzzleFile(dir: string, count = 3000): string {
   writeFileSync(file, zstdCompressSync(Buffer.from([header, ...rows, ""].join("\n"))));
   return file;
 }
+
+/** The Lichess broadcast the broadcast journeys watch (ids are Lichess's 8-character ones). */
+const BROADCAST = { tourId: "GrSw2026", roundId: "Round007" } as const;
+
+const BROADCAST_GAMES = [
+  {
+    id: "Game0001",
+    white: { name: "Gukesh D", title: "GM", rating: 2787, fed: "IND" },
+    black: { name: "Carlsen, Magnus", title: "GM", rating: 2837, fed: "NOR" },
+    sans: "e4 e5 Nf3 Nc6 Bb5 Nf6 O-O Nxe4 Re1 Nd6 Nxe5 Be7 Bf1 Nxe5 Rxe5 O-O d4 Bf6 Re1 Re8 c3 Rxe1 Qxe1 Ne8 Bf4 d6 Nd2 Bf5 Qe2 c6 Re1 Qd7 h3 Nc7",
+    fen: "r5k1/ppnq1ppp/2pp1b2/5b2/3P1B2/2P4P/PP1NQPP1/4RBK1 w - - 1 18",
+    lastMove: "e8c7",
+    result: "*"
+  },
+  {
+    id: "Game0002",
+    white: { name: "Caruana, Fabiano", title: "GM", rating: 2795, fed: "USA" },
+    black: { name: "Nakamura, Hikaru", title: "GM", rating: 2804, fed: "USA" },
+    sans: "d4 Nf6 c4 e6 Nf3 d5 Nc3 Be7 Bf4 O-O e3 c5 dxc5 Bxc5 Qc2 Nc6 a3 Qa5 Rd1 Re8 Nd2 e5 Bg5 Nd4 Qb1 Bf5 Bd3 Bxd3 Qxd3",
+    fen: "r3r1k1/pp3ppp/5n2/q1bpp1B1/2Pn4/P1NQP3/1P1N1PPP/3RK2R b K - 0 15",
+    lastMove: "b1d3",
+    result: "*"
+  },
+  {
+    id: "Game0003",
+    white: { name: "Ding Liren", title: "GM", rating: 2734, fed: "CHN" },
+    black: { name: "Duda, Jan-Krzysztof", title: "GM", rating: 2729, fed: "POL" },
+    sans: "Nf3 d5 g3 Nf6 Bg2 c6 O-O Bg4 d3 Nbd7 Nbd2 e5 e4 dxe4 dxe4 Bc5 h3 Bh5 Qe1 O-O Nh4 Re8 Nf5 Bf8 g4 Bg6",
+    fen: "r2qrbk1/pp1n1ppp/2p2nb1/4pN2/4P1P1/7P/PPPN1PB1/R1B1QRK1 w - - 1 14",
+    lastMove: "h5g6",
+    result: "1/2-1/2"
+  }
+] as const;
+
+/** `sans` as PGN movetext, each move with a falling `[%clk]`. */
+function movetext(sans: string, result: string): string {
+  const parts = sans.split(" ").map((san, index) => {
+    const seconds = 6000 - index * 50;
+    const clock = `${Math.floor(seconds / 3600)}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    const number = index % 2 === 0 ? `${index / 2 + 1}. ` : "";
+    return `${number}${san} { [%clk ${clock}] }`;
+  });
+  return `${parts.join(" ")} ${result}`;
+}
+
+/**
+ * The broadcast's Lichess answers as files, by URL (served by `routeToFile`): the top list, the
+ * tournament, its round's boards and standings, and the round's PGN stream (three games).
+ */
+export function writeBroadcastFixtures(dir: string): Record<string, string> {
+  const { tourId, roundId } = BROADCAST;
+  const tour = {
+    id: tourId,
+    name: "FIDE Grand Swiss 2026",
+    slug: "fide-grand-swiss-2026",
+    createdAt: 1,
+    url: `https://lichess.org/broadcast/fide-grand-swiss-2026/${tourId}`,
+    tier: 5,
+    dates: [Date.now() - 6 * 86_400_000, Date.now() + 5 * 86_400_000],
+    info: { location: "Samarkand, Uzbekistan", tc: "100+30", fideTC: "standard" },
+    description: "The open Swiss that qualifies two players for the Candidates."
+  };
+  const round = {
+    id: roundId,
+    name: "Round 7",
+    slug: "round-7",
+    ongoing: true,
+    startsAt: Date.now() - 2 * 3_600_000,
+    url: `https://lichess.org/broadcast/fide-grand-swiss-2026/round-7/${roundId}`
+  };
+  const player = (
+    side: { name: string; title: string; rating: number; fed: string },
+    clock: number
+  ) => ({
+    ...side,
+    clock
+  });
+  const games = BROADCAST_GAMES.map((game) => ({
+    id: game.id,
+    name: `${game.white.name} - ${game.black.name}`,
+    fen: game.fen,
+    players: [player(game.white, 360_000), player(game.black, 340_000)],
+    lastMove: game.lastMove,
+    thinkTime: 30,
+    status: game.result === "1/2-1/2" ? "½-½" : game.result
+  }));
+  const pgn = BROADCAST_GAMES.map(
+    (game) => `[Event "FIDE Grand Swiss 2026"]
+[Round "7.${game.id.slice(-1)}"]
+[White "${game.white.name}"]
+[Black "${game.black.name}"]
+[WhiteElo "${game.white.rating}"]
+[BlackElo "${game.black.rating}"]
+[WhiteTitle "${game.white.title}"]
+[BlackTitle "${game.black.title}"]
+[Result "${game.result}"]
+[GameURL "https://lichess.org/broadcast/fide-grand-swiss-2026/round-7/${roundId}/${game.id}"]
+
+${movetext(game.sans, game.result)}
+
+`
+  ).join("\n");
+  const answers: Record<string, unknown> = {
+    "https://lichess.org/api/broadcast/top?page=1": {
+      active: [{ tour, round }],
+      upcoming: [],
+      past: { currentPage: 1, maxPerPage: 24, currentPageResults: [], nextPage: null }
+    },
+    [`https://lichess.org/api/broadcast/${tourId}`]: {
+      tour,
+      rounds: [
+        {
+          ...round,
+          id: "Round006",
+          name: "Round 6",
+          slug: "round-6",
+          ongoing: false,
+          finished: true
+        },
+        round
+      ],
+      defaultRoundId: roundId
+    },
+    [`https://lichess.org/api/broadcast/-/-/${roundId}`]: { tour, round, games },
+    // Lichess's search matches event names only: players are found in the rounds read.
+    "https://lichess.org/api/broadcast/search?q=gukesh": { currentPageResults: [] },
+    [`https://lichess.org/broadcast/${tourId}/players`]: [
+      { name: "Gukesh D", title: "GM", rating: 2787, fed: "IND", score: 5.5, played: 6, rank: 1 },
+      {
+        name: "Carlsen, Magnus",
+        title: "GM",
+        rating: 2837,
+        fed: "NOR",
+        score: 5,
+        played: 6,
+        rank: 2
+      }
+    ]
+  };
+  const files: Record<string, string> = {};
+  for (const [url, body] of Object.entries(answers)) {
+    const file = join(dir, `${Object.keys(files).length}.json`);
+    writeFileSync(file, JSON.stringify(body));
+    files[url] = file;
+  }
+  const stream = join(dir, "round.pgn");
+  writeFileSync(stream, pgn);
+  files[
+    `https://lichess.org/api/stream/broadcast/round/${roundId}.pgn?clocks=true&comments=false`
+  ] = stream;
+  return files;
+}

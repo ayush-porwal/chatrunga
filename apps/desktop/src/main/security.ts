@@ -47,7 +47,8 @@ export const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: chaturanga-image:",
+  // Lichess broadcast banners (main/broadcasts only passes on images from this host).
+  "img-src 'self' data: chaturanga-image: https://image.lichess1.org",
   "font-src 'self' data:",
   "media-src 'self'",
   "connect-src 'self'",

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { SavedGame } from "@chaturanga/shared/types/chess";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { isFollowedBoard, refollowBoard } from "../features/broadcasts/broadcast-follow";
 import { openSavedGame, savedReview } from "../features/game/saved-game";
 import { LIVE_GAME_NOTICE } from "../features/repertoire/handoffs";
 import { isMissingTargetError } from "../features/repertoire/repertoire-model";
@@ -55,6 +56,10 @@ export type NavigationShell = {
   openPlay: () => void;
   openPuzzles: () => void;
   openDatabases: () => void;
+  openBroadcasts: () => void;
+  openBroadcastTournament: (
+    screen: Extract<HistoryEntry, { view: "broadcast-tournament" }>["screen"]
+  ) => void;
   openRepertoireHub: () => void;
   /**
    * Opens a study chapter. False when it didn't: the chapter being left couldn't be saved (the
@@ -158,10 +163,20 @@ export async function restoreEntry(
     case "databases":
       shell.openDatabases();
       return "shown";
+    case "broadcasts":
+      shell.openBroadcasts();
+      return "shown";
+    case "broadcast-tournament":
+      shell.openBroadcastTournament(entry.screen);
+      return "shown";
     case "game": {
       const outcome = await restoreBoard(entry.board, shell);
-      if (outcome === "restored") shell.showGame(sideTabFrom(entry.board.tab));
-      return outcome === "restored" ? "shown" : outcome;
+      if (outcome !== "restored") return outcome;
+      // A broadcast game comes back as it was left, then catches up with the live game.
+      if (entry.board.broadcast && !isFollowedBoard(useGameStore.getState().board))
+        refollowBoard(entry.board.broadcast);
+      shell.showGame(sideTabFrom(entry.board.tab));
+      return "shown";
     }
     case "game-review": {
       // The review running for this game keeps going (left for a repertoire screen, say).

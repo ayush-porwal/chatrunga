@@ -15,6 +15,7 @@ import {
 } from "../features/board/WorkspaceTabBar";
 import { MoveNavigation } from "../features/board/MoveNavigation";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
+import { BroadcastLivePanel } from "../features/broadcasts/BroadcastLivePanel";
 import { MoveList } from "../features/game/MoveList";
 import {
   LibraryActions,
@@ -100,6 +101,8 @@ export const GameWorkspace = memo(function GameWorkspace({
     >
       {shownTab === "notation" ? (
         <div className="flex h-full min-h-0 flex-col">
+          {/* A followed broadcast game: following live, or the way back to it. */}
+          <BroadcastLivePanel />
           {engineShown ? (
             <EngineStatusPanel
               onOpenSettings={onOpenSettings}

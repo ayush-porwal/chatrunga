@@ -1,0 +1,210 @@
+import { memo, useState, type ReactNode } from "react";
+import { ImageIcon } from "lucide-react";
+import type { BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
+import type { Color } from "@chaturanga/shared/types/chess";
+import { cn } from "@/lib/utils";
+import { BoardThumbnail } from "../settings/board-thumbnail";
+import { clockNowMs, clockText, isLive, LOW_TIME_MS, type BoardModel } from "./board-state";
+import { playerLabel, resultText } from "./broadcast-text";
+
+/** The red "Live" pill (a dot and its text). */
+export function LiveBadge({
+  children = "Live",
+  className
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-md bg-danger-soft px-2 text-2xs font-semibold text-danger",
+        className
+      )}
+    >
+      <LiveDot />
+      {children}
+    </span>
+  );
+}
+
+export function LiveDot({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("size-1.5 shrink-0 rounded-full bg-danger", className)}
+    />
+  );
+}
+
+/** A tournament's banner, or a quiet checkered tile when it has none (or it fails to load). */
+export function TourImage({
+  src,
+  className,
+  children
+}: {
+  src: string | null;
+  className?: string;
+  /** Laid over the image (a badge). */
+  children?: ReactNode;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const shown = src && failed !== src ? src : null;
+  return (
+    <div
+      className={cn(
+        "relative grid shrink-0 place-items-center overflow-hidden bg-surface-raised",
+        !shown &&
+          "bg-[repeating-conic-gradient(var(--color-control)_0_25%,transparent_0_50%)] bg-size-[20px_20px]",
+        className
+      )}
+    >
+      {shown ? (
+        <img
+          src={shown}
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 size-full object-cover"
+          onError={() => setFailed(shown)}
+        />
+      ) : (
+        <ImageIcon aria-hidden="true" className="size-5 text-fg-subtle" />
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** A player's title, name and rating in one line. */
+export function PlayerLine({
+  player,
+  color,
+  dim = false,
+  size = "md",
+  className
+}: {
+  player: BroadcastPlayer;
+  color?: Color;
+  dim?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  return (
+    <span className={cn("flex min-w-0 items-center gap-1.5", className)}>
+      {color ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-2.25 shrink-0 rounded-full",
+            color === "white" ? "bg-piece-white" : "border border-line-strong bg-piece-black"
+          )}
+        />
+      ) : null}
+      {player.title ? (
+        <span className="shrink-0 text-2xs font-semibold text-warn">{player.title}</span>
+      ) : null}
+      <span
+        className={cn(
+          "truncate font-semibold",
+          size === "sm" ? "text-[0.78125rem]" : "text-[0.8125rem]",
+          dim ? "text-fg-subtle" : "text-fg"
+        )}
+      >
+        {player.name}
+      </span>
+      {player.rating ? (
+        <span className="shrink-0 text-2xs text-fg-subtle tabular-nums">{player.rating}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function ClockBox({ board, color, now }: { board: BoardModel; color: Color; now: number }) {
+  const ms = clockNowMs(board, color, now);
+  if (ms === null) return null;
+  const live = isLive(board);
+  const active = live && board.sideToMove === color;
+  const low = live && ms < LOW_TIME_MS;
+  return (
+    <span
+      role="timer"
+      aria-label={`${color === "white" ? "White" : "Black"} clock`}
+      className={cn(
+        "grid h-5.5 min-w-14 shrink-0 place-items-center rounded-md border px-1.5 font-mono text-[0.71875rem] font-semibold tabular-nums",
+        active
+          ? "border-transparent bg-side-white text-side-white-fg"
+          : live
+            ? "border-line bg-surface-sunken text-fg-muted"
+            : "border-line-subtle bg-surface-sunken text-fg-subtle",
+        low && (active ? "text-mark-blunder" : "text-danger")
+      )}
+    >
+      {clockText(ms)}
+    </span>
+  );
+}
+
+/**
+ * A board of a round: both players with their clocks (the side to move's lit and running), the
+ * position with its last move, and the board number with its state. Opens the game.
+ */
+export const BoardCard = memo(function BoardCard({
+  board,
+  number,
+  now,
+  highlighted,
+  onOpen
+}: {
+  board: BoardModel;
+  number: number;
+  now: number;
+  /** The board a search picked: outlined until another is opened. */
+  highlighted: boolean;
+  onOpen: (gameId: string) => void;
+}) {
+  const live = isLive(board);
+  const whiteLost = board.result === "0-1";
+  const blackLost = board.result === "1-0";
+  const low =
+    live && (clockNowMs(board, board.sideToMove, now) ?? Number.POSITIVE_INFINITY) < LOW_TIME_MS;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(board.id)}
+      aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
+      className={cn(
+        "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow] duration-micro ease-standard",
+        "hover:border-accent focus-visible:ring-2 focus-visible:ring-accent/70",
+        highlighted ? "border-accent shadow-[0_0_0_3px_rgb(143_182_111/0.18)]" : "border-line"
+      )}
+    >
+      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+        <PlayerLine player={board.black} dim={blackLost} size="sm" />
+        <ClockBox board={board} color="black" now={now} />
+      </span>
+      <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
+      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+        <PlayerLine player={board.white} dim={whiteLost} size="sm" />
+        <ClockBox board={board} color="white" now={now} />
+      </span>
+      <span className="flex h-5.5 items-center justify-between border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
+        <span>Board {number}</span>
+        {live ? (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[5px] px-1.5 font-semibold text-danger",
+              low && "bg-danger-soft"
+            )}
+          >
+            <LiveDot />
+            {low ? "Time trouble" : "Live"}
+          </span>
+        ) : (
+          <span className="rounded-[5px] bg-control px-1.5 font-semibold text-fg">
+            {resultText(board.result)}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+});

@@ -9,6 +9,7 @@ export type SidebarActive = {
   repertoire: boolean;
   puzzles: boolean;
   databases: boolean;
+  broadcasts: boolean;
   settings: boolean;
 };
 
@@ -45,6 +46,7 @@ export function sidebarActiveFor({
     play: view === "play",
     puzzles: view === "puzzles",
     databases: view === "databases",
+    broadcasts: view === "broadcasts" || view === "broadcast-tournament",
     settings: view === "settings"
   };
 }

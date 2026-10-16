@@ -1,11 +1,13 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
+import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { rehearsePreset, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
+import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
@@ -41,6 +43,16 @@ const PuzzlePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
 );
+const BroadcastsPage = lazy(() =>
+  import("../features/broadcasts/BroadcastsPage").then((module) => ({
+    default: module.BroadcastsPage
+  }))
+);
+const TournamentPage = lazy(() =>
+  import("../features/broadcasts/TournamentPage").then((module) => ({
+    default: module.TournamentPage
+  }))
+);
 const RepertoireHubPage = lazy(() =>
   import("../features/repertoire/RepertoireHubPage").then((module) => ({
     default: module.RepertoireHubPage
@@ -69,6 +81,8 @@ export type AppView =
   | "play"
   | "puzzles"
   | "databases"
+  | "broadcasts"
+  | "broadcast-tournament"
   | "game-review"
   | "repertoire-hub"
   | "repertoire-study"
@@ -109,6 +123,13 @@ export type PageCommands = {
   showGame: () => void;
   freeBoard: () => void;
   databases: () => void;
+  broadcasts: () => void;
+  /** A tournament from the hub or its search (a board picked by the search is outlined). */
+  openBroadcastTournament: (target: TournamentTarget) => void;
+  /** The tournament screen's round or tab changed. */
+  broadcastScreenChange: (screen: BroadcastScreen) => void;
+  /** A board of a round onto the analysis board, following its game live. */
+  openBroadcastGame: (detail: BroadcastRoundDetail, gameId: string) => void;
   startPuzzle: (config: PuzzleSessionConfig, puzzle: PuzzleSample) => void;
   trainWithDatabase: (databaseId: string) => void;
   startReview: () => void;
@@ -165,6 +186,7 @@ export function AppPages({
   canStartAnalysis,
   puzzlePanel,
   repertoire,
+  broadcastScreen,
   on
 }: {
   view: AppView;
@@ -184,6 +206,7 @@ export function AppPages({
   canStartAnalysis: boolean;
   puzzlePanel: ReactNode;
   repertoire: RepertoireScreen | null;
+  broadcastScreen: BroadcastScreen | null;
   on: PageCommands;
 }) {
   return (
@@ -232,6 +255,18 @@ export function AppPages({
           <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
         ) : view === "databases" ? (
           <DatabasePage onTrain={on.trainWithDatabase} />
+        ) : view === "broadcasts" ? (
+          <BroadcastsPage onOpenTournament={on.openBroadcastTournament} />
+        ) : view === "broadcast-tournament" ? (
+          broadcastScreen ? (
+            <TournamentPage
+              screen={broadcastScreen}
+              onScreenChange={on.broadcastScreenChange}
+              onOpenGame={on.openBroadcastGame}
+            />
+          ) : (
+            <BroadcastsPage onOpenTournament={on.openBroadcastTournament} />
+          )
         ) : view === "game-review" ? (
           <GameReviewPage
             activeTab={reviewTab}

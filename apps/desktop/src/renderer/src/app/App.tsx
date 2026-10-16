@@ -12,11 +12,14 @@ import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
 import { loadSidebarExpanded, saveSidebarExpanded } from "@/lib/layout-prefs";
 import { BoardFocusContext } from "../features/board/board-focus";
+import { useBroadcastFollow } from "../features/broadcasts/broadcast-follow";
+import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { openReviewSettingsDialog } from "../features/game-review/ReviewSettingsDialog";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
+import { useBroadcastEventSubscription } from "../queries/broadcasts";
 import { usePuzzleAttemptRecording } from "../queries/puzzles";
 import {
   useEnginesQuery,
@@ -62,6 +65,7 @@ import { useReviewRunner } from "./useReviewRunner";
 import { useDatabaseDownloads } from "./useDatabaseDownloads";
 import { boardViews, currentGame, gameBoardViews, useAppNavigation } from "./app-navigation";
 import { useBoardCommands } from "./board-commands";
+import { useBroadcastCommands } from "./broadcast-commands";
 import { usePuzzleCommands } from "./puzzle-commands";
 import { useRepertoireCommands } from "./repertoire-commands";
 import { useAppCommands } from "./useAppCommands";
@@ -89,6 +93,8 @@ export function App() {
   /** The Opening tab's picked side (per game); game-review history entries carry it. */
   const [openingSide, setOpeningSide] = useState<OpeningSide | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
+  /** The broadcast tournament screen (its round and tab), kept while you go elsewhere. */
+  const [broadcastScreen, setBroadcastScreen] = useState<BroadcastScreen | null>(null);
   /** The Settings section being read (scroll-spy), which history records; the state above is only where Settings opens. */
   const viewedSettingsSection = useRef<SettingsSectionId | null>(null);
   const [focusMode, setFocusMode] = useState(false);
@@ -204,6 +210,8 @@ export function App() {
   );
 
   useLichess({ onGameStart: (load) => board.startOnlineGame(load) });
+  useBroadcastEventSubscription();
+  useBroadcastFollow();
   useChesscom();
   // The repertoire board has its own move keys (they must not step the game behind it).
   useMoveKeyboardShortcuts({ enabled: gameBoardViews.has(appView) });
@@ -254,8 +262,10 @@ export function App() {
       reviewTab,
       openingSide,
       repertoireScreen,
-      savedPlayOpponent: settings.playOpponent
-    }
+      savedPlayOpponent: settings.playOpponent,
+      broadcastScreen
+    },
+    setBroadcastScreen
   });
   const board = useBoardCommands(nav, {
     engines: engines.data,
@@ -265,6 +275,7 @@ export function App() {
     setGameReviewPickerOpen,
     startReview
   });
+  const broadcast = useBroadcastCommands(nav);
   const puzzles = usePuzzleCommands(nav, {
     engines: engines.data,
     defaultEngineId,
@@ -298,6 +309,8 @@ export function App() {
     openPlay: () => nav.openPlayPage("none"),
     openPuzzles: () => nav.openPuzzlesPage("none"),
     openDatabases: () => nav.openDatabasesPage("none"),
+    openBroadcasts: () => nav.openBroadcastsPage("none"),
+    openBroadcastTournament: (screen) => nav.openBroadcastTournament(screen, "none"),
     openRepertoireHub: () => repertoire.openRepertoireHub("none"),
     openRepertoireStudy: (entry) => repertoire.openRepertoireStudy(entry, "none"),
     openRepertoirePractice: (repertoireId, sessionId) =>
@@ -361,6 +374,7 @@ export function App() {
   const on = useAppCommands({
     nav,
     board,
+    broadcast,
     puzzles,
     repertoire,
     history,
@@ -440,6 +454,7 @@ export function App() {
           <ViewTitlebar
             view={appView}
             repertoire={repertoireScreen}
+            broadcastScreen={broadcastScreen}
             reviewLoading={reviewRouteLoading}
             hasMoves={gameHasMoves}
             engines={engines.data}
@@ -461,6 +476,7 @@ export function App() {
           onRepertoire={on.repertoireHub}
           onPuzzles={on.puzzles}
           onDatabases={on.databases}
+          onBroadcasts={on.broadcasts}
           onFocusToggle={on.toggleFocus}
           onFlip={on.flipBoard}
           onSettings={on.settings}
@@ -501,6 +517,7 @@ export function App() {
                 })}
                 puzzlePanel={puzzlePanel}
                 repertoire={repertoireScreen}
+                broadcastScreen={broadcastScreen}
                 on={on}
               />
             </ErrorBoundary>

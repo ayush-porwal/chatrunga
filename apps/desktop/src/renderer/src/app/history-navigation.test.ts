@@ -25,7 +25,8 @@ const context: HistoryContext = {
   puzzleSet: null,
   puzzleSetContinues: false,
   repertoireScreen: null,
-  savedPlayOpponent: null
+  savedPlayOpponent: null,
+  broadcastScreen: null
 };
 const puzzle = {
   id: "p1",
@@ -126,6 +127,17 @@ describe("history capture", () => {
     expect(captureBoard("notation", null).lichessGameId).toBeNull();
     useGameStore.getState().setMode("online");
     expect(captureBoard("notation", null).lichessGameId).toBe("lx");
+  });
+
+  it("captures the tournament screen, and the hub when none was opened", () => {
+    const screen = { tourId: "Tour0001", roundId: null, focusGameId: null, tab: "boards" } as const;
+    expect(
+      captureEntry("broadcast-tournament", { ...context, broadcastScreen: screen })
+    ).toStrictEqual({
+      view: "broadcast-tournament",
+      screen
+    });
+    expect(captureEntry("broadcast-tournament", context)).toStrictEqual({ view: "broadcasts" });
   });
 
   it("captures each view with the shell state it needs", () => {

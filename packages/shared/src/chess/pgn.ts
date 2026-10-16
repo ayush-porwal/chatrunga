@@ -330,7 +330,7 @@ function clockAfterFromCommentBlob(blob: string, regexFallback: string | null): 
 }
 
 /** Matches chessops `makeClk` display (hours:mins:secs with optional fraction). */
-function formatSecondsAsClk(seconds: number): string {
+export function formatSecondsAsClk(seconds: number): string {
   let s = Math.max(0, seconds);
   const hours = Math.floor(s / 3600);
   const minutes = Math.floor((s % 3600) / 60);

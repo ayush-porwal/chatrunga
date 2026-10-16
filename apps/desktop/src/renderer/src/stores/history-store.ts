@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { Color, GameMode, GameSession, GameSource } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
+import type { BroadcastGameRef } from "../features/broadcasts/broadcast-follow";
+import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
@@ -47,11 +49,15 @@ export type BoardSnapshot = {
   puzzleSet: PuzzleSetRecord | null;
   /** The Lichess game on the board, if any: it can only be the one being played now. */
   lichessGameId: string | null;
+  /** A broadcast game followed live on the board: restoring follows it again. */
+  broadcast?: BroadcastGameRef;
 };
 
 export type HistoryEntry =
   | { view: "puzzles" }
   | { view: "databases" }
+  | { view: "broadcasts" }
+  | { view: "broadcast-tournament"; screen: BroadcastScreen }
   | { view: "settings"; section: SettingsSectionId | null }
   | { view: "play"; opponent: PlayOpponent | null }
   | { view: "game"; board: BoardSnapshot }
