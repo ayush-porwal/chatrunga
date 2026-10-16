@@ -90,10 +90,9 @@ export function BroadcastsPage({
     // The page fits the panel (it never scrolls): its sections scroll inside.
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
       <h1 className="sr-only">Broadcasts</h1>
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <BroadcastSearch liveRoundIds={previewedRoundIds} onOpen={onOpenTournament} />
-        </div>
+      {/* The sections' columns: the search over the events, the filters over the side column. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_var(--side-column)] items-center gap-4">
+        <BroadcastSearch liveRoundIds={previewedRoundIds} onOpen={onOpenTournament} />
         <HubFilters filter={filter} />
       </div>
       <FollowedGames roundIds={previewedRoundIds} onOpen={onOpenTournament} />
@@ -138,22 +137,26 @@ const SPEEDS: { value: HubFilter["speed"]; label: string }[] = [
 function HubFilters({ filter }: { filter: HubFilter }) {
   const setFilter = useBroadcastStore((state) => state.setHubFilter);
   return (
-    <>
+    <div className="flex min-w-0 items-center gap-3">
       <SegmentedControl<HubFilter["speed"]>
         ariaLabel="Speed"
-        size="sm"
+        fullWidth
         value={filter.speed}
         onChange={(speed) => setFilter({ ...filter, speed })}
         options={SPEEDS}
+        className="min-w-0 flex-1"
       />
-      <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
+      <label
+        className="flex shrink-0 items-center gap-2 text-xs text-fg-muted"
+        title="Only Lichess's official broadcasts"
+      >
         <Switch
           checked={filter.officialOnly}
           onCheckedChange={(officialOnly) => setFilter({ ...filter, officialOnly })}
         />
-        Official only
+        Official
       </label>
-    </>
+    </div>
   );
 }
 
