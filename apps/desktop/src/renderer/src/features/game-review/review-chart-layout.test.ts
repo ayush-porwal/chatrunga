@@ -35,6 +35,8 @@ describe("review chart layout", () => {
     expect(clampChartsHeight(40, max)).toBe(CHARTS_MIN_HEIGHT);
     // A panel too short for both: the charts keep their minimum.
     expect(clampChartsHeight(300, chartsMaxHeight(20, 130))).toBe(CHARTS_MIN_HEIGHT);
+    // Only the content that yields gives up height: 120 of the 400 (tabs, the engine lines) stays.
+    expect(chartsMaxHeight(400, 200, 120)).toBe(200 + 400 - 120 - CONTENT_MIN_HEIGHT);
     // Before the panel is measured only the minimum applies.
     expect(chartsMaxHeight(null, 200)).toBeNull();
     expect(clampChartsHeight(1234.4, null)).toBe(1234);

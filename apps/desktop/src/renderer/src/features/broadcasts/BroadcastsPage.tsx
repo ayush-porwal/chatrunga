@@ -8,10 +8,9 @@ import type {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCell, StatStrip } from "@/components/ui/stat-strip";
-import { Switch } from "@/components/ui/switch";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { sectionTitle } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
@@ -115,7 +114,7 @@ export function BroadcastsPage({
           <LiveSection
             sections={sections}
             loading={loading}
-            filtered={filter.speed !== "all" || filter.officialOnly}
+            filtered={filter.speed !== "all"}
             onOpen={open}
           />
           <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
@@ -126,37 +125,35 @@ export function BroadcastsPage({
   );
 }
 
-const SPEEDS: { value: HubFilter["speed"]; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "standard", label: "Classical" },
-  { value: "rapid", label: "Rapid" },
-  { value: "blitz", label: "Blitz" }
-];
+const SPEEDS: Record<HubFilter["speed"], string> = {
+  all: "All speeds",
+  standard: "Classical",
+  rapid: "Rapid",
+  blitz: "Blitz"
+};
 
-/** Which events every section shows: one speed or all, and only Lichess's official ones. */
+function isSpeed(value: string): value is HubFilter["speed"] {
+  return Object.hasOwn(SPEEDS, value);
+}
+
+/** Which speed every section shows (or all): one quiet field beside the search, its own height. */
 function HubFilters({ filter }: { filter: HubFilter }) {
   const setFilter = useBroadcastStore((state) => state.setHubFilter);
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <SegmentedControl<HubFilter["speed"]>
-        ariaLabel="Speed"
-        fullWidth
-        value={filter.speed}
-        onChange={(speed) => setFilter({ ...filter, speed })}
-        options={SPEEDS}
-        className="min-w-0 flex-1"
-      />
-      <label
-        className="flex shrink-0 items-center gap-2 text-xs text-fg-muted"
-        title="Only Lichess's official broadcasts"
-      >
-        <Switch
-          checked={filter.officialOnly}
-          onCheckedChange={(officialOnly) => setFilter({ ...filter, officialOnly })}
-        />
-        Official
-      </label>
-    </div>
+    <Select
+      aria-label="Speed"
+      value={filter.speed}
+      onChange={(event) => {
+        const speed = event.target.value;
+        if (isSpeed(speed)) setFilter({ speed });
+      }}
+    >
+      {Object.entries(SPEEDS).map(([value, label]) => (
+        <option key={value} value={value}>
+          {label}
+        </option>
+      ))}
+    </Select>
   );
 }
 

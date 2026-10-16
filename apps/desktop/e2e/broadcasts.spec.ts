@@ -31,7 +31,7 @@ test("follows a broadcast game live on the analysis board, and goes back to live
   await screen(page, "1-hub");
 
   // Search finds a player's game in the live rounds; picking it opens its tournament.
-  await page.getByRole("combobox").fill("gukesh");
+  await page.getByRole("combobox", { name: "Search broadcasts" }).fill("gukesh");
   const result = page.getByRole("option", { name: /Gukesh D – GM Carlsen/ });
   await expect(result).toBeVisible();
   await screen(page, "2-search");
@@ -88,9 +88,10 @@ test("follows a player, rings a board, switches games and keeps a copy", async (
   await sidebar(page).getByRole("button", { name: "Broadcasts", exact: true }).click();
   const event = page.getByRole("button", { name: /FIDE Grand Swiss 2026/ });
   await expect(event).toBeVisible();
-  await page.getByRole("radio", { name: "Blitz" }).click();
+  const speed = page.getByRole("combobox", { name: "Speed" });
+  await speed.selectOption("blitz");
   await expect(page.getByText("No live events match the filter")).toBeVisible();
-  await page.getByRole("radio", { name: "All" }).click();
+  await speed.selectOption("all");
   await event.click();
 
   // A star on the standings follows a player; the crosstable has their game of the round.

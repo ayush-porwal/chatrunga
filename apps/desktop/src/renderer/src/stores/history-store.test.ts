@@ -3,13 +3,35 @@ import {
   HISTORY_LIMIT,
   selectCanGoBack,
   selectCanGoForward,
-  useHistoryStore
+  useHistoryStore,
+  type BoardSnapshot
 } from "./history-store";
 
 const history = () => useHistoryStore.getState();
 /** Where the app opens: Play (its mode not chosen yet). */
 const START = { view: "play", opponent: null } as const;
 const initial = useHistoryStore.getState();
+
+/** A game screen's entry (only what tells games apart matters here). */
+function game(board: Partial<BoardSnapshot> & Pick<BoardSnapshot, "gameId" | "board">) {
+  return {
+    view: "game" as const,
+    board: {
+      session: null,
+      currentNodeId: "root",
+      mode: "freeplay" as const,
+      source: "new" as const,
+      engineSide: null,
+      orientation: "white" as const,
+      gameOutcome: null,
+      tab: "notation" as const,
+      puzzle: null,
+      puzzleSet: null,
+      lichessGameId: null,
+      ...board
+    }
+  };
+}
 
 describe("history store", () => {
   beforeEach(() => useHistoryStore.setState({ entries: [START], index: 0 }));
@@ -20,13 +42,62 @@ describe("history store", () => {
   });
 
   it("steps back and forward through pushed screens", () => {
-    history().push({ view: "play", opponent: "pool" });
+    history().push({ view: "settings", section: "engines" });
     history().push({ view: "databases" });
     expect(history().index).toBe(2);
     history().moveTo(1);
     expect(selectCanGoBack(history())).toBe(true);
     expect(selectCanGoForward(history())).toBe(true);
-    expect(history().entries[history().index]).toStrictEqual({ view: "play", opponent: "pool" });
+    expect(history().entries[history().index]).toStrictEqual({
+      view: "settings",
+      section: "engines"
+    });
+  });
+
+  it("replaces the entry for another state of the same page instead of adding a step", () => {
+    history().push({ view: "settings", section: null });
+    history().push({ view: "databases" });
+    history().moveTo(1);
+    // Another Settings section: still Settings, so Back leaves Settings and Forward stays.
+    history().push({ view: "settings", section: "lichess" });
+    expect(history().entries).toStrictEqual([
+      START,
+      { view: "settings", section: "lichess" },
+      { view: "databases" }
+    ]);
+    expect(history().index).toBe(1);
+    // The same game, switched to analysis: one step.
+    history().moveTo(2);
+    history().push(game({ gameId: "g1", board: 4, mode: "freeplay" }));
+    history().push(game({ gameId: "g1", board: 4, mode: "analysis" }));
+    // Saved since (an id now), still the board it was.
+    history().push(game({ gameId: null, board: 7 }));
+    history().push(game({ gameId: "g2", board: 7 }));
+    expect(history().entries.map((entry) => entry.view)).toStrictEqual([
+      "play",
+      "settings",
+      "databases",
+      "game",
+      "game"
+    ]);
+    expect(history().entries[3]).toStrictEqual(game({ gameId: "g1", board: 4, mode: "analysis" }));
+  });
+
+  it("merges neighbours left on the same page by a replace or a removal", () => {
+    history().push({ view: "repertoire-hub" });
+    history().push({ view: "puzzles" });
+    // The puzzles step becomes the hub (a chapter deleted, say): one hub entry, current.
+    history().replaceCurrent({ view: "repertoire-hub" });
+    expect(history().entries).toStrictEqual([START, { view: "repertoire-hub" }]);
+    expect(history().index).toBe(1);
+    // A game gone from between two Play steps: one Play step, the current one kept.
+    history().push(game({ gameId: "g1", board: 1 }));
+    history().push({ view: "play", opponent: "pool" });
+    history().removeAt(2);
+    history().removeAt(1);
+    expect(history().entries).toStrictEqual([{ view: "play", opponent: "pool" }]);
+    expect(history().index).toBe(0);
+    expect(selectCanGoBack(history())).toBe(false);
   });
 
   it("drops the screens ahead when a new one is pushed after going back, like a browser", () => {

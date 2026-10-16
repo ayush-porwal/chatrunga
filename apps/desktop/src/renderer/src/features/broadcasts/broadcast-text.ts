@@ -21,23 +21,28 @@ export type HubSections = {
  * live, the rest are between rounds or about to start (upcoming, by their next round's start).
  */
 export function hubSections(page: BroadcastTopPage): HubSections {
-  const live = page.active.filter((listing) => listing.round?.ongoing);
-  const upcoming = page.active
+  // Only Lichess's official events (ranked by it); search still finds the others.
+  const active = page.active.filter(isOfficial);
+  const live = active.filter((listing) => listing.round?.ongoing);
+  const upcoming = active
     .filter((listing) => !listing.round?.ongoing)
     .sort((a, b) => startOf(a) - startOf(b));
-  return { live, upcoming, past: page.past };
+  return { live, upcoming, past: page.past.filter(isOfficial) };
 }
 
-/** What the hub shows: one speed (FIDE's category) or all, and only Lichess's official events. */
-export type HubFilter = { speed: BroadcastFideTimeControl | "all"; officialOnly: boolean };
+function isOfficial({ tour }: BroadcastListing): boolean {
+  return tour.tier !== null;
+}
 
-export const NO_HUB_FILTER: HubFilter = { speed: "all", officialOnly: false };
+/** What the hub shows: one speed (FIDE's category) or all. */
+export type HubFilter = { speed: BroadcastFideTimeControl | "all" };
 
-/** The sections with only the events `filter` keeps (official: ranked by Lichess). */
+export const NO_HUB_FILTER: HubFilter = { speed: "all" };
+
+/** The sections with only the events `filter` keeps. */
 export function filterHub(sections: HubSections, filter: HubFilter): HubSections {
   const keep = ({ tour }: BroadcastListing) =>
-    (filter.speed === "all" || tour.info.fideTimeControl === filter.speed) &&
-    (!filter.officialOnly || tour.tier !== null);
+    filter.speed === "all" || tour.info.fideTimeControl === filter.speed;
   return {
     live: sections.live.filter(keep),
     upcoming: sections.upcoming.filter(keep),

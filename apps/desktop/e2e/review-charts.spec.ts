@@ -321,3 +321,44 @@ test("the Analyze page shows the Charts for an unreviewed game: its clocks, no e
   await view(page, "times").locator('rect[data-ply="7"]').click();
   await expect(counter(page)).toHaveText("4 / 7");
 });
+
+test("dragged up, the charts stop where the move list keeps its room under the engine lines", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, join(profile, "fake-engine.log"), "stockfish");
+  await importPgnFile(app, page, writePgn(profile, "clocked.pgn", trapPgn(true)));
+  await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  // Off the final mate, so there is something to analyse.
+  await view(page, "times").locator('rect[data-ply="7"]').click();
+  await expect(counter(page)).toHaveText("4 / 7");
+  await page.getByRole("switch", { name: "Analysis" }).click();
+  const engine = page.getByRole("region", { name: "Engine" });
+  await expect(engine.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
+
+  // Far past the top of the panel.
+  const handle = await splitter(page).boundingBox();
+  if (!handle) throw new Error("no splitter");
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, 0, { steps: 8 });
+  await page.mouse.up();
+
+  // Top to bottom without overlapping: the engine lines, the move list (its minimum room kept),
+  // then the charts.
+  const box = async (locator: Locator) => {
+    const found = await locator.boundingBox();
+    if (!found) throw new Error("not laid out");
+    return found;
+  };
+  await expect(async () => {
+    const lines = await box(engine);
+    const moves = await box(page.locator("[data-panel-yields]"));
+    const chartsBox = await box(charts(page));
+    expect(lines.y + lines.height).toBeLessThanOrEqual(moves.y + 0.5);
+    expect(moves.height).toBeGreaterThanOrEqual(159);
+    expect(moves.y + moves.height).toBeLessThanOrEqual(chartsBox.y + 0.5);
+  }).toPass();
+});

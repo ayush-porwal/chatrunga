@@ -310,7 +310,10 @@ function PanelBody({
         </div>
       )}
       <div
-        className={cn("flex min-h-0 flex-1 flex-col", !flush && "workspace-panel-body gap-3 p-3")}
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden",
+          !flush && "workspace-panel-body gap-3 p-3"
+        )}
       >
         {notices}
         <div className="min-h-0 flex-1" {...tabPanel}>

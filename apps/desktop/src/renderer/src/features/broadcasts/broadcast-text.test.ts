@@ -52,7 +52,7 @@ const ROUND: BroadcastRound = {
 };
 
 const listing = (id: string, ongoing: boolean, startsAt: number | null): BroadcastListing => ({
-  tour: tour({ id }),
+  tour: tour({ id, tier: 3 }),
   round: { ...ROUND, startsAt, ongoing },
   group: null
 });
@@ -104,45 +104,42 @@ describe("broadcast text", () => {
     ]);
   });
 
-  it("keeps the events of one speed, or only the official ones", () => {
+  it("keeps the events of one speed, or all", () => {
     const blitz = tour({ id: "Blitz001", info: { ...tour().info, fideTimeControl: "blitz" } });
-    const official = tour({
-      id: "Offic001",
-      tier: 4,
+    const classical = tour({
+      id: "Class001",
       info: { ...tour().info, fideTimeControl: "standard" }
     });
     const sections = {
       live: [{ tour: blitz, round: ROUND, group: null }],
-      upcoming: [{ tour: official, round: ROUND, group: null }],
+      upcoming: [{ tour: classical, round: ROUND, group: null }],
       past: [{ tour: tour(), round: null, group: null }]
     };
     const ids = (filtered: ReturnType<typeof filterHub>) =>
       [...filtered.live, ...filtered.upcoming, ...filtered.past].map((item) => item.tour.id);
     expect(ids(filterHub(sections, NO_HUB_FILTER))).toStrictEqual([
       "Blitz001",
-      "Offic001",
+      "Class001",
       "Tour0001"
     ]);
-    expect(ids(filterHub(sections, { speed: "blitz", officialOnly: false }))).toStrictEqual([
-      "Blitz001"
-    ]);
-    expect(ids(filterHub(sections, { speed: "all", officialOnly: true }))).toStrictEqual([
-      "Offic001"
-    ]);
+    expect(ids(filterHub(sections, { speed: "blitz" }))).toStrictEqual(["Blitz001"]);
   });
 
-  it("splits the active list into live and upcoming, soonest first", () => {
+  it("splits the official events into live and upcoming, soonest first", () => {
     const sections = hubSections({
       active: [
         listing("Later001", false, 3000),
         listing("LiveNow1", true, 1000),
-        listing("Sooner01", false, 2000)
+        listing("Sooner01", false, 2000),
+        // Not one of Lichess's official events: never on the hub.
+        { ...listing("Commun01", true, 1000), tour: tour({ id: "Commun01" }) }
       ],
-      past: [],
+      past: [{ tour: tour({ id: "Commun02" }), round: null, group: null }],
       nextPastPage: null
     });
     expect(sections.live.map((item) => item.tour.id)).toStrictEqual(["LiveNow1"]);
     expect(sections.upcoming.map((item) => item.tour.id)).toStrictEqual(["Sooner01", "Later001"]);
+    expect(sections.past).toStrictEqual([]);
   });
 
   it("writes date ranges compactly", () => {

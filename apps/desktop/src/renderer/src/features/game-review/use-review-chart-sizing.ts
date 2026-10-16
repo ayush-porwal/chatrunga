@@ -168,18 +168,34 @@ export function useChartsHeight(layout: ChartsLayout, fill: boolean) {
   useLayoutEffect(() => {
     const above = contentAbove(section);
     if (!section || !above || fill) return;
-    const update = () =>
-      setMax(
-        chartsMaxHeight(
-          above.getBoundingClientRect().height,
-          section.getBoundingClientRect().height
-        )
-      );
-    update();
+    // Only the part marked as yielding (the move list) gives up height; the rest of the content
+    // (tabs, live strips, engine lines) keeps its own, or the charts would grow over it.
+    let yields: Element | null = null;
+    const update = () => {
+      const content = above.getBoundingClientRect().height;
+      const fixed = yields ? content - yields.getBoundingClientRect().height : 0;
+      setMax(chartsMaxHeight(content, section.getBoundingClientRect().height, fixed));
+    };
     const observer = new ResizeObserver(update);
+    // The marked part comes and goes with the panel's tab: follow it.
+    const follow = () => {
+      const next = above.querySelector("[data-panel-yields]");
+      if (next === yields) return;
+      if (yields) observer.unobserve(yields);
+      yields = next;
+      if (yields) observer.observe(yields);
+      update();
+    };
+    follow();
+    update();
     observer.observe(above);
     observer.observe(section);
-    return () => observer.disconnect();
+    const mutations = new MutationObserver(follow);
+    mutations.observe(above, { childList: true, subtree: true });
+    return () => {
+      mutations.disconnect();
+      observer.disconnect();
+    };
   }, [fill, section]);
 
   const set = (next: number | null, save: boolean) => {

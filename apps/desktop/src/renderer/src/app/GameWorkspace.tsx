@@ -117,7 +117,9 @@ export const GameWorkspace = memo(function GameWorkspace({
           {/* A puzzle card taller than the panel (a short window, an explanation) scrolls with the
               moves rather than running under the footer. The tree's header sits right under the
               engine block. */}
+          {/* The part that gives the review charts their height when they are dragged taller. */}
           <div
+            data-panel-yields
             className={cn(
               "scroll-area flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3",
               (!engineShown || puzzlePanel) && "pt-3"
