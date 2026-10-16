@@ -370,7 +370,8 @@ function BoardsTab({
   // A board's evaluation: its score, or on its way (a live board, while evaluating goes on);
   // nothing for a position that won't be searched, or another engine's score.
   const boardEvaluation = (board: BoardModel) => {
-    if (!evalsOn) return undefined;
+    // No engine (none installed, or gone since): nothing fills a bar, so none is drawn.
+    if (!evalsOn || !evalEngine) return undefined;
     const score = evalsEngine === evalEngine ? evals[board.fen] : undefined;
     if (score !== undefined) return { score };
     return isLive(board) && !evalError ? { score: null } : undefined;
