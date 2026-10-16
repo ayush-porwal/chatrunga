@@ -1,15 +1,22 @@
 import { useEffect } from "react";
-import { Radio, Undo2 } from "lucide-react";
+import { BookmarkPlus, Radio, Undo2 } from "lucide-react";
+import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode } from "@chaturanga/shared/chess/pgn";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Select } from "@/components/ui/input";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
+import { useSaveGameMutation } from "../../queries/api";
+import { useBroadcastRoundQuery } from "../../queries/broadcasts";
+import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useBroadcastStore, type BroadcastFollow } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
 import { ClockFace } from "../board/PlayerIdentity";
 import { BoardThumbnail } from "../settings/board-thumbnail";
-import { backToLive, undoBackToLive } from "./broadcast-follow";
+import { backToLive, followedCopy, undoBackToLive } from "./broadcast-follow";
 import { AlertBell, LiveDot } from "./broadcast-parts";
 import { elapsedText, resultText } from "./broadcast-text";
 import { clockToMs, LOW_TIME_MS, useSecondClock } from "./board-state";
@@ -50,7 +57,12 @@ function useBackToLiveKey(enabled: boolean): void {
  * exploring away from it with the live position beside "Back to live" (which clears the user's
  * own moves; Undo puts them back). Nothing for any other board.
  */
-export function BroadcastLivePanel() {
+export function BroadcastLivePanel({
+  onOpenGame
+}: {
+  /** Another game of the round on the board (the switcher). */
+  onOpenGame?: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
   const follow = useBroadcastStore((state) => state.follow);
   const board = useGameStore((state) => state.board);
   const moveTree = useGameStore((state) => state.moveTree);
@@ -63,15 +75,74 @@ export function BroadcastLivePanel() {
 
   if (!followed) return null;
   const tipNode = moveTree.find((node) => node.id === liveTip);
-  return exploring ? (
-    <ExploringStrip
-      follow={followed}
-      tipNode={tipNode}
-      startFen={moveTree.at(0)?.fenAfter ?? ""}
-      own={own}
-    />
-  ) : (
-    <FollowingStrip follow={followed} tipFen={tipNode?.fenAfter ?? null} />
+  return (
+    <>
+      <GameBar follow={followed} onOpenGame={onOpenGame} />
+      {exploring ? (
+        <ExploringStrip
+          follow={followed}
+          tipNode={tipNode}
+          startFen={moveTree.at(0)?.fenAfter ?? ""}
+          own={own}
+        />
+      ) : (
+        <FollowingStrip follow={followed} tipFen={tipNode?.fenAfter ?? null} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Over the strip: the round's other games, to switch to (each followed in turn), and a copy of
+ * this one for the library (the board goes on following).
+ */
+function GameBar({
+  follow,
+  onOpenGame
+}: {
+  follow: BroadcastFollow;
+  onOpenGame?: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
+  const round = useBroadcastRoundQuery(follow.roundId);
+  const streamed = useBroadcastStore((state) => state.games);
+  const save = useSaveGameMutation();
+  const detail = round.data;
+  const saveCopy = () => {
+    const copy = followedCopy();
+    if (!copy) return;
+    const notices = useAppNoticeStore.getState();
+    save.mutateAsync(copy).then(
+      () => notices.show("Saved a copy to your library.", { tone: "success" }),
+      (error: unknown) => notices.show(`Couldn't save a copy: ${ipcErrorMessage(error)}`)
+    );
+  };
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line-subtle px-3">
+      {detail && onOpenGame ? (
+        <Select
+          aria-label="Switch to another game of the round"
+          value={follow.gameId}
+          onChange={(event) => onOpenGame(detail, event.target.value)}
+          className="h-7 min-w-0 flex-1 text-xs"
+        >
+          {detail.games.map((game, index) => (
+            <option key={game.id} value={game.id}>
+              Board {index + 1} · {game.white.name} – {game.black.name} ·{" "}
+              {resultText(streamed[game.id]?.result ?? game.result)}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{follow.tourName}</span>
+      )}
+      <IconButton
+        label="Save a copy to the library"
+        icon={<BookmarkPlus />}
+        size="icon-xs"
+        disabled={save.isPending}
+        onClick={saveCopy}
+      />
+    </div>
   );
 }
 
