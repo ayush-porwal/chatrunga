@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, Notification } from "electron";
 import type { BroadcastAlert } from "@chaturanga/shared/types/broadcast";
 import { broadcast } from "../ipc/broadcast";
+import { getLichessService } from "../lichess";
 import { asObject, asString, fail } from "../ipc/fields";
 import { BroadcastService } from "./broadcast-service";
 import { BROADCAST_ID } from "./normalize";
@@ -8,7 +9,8 @@ import { BROADCAST_ID } from "./normalize";
 let service: BroadcastService | null = null;
 
 function getBroadcastService(): BroadcastService {
-  service ??= new BroadcastService();
+  // Signed in when the saved Lichess token may read studies (higher limits), else anonymous.
+  service ??= new BroadcastService({ getToken: () => getLichessService().broadcastToken() });
   return service;
 }
 

@@ -41,6 +41,12 @@ function setup(routes: Parameters<typeof fakeFetch>[0]) {
   return { service, events, requests };
 }
 
+/** A route Lichess refuses signed in (the token) and can't find anonymously. */
+function refusedSignedIn(request: { headers: Record<string, string> }): Response {
+  if (request.headers.authorization) return json({ error: "Invalid token" }, 401);
+  return json({ error: "Not found" }, 404);
+}
+
 /** The games among the service's events, in order. */
 function gamesOf(events: readonly BroadcastEvent[]) {
   return events.flatMap((event) => (event.type === "game" ? [event.game] : []));
@@ -62,6 +68,24 @@ describe("BroadcastService", () => {
     });
     expect(requests[0].url).toBe("https://lichess.org/api/broadcast/top?page=1");
     expect(requests[0].headers.authorization).toBeUndefined();
+  });
+
+  it("goes signed in with a token that may read studies, and anonymously once it is refused", async () => {
+    const { fetch, requests } = fakeFetch({
+      "GET /api/broadcast/abcdefgh": refusedSignedIn,
+      "GET /api/broadcast/top": () => json({ active: [], past: { currentPageResults: [] } })
+    });
+    const service = new BroadcastService({ fetch, getToken: async () => "lip_study" });
+    await service.top();
+    expect(requests[0].headers.authorization).toBe("Bearer lip_study");
+    // Refused signed in: asked again anonymously (and anonymous from then on).
+    await expect(service.tournament("abcdefgh")).rejects.toThrow("Not found");
+    expect(requests.slice(1).map((request) => request.headers.authorization)).toStrictEqual([
+      "Bearer lip_study",
+      undefined
+    ]);
+    await service.top();
+    expect(requests.at(-1)?.headers.authorization).toBeUndefined();
   });
 
   it("rejects with a readable message when Lichess limits requests", async () => {

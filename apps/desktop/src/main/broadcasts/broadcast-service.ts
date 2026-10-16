@@ -1,8 +1,9 @@
 /**
  * Lichess broadcasts (relays of over-the-board events): the lists, tournaments, rounds and
- * standings, and the live PGN stream of a watched round. Broadcast data is public, so every
- * request is anonymous: a saved Lichess token is never sent (its scopes don't cover studies, and
- * Lichess refuses a token that lacks the scope rather than ignoring it).
+ * standings, and the live PGN stream of a watched round. Broadcast data is public: requests go
+ * signed in only with a token that may read studies (`getToken`; Lichess refuses a token that
+ * lacks the scope rather than ignoring it), for the higher limits, else anonymously. A token
+ * Lichess refuses here anyway is dropped: the requests go on anonymously.
  *
  * Anonymous limits: round and tournament JSON share about 30 requests per 3 minutes, and only two
  * PGN streams may be open at once. So a round's boards come from one summary request, then every
@@ -27,7 +28,7 @@ import {
   sleep,
   STABLE_CONNECTION_MS
 } from "../lichess/lichess-service";
-import { LichessClient, type FetchLike } from "../lichess/http";
+import { LichessClient, LichessHttpError, type FetchLike } from "../lichess/http";
 import {
   liveGameFromPgn,
   normalizeRoundDetail,
@@ -36,6 +37,9 @@ import {
   normalizeTopPage,
   normalizeTourDetail
 } from "./normalize";
+
+/** A request with the token that may read studies, or an anonymous one. */
+type SignedIn = { token: string } | { auth: false };
 
 /** Lichess sends a keep-alive space after 60 s of silence on a broadcast stream. */
 const STREAM_IDLE_TIMEOUT_MS = 100_000;
@@ -53,13 +57,19 @@ type RoundWatch = {
   trouble: Extract<BroadcastEvent, { type: "connection" }> | null;
 };
 
-export type BroadcastServiceOptions = { fetch?: FetchLike };
+export type BroadcastServiceOptions = {
+  fetch?: FetchLike;
+  /** The saved Lichess token when it may read studies, else null (anonymous requests). */
+  getToken?: () => Promise<string | null>;
+};
 
 export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> {
   private readonly client: LichessClient;
   private readonly watches = new Map<string, RoundWatch>();
+  /** Lichess refused the token here: anonymous from now on. */
+  private tokenRefused = false;
 
-  constructor(options: BroadcastServiceOptions = {}) {
+  constructor(private readonly options: BroadcastServiceOptions = {}) {
     super();
     this.client = new LichessClient({
       fetch: options.fetch,
@@ -126,8 +136,30 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
   }
 
   private async json(path: string): Promise<unknown> {
-    const response = await this.client.request(path, { auth: false });
-    return response.json();
+    const signedIn = await this.signedIn();
+    try {
+      const response = await this.client.request(path, signedIn);
+      return await response.json();
+    } catch (error) {
+      if (!this.refusedToken(signedIn, error)) throw error;
+      return this.json(path);
+    }
+  }
+
+  /** How a request goes: with the token that may read studies, or anonymously. */
+  private async signedIn(): Promise<SignedIn> {
+    if (this.tokenRefused || !this.options.getToken) return { auth: false };
+    const token = await this.options.getToken().catch(() => null);
+    return token ? { token } : { auth: false };
+  }
+
+  /** Whether `error` is Lichess refusing the token a request sent (it is dropped: anonymous now). */
+  private refusedToken(sent: SignedIn, error: unknown): boolean {
+    if (!("token" in sent) || !(error instanceof LichessHttpError)) return false;
+    if (error.status !== 401 && error.status !== 403) return false;
+    logger.warn("broadcasts", "Lichess refused the token; going on anonymously");
+    this.tokenRefused = true;
+    return true;
   }
 
   /**
@@ -141,14 +173,21 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
     while (!signal.aborted) {
       let openedAt = 0;
       let dropError: unknown = null;
+      const signedIn = await this.signedIn();
       try {
-        await this.streamRound(roundId, signal, watch, () => {
-          openedAt = Date.now();
-          this.setTrouble(roundId, watch, null);
+        await this.streamRound(roundId, watch, {
+          signal,
+          signedIn,
+          onOpen: () => {
+            openedAt = Date.now();
+            this.setTrouble(roundId, watch, null);
+          }
         });
       } catch (error) {
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
         if (signal.aborted) return;
+        // Refused signed in: straight back, anonymously.
+        if (this.refusedToken(signedIn, error)) continue;
         logger.warn("broadcasts", `round ${roundId} stream dropped:`, error);
         dropError = error;
       }
@@ -189,10 +228,10 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
    */
   private async streamRound(
     roundId: string,
-    signal: AbortSignal,
     watch: RoundWatch,
-    onOpen: () => void
+    connection: { signal: AbortSignal; signedIn: SignedIn; onOpen: () => void }
   ): Promise<void> {
+    const { signal, signedIn, onOpen } = connection;
     const splitter = createPgnGameSplitter((game) => {
       const live = liveGameFromPgn(game, roundId);
       if (!live) return;
@@ -202,7 +241,7 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
     await this.client.streamBody(
       `/api/stream/broadcast/round/${roundId}.pgn?clocks=true&comments=false`,
       {
-        auth: false,
+        ...signedIn,
         accept: "application/x-chess-pgn",
         signal,
         idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,

@@ -159,6 +159,25 @@ describe("lichess service", () => {
       );
     });
 
+    it("hands out the token for broadcasts only when it may read studies, asking once", async () => {
+      const { service, requests } = await setup({
+        "POST /api/token/test": () =>
+          json({ "lip_saved-token": { scopes: "board:play,study:read", userId: "magnus" } })
+      });
+      expect(await service.broadcastToken()).toBe("lip_saved-token");
+      expect(await service.broadcastToken()).toBe("lip_saved-token");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].body).toBe("lip_saved-token");
+    });
+
+    it("keeps a token without study:read away from broadcasts", async () => {
+      const { service } = await setup({
+        "POST /api/token/test": () =>
+          json({ "lip_saved-token": { scopes: "board:play", userId: "magnus" } })
+      });
+      expect(await service.broadcastToken()).toBeNull();
+    });
+
     it("reconnects the event stream with backoff after a drop", async () => {
       const events = streams();
       const { service } = await setup({ "GET /api/stream/event": events.handler });

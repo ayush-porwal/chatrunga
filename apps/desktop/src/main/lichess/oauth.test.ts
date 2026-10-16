@@ -37,7 +37,7 @@ describe("PKCE", () => {
       redirect_uri: "http://localhost:5555/callback",
       code_challenge_method: "S256",
       code_challenge: "abc",
-      scope: "board:play challenge:read challenge:write",
+      scope: "board:play challenge:read challenge:write study:read",
       state: "xyz"
     });
   });
