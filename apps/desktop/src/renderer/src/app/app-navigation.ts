@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { NavigateFunction } from "react-router-dom";
+import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/navigation";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { LIVE_GAME_NOTICE } from "../features/repertoire/handoffs";
 import { useAnalysisStore } from "../stores/analysis-store";
@@ -64,8 +65,9 @@ export type ShellState = {
   /** The rest of the shell's state a history entry records. */
   entryState: Pick<
     HistoryContext,
-    "reviewTab" | "openingSide" | "repertoireScreen" | "savedPlayOpponent"
+    "reviewTab" | "openingSide" | "repertoireScreen" | "savedPlayOpponent" | "broadcastScreen"
   >;
+  setBroadcastScreen: (screen: BroadcastScreen) => void;
 };
 
 /**
@@ -203,6 +205,42 @@ export function useAppNavigation(shell: ShellState) {
     showView("databases", history);
   }
 
+  /** Broadcasts: the events Lichess relays live. Pages over the board, like Databases. */
+  function openBroadcastsPage(history: HistoryMode = "push") {
+    if (!shell.desktopApiAvailable) return;
+    if (history === "push") commitCurrent();
+    if (useGameStore.getState().mode !== "engine") stopEngineWork();
+    setFocusMode(false);
+    showView("broadcasts", history);
+  }
+
+  /** A tournament's page (its round, a board to outline), or the one a history entry kept. */
+  function openBroadcastTournament(
+    target: TournamentTarget | BroadcastScreen,
+    history: HistoryMode = "push"
+  ) {
+    if (!shell.desktopApiAvailable) return;
+    if (history === "push") commitCurrent();
+    if (useGameStore.getState().mode !== "engine") stopEngineWork();
+    setFocusMode(false);
+    const screen: BroadcastScreen = { tab: "boards", ...target };
+    shell.setBroadcastScreen(screen);
+    latestNavigation.current += 1;
+    setView(
+      "broadcast-tournament",
+      leavesRoute("broadcast-tournament") ? () => void navigate("/", { replace: true }) : undefined
+    );
+    record(history, { view: "broadcast-tournament", screen });
+  }
+
+  /** The tournament page's round or tab: the entry follows it (no step of its own). */
+  function changeBroadcastScreen(screen: BroadcastScreen) {
+    // A game still opening from the screen left (waiting for its moves) no longer opens.
+    latestNavigation.current += 1;
+    shell.setBroadcastScreen(screen);
+    record("replace", { view: "broadcast-tournament", screen });
+  }
+
   function openSettings(section: SettingsSectionId | null) {
     commitCurrent();
     shell.viewedSettingsSection.current = section;
@@ -235,6 +273,9 @@ export function useAppNavigation(shell: ShellState) {
     openFreshPlayPage,
     openPuzzlesPage,
     openDatabasesPage,
+    openBroadcastsPage,
+    openBroadcastTournament,
+    changeBroadcastScreen,
     openSettings,
     settingsSectionViewed
   };

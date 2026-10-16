@@ -41,6 +41,7 @@ export const AppSidebar = memo(function AppSidebar({
   onRepertoire,
   onPuzzles,
   onDatabases,
+  onBroadcasts,
   onFocusToggle,
   onFlip,
   onSettings
@@ -56,6 +57,7 @@ export const AppSidebar = memo(function AppSidebar({
   onRepertoire: () => void;
   onPuzzles: () => void;
   onDatabases: () => void;
+  onBroadcasts: () => void;
   onFocusToggle: () => void;
   onFlip: () => void;
   onSettings: () => void;
@@ -69,21 +71,7 @@ export const AppSidebar = memo(function AppSidebar({
       {/* minmax(0,1fr): the track never grows past the rail — a wider item (the "Game" label) would
           make the collapsed nav scrollable and a click would scroll every icon 8px left. */}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-0.5">
-        {/* Same height in both states: the "Game" label expanded, a hairline collapsed. */}
-        <div className="relative flex h-8 min-w-0 items-center overflow-hidden px-2.5">
-          <Eyebrow
-            className={cn("whitespace-nowrap", labelFade(expanded))}
-            aria-hidden={!expanded || undefined}
-          >
-            Game
-          </Eyebrow>
-          <Separator
-            className={cn(
-              "absolute inset-x-2.5 top-1/2 w-auto bg-line-subtle transition-opacity duration-micro",
-              expanded ? "opacity-0" : "opacity-100 delay-100"
-            )}
-          />
-        </div>
+        <GroupLabel expanded={expanded}>Game</GroupLabel>
         <SidebarCommand
           expanded={expanded}
           icon={icons.play}
@@ -125,6 +113,16 @@ export const AppSidebar = memo(function AppSidebar({
           label="Databases"
           active={active.databases}
           onClick={onDatabases}
+        />
+        <GroupLabel expanded={expanded} className="mt-2.5">
+          Watch
+        </GroupLabel>
+        <SidebarCommand
+          expanded={expanded}
+          icon={icons.broadcasts}
+          label="Broadcasts"
+          active={active.broadcasts}
+          onClick={onBroadcasts}
         />
       </div>
 
@@ -174,6 +172,34 @@ export const AppSidebar = memo(function AppSidebar({
     </nav>
   );
 });
+
+/** A group's label: the same height in both states, its name expanded and a hairline collapsed. */
+function GroupLabel({
+  expanded,
+  className,
+  children
+}: {
+  expanded: boolean;
+  className?: string;
+  children: string;
+}) {
+  return (
+    <div className={cn("relative flex h-8 min-w-0 items-center overflow-hidden px-2.5", className)}>
+      <Eyebrow
+        className={cn("whitespace-nowrap", labelFade(expanded))}
+        aria-hidden={!expanded || undefined}
+      >
+        {children}
+      </Eyebrow>
+      <Separator
+        className={cn(
+          "absolute inset-x-2.5 top-1/2 w-auto bg-line-subtle transition-opacity duration-micro",
+          expanded ? "opacity-0" : "opacity-100 delay-100"
+        )}
+      />
+    </div>
+  );
+}
 
 /** Nav item: ghost button, 16px icon, active = control fill. */
 const navItem =

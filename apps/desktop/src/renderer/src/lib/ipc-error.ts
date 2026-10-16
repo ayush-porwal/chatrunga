@@ -4,5 +4,5 @@
  */
 export function ipcErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+  return message.replace(/^Error invoking remote method '[^']+': ([A-Za-z]*Error: )?/, "");
 }

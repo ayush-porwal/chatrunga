@@ -171,8 +171,19 @@ const api: ChaturangaApi = {
     ),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
     onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
+    onBroadcastEvent: subscribe<EventPayload<"onBroadcastEvent">>("broadcast:event"),
     onChesscomEvent: subscribe<EventPayload<"onChesscomEvent">>("chesscom:event"),
     onSettingsChanged: subscribe<EventPayload<"onSettingsChanged">>("settings:changed")
+  },
+  // Lichess broadcasts (main/broadcasts).
+  broadcasts: {
+    top: (page) => ipcRenderer.invoke("broadcasts:top", page),
+    search: (query) => ipcRenderer.invoke("broadcasts:search", query),
+    tournament: (tourId) => ipcRenderer.invoke("broadcasts:tournament", tourId),
+    round: (roundId) => ipcRenderer.invoke("broadcasts:round", roundId),
+    players: (tourId) => ipcRenderer.invoke("broadcasts:players", tourId),
+    watchRound: (roundId) => ipcRenderer.invoke("broadcasts:watchRound", roundId),
+    unwatchRound: (roundId) => ipcRenderer.invoke("broadcasts:unwatchRound", roundId)
   },
   // Chess.com account and import (main/chesscom).
   chesscom: {

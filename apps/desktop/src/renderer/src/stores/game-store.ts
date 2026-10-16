@@ -122,6 +122,12 @@ type GameStore = {
   goToLine: (startNodeId: string, moves: readonly string[]) => boolean;
   deleteLineFromNode: (nodeId: string) => boolean;
   /**
+   * Replaces the tree and moves the cursor to `currentNodeId` (the root if it isn't in the tree): a
+   * followed broadcast's live moves merged in, or the user's own moves cleared. Pure data: never
+   * changes mode or starts an engine.
+   */
+  replaceMoveTree: (moveTree: MoveNode[], currentNodeId: string) => void;
+  /**
    * Makes the line through `nodeId` the main line (the line it replaces becomes the first variation
    * at each branch point); the current move stays. Refused (false) on the main line, for an unknown
    * move, and during a live match.
@@ -462,6 +468,21 @@ export const useGameStore = create<GameStore>((set, get) => {
         ...outcomeAfterEdit(state, nextTree)
       });
       return true;
+    },
+
+    replaceMoveTree: (moveTree, currentNodeId) => {
+      const node =
+        moveTree.find((item) => item.id === currentNodeId) ??
+        moveTree.find((item) => item.id === "root");
+      if (!node) return;
+      const moved = node.id !== get().currentNodeId;
+      set({
+        moveTree,
+        currentNodeId: node.id,
+        currentFen: node.fenAfter,
+        lastError: null,
+        ...(moved ? { pendingPromotion: null, bestLine: null } : {})
+      });
     },
 
     promoteVariation: (nodeId) => {

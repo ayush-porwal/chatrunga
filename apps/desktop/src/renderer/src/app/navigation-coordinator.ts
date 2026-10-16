@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { SavedGame } from "@chaturanga/shared/types/chess";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { isFollowedBoard, refollowBoard } from "../features/broadcasts/broadcast-follow";
 import { openSavedGame, savedReview } from "../features/game/saved-game";
 import { LIVE_GAME_NOTICE } from "../features/repertoire/handoffs";
 import { isMissingTargetError } from "../features/repertoire/repertoire-model";
@@ -55,6 +56,10 @@ export type NavigationShell = {
   openPlay: () => void;
   openPuzzles: () => void;
   openDatabases: () => void;
+  openBroadcasts: () => void;
+  openBroadcastTournament: (
+    screen: Extract<HistoryEntry, { view: "broadcast-tournament" }>["screen"]
+  ) => void;
   openRepertoireHub: () => void;
   /**
    * Opens a study chapter. False when it didn't: the chapter being left couldn't be saved (the
@@ -158,15 +163,24 @@ export async function restoreEntry(
     case "databases":
       shell.openDatabases();
       return "shown";
+    case "broadcasts":
+      shell.openBroadcasts();
+      return "shown";
+    case "broadcast-tournament":
+      shell.openBroadcastTournament(entry.screen);
+      return "shown";
     case "game": {
       const outcome = await restoreBoard(entry.board, shell);
-      if (outcome === "restored") shell.showGame(sideTabFrom(entry.board.tab));
-      return outcome === "restored" ? "shown" : outcome;
+      if (outcome !== "restored") return outcome;
+      refollowRestored(entry.board);
+      shell.showGame(sideTabFrom(entry.board.tab));
+      return "shown";
     }
     case "game-review": {
       // The review running for this game keeps going (left for a repertoire screen, say).
       const outcome = await restoreBoard(entry.board, shell, { keepReview: true });
       if (outcome !== "restored") return outcome;
+      refollowRestored(entry.board);
       const request = shell.navigation.current;
       // The review may not be loaded (the board was replaced while away): bring the saved one back.
       if (entry.board.gameId && !useReviewStore.getState().review) {
@@ -248,6 +262,12 @@ async function restoreBoard(
 }
 
 /** Analysis on the restored board: the default engine when none is picked, searching again. */
+/** A broadcast game comes back as it was left, then catches up with the live game. */
+function refollowRestored(snapshot: BoardSnapshot): void {
+  if (snapshot.broadcast && !isFollowedBoard(useGameStore.getState().board))
+    refollowBoard(snapshot.broadcast);
+}
+
 function resumeBoardAnalysis(defaultEngineId: string | null): void {
   const analysis = useAnalysisStore.getState();
   if (defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(defaultEngineId);

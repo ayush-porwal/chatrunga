@@ -4,6 +4,8 @@ import {
   RepertoireStudyTitlebar
 } from "../features/repertoire/RepertoireTitlebar";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
+import type { BroadcastScreen } from "../features/broadcasts/navigation";
+import { TournamentTitle } from "../features/broadcasts/TournamentTitle";
 import type { AppView, RepertoireScreen } from "./AppPages";
 import { GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import type { AppCommands } from "./useAppCommands";
@@ -13,6 +15,7 @@ const pageTitles: Partial<Record<AppView, string>> = {
   play: "Play",
   puzzles: "Puzzles",
   databases: "Databases",
+  broadcasts: "Broadcasts",
   "repertoire-hub": "Repertoire"
 };
 
@@ -23,6 +26,7 @@ const pageTitles: Partial<Record<AppView, string>> = {
 export function ViewTitlebar({
   view,
   repertoire,
+  broadcastScreen,
   reviewLoading,
   hasMoves,
   engines,
@@ -33,6 +37,7 @@ export function ViewTitlebar({
 }: {
   view: AppView;
   repertoire: RepertoireScreen | null;
+  broadcastScreen: BroadcastScreen | null;
   /** The review route's game is still loading (Analyze waits). */
   reviewLoading: boolean;
   /** The game has a main line to review. */
@@ -55,6 +60,7 @@ export function ViewTitlebar({
     | "reviewHandoffOpening"
     | "returnToRepertoire"
     | "showGame"
+    | "broadcasts"
   >;
 }) {
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
@@ -77,6 +83,14 @@ export function ViewTitlebar({
   if (view === "repertoire-practice" && repertoire) {
     return (
       <RepertoirePracticeTitlebar repertoireId={repertoire.repertoireId} onHub={on.repertoireHub} />
+    );
+  }
+  if (view === "broadcast-tournament" && broadcastScreen) {
+    return (
+      <>
+        <TournamentTitle tourId={broadcastScreen.tourId} onBroadcasts={on.broadcasts} />
+        {onlineGameLive ? <LiveGameButton onClick={on.showGame} /> : null}
+      </>
     );
   }
   if (view === "game") {

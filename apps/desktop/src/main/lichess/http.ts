@@ -3,6 +3,9 @@ import { isRecord } from "@chaturanga/shared/types/guards";
 
 export const LICHESS_ORIGIN = "https://lichess.org";
 
+/** Lichess asks API clients to say who they are (a library's default agent may be refused). */
+export const USER_AGENT = "Chaturanga (+https://github.com/ayush-porwal/chatrunga)";
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export const RATE_LIMITED_ERROR = "Lichess is limiting requests right now. Try again in a minute.";
@@ -36,8 +39,22 @@ export function lichessErrorMessage(status: number, bodyText: string): string {
   const detail = errorDetail(bodyText);
   if (detail) return detail;
   if (status === 404) return "Lichess couldn't find that (it may have ended or been removed).";
+  // A refusal that isn't Lichess's JSON (a block page): its own words say why.
+  const page = pageText(bodyText);
+  if (status === 403 && page) return `Lichess refused the request (403): ${page}`;
   if (status >= 500) return `Lichess is having trouble right now (${status}). Try again later.`;
   return `Lichess refused the request (${status}).`;
+}
+
+/** A short plain-text excerpt of an HTML or text answer, or null for none. */
+function pageText(bodyText: string): string | null {
+  const text = bodyText
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
 }
 
 function errorDetail(bodyText: string): string | null {
@@ -90,6 +107,9 @@ function formBody(form: Record<string, FormValue>): URLSearchParams {
   return body;
 }
 
+/** A long-lived request: how long it may stay silent, and a call once it opens. */
+type StreamRequest = LichessRequest & { idleTimeoutMs?: number; onOpen?: () => void };
+
 /** Requests to lichess.org with the bearer token; refused requests throw LichessHttpError. */
 export class LichessClient {
   private readonly fetchImpl: FetchLike;
@@ -100,7 +120,10 @@ export class LichessClient {
 
   /** The response of a successful request (2xx); its body is the caller's to read. */
   async request(path: string, request: LichessRequest = {}): Promise<Response> {
-    const headers: Record<string, string> = { Accept: request.accept ?? "application/json" };
+    const headers: Record<string, string> = {
+      Accept: request.accept ?? "application/json",
+      "User-Agent": USER_AGENT
+    };
     const usesSavedToken = request.auth !== false && request.token === undefined;
     const sentToken = await this.tokenFor(request);
     if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
@@ -156,8 +179,27 @@ export class LichessClient {
    */
   async stream(
     path: string,
-    request: LichessRequest & { idleTimeoutMs?: number; onOpen?: () => void },
+    request: StreamRequest,
     onLine: (value: unknown) => void
+  ): Promise<void> {
+    await this.streamBody(
+      path,
+      { ...request, accept: request.accept ?? "application/x-ndjson" },
+      async (body, touch) => {
+        for await (const line of readNdjson(body, touch)) onLine(line);
+      }
+    );
+  }
+
+  /**
+   * A long-lived response handed to `read` with `touch` (call it per chunk: it keeps the idle
+   * timeout from firing), until the server closes it. Aborting `request.signal` ends it; going
+   * silent past `idleTimeoutMs` throws (see `stream`).
+   */
+  async streamBody(
+    path: string,
+    request: StreamRequest,
+    read: (body: ReadableStream<Uint8Array>, touch: () => void) => Promise<void>
   ): Promise<void> {
     const controller = new AbortController();
     const outer = request.signal;
@@ -172,15 +214,11 @@ export class LichessClient {
     };
     try {
       touch();
-      const response = await this.request(path, {
-        ...request,
-        accept: request.accept ?? "application/x-ndjson",
-        signal: controller.signal
-      });
+      const response = await this.request(path, { ...request, signal: controller.signal });
       touch();
       request.onOpen?.();
       if (!response.body) return;
-      for await (const line of readNdjson(response.body, touch)) onLine(line);
+      await read(response.body, touch);
     } catch (error) {
       // Aborted, but not by the caller: the idle timer did it.
       if (controller.signal.aborted && !outer?.aborted)

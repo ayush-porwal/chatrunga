@@ -5,6 +5,7 @@ import {
   Download,
   Microscope,
   Puzzle,
+  Radio,
   Settings,
   Swords,
   Upload
@@ -22,6 +23,7 @@ export const DESTINATION_ICONS = {
   repertoire: BookMarked,
   puzzles: Puzzle,
   databases: Database,
+  broadcasts: Radio,
   importPgn: Upload,
   exportPgn: Download,
   settings: Settings

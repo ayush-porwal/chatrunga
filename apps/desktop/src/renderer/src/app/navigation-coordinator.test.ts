@@ -5,7 +5,9 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { LIVE_GAME_NOTICE } from "../features/repertoire/handoffs";
 import { useAnalysisStore } from "../stores/analysis-store";
+import { isBroadcastBoard } from "../features/broadcasts/broadcast-follow";
 import { useAppNoticeStore } from "../stores/app-notice-store";
+import { useBroadcastStore } from "../stores/broadcast-store";
 import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
@@ -85,6 +87,8 @@ function fakeShell(overrides: Partial<NavigationShell> = {}): NavigationShell {
     openPlay: shows(),
     openPuzzles: shows(),
     openDatabases: shows(),
+    openBroadcasts: shows(),
+    openBroadcastTournament: shows(),
     openRepertoireHub: shows(),
     openRepertoireStudy: vi.fn(async () => {
       navigation.current += 1;
@@ -144,6 +148,7 @@ describe("navigation coordinator", () => {
     useLichessStore.setState({ playOpponent: null });
     useRepertoireWorkspaceStore.getState().reset();
     useRepertoireWorkspaceStore.setState({ decisionDrafts: {} });
+    useBroadcastStore.setState({ follow: null, cleared: null });
     history([PLAY], 0);
   });
 
@@ -186,6 +191,44 @@ describe("navigation coordinator", () => {
         )
       ).toBe("shown");
       expect(shell.openRepertoirePractice).toHaveBeenCalledWith("r1", "s1");
+    });
+
+    it("brings the broadcast pages back, a tournament on its round and tab", async () => {
+      const shell = fakeShell();
+      expect(await restoreEntry({ view: "broadcasts" }, shell)).toBe("shown");
+      expect(shell.openBroadcasts).toHaveBeenCalledWith();
+      const screen = {
+        tourId: "Tour0001",
+        roundId: "Round007",
+        focusGameId: null,
+        tab: "players"
+      } as const;
+      expect(await restoreEntry({ view: "broadcast-tournament", screen }, shell)).toBe("shown");
+      expect(shell.openBroadcastTournament).toHaveBeenCalledWith(screen);
+    });
+
+    it("follows a broadcast game again when its board or its review comes back", async () => {
+      const ref = {
+        tourId: "Tour0001",
+        tourName: "Knight Invitational",
+        roundId: "Round007",
+        roundName: "Round 7",
+        gameId: "Game0001"
+      };
+      const entry = gameEntry(null, { broadcast: ref });
+      loadSaved("g2");
+      expect(await restoreEntry(entry, fakeShell())).toBe("shown");
+      const follow = useBroadcastStore.getState().follow;
+      expect(follow).toMatchObject({ gameId: "Game0001", board: useGameStore.getState().board });
+      // Without the live game yet, the main line it was left with stands for the live line.
+      expect(follow?.liveIds).toHaveLength(4);
+      expect(isBroadcastBoard(useGameStore.getState().board)).toBe(true);
+
+      // Its Game Review comes back following it too.
+      loadSaved("g2");
+      const review = { view: "game-review", board: entry.board, tab: "moves" } as const;
+      expect(await restoreEntry(review, fakeShell())).toBe("shown");
+      expect(useBroadcastStore.getState().follow?.board).toBe(useGameStore.getState().board);
     });
 
     it("brings a saved game back on its tab, ending the board's other activity", async () => {

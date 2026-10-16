@@ -4,11 +4,13 @@ import type { ReviewTab } from "../features/game-review/review-utils";
 import { resolvePlayMode } from "../features/play/play-layout";
 import { repertoireCommandBlocked } from "../features/repertoire/handoffs";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
+import { useBroadcastStore } from "../stores/broadcast-store";
 import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
+import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { AppView, RepertoireScreen } from "./AppPages";
 import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
 import type { SideTab } from "./side-tabs";
@@ -40,6 +42,8 @@ export type HistoryContext = {
   repertoireScreen: RepertoireScreen | null;
   /** Play settings' saved opponent (what the Play card opens with before one is chosen). */
   savedPlayOpponent: PlayOpponent | null;
+  /** The broadcast tournament screen shown (null when none was opened). */
+  broadcastScreen: BroadcastScreen | null;
 };
 
 /** The board as it is now, for a history entry. */
@@ -50,6 +54,7 @@ export function captureBoard(
 ): BoardSnapshot {
   const game = useGameStore.getState();
   const puzzle = game.mode === "puzzle" ? usePuzzleStore.getState().activePuzzle : null;
+  const follow = useBroadcastStore.getState().follow;
   return {
     gameId: game.gameId,
     // Nothing to reload an unsaved game from: keep it whole.
@@ -67,7 +72,18 @@ export function captureBoard(
     puzzle: puzzle ? { sample: puzzle } : null,
     // Its puzzle's set, or the set a game played on from its puzzle goes on with.
     puzzleSet: puzzle || continuesSet ? puzzleSet : null,
-    lichessGameId: game.mode === "online" ? (useLichessStore.getState().live?.id ?? null) : null
+    lichessGameId: game.mode === "online" ? (useLichessStore.getState().live?.id ?? null) : null,
+    ...(follow?.board === game.board
+      ? {
+          broadcast: {
+            tourId: follow.tourId,
+            tourName: follow.tourName,
+            roundId: follow.roundId,
+            roundName: follow.roundName,
+            gameId: follow.gameId
+          }
+        }
+      : {})
   };
 }
 
@@ -118,6 +134,10 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
         orientation: open ? draft.orientation : screen.orientation
       };
     }
+    case "broadcast-tournament":
+      return context.broadcastScreen
+        ? { view, screen: context.broadcastScreen }
+        : { view: "broadcasts" };
     case "repertoire-practice": {
       const screen = context.repertoireScreen;
       if (screen?.view !== "repertoire-practice") return { view: "repertoire-hub" };

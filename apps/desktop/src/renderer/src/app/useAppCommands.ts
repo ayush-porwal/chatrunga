@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import {
@@ -6,6 +7,7 @@ import {
   type AddFromGameResult
 } from "@chaturanga/shared/types/repertoire";
 import { useEventCallback } from "@/lib/use-event-callback";
+import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/navigation";
 import { isLichessMode } from "../features/play/play-layout";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { PracticePreset } from "../features/repertoire/practice-setup";
@@ -20,6 +22,7 @@ import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store"
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { currentGame, type AppNavigation } from "./app-navigation";
 import type { BoardCommands } from "./board-commands";
+import type { BroadcastCommands } from "./broadcast-commands";
 import type { PuzzleCommands } from "./puzzle-commands";
 import type { RepertoireCommands } from "./repertoire-commands";
 import type { RepertoireExtras } from "./useRepertoireRoute";
@@ -29,6 +32,7 @@ import { cancelActiveReview } from "./useReviewRunner";
 type AppCommandSources = {
   nav: AppNavigation;
   board: BoardCommands;
+  broadcast: BroadcastCommands;
   puzzles: PuzzleCommands;
   repertoire: RepertoireCommands;
   /** Back / Forward (useHistoryRestore); `busy` while a restore is still loading. */
@@ -50,6 +54,7 @@ type AppCommandSources = {
 export function useAppCommands({
   nav,
   board,
+  broadcast,
   puzzles,
   repertoire,
   history,
@@ -118,6 +123,17 @@ export function useAppCommands({
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(() => nav.openPuzzlesPage())),
     databases: useEventCallback(() => nav.openDatabasesPage()),
+    broadcasts: useEventCallback(() => nav.openBroadcastsPage()),
+    openBroadcastTournament: useEventCallback((target: TournamentTarget) =>
+      nav.openBroadcastTournament(target)
+    ),
+    broadcastScreenChange: useEventCallback((screen: BroadcastScreen) =>
+      nav.changeBroadcastScreen(screen)
+    ),
+    // A Lichess game of yours being played keeps the board.
+    openBroadcastGame: useEventCallback((detail: BroadcastRoundDetail, gameId: string) =>
+      unlessOnlineGame(() => void broadcast.openBroadcastGame(detail, gameId))
+    ),
     // Databases → "Train with this dataset": Puzzles with that dataset chosen (other filters kept).
     trainWithDatabase: useEventCallback((databaseId: string) =>
       // A Lichess game on the board keeps it (like the Puzzles item).

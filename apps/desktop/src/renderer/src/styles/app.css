@@ -136,6 +136,8 @@
   /* Keeps a Radix Presence node mounted while its children run their exit animation. */
   --animate-hold: ui-hold 120ms linear both;
   --animate-indeterminate: ui-indeterminate 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  /* Something happening right now (a live broadcast's dot): a ring that swells and fades. */
+  --animate-live-ping: ui-live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
 
   @keyframes ui-fade-in {
     from {
@@ -182,6 +184,13 @@
       opacity: 1;
     }
   }
+  @keyframes ui-live-ping {
+    80%,
+    100% {
+      opacity: 0;
+      transform: scale(2.75);
+    }
+  }
   @keyframes ui-indeterminate {
     from {
       transform: translateX(-100%);
@@ -197,6 +206,16 @@
   --motion-pop-scale: 0.96;
   --motion-dialog-scale: 0.97;
   --motion-dialog-exit-scale: 0.98;
+}
+
+/*
+ * The pointer over everything clickable inside (buttons, links, options, pickers), for pages of
+ * cards and rows that read as content until hovered (the broadcasts pages).
+ */
+@utility pointer-cursors {
+  & :is(button, a[href], select, [role="option"]):not(:disabled, [aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -260,16 +279,12 @@ html:has(.onb-root) {
   --page-gutter: clamp(1.5rem, 2.5vw, 3.5rem);
   --page-gutter-y: clamp(1.25rem, 2vw, 3rem);
   --page-content: clamp(64rem, 20rem + 42vw, 88rem);
+  /* A page's lead column (Play's card): `100%` is its grid's width. The side column: .page-frame. */
+  --lead-column: clamp(320px, 32.8%, 392px);
   --workspace-pad: clamp(0.75rem, 1.25vw, 2rem);
-  /* The side panel's bounds, and its width beside a board that fills its space. */
+  /* The side panel's bounds (it opens as wide as every page's side column, --side-column). */
   --workspace-panel-min: 20rem;
   --workspace-panel-max: 34rem;
-  --workspace-panel-fill: clamp(
-    var(--workspace-panel-min),
-    10.5rem + 14.5vw,
-    var(--workspace-panel-max)
-  );
-  --workspace-panel: var(--workspace-panel-fill);
   /* The widest a panel block that reads as a line (tabs, summary, notices, move navigation) is
      drawn: centred in a panel that is wider (beside a resized board). */
   --workspace-panel-measure: var(--workspace-panel-max);
@@ -280,6 +295,38 @@ html:has(.onb-root) {
 }
 
 /*
+ * Every page's right-hand column, one width on every page (Play's side cards, the broadcasts rail,
+ * the puzzles summary, the board workspace's panel as it opens): Play's, a third of what its lead
+ * column (--lead-column) and three 1rem gaps leave of a page's content, never under 20rem (what
+ * the board workspace's panel needs: the review summary, the engine lines). Worked
+ * out once from the content panel's width (a page pads its content 1.5rem each side and keeps the
+ * 8px scrollbar's gutter), so it is the same length whatever grid or container uses it.
+ */
+@property --side-column {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 20rem;
+}
+
+@property --page-content-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+.page-frame {
+  container-type: inline-size;
+}
+
+.page-frame > * {
+  --page-content-width: calc(100cqw - 3rem - 8px);
+  --side-column: max(
+    20rem,
+    (var(--page-content-width) - clamp(320px, 0.328 * var(--page-content-width), 392px) - 3rem) / 3
+  );
+}
+
+/*
  * The board workspace's root (BoardWorkspace), a size container. Declared on it rather than :root
  * because they read its own `--workspace-eval` (0 while the eval bar is off):
  * - `--workspace-board-fill`: the edge of a board that fills its space (the height's, or on a narrow
@@ -287,6 +334,8 @@ html:has(.onb-root) {
  * - `--workspace-board-max`: the largest edge a resize can reach, beside the panel at its minimum.
  */
 .board-workspace {
+  --workspace-panel-fill: var(--side-column);
+  --workspace-panel: var(--workspace-panel-fill);
   --workspace-board-fill: min(
     100cqh - 2 * var(--workspace-pad) - 5rem,
     100rem,

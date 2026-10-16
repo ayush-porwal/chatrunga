@@ -6,7 +6,8 @@ import {
   lichessErrorMessage,
   NOT_CONNECTED_ERROR,
   RATE_LIMITED_ERROR,
-  TOKEN_REJECTED_ERROR
+  TOKEN_REJECTED_ERROR,
+  USER_AGENT
 } from "./http";
 
 describe("lichessErrorMessage", () => {
@@ -29,6 +30,16 @@ describe("lichessErrorMessage", () => {
     expect(lichessErrorMessage(503, "")).toMatch(/trouble.*503/);
     expect(lichessErrorMessage(418, "")).toMatch(/418/);
   });
+
+  it("quotes a refusal page's own words", () => {
+    expect(
+      lichessErrorMessage(
+        403,
+        "<html><body><h1>Forbidden</h1><p>Your IP is blocked.</p></body></html>"
+      )
+    ).toBe("Lichess refused the request (403): Forbidden Your IP is blocked.");
+    expect(lichessErrorMessage(403, "")).toBe("Lichess refused the request (403).");
+  });
 });
 
 describe("LichessClient", () => {
@@ -45,7 +56,8 @@ describe("LichessClient", () => {
     });
     expect(requests[0].headers).toMatchObject({
       authorization: "Bearer test-token",
-      "content-type": "application/x-www-form-urlencoded"
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": USER_AGENT
     });
   });
 

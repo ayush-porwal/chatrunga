@@ -36,6 +36,14 @@ import type {
   UpdateEngineInput
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
+import type {
+  BroadcastEvent,
+  BroadcastListing,
+  BroadcastRoundDetail,
+  BroadcastStanding,
+  BroadcastTopPage,
+  BroadcastTourDetail
+} from "../types/broadcast";
 import type { PuzzleInsightPayload } from "../schemas/puzzle-insight";
 import type { UpdateState } from "../types/updates";
 import type {
@@ -336,6 +344,8 @@ export type ChaturangaApi = {
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
     /** Lichess account, seek, challenge, game and import events (main/lichess). */
     onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
+    /** Live games of the watched broadcast rounds (main/broadcasts). */
+    onBroadcastEvent(callback: (event: BroadcastEvent) => void): Unsubscribe;
     /** Chess.com account and import events (main/chesscom). */
     onChesscomEvent(callback: (event: ChesscomEvent) => void): Unsubscribe;
     /** Settings the main process changed itself (the accounts' ratings sync): read them again. */
@@ -378,6 +388,28 @@ export type ChaturangaApi = {
     /** Offers a draw, or accepts the opponent's offer. */
     offerDraw(gameId: string): Promise<void>;
     declineDraw(gameId: string): Promise<void>;
+  };
+
+  /**
+   * Lichess broadcasts of over-the-board events (main/broadcasts). Public data: no account needed.
+   * Requests reject with a readable message when Lichess refuses them (rate limit, not found, …).
+   */
+  broadcasts: {
+    /** Tournaments in progress, and a page of finished ones (`page` 1 also has the active ones). */
+    top(page?: number): Promise<BroadcastTopPage>;
+    /** Tournaments whose name matches `query`. */
+    search(query: string): Promise<BroadcastListing[]>;
+    tournament(tourId: string): Promise<BroadcastTourDetail>;
+    /** A round with every board as it stands now. */
+    round(roundId: string): Promise<BroadcastRoundDetail>;
+    /** The tournament's standings. */
+    players(tourId: string): Promise<BroadcastStanding[]>;
+    /**
+     * Streams a round's games (`game` events: every game once, then each change) until its last
+     * watcher calls `unwatchRound`; its stream's trouble arrives as `connection` events.
+     */
+    watchRound(roundId: string): Promise<void>;
+    unwatchRound(roundId: string): Promise<void>;
   };
 
   /**
