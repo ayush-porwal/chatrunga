@@ -42,12 +42,17 @@ type EventResult = {
 
 type Result = GameResult | EventResult;
 
+type BroadcastStoreGames = ReturnType<typeof useBroadcastStore.getState>["games"];
+
 /**
  * Games whose players match, from the rounds already read (the live events' rounds are read when
  * the search box is first used): Lichess's own search only matches tournament names.
  */
-function matchingGames(rounds: readonly BroadcastRoundDetail[], query: string): GameResult[] {
-  const streamed = useBroadcastStore.getState().games;
+function matchingGames(
+  rounds: readonly BroadcastRoundDetail[],
+  streamed: BroadcastStoreGames,
+  query: string
+): GameResult[] {
   const results: GameResult[] = [];
   for (const detail of rounds) {
     detail.games.forEach((game, index) => {
@@ -99,6 +104,7 @@ export function BroadcastSearch({
   const query = useDebouncedValue(text.trim(), 250);
   const events = useBroadcastSearchQuery(query);
   const searching = query.length >= MIN_SEARCH_LENGTH;
+  const streamed = useBroadcastStore((state) => state.games);
   const rounds = useQueries({
     queries: liveRoundIds.map((roundId) => ({ ...roundQueryOptions(roundId), enabled: used })),
     combine: roundsRead
@@ -106,7 +112,7 @@ export function BroadcastSearch({
 
   const results = useMemo<Result[]>(() => {
     if (!searching) return [];
-    const games = matchingGames(rounds, query);
+    const games = matchingGames(rounds, streamed, query);
     const eventResults: EventResult[] = (events.data ?? []).slice(0, MAX_EVENTS).map((listing) => ({
       kind: "event",
       key: listing.tour.id,
@@ -114,7 +120,7 @@ export function BroadcastSearch({
       listing
     }));
     return [...games, ...eventResults];
-  }, [events.data, query, rounds, searching]);
+  }, [events.data, query, rounds, searching, streamed]);
 
   const shown = open && searching;
   const activeIndex = Math.min(active, Math.max(0, results.length - 1));

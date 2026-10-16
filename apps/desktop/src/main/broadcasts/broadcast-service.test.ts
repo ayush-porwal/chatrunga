@@ -75,9 +75,8 @@ describe("BroadcastService", () => {
     vi.useFakeTimers();
     const rounds = streams();
     const { service, events, requests } = setup({ [STREAM_PATH]: rounds.handler });
-    const watching = service.watchRound(ROUND_ID);
+    service.watchRound(ROUND_ID);
     await vi.advanceTimersByTimeAsync(0);
-    await watching;
     // A game split across chunks still arrives whole.
     const text = pgn("Game0001", "1. e4 e5");
     rounds.opened[0].pushRaw(text.slice(0, 20));
@@ -91,20 +90,21 @@ describe("BroadcastService", () => {
 
     // A second watcher shares the stream and gets the latest of each game at once.
     events.length = 0;
-    await service.watchRound(ROUND_ID);
+    service.watchRound(ROUND_ID);
     expect(rounds.opened).toHaveLength(1);
     expect(events).toMatchObject([{ type: "game", game: { id: "Game0001", lastMove: "g1f3" } }]);
 
     rounds.opened[0].fail();
     await vi.advanceTimersByTimeAsync(0);
-    expect(events.at(-1)).toMatchObject({ type: "connection", connected: false });
+    expect(events.at(-1)).toMatchObject({ type: "connection", connected: false, retrying: true });
     await vi.advanceTimersByTimeAsync(1000);
     expect(rounds.opened).toHaveLength(2);
     expect(events.at(-1)).toStrictEqual({
       type: "connection",
       roundId: ROUND_ID,
       connected: true,
-      error: null
+      error: null,
+      retrying: false
     });
 
     // The stream closes only when the last watcher leaves, and nothing reconnects after.
@@ -118,8 +118,45 @@ describe("BroadcastService", () => {
     expect(rounds.opened).toHaveLength(2);
   });
 
-  it("rejects the watch when the first connection fails", async () => {
-    const { service } = setup({ [STREAM_PATH]: () => json({ error: "Not found" }, 404) });
-    await expect(service.watchRound(ROUND_ID)).rejects.toThrow("Not found");
+  it("retries a first connection that fails, telling a watcher who joins meanwhile", async () => {
+    vi.useFakeTimers();
+    const rounds = streams();
+    const { service, events } = setup({
+      [STREAM_PATH]: vi.fn(rounds.handler).mockReturnValueOnce(json({ error: "Down" }, 503))
+    });
+    service.watchRound(ROUND_ID);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events).toMatchObject([{ type: "connection", connected: false, retrying: true }]);
+
+    // The watch stands while it retries: a new watcher shares it and learns of the trouble.
+    events.length = 0;
+    service.watchRound(ROUND_ID);
+    expect(events).toMatchObject([{ type: "connection", connected: false, retrying: true }]);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(rounds.opened).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "connection", connected: true });
+    service.unwatchRound(ROUND_ID);
+    service.unwatchRound(ROUND_ID);
+  });
+
+  it("stops, saying why, when Lichess refuses the round for good", async () => {
+    vi.useFakeTimers();
+    const { service, events, requests } = setup({
+      [STREAM_PATH]: () => json({ error: "Not found" }, 404)
+    });
+    service.watchRound(ROUND_ID);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requests).toHaveLength(1);
+    expect(events).toStrictEqual([
+      {
+        type: "connection",
+        roundId: ROUND_ID,
+        connected: false,
+        error: "Not found",
+        retrying: false
+      }
+    ]);
+    service.unwatchRound(ROUND_ID);
   });
 });

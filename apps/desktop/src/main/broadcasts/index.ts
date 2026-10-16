@@ -48,9 +48,9 @@ export function registerBroadcastIpc(): void {
   ipcMain.handle("broadcasts:players", (_event, id: unknown) =>
     broadcasts.players(broadcastId(id, "tournament id"))
   );
-  ipcMain.handle("broadcasts:watchRound", (_event, id: unknown) =>
-    broadcasts.watchRound(broadcastId(id, "round id"))
-  );
+  ipcMain.handle("broadcasts:watchRound", (_event, id: unknown) => {
+    broadcasts.watchRound(broadcastId(id, "round id"));
+  });
   ipcMain.handle("broadcasts:unwatchRound", (_event, id: unknown) =>
     broadcasts.unwatchRound(broadcastId(id, "round id"))
   );

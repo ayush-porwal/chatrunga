@@ -98,7 +98,11 @@ export function useBroadcastEventSubscription() {
       window.chaturanga?.events.onBroadcastEvent((event) => {
         const store = useBroadcastStore.getState();
         if (event.type === "game") store.receiveGame(event.game);
-        else store.setConnection(event.roundId, { connected: event.connected, error: event.error });
+        else
+          store.setConnection(
+            event.roundId,
+            event.connected ? null : { error: event.error, retrying: event.retrying }
+          );
       }),
     []
   );
@@ -110,17 +114,14 @@ export function useRoundStream(roundId: string | null) {
     const api = window.chaturanga?.broadcasts;
     if (!api || !roundId) return;
     let mounted = true;
-    api.watchRound(roundId).then(
-      () => {
-        if (mounted) useBroadcastStore.getState().setConnection(roundId, null);
-      },
-      (error: unknown) => {
-        if (!mounted) return;
-        useBroadcastStore
-          .getState()
-          .setConnection(roundId, { connected: false, error: ipcErrorMessage(error) });
-      }
-    );
+    // A watch starts clean: the main process says if its stream (still) has trouble.
+    useBroadcastStore.getState().setConnection(roundId, null);
+    api.watchRound(roundId).catch((error: unknown) => {
+      if (!mounted) return;
+      useBroadcastStore
+        .getState()
+        .setConnection(roundId, { error: ipcErrorMessage(error), retrying: false });
+    });
     return () => {
       mounted = false;
       api.unwatchRound(roundId).catch(() => undefined);

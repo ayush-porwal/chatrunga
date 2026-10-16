@@ -154,5 +154,14 @@ export type BroadcastLiveGame = {
 export type BroadcastEvent =
   /** A game of a watched round changed (or was sent when the watch started). */
   | { type: "game"; game: BroadcastLiveGame }
-  /** A watched round's stream dropped or came back; the main process reconnects on its own. */
-  | { type: "connection"; roundId: string; connected: boolean; error: string | null };
+  /**
+   * A watched round's stream dropped (or failed to open) or came back. The main process retries on
+   * its own (`retrying`) unless Lichess refused it for good, when it stops and `error` says why.
+   */
+  | {
+      type: "connection";
+      roundId: string;
+      connected: boolean;
+      error: string | null;
+      retrying: boolean;
+    };

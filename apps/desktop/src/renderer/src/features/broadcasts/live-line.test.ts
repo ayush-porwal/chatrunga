@@ -25,8 +25,12 @@ function play(tree: MoveNode[], parentId: string, uci: string, san: string) {
 }
 
 /** `mergeLiveLine`, failing the test when the moves don't play. */
-function merge(tree: readonly MoveNode[], moves: readonly BroadcastMove[]) {
-  const merged = mergeLiveLine(tree, moves);
+function merge(
+  tree: readonly MoveNode[],
+  moves: readonly BroadcastMove[],
+  previousLiveIds: readonly string[] = []
+) {
+  const merged = mergeLiveLine(tree, moves, previousLiveIds);
   if (!merged) throw new Error("the live moves didn't play");
   return merged;
 }
@@ -76,6 +80,20 @@ describe("mergeLiveLine", () => {
     expect(next.liveIds.at(-1)).toBe(guessed.node.id);
     expect(next.moveTree.find((node) => node.id === guessed.node.id)?.clockAfter).toBe("1:58:00");
     expect(ownMoveCount(next.moveTree, next.liveIds)).toBe(0);
+  });
+
+  it("takes out moves the broadcaster took back or replaced, unless the user played on", () => {
+    const first = merge(START, [E4, E5]);
+    expect(merge(first.moveTree, [E4], first.liveIds).moveTree).toHaveLength(2);
+
+    const replaced = merge(first.moveTree, [E4, move("c7c5", "c5")], first.liveIds);
+    expect(mainline(replaced.moveTree)).toStrictEqual(["e4", "c5"]);
+    expect(replaced.moveTree).toHaveLength(3);
+
+    // The user's 2. Nf3 after the taken-back 1... e5 keeps that line.
+    const explored = play(first.moveTree, first.liveIds[2], "g1f3", "Nf3");
+    const kept = merge(explored.moveTree, [E4], first.liveIds);
+    expect(ownMoveCount(kept.moveTree, kept.liveIds)).toBe(2);
   });
 
   it("refuses moves that can't be played on the tree", () => {

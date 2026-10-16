@@ -20,9 +20,14 @@ import type {
   BroadcastTopPage,
   BroadcastTourDetail
 } from "@chaturanga/shared/types/broadcast";
-import { logger } from "../logger";
-import { reconnectDelay } from "../lichess/lichess-service";
-import { isAbortError, LichessClient, LichessHttpError, type FetchLike } from "../lichess/http";
+import { errorMessage, logger } from "../logger";
+import {
+  isPermanent,
+  reconnectDelay,
+  sleep,
+  STABLE_CONNECTION_MS
+} from "../lichess/lichess-service";
+import { LichessClient, type FetchLike } from "../lichess/http";
 import {
   liveGameFromPgn,
   normalizeRoundDetail,
@@ -34,31 +39,21 @@ import {
 
 /** Lichess sends a keep-alive space after 60 s of silence on a broadcast stream. */
 const STREAM_IDLE_TIMEOUT_MS = 100_000;
-/** A connection that stayed up this long resets the backoff. */
-const STABLE_CONNECTION_MS = 30_000;
 
+/**
+ * A watched round. It lives while it has watchers, whatever its stream does: a failing stream
+ * retries (or, refused for good, stops and says why) without the watchers' count changing.
+ */
 type RoundWatch = {
   watchers: number;
   controller: AbortController;
   /** The latest of each game, by id, as the stream sent it. */
   games: Map<string, BroadcastLiveGame>;
+  /** The stream's trouble, if any: the last `connection` event while it isn't connected. */
+  trouble: Extract<BroadcastEvent, { type: "connection" }> | null;
 };
 
 export type BroadcastServiceOptions = { fetch?: FetchLike };
-
-/** Resolves after `ms`, or as soon as `signal` aborts. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) return resolve();
-    const done = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer = setTimeout(done, ms);
-    signal.addEventListener("abort", done, { once: true });
-  });
-}
 
 export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> {
   private readonly client: LichessClient;
@@ -91,26 +86,29 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
   }
 
   async players(tourId: string): Promise<BroadcastStanding[]> {
-    const response = await this.client.request(`/broadcast/${tourId}/players`, { auth: false });
-    return normalizeStandings(await response.json());
+    return normalizeStandings(await this.json(`/broadcast/${tourId}/players`));
   }
 
   /**
-   * Streams a round until its last watcher leaves. Resolves once the stream is open (rejects if the
-   * first connection fails); a new watcher of a streamed round gets its games right away.
+   * Watches a round until its last watcher leaves: its games arrive as `game` events (all of them
+   * at once for a watcher joining a streamed round), its stream's trouble as `connection` events.
    */
-  async watchRound(roundId: string): Promise<void> {
+  watchRound(roundId: string): void {
     const existing = this.watches.get(roundId);
     if (existing) {
       existing.watchers += 1;
       for (const game of existing.games.values()) this.emit("event", { type: "game", game });
+      if (existing.trouble) this.emit("event", existing.trouble);
       return;
     }
-    const watch: RoundWatch = { watchers: 1, controller: new AbortController(), games: new Map() };
+    const watch: RoundWatch = {
+      watchers: 1,
+      controller: new AbortController(),
+      games: new Map(),
+      trouble: null
+    };
     this.watches.set(roundId, watch);
-    await new Promise<void>((resolve, reject) => {
-      void this.runRoundStream(roundId, watch, resolve, reject);
-    });
+    void this.runRoundStream(roundId, watch);
   }
 
   unwatchRound(roundId: string): void {
@@ -132,61 +130,57 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
     return response.json();
   }
 
-  private async runRoundStream(
-    roundId: string,
-    watch: RoundWatch,
-    opened: () => void,
-    failed: (error: unknown) => void
-  ): Promise<void> {
+  /**
+   * Keeps the round's stream open until the watch ends: a dropped or failed connection (the first
+   * one too) is retried with backoff; one refused for good (a 4xx other than a rate limit) stops,
+   * saying why.
+   */
+  private async runRoundStream(roundId: string, watch: RoundWatch): Promise<void> {
     const { signal } = watch.controller;
-    let firstAttempt = true;
-    let connected = true;
     let attempt = 0;
-    try {
-      while (!signal.aborted) {
-        let openedAt = 0;
-        let dropError: unknown = null;
-        try {
-          await this.streamRound(
-            roundId,
-            signal,
-            () => {
-              openedAt = Date.now();
-              if (firstAttempt) opened();
-              if (!connected) {
-                connected = true;
-                this.emit("event", { type: "connection", roundId, connected: true, error: null });
-              }
-            },
-            (game) => {
-              watch.games.set(game.id, game);
-              this.emit("event", { type: "game", game });
-            }
-          );
-        } catch (error) {
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
-          if (signal.aborted) return;
-          if (firstAttempt && !openedAt) {
-            failed(error);
-            return;
-          }
-          dropError = error;
-        }
-        firstAttempt = false;
+    while (!signal.aborted) {
+      let openedAt = 0;
+      let dropError: unknown = null;
+      try {
+        await this.streamRound(roundId, signal, watch, () => {
+          openedAt = Date.now();
+          this.setTrouble(roundId, watch, null);
+        });
+      } catch (error) {
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
         if (signal.aborted) return;
-        if (connected) {
-          connected = false;
-          const error = dropError instanceof Error ? dropError.message : null;
-          this.emit("event", { type: "connection", roundId, connected: false, error });
-        }
-        if (openedAt && Date.now() - openedAt > STABLE_CONNECTION_MS) attempt = 0;
-        await sleep(reconnectDelay(attempt++, dropError), signal);
+        logger.warn("broadcasts", `round ${roundId} stream dropped:`, error);
+        dropError = error;
       }
-    } finally {
-      if (firstAttempt) failed(new Error("The broadcast stream was stopped."));
-      if (this.watches.get(roundId) === watch) this.watches.delete(roundId);
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- as above
+      if (signal.aborted) return;
+      const message = dropError ? errorMessage(dropError) : null;
+      if (isPermanent(dropError)) {
+        this.setTrouble(roundId, watch, { message, retrying: false });
+        return;
+      }
+      this.setTrouble(roundId, watch, { message, retrying: true });
+      if (openedAt && Date.now() - openedAt > STABLE_CONNECTION_MS) attempt = 0;
+      await sleep(reconnectDelay(attempt++, dropError), signal);
     }
+  }
+
+  /** Records and announces the stream's state (null: connected). */
+  private setTrouble(
+    roundId: string,
+    watch: RoundWatch,
+    trouble: { message: string | null; retrying: boolean } | null
+  ): void {
+    if (!trouble && !watch.trouble) return;
+    const event: Extract<BroadcastEvent, { type: "connection" }> = {
+      type: "connection",
+      roundId,
+      connected: trouble === null,
+      error: trouble?.message ?? null,
+      retrying: trouble?.retrying ?? false
+    };
+    watch.trouble = trouble ? event : null;
+    this.emit("event", event);
   }
 
   /**
@@ -195,54 +189,41 @@ export class BroadcastService extends EventEmitter<{ event: [BroadcastEvent] }> 
    */
   private async streamRound(
     roundId: string,
-    outer: AbortSignal,
-    onOpen: () => void,
-    onGame: (game: BroadcastLiveGame) => void
+    signal: AbortSignal,
+    watch: RoundWatch,
+    onOpen: () => void
   ): Promise<void> {
-    const controller = new AbortController();
-    const abortFromOuter = () => controller.abort();
-    outer.addEventListener("abort", abortFromOuter, { once: true });
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    const touch = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
-    };
     const splitter = createPgnGameSplitter((game) => {
       const live = liveGameFromPgn(game, roundId);
-      if (live) onGame(live);
+      if (!live) return;
+      watch.games.set(live.id, live);
+      this.emit("event", { type: "game", game: live });
     });
-    try {
-      touch();
-      const response = await this.client.request(
-        `/api/stream/broadcast/round/${roundId}.pgn?clocks=true&comments=false`,
-        { auth: false, accept: "application/x-chess-pgn", signal: controller.signal }
-      );
-      touch();
-      onOpen();
-      if (!response.body) return;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          touch();
-          splitter.write(decoder.decode(value, { stream: true }));
+    await this.client.streamBody(
+      `/api/stream/broadcast/round/${roundId}.pgn?clocks=true&comments=false`,
+      {
+        auth: false,
+        accept: "application/x-chess-pgn",
+        signal,
+        idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+        onOpen
+      },
+      async (body, touch) => {
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            touch();
+            splitter.write(decoder.decode(value, { stream: true }));
+          }
+          splitter.write(decoder.decode());
+          splitter.end();
+        } finally {
+          await reader.cancel().catch(() => undefined);
         }
-        splitter.write(decoder.decode());
-        splitter.end();
-      } finally {
-        await reader.cancel().catch(() => undefined);
       }
-    } catch (error) {
-      if (controller.signal.aborted && !outer.aborted)
-        throw new LichessHttpError("The broadcast stream went silent.", 0);
-      if (!isAbortError(error))
-        logger.warn("broadcasts", `round ${roundId} stream dropped:`, error);
-      throw error;
-    } finally {
-      clearTimeout(idleTimer);
-      outer.removeEventListener("abort", abortFromOuter);
-    }
+    );
   }
 }

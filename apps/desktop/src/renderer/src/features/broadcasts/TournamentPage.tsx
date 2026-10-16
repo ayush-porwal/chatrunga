@@ -61,6 +61,18 @@ export function shownRoundId(
 }
 
 /**
+ * The analysis board's clock runs from the last move: date a streamed game's from the round
+ * summary (read at `readAt`) when the stream can't.
+ */
+function dateFromSummary(detail: BroadcastRoundDetail, gameId: string, readAt: number): void {
+  const game = detail.games.find((item) => item.id === gameId);
+  if (!game) return;
+  const store = useBroadcastStore.getState();
+  const board = boardModel(game, store.games[gameId], readAt);
+  if (board.lastMoveAt !== null) store.dateLastMove(gameId, board.lastMove, board.lastMoveAt);
+}
+
+/**
  * A tournament: its banner and facts, the round picker, and the round's boards (every move live),
  * its standings or its description. A board opens its game on the analysis board.
  */
@@ -84,6 +96,10 @@ export function TournamentPage({
   const tour = tournament.data?.tour ?? round.data?.tour ?? null;
   const setRound = (id: string) => onScreenChange({ ...screen, roundId: id, focusGameId: null });
   const setTab = (tab: TournamentTab) => onScreenChange({ ...screen, tab });
+  const openGame = (detail: BroadcastRoundDetail, gameId: string) => {
+    dateFromSummary(detail, gameId, round.dataUpdatedAt);
+    onOpenGame(detail, gameId);
+  };
 
   return (
     <div className={pageShell}>
@@ -126,10 +142,10 @@ export function TournamentPage({
             roundQuery={round}
             roundId={roundId}
             focusGameId={screen.focusGameId}
-            onOpenGame={onOpenGame}
+            onOpenGame={openGame}
           />
         ) : screen.tab === "players" ? (
-          <PlayersTab tourId={screen.tourId} round={round.data ?? null} onOpenGame={onOpenGame} />
+          <PlayersTab tourId={screen.tourId} round={round.data ?? null} onOpenGame={openGame} />
         ) : tour ? (
           <AboutTab tour={tour} />
         ) : null}
@@ -346,9 +362,10 @@ function BoardsTab({
             className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
           />
         </label>
-        {connection && !connection.connected ? (
+        {connection ? (
           <span className="text-xs text-warn">
-            Live updates paused, reconnecting…{connection.error ? ` (${connection.error})` : ""}
+            {connection.retrying ? "Live updates paused, reconnecting…" : "Live updates stopped"}
+            {connection.error ? ` (${connection.error})` : ""}
           </span>
         ) : null}
       </div>
@@ -367,14 +384,7 @@ function BoardsTab({
               number={number}
               now={now}
               highlighted={board.id === focusGameId}
-              onOpen={(gameId) => {
-                // The analysis board's clock runs from the last move: date it if the stream can't.
-                if (board.lastMoveAt !== null)
-                  useBroadcastStore
-                    .getState()
-                    .dateLastMove(gameId, board.lastMove, board.lastMoveAt);
-                onOpenGame(detail, gameId);
-              }}
+              onOpen={(gameId) => onOpenGame(detail, gameId)}
             />
           ))}
         </div>

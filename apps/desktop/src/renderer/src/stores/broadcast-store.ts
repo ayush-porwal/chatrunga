@@ -8,8 +8,11 @@ export type StreamedGame = BroadcastLiveGame & {
   lastMoveAt: number | null;
 };
 
-/** A round stream's trouble, if any (null: connected, or not watched). */
-type RoundConnection = { connected: boolean; error: string | null } | null;
+/**
+ * A round stream's trouble, if any (null: connected, or not watched): retrying on its own, or
+ * stopped for good (`error` says why).
+ */
+type RoundConnection = { error: string | null; retrying: boolean } | null;
 
 /** The broadcast game on the analysis board, followed live. */
 export type BroadcastFollow = {

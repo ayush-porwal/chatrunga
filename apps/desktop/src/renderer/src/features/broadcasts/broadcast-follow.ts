@@ -5,6 +5,7 @@ import type { GameHeaders, GameSession } from "@chaturanga/shared/types/chess";
 import { useRoundStream } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
+import { mainlinePath } from "../game/move-tree-model";
 import { mergeLiveLine, pruneToLiveLine, restoreRemovedMoves } from "./live-line";
 
 /**
@@ -88,20 +89,13 @@ export function followBoard(ref: BroadcastGameRef, liveIds: string[]): void {
 export function refollowBoard(ref: BroadcastGameRef): void {
   const board = useGameStore.getState();
   const game = useBroadcastStore.getState().games[ref.gameId];
-  const merged = mergeLiveLine(board.moveTree, game?.moves ?? []);
-  if (!merged) return;
-  // Without the streamed game yet, the main line as it was left stands for the live line.
-  const liveIds = game ? merged.liveIds : mainlineIds(board.moveTree);
-  followBoard(ref, liveIds);
+  if (game && !mergeLiveLine(board.moveTree, game.moves)) return;
+  // The main line as it was left stands for the live line until the streamed game merges in.
+  followBoard(
+    ref,
+    mainlinePath(board.moveTree).map((node) => node.id)
+  );
   if (game) applyLiveGame(game);
-}
-
-function mainlineIds(moveTree: ReturnType<typeof useGameStore.getState>["moveTree"]): string[] {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const ids: string[] = [];
-  for (let node = byId.get("root"); node; node = byId.get(node.children[0] ?? ""))
-    ids.push(node.id);
-  return ids;
 }
 
 /** Whether `board` is the broadcast game being followed now. */
@@ -115,7 +109,7 @@ export function applyLiveGame(game: BroadcastLiveGame): void {
   if (follow?.gameId !== game.id) return;
   const state = useGameStore.getState();
   if (state.board !== follow.board) return;
-  const merged = mergeLiveLine(state.moveTree, game.moves);
+  const merged = mergeLiveLine(state.moveTree, game.moves, follow.liveIds);
   if (!merged) return;
   const unchanged =
     merged.moveTree.length === state.moveTree.length &&
@@ -123,12 +117,16 @@ export function applyLiveGame(game: BroadcastLiveGame): void {
   const previousTip = follow.liveIds.at(-1);
   const tip = merged.liveIds.at(-1) ?? "root";
   if (!unchanged) {
-    // On the live position the board moves on with the game; anywhere else it stays put.
-    const following = state.currentNodeId === previousTip;
+    // On the live position (or a move taken back) the board moves on with the game; anywhere
+    // else it stays put.
+    const following =
+      state.currentNodeId === previousTip ||
+      !merged.moveTree.some((node) => node.id === state.currentNodeId);
     state.replaceMoveTree(merged.moveTree, following ? tip : state.currentNodeId);
   }
-  const result = game.result === "½-½" ? "1/2-1/2" : game.result;
-  if (game.result !== follow.result && result !== "*") state.patchHeaders({ result });
+  // Every change, a corrected result going back to "*" included.
+  if (game.result !== follow.result)
+    state.patchHeaders({ result: game.result === "½-½" ? "1/2-1/2" : game.result });
   const sameLine =
     merged.liveIds.length === follow.liveIds.length &&
     merged.liveIds.every((id, index) => id === follow.liveIds[index]);

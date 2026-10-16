@@ -55,7 +55,7 @@ const BACKOFF_BASE_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 const RATE_LIMIT_WAIT_MS = 60_000;
 /** A connection that stayed up this long resets the backoff. */
-const STABLE_CONNECTION_MS = 30_000;
+export const STABLE_CONNECTION_MS = 30_000;
 /** Lichess sends a keep-alive newline every 7 s on the event and game streams. */
 const STREAM_IDLE_TIMEOUT_MS = 30_000;
 const REVOKE_TIMEOUT_MS = 5000;
@@ -67,7 +67,7 @@ export function reconnectDelay(attempt: number, error: unknown): number {
 }
 
 /** Resolves after `ms`, or as soon as `signal` aborts. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
+export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
     const done = () => {
@@ -81,7 +81,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** Errors that retrying won't fix (other than rate limiting). */
-function isPermanent(error: unknown): boolean {
+export function isPermanent(error: unknown): boolean {
   return (
     error instanceof LichessHttpError &&
     error.status >= 400 &&

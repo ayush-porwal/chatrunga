@@ -235,6 +235,8 @@ export function useAppNavigation(shell: ShellState) {
 
   /** The tournament page's round or tab: the entry follows it (no step of its own). */
   function changeBroadcastScreen(screen: BroadcastScreen) {
+    // A game still opening from the screen left (waiting for its moves) no longer opens.
+    latestNavigation.current += 1;
     shell.setBroadcastScreen(screen);
     record("replace", { view: "broadcast-tournament", screen });
   }

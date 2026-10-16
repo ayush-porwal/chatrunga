@@ -406,7 +406,7 @@ export type ChaturangaApi = {
     players(tourId: string): Promise<BroadcastStanding[]>;
     /**
      * Streams a round's games (`game` events: every game once, then each change) until its last
-     * watcher calls `unwatchRound`. Resolves once the stream is open.
+     * watcher calls `unwatchRound`; its stream's trouble arrives as `connection` events.
      */
     watchRound(roundId: string): Promise<void>;
     unwatchRound(roundId: string): Promise<void>;

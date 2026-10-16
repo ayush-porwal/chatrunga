@@ -32,6 +32,11 @@ const CALENDAR_URL = "https://lichess.org/broadcast/calendar";
 const PAST_SHOWN = 6;
 /** How often a live event's top board is read again on the hub. */
 const PREVIEW_REFRESH_MS = 3 * 60_000;
+/**
+ * The live events whose top board the hub shows (the first, most prominent ones): each is a
+ * request every few minutes, from an anonymous budget of about 30 per 3 minutes for every page.
+ */
+const PREVIEWED_LIVE = 6;
 
 const cardFrame = "rounded-xl border border-line bg-surface";
 
@@ -160,8 +165,13 @@ function LiveSection({
           NOT_LOADED
         )
       ) : sections.live.length ? (
-        sections.live.map((listing) => (
-          <LiveEventCard key={listing.tour.id} listing={listing} onOpen={() => onOpen(listing)} />
+        sections.live.map((listing, index) => (
+          <LiveEventCard
+            key={listing.tour.id}
+            listing={listing}
+            preview={index < PREVIEWED_LIVE}
+            onOpen={() => onOpen(listing)}
+          />
         ))
       ) : (
         <EmptyState
@@ -300,13 +310,21 @@ function UpcomingRail({
 }
 
 /**
- * An event live now: its banner, where and how it's played, its top board (read again every few
- * minutes here, within Lichess's limits for anonymous use; the tournament page follows every
- * move), and the round's progress.
+ * An event live now: its banner, where and how it's played, with `preview` its top board (read
+ * again every few minutes here, within Lichess's limits for anonymous use; the tournament page
+ * follows every move), and the round's progress.
  */
-function LiveEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen: () => void }) {
+function LiveEventCard({
+  listing,
+  preview,
+  onOpen
+}: {
+  listing: BroadcastListing;
+  preview: boolean;
+  onOpen: () => void;
+}) {
   const { tour, round } = listing;
-  const detail = useBroadcastRoundQuery(round?.id ?? null, {
+  const detail = useBroadcastRoundQuery(preview ? (round?.id ?? null) : null, {
     refetchIntervalMs: PREVIEW_REFRESH_MS
   });
   const games = detail.data?.games ?? [];
@@ -332,7 +350,7 @@ function LiveEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
             <PlayerLine player={topBoard.white} color="white" />
             <PlayerLine player={topBoard.black} color="black" />
           </span>
-        ) : detail.isPending ? (
+        ) : preview && detail.isPending ? (
           <span className="grid gap-2">
             <Skeleton className="h-3 w-3/5" />
             <Skeleton className="h-3 w-1/2" />

@@ -18,11 +18,14 @@ export type MergedLiveLine = { moveTree: MoveNode[]; liveIds: string[] };
  * Merges the game's live moves into `moveTree`: each live move reuses the node already there (a
  * move the user guessed right included) or is added, and becomes its parent's first child, so the
  * live line is always the main line and the user's own moves stay as variations. Clocks follow
- * the live ones. Null when a live move can't be played on the tree (a different game).
+ * the live ones. Moves of `previousLiveIds` the broadcaster took back (a shortened or corrected
+ * line) are taken out, so the main line doesn't run on past the live position.
+ * Null when a live move can't be played on the tree (a different game).
  */
 export function mergeLiveLine(
   moveTree: readonly MoveNode[],
-  moves: readonly BroadcastMove[]
+  moves: readonly BroadcastMove[],
+  previousLiveIds: readonly string[] = []
 ): MergedLiveLine | null {
   let tree = [...moveTree];
   let parent = tree.find((node) => node.id === ROOT_ID);
@@ -52,7 +55,56 @@ export function mergeLiveLine(
     parent = next;
     liveIds.push(next.id);
   }
-  return { moveTree: tree, liveIds };
+  return { moveTree: dropTakenBack(tree, liveIds, previousLiveIds), liveIds };
+}
+
+/**
+ * Takes out the moves of the previous live line the broadcaster took back (`liveIds` no longer
+ * has them), with what follows them, unless the user played on from them: those stay, after the
+ * live tip's other moves.
+ */
+function dropTakenBack(
+  tree: MoveNode[],
+  liveIds: readonly string[],
+  previousLiveIds: readonly string[]
+): MoveNode[] {
+  const live = new Set(liveIds);
+  const takenBack = new Set(previousLiveIds.filter((id) => !live.has(id)));
+  if (!takenBack.size) return tree;
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  const dropped = new Set<string>();
+  for (const id of takenBack) {
+    const node = byId.get(id);
+    // From the first taken-back move only: the rest of the line is below it.
+    if (!node || takenBack.has(node.parentId ?? "")) continue;
+    const below = subtreeIds(byId, id);
+    if (below.every((item) => takenBack.has(item))) for (const item of below) dropped.add(item);
+  }
+  const tipId = liveIds.at(-1);
+  return tree
+    .filter((node) => !dropped.has(node.id))
+    .map((node) => {
+      let children = node.children.filter((id) => !dropped.has(id));
+      if (node.id === tipId)
+        children = [
+          ...children.filter((id) => !takenBack.has(id)),
+          ...children.filter((id) => takenBack.has(id))
+        ];
+      const same =
+        children.length === node.children.length &&
+        children.every((id, index) => id === node.children[index]);
+      return same ? node : { ...node, children };
+    });
+}
+
+function subtreeIds(byId: ReadonlyMap<string, MoveNode>, id: string): string[] {
+  const ids: string[] = [];
+  const queue = [id];
+  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+    ids.push(next);
+    queue.push(...(byId.get(next)?.children ?? []));
+  }
+  return ids;
 }
 
 /** The moves the user added: every node off the live line. */

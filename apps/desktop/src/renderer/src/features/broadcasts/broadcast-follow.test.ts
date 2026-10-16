@@ -95,6 +95,14 @@ describe("following a broadcast game on the board", () => {
     expect(useBroadcastStore.getState().follow?.liveIds).toHaveLength(5);
   });
 
+  it("follows a line the broadcaster took back to its new live position", () => {
+    open(liveGame(MOVES));
+    applyLiveGame(liveGame(MOVES.slice(0, 1)));
+    expect(sans()).toBe("e4");
+    expect(useBroadcastStore.getState().follow?.liveIds).toHaveLength(2);
+    expect(useGameStore.getState().moveTree).toHaveLength(2);
+  });
+
   it("clears the user's moves on Back to live and puts them back on undo", () => {
     open(liveGame(MOVES));
     // The user explores 2. d4 from the live position, then the game goes 2. Nf3.
@@ -116,6 +124,9 @@ describe("following a broadcast game on the board", () => {
     open(liveGame(MOVES));
     applyLiveGame(liveGame(MOVES, "1-0"));
     expect(useGameStore.getState().headers.result).toBe("1-0");
+    // A result the broadcaster corrects back to a game in progress.
+    applyLiveGame(liveGame(MOVES));
+    expect(useGameStore.getState().headers.result).toBe("*");
 
     useGameStore.getState().reset();
     expect(isFollowedBoard(useGameStore.getState().board)).toBe(false);

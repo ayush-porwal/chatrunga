@@ -207,7 +207,7 @@ describe("navigation coordinator", () => {
       expect(shell.openBroadcastTournament).toHaveBeenCalledWith(screen);
     });
 
-    it("follows a broadcast game again when its board comes back", async () => {
+    it("follows a broadcast game again when its board or its review comes back", async () => {
       const ref = {
         tourId: "Tour0001",
         tourName: "Knight Invitational",
@@ -223,6 +223,12 @@ describe("navigation coordinator", () => {
       // Without the live game yet, the main line it was left with stands for the live line.
       expect(follow?.liveIds).toHaveLength(4);
       expect(isBroadcastBoard(useGameStore.getState().board)).toBe(true);
+
+      // Its Game Review comes back following it too.
+      loadSaved("g2");
+      const review = { view: "game-review", board: entry.board, tab: "moves" } as const;
+      expect(await restoreEntry(review, fakeShell())).toBe("shown");
+      expect(useBroadcastStore.getState().follow?.board).toBe(useGameStore.getState().board);
     });
 
     it("brings a saved game back on its tab, ending the board's other activity", async () => {

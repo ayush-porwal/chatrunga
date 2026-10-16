@@ -172,9 +172,7 @@ export async function restoreEntry(
     case "game": {
       const outcome = await restoreBoard(entry.board, shell);
       if (outcome !== "restored") return outcome;
-      // A broadcast game comes back as it was left, then catches up with the live game.
-      if (entry.board.broadcast && !isFollowedBoard(useGameStore.getState().board))
-        refollowBoard(entry.board.broadcast);
+      refollowRestored(entry.board);
       shell.showGame(sideTabFrom(entry.board.tab));
       return "shown";
     }
@@ -182,6 +180,7 @@ export async function restoreEntry(
       // The review running for this game keeps going (left for a repertoire screen, say).
       const outcome = await restoreBoard(entry.board, shell, { keepReview: true });
       if (outcome !== "restored") return outcome;
+      refollowRestored(entry.board);
       const request = shell.navigation.current;
       // The review may not be loaded (the board was replaced while away): bring the saved one back.
       if (entry.board.gameId && !useReviewStore.getState().review) {
@@ -263,6 +262,12 @@ async function restoreBoard(
 }
 
 /** Analysis on the restored board: the default engine when none is picked, searching again. */
+/** A broadcast game comes back as it was left, then catches up with the live game. */
+function refollowRestored(snapshot: BoardSnapshot): void {
+  if (snapshot.broadcast && !isFollowedBoard(useGameStore.getState().board))
+    refollowBoard(snapshot.broadcast);
+}
+
 function resumeBoardAnalysis(defaultEngineId: string | null): void {
   const analysis = useAnalysisStore.getState();
   if (defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(defaultEngineId);

@@ -79,9 +79,7 @@ export function BroadcastLivePanel() {
 function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: string | null }) {
   const cleared = useBroadcastStore((state) => state.cleared);
   const lastMoveAt = useBroadcastStore((state) => state.games[follow.gameId]?.lastMoveAt ?? null);
-  const reconnecting = useBroadcastStore(
-    (state) => state.connections[follow.roundId]?.connected === false
-  );
+  const connection = useBroadcastStore((state) => state.connections[follow.roundId] ?? null);
   const over = follow.result !== "*";
   return (
     <div
@@ -98,8 +96,10 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
       <span className="font-semibold text-fg">{over ? "Game over" : "Following live"}</span>
       <span className="truncate text-fg-subtle">{follow.roundName}</span>
       <span className="flex-1" />
-      {over ? null : reconnecting ? (
-        <span className="shrink-0 text-xs text-warn">Reconnecting…</span>
+      {over ? null : connection ? (
+        <span className="shrink-0 text-xs text-warn">
+          {connection.retrying ? "Reconnecting…" : "Live updates stopped"}
+        </span>
       ) : (
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
       )}
