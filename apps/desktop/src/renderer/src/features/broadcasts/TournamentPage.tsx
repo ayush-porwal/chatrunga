@@ -25,6 +25,7 @@ import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { pageShell } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
@@ -36,6 +37,7 @@ import {
   useRoundStream
 } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
+import { useBoardEvals, useEvalEngine } from "./board-evals";
 import { boardModel, isLive, useSecondClock, type BoardModel } from "./board-state";
 import { BoardCard, LiveBadge, LiveDot, TourImage } from "./broadcast-parts";
 import {
@@ -364,6 +366,9 @@ function BoardsTab({
   const streamed = useBroadcastStore((state) => state.games);
   const connection = useBroadcastStore((state) => (roundId ? state.connections[roundId] : null));
   const [filter, setFilter] = useState<BoardFilter>("all");
+  const evalsOn = useBroadcastStore((state) => state.evalsOn);
+  const evals = useBroadcastStore((state) => state.evals);
+  const evalEngine = useEvalEngine();
   const [player, setPlayer] = useState("");
   const detail = roundQuery.data;
   const boards = useMemo(
@@ -383,6 +388,12 @@ function BoardsTab({
       (!player.trim() ||
         nameMatches(board.white.name, player) ||
         nameMatches(board.black.name, player))
+  );
+
+  // The live boards shown are evaluated while the switch is on (finished ones stay as they are).
+  useBoardEvals(
+    evalsOn ? shown.flatMap(({ board }) => (isLive(board) ? [board.fen] : [])) : [],
+    evalsOn ? evalEngine : null
   );
 
   if (roundQuery.isError) {
@@ -430,6 +441,7 @@ function BoardsTab({
             className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
           />
         </label>
+        <EvalSwitch />
         {connection ? (
           <span className="text-xs text-warn">
             {connection.retrying ? "Live updates paused, reconnecting…" : "Live updates stopped"}
@@ -453,6 +465,7 @@ function BoardsTab({
               roundId={detail.round.id}
               now={now}
               highlighted={board.id === focusGameId}
+              evaluation={evalsOn ? { score: evals[board.fen] ?? null } : undefined}
               onOpen={(gameId) => onOpenGame(detail, gameId)}
             />
           ))}
@@ -466,6 +479,28 @@ function BoardsTab({
         />
       )}
     </section>
+  );
+}
+
+/** "Evaluations": the live boards' engine bars, on demand (an engine runs while it is on). */
+function EvalSwitch() {
+  const on = useBroadcastStore((state) => state.evalsOn);
+  const setOn = useBroadcastStore((state) => state.setEvalsOn);
+  const error = useBroadcastStore((state) => state.evalError);
+  const engine = useEvalEngine();
+  return (
+    <>
+      <label
+        className="flex shrink-0 items-center gap-2 text-xs text-fg-muted"
+        title={engine ? "Engine bars on the live boards" : "Add an engine in Settings first"}
+      >
+        <Switch checked={on && engine !== null} onCheckedChange={setOn} disabled={!engine} />
+        Evaluations
+      </label>
+      {on && error ? (
+        <span className="text-xs text-danger">Evaluations stopped: {error}</span>
+      ) : null}
+    </>
   );
 }
 

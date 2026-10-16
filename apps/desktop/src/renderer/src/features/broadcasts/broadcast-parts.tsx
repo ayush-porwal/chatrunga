@@ -1,9 +1,12 @@
 import { memo, useState, type ReactNode } from "react";
 import { Bell, BellRing, ImageIcon } from "lucide-react";
 import type { BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
+import { formatEngineScore } from "@chaturanga/shared/chess/review";
 import type { Color } from "@chaturanga/shared/types/chess";
+import type { EngineScore } from "@chaturanga/shared/types/engine";
 import { cn } from "@/lib/utils";
 import { useBroadcastStore } from "../../stores/broadcast-store";
+import { evalShare } from "../board/EvalBar";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { clockNowMs, clockText, isLive, LOW_TIME_MS, type BoardModel } from "./board-state";
 import { playerLabel, resultText } from "./broadcast-text";
@@ -162,6 +165,7 @@ export const BoardCard = memo(function BoardCard({
   roundId,
   now,
   highlighted,
+  evaluation,
   onOpen
 }: {
   board: BoardModel;
@@ -170,6 +174,8 @@ export const BoardCard = memo(function BoardCard({
   now: number;
   /** The board a search picked: outlined until another is opened. */
   highlighted: boolean;
+  /** The engine's look at the position (`score` null: on its way, or none); absent: not shown. */
+  evaluation?: { score: EngineScore | null };
   onOpen: (gameId: string) => void;
 }) {
   const live = isLive(board);
@@ -200,6 +206,7 @@ export const BoardCard = memo(function BoardCard({
           <ClockBox board={board} color="black" now={now} />
         </span>
         <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
+        {evaluation ? <EvalStrip score={evaluation.score} /> : null}
         <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
           <PlayerLine player={board.white} dim={whiteLost} size="sm" />
           <ClockBox board={board} color="white" now={now} />
@@ -228,6 +235,30 @@ export const BoardCard = memo(function BoardCard({
     </div>
   );
 });
+
+/** A card's evaluation: White's share of a thin bar, and the score (pulsing while on its way). */
+function EvalStrip({ score }: { score: EngineScore | null }) {
+  return (
+    <span
+      role="img"
+      aria-label={score ? `Evaluation ${formatEngineScore(score)}` : "Evaluating"}
+      className="flex h-3.5 items-center gap-1.5"
+    >
+      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-piece-black ring-1 ring-line-strong">
+        <span
+          className={cn(
+            "block h-full bg-piece-white transition-[width] duration-emphasis ease-standard",
+            !score && "animate-pulse opacity-40"
+          )}
+          style={{ width: `${score ? evalShare(score) : 50}%` }}
+        />
+      </span>
+      <span className="w-10 shrink-0 text-right font-mono text-2xs text-fg-muted tabular-nums">
+        {score ? formatEngineScore(score) : ""}
+      </span>
+    </span>
+  );
+}
 
 /** A live board's bell: a desktop notification when its game ends (on, it stays lit). */
 export function AlertBell({

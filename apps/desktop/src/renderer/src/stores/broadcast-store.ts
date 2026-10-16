@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { BroadcastLiveGame, BroadcastResult } from "@chaturanga/shared/types/broadcast";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { EngineScore } from "@chaturanga/shared/types/engine";
 import { NO_HUB_FILTER, type HubFilter } from "../features/broadcasts/broadcast-text";
 
 /** A streamed game and when its last move arrived (for the clock of the side to move). */
@@ -45,6 +46,12 @@ type BroadcastStore = {
   hubFilter: HubFilter;
   /** The games to notify about when they end, by game id (while the app runs). */
   alerts: Partial<Record<string, GameAlert>>;
+  /** The boards' engine evaluations are shown (and searched). */
+  evalsOn: boolean;
+  /** Engine evaluations by FEN, White's side (null: none, a finished position). */
+  evals: Partial<Record<string, EngineScore | null>>;
+  /** Why evaluating stopped, if it did (the engine failed). */
+  evalError: string | null;
   receiveGame: (game: BroadcastLiveGame) => void;
   /**
    * When a streamed game's last move was played, from the round summary's think time (the stream
@@ -58,7 +65,13 @@ type BroadcastStore = {
   setHubFilter: (filter: HubFilter) => void;
   /** Asks for an alert when the game ends (`alert`), or drops it (null). */
   setAlert: (gameId: string, alert: GameAlert | null) => void;
+  setEvalsOn: (on: boolean) => void;
+  addEvals: (entries: readonly (readonly [string, EngineScore | null])[]) => void;
+  setEvalError: (error: string | null) => void;
 };
+
+/** Evaluations kept at most (a long session's positions): past it, the oldest go. */
+const MAX_EVALS = 2000;
 
 export const useBroadcastStore = create<BroadcastStore>((set) => ({
   games: {},
@@ -67,6 +80,9 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   cleared: null,
   hubFilter: NO_HUB_FILTER,
   alerts: {},
+  evalsOn: false,
+  evals: {},
+  evalError: null,
   receiveGame: (game) =>
     set((state) => {
       const previous = state.games[game.id];
@@ -92,6 +108,13 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
     set((state) => (state.follow ? { follow: { ...state.follow, ...patch } } : state)),
   setCleared: (cleared) => set({ cleared }),
   setHubFilter: (hubFilter) => set({ hubFilter }),
+  setEvalsOn: (evalsOn) => set({ evalsOn, evalError: null }),
+  addEvals: (entries) =>
+    set((state) => {
+      const kept = Object.entries(state.evals).slice(-(MAX_EVALS - entries.length));
+      return { evals: Object.fromEntries([...kept, ...entries]) };
+    }),
+  setEvalError: (evalError) => set({ evalError }),
   setAlert: (gameId, alert) =>
     set((state) => {
       const { [gameId]: _dropped, ...rest } = state.alerts;
