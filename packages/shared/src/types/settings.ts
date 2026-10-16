@@ -425,6 +425,8 @@ export type AppSettings = {
   /** UCI `Hash` (MB) for the evaluation engine. */
   engineHashMb: number;
   recentFilePaths: string[];
+  /** Broadcast players followed (by name as Lichess shows it): their games lead the Broadcasts page. */
+  followedBroadcastPlayers: string[];
   /** In-app updates: download new versions in the background (Windows, Linux AppImage, signed macOS). */
   updatesAutoDownload: boolean;
   /**
@@ -544,6 +546,7 @@ export const defaultSettings: AppSettings = {
   engineThreads: null,
   engineHashMb: 128,
   recentFilePaths: [],
+  followedBroadcastPlayers: [],
   updatesAutoDownload: true,
   usageAnalyticsEnabled: true,
   lc0AutoDetect: true,

@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { BroadcastLiveGame, BroadcastResult } from "@chaturanga/shared/types/broadcast";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { EngineScore } from "@chaturanga/shared/types/engine";
+import { NO_HUB_FILTER, type HubFilter } from "../features/broadcasts/broadcast-text";
 
 /** A streamed game and when its last move arrived (for the clock of the side to move). */
 export type StreamedGame = BroadcastLiveGame & {
@@ -28,6 +30,9 @@ export type BroadcastFollow = {
   result: BroadcastResult;
 };
 
+/** A game you asked to hear about when it ends (a desktop notification), with its players. */
+export type GameAlert = { roundId: string; white: string; black: string };
+
 /** What "Back to live" cleared, kept for its undo (on the board it was cleared on). */
 type ClearedMoves = { board: number; removed: MoveNode[] };
 
@@ -37,6 +42,18 @@ type BroadcastStore = {
   connections: Partial<Record<string, RoundConnection>>;
   follow: BroadcastFollow | null;
   cleared: ClearedMoves | null;
+  /** The hub's filter, kept while the app runs (into a tournament and back). */
+  hubFilter: HubFilter;
+  /** The games to notify about when they end, by game id (while the app runs). */
+  alerts: Partial<Record<string, GameAlert>>;
+  /** The boards' engine evaluations are shown (and searched). */
+  evalsOn: boolean;
+  /** Engine evaluations by FEN, White's side (null: none, a finished position). */
+  evals: Partial<Record<string, EngineScore | null>>;
+  /** The engine `evals` come from (another engine's start afresh). */
+  evalsEngine: string | null;
+  /** Why evaluating stopped, if it did (the engine failed). */
+  evalError: string | null;
   receiveGame: (game: BroadcastLiveGame) => void;
   /**
    * When a streamed game's last move was played, from the round summary's think time (the stream
@@ -47,13 +64,28 @@ type BroadcastStore = {
   setFollow: (follow: BroadcastFollow | null) => void;
   patchFollow: (patch: Partial<Omit<BroadcastFollow, "board">>) => void;
   setCleared: (cleared: ClearedMoves | null) => void;
+  setHubFilter: (filter: HubFilter) => void;
+  /** Asks for an alert when the game ends (`alert`), or drops it (null). */
+  setAlert: (gameId: string, alert: GameAlert | null) => void;
+  setEvalsOn: (on: boolean) => void;
+  addEvals: (engineId: string, entries: readonly (readonly [string, EngineScore | null])[]) => void;
+  setEvalError: (error: string | null) => void;
 };
+
+/** Evaluations kept at most (a long session's positions): past it, the oldest go. */
+const MAX_EVALS = 2000;
 
 export const useBroadcastStore = create<BroadcastStore>((set) => ({
   games: {},
   connections: {},
   follow: null,
   cleared: null,
+  hubFilter: NO_HUB_FILTER,
+  alerts: {},
+  evalsOn: false,
+  evals: {},
+  evalsEngine: null,
+  evalError: null,
   receiveGame: (game) =>
     set((state) => {
       const previous = state.games[game.id];
@@ -77,5 +109,25 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   setFollow: (follow) => set({ follow, cleared: null }),
   patchFollow: (patch) =>
     set((state) => (state.follow ? { follow: { ...state.follow, ...patch } } : state)),
-  setCleared: (cleared) => set({ cleared })
+  setCleared: (cleared) => set({ cleared }),
+  setHubFilter: (hubFilter) => set({ hubFilter }),
+  setEvalsOn: (evalsOn) => set({ evalsOn, evalError: null }),
+  addEvals: (engineId, entries) =>
+    set((state) => {
+      const kept =
+        state.evalsEngine === engineId
+          ? Object.entries(state.evals).slice(-(MAX_EVALS - entries.length))
+          : [];
+      return {
+        evals: Object.fromEntries([...kept, ...entries]),
+        evalsEngine: engineId,
+        evalError: null
+      };
+    }),
+  setEvalError: (evalError) => set({ evalError }),
+  setAlert: (gameId, alert) =>
+    set((state) => {
+      const { [gameId]: _dropped, ...rest } = state.alerts;
+      return { alerts: alert ? { ...rest, [gameId]: alert } : rest };
+    })
 }));

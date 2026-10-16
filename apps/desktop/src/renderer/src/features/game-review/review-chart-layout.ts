@@ -37,7 +37,7 @@ export const STRIP_MIN = 44;
 
 /** The charts never get lower than this: the winning-chances view stays readable. */
 export const CHARTS_MIN_HEIGHT = 120;
-/** The panel content above the charts keeps at least this much. */
+/** The part of the panel content above the charts that yields height keeps at least this much. */
 export const CONTENT_MIN_HEIGHT = 160;
 /** One arrow-key step of the splitter. */
 export const SPLITTER_STEP = 16;
@@ -198,10 +198,12 @@ export function stripPlotHeight(view: number): number {
 
 /**
  * The tallest the charts may be: as tall as they are now plus what the content above has beyond
- * its minimum (`content`: its current height). Null when the panel can't be measured.
+ * its minimum (`content`: its current height). `fixed` is the part of the content that can't give
+ * up height (a tab bar, a live strip, the engine lines), so only the rest (the move list) yields,
+ * down to its minimum. Null when the panel can't be measured.
  */
-export function chartsMaxHeight(content: number | null, charts: number): number | null {
-  return content === null ? null : charts + content - CONTENT_MIN_HEIGHT;
+export function chartsMaxHeight(content: number | null, charts: number, fixed = 0): number | null {
+  return content === null ? null : charts + content - fixed - CONTENT_MIN_HEIGHT;
 }
 
 /**

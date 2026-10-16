@@ -48,7 +48,7 @@ function PlayerIdentity({
 /**
  * The clock box beside a player row: a quiet sunken box, lit (the light side box) for the side to
  * move (`active`). Fixed minimum width and tabular digits so the text never shifts as it counts;
- * `low` (little time left) turns the time red and, while it runs, pulses gently.
+ * `low` (little time left) turns the time red; `running` marks a clock counting down.
  */
 export function ClockFace({
   color,
@@ -74,7 +74,7 @@ export function ClockFace({
         active
           ? "border-transparent bg-side-white text-side-white-fg"
           : "border-line bg-surface-sunken text-fg-muted",
-        low && cn("board-clock-low", active ? "text-mark-blunder" : "text-danger")
+        low && (active ? "text-mark-blunder" : "text-danger")
       )}
     >
       {text}

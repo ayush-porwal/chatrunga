@@ -297,6 +297,7 @@ export function AppPages({
             onExportPgn={on.exportPgn}
             puzzlePanel={puzzlePanel}
             onOpenSettings={on.engineSettings}
+            onOpenBroadcastGame={on.openBroadcastGame}
           />
         )}
       </Suspense>

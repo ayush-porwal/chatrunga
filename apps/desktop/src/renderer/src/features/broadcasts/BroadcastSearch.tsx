@@ -1,37 +1,21 @@
 import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Loader2, Search } from "lucide-react";
-import { useQueries, type UseQueryResult } from "@tanstack/react-query";
-import type { BroadcastListing, BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
+import type { BroadcastListing } from "@chaturanga/shared/types/broadcast";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { cn } from "@/lib/utils";
-import {
-  MIN_SEARCH_LENGTH,
-  roundQueryOptions,
-  useBroadcastSearchQuery
-} from "../../queries/broadcasts";
+import { MIN_SEARCH_LENGTH, useBroadcastSearchQuery } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BoardThumbnail } from "../settings/board-thumbnail";
-import { boardModel } from "./board-state";
 import { LiveDot, TourImage } from "./broadcast-parts";
-import { nameMatches, playerLabel, resultText, tourDates } from "./broadcast-text";
+import { nameMatches, tourDates } from "./broadcast-text";
 import type { TournamentTarget } from "./navigation";
+import { roundGamesWhere, useRoundsRead, type RoundGameEntry } from "./round-games";
 
 /** Results shown per group. */
 const MAX_GAMES = 5;
 const MAX_EVENTS = 5;
 
-type GameResult = {
-  kind: "game";
-  key: string;
-  target: TournamentTarget;
-  white: string;
-  black: string;
-  where: string;
-  fen: string;
-  lastMove: string | null;
-  status: string;
-  live: boolean;
-};
+type GameResult = RoundGameEntry & { kind: "game" };
 
 type EventResult = {
   kind: "event";
@@ -42,46 +26,6 @@ type EventResult = {
 
 type Result = GameResult | EventResult;
 
-type BroadcastStoreGames = ReturnType<typeof useBroadcastStore.getState>["games"];
-
-/**
- * Games whose players match, from the rounds already read (the live events' rounds are read when
- * the search box is first used): Lichess's own search only matches tournament names.
- */
-function matchingGames(
-  rounds: readonly BroadcastRoundDetail[],
-  streamed: BroadcastStoreGames,
-  query: string
-): GameResult[] {
-  const results: GameResult[] = [];
-  for (const detail of rounds) {
-    detail.games.forEach((game, index) => {
-      if (!nameMatches(game.white.name, query) && !nameMatches(game.black.name, query)) return;
-      // Only the position and result are shown: when the summary was read doesn't matter.
-      const board = boardModel(game, streamed[game.id], 0);
-      results.push({
-        kind: "game",
-        key: `${detail.round.id}/${game.id}`,
-        target: { tourId: detail.tour.id, roundId: detail.round.id, focusGameId: game.id },
-        white: playerLabel(game.white),
-        black: playerLabel(game.black),
-        where: `${detail.tour.name} · ${detail.round.name} · Board ${index + 1}`,
-        fen: board.fen,
-        lastMove: board.lastMove,
-        status: resultText(board.result),
-        live: board.result === "*"
-      });
-    });
-  }
-  // Games being played first.
-  return results.sort((a, b) => Number(b.live) - Number(a.live)).slice(0, MAX_GAMES);
-}
-
-/** The rounds read so far (structurally shared: the same array while nothing changed). */
-function roundsRead(results: UseQueryResult<BroadcastRoundDetail>[]): BroadcastRoundDetail[] {
-  return results.flatMap((result) => (result.data ? [result.data] : []));
-}
-
 /**
  * The hub's search: tournaments by name (Lichess search) and games by player (the rounds read so
  * far), as you type. Picking either opens the tournament, a game on its round with its board
@@ -91,7 +35,7 @@ export function BroadcastSearch({
   liveRoundIds,
   onOpen
 }: {
-  /** The live events' rounds: read when the box is first used, so their players can be found. */
+  /** The live events' rounds the hub reads (their players are searched here, at no extra request). */
   liveRoundIds: readonly string[];
   onOpen: (target: TournamentTarget) => void;
 }) {
@@ -105,14 +49,18 @@ export function BroadcastSearch({
   const events = useBroadcastSearchQuery(query);
   const searching = query.length >= MIN_SEARCH_LENGTH;
   const streamed = useBroadcastStore((state) => state.games);
-  const rounds = useQueries({
-    queries: liveRoundIds.map((roundId) => ({ ...roundQueryOptions(roundId), enabled: used })),
-    combine: roundsRead
-  });
+  const rounds = useRoundsRead(liveRoundIds, used);
 
   const results = useMemo<Result[]>(() => {
     if (!searching) return [];
-    const games = matchingGames(rounds, streamed, query);
+    // Lichess's own search only matches tournament names: games come from the rounds read.
+    const games: GameResult[] = roundGamesWhere(
+      rounds,
+      streamed,
+      (game) => nameMatches(game.white.name, query) || nameMatches(game.black.name, query)
+    )
+      .slice(0, MAX_GAMES)
+      .map((entry) => ({ ...entry, kind: "game" }));
     const eventResults: EventResult[] = (events.data ?? []).slice(0, MAX_EVENTS).map((listing) => ({
       kind: "event",
       key: listing.tour.id,

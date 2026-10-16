@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { CalendarDays, ChevronRight, Clock, MapPin, Radio, RotateCcw } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { CalendarDays, ChevronRight, Clock, MapPin, Radio, RotateCcw, Trophy } from "lucide-react";
 import type {
   BroadcastGame,
   BroadcastListing,
@@ -8,23 +8,33 @@ import type {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
+import { Select } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCell, StatStrip } from "@/components/ui/stat-strip";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { sectionTitle } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
-import { useBroadcastRoundQuery, useBroadcastTopQuery } from "../../queries/broadcasts";
+import {
+  useBroadcastPlayersQuery,
+  useBroadcastRoundQuery,
+  useBroadcastTopQuery
+} from "../../queries/broadcasts";
+import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { LiveBadge, PlayerLine, TourImage } from "./broadcast-parts";
 import {
+  filterHub,
   hubSections,
+  podium,
   startsText,
   timeControlText,
   tourDates,
+  type HubFilter,
   type HubSections
 } from "./broadcast-text";
 import { BroadcastSearch } from "./BroadcastSearch";
+import { FollowedGames } from "./FollowedGames";
 import type { TournamentTarget } from "./navigation";
 
 /** Lichess's broadcast calendar (every upcoming event, beyond the few listed here). */
@@ -59,7 +69,13 @@ export function BroadcastsPage({
   onOpenTournament: (target: TournamentTarget) => void;
 }) {
   const top = useBroadcastTopQuery();
-  const sections = top.data ? hubSections(top.data) : null;
+  const filter = useBroadcastStore((state) => state.hubFilter);
+  const sections = top.data ? filterHub(hubSections(top.data), filter) : null;
+  // The rounds the live cards read: search and "Your players" use them, at no request of their own.
+  const previewedRoundIds =
+    sections?.live
+      .slice(0, PREVIEWED_LIVE)
+      .flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? [];
   // Skeletons only while loading: after a failure the notice above says why.
   const loading = !sections && !top.isError;
   const open = (listing: BroadcastListing) =>
@@ -71,14 +87,14 @@ export function BroadcastsPage({
 
   return (
     // The page fits the panel (it never scrolls): its sections scroll inside.
-    <div className="pointer-cursors flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
       <h1 className="sr-only">Broadcasts</h1>
-      <BroadcastSearch
-        liveRoundIds={
-          sections?.live.flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
-        }
-        onOpen={onOpenTournament}
-      />
+      {/* The sections' columns: the search over the events, the filters over the side column. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_var(--side-column)] items-center gap-4">
+        <BroadcastSearch liveRoundIds={previewedRoundIds} onOpen={onOpenTournament} />
+        <HubFilters filter={filter} />
+      </div>
+      <FollowedGames roundIds={previewedRoundIds} onOpen={onOpenTournament} />
       {top.isError ? (
         <Notice
           tone="danger"
@@ -95,12 +111,49 @@ export function BroadcastsPage({
       ) : null}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_var(--side-column)] gap-4">
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
-          <LiveSection sections={sections} loading={loading} onOpen={open} />
+          <LiveSection
+            sections={sections}
+            loading={loading}
+            filtered={filter.speed !== "all"}
+            onOpen={open}
+          />
           <PastSection past={sections?.past ?? null} loading={loading} onOpen={open} />
         </div>
         <UpcomingRail upcoming={sections?.upcoming ?? null} loading={loading} onOpen={open} />
       </div>
     </div>
+  );
+}
+
+const SPEEDS: Record<HubFilter["speed"], string> = {
+  all: "All speeds",
+  standard: "Classical",
+  rapid: "Rapid",
+  blitz: "Blitz"
+};
+
+function isSpeed(value: string): value is HubFilter["speed"] {
+  return Object.hasOwn(SPEEDS, value);
+}
+
+/** Which speed every section shows (or all): one quiet field beside the search, its own height. */
+function HubFilters({ filter }: { filter: HubFilter }) {
+  const setFilter = useBroadcastStore((state) => state.setHubFilter);
+  return (
+    <Select
+      aria-label="Speed"
+      value={filter.speed}
+      onChange={(event) => {
+        const speed = event.target.value;
+        if (isSpeed(speed)) setFilter({ speed });
+      }}
+    >
+      {Object.entries(SPEEDS).map(([value, label]) => (
+        <option key={value} value={value}>
+          {label}
+        </option>
+      ))}
+    </Select>
   );
 }
 
@@ -141,10 +194,13 @@ const NOT_LOADED = <EmptyState compact title="Not loaded." className="px-4 py-3"
 function LiveSection({
   sections,
   loading,
+  filtered,
   onOpen
 }: {
   sections: HubSections | null;
   loading: boolean;
+  /** The hub's filter hides some events. */
+  filtered: boolean;
   onOpen: (listing: BroadcastListing) => void;
 }) {
   const now = useMinuteClock();
@@ -185,7 +241,7 @@ function LiveSection({
         ) : (
           <EmptyState
             icon={<Radio />}
-            title="No events are live right now"
+            title={filtered ? "No live events match the filter" : "No events are live right now"}
             description={
               next && nextStart !== null
                 ? `Next up: ${next.tour.name}, ${startsText(nextStart, now).toLowerCase()}`
@@ -476,6 +532,10 @@ function LiveEventSkeleton() {
 
 function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen: () => void }) {
   const { tour } = listing;
+  // The standings are read once the card is pointed at (each is a request), then kept.
+  const [wanted, setWanted] = useState(false);
+  const standings = useBroadcastPlayersQuery(tour.id, wanted);
+  const top = standings.data ? podium(standings.data) : [];
   const meta = [timeControlText(tour)?.split(" · ")[0], tourDates(tour)]
     .filter(Boolean)
     .join(" · ");
@@ -483,6 +543,8 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
     <button
       type="button"
       onClick={onOpen}
+      onPointerEnter={() => setWanted(true)}
+      onFocus={() => setWanted(true)}
       className={cn(
         PAST_CARD_WIDTH,
         "group flex shrink-0 flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
@@ -494,12 +556,38 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
           "aspect-[2/1] w-full rounded-lg ring-1 ring-transparent transition-shadow group-hover:ring-accent/60",
           zoomOnHover
         )}
-      />
+      >
+        {top.length ? (
+          // The podium, over the banner while the card is pointed at.
+          <span className="absolute inset-0 flex flex-col justify-end gap-0.5 bg-linear-to-t from-black/85 via-black/55 to-transparent px-2.5 pb-2 opacity-0 transition-opacity duration-standard group-hover:opacity-100 group-focus-visible:opacity-100">
+            {top.map((entry, index) => (
+              <span
+                key={entry.name}
+                className="flex items-center gap-1.5 text-xs text-white/90 [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]"
+              >
+                {index === 0 ? (
+                  <Trophy aria-hidden="true" className="size-3 shrink-0 text-warn" />
+                ) : (
+                  <span className="w-3 shrink-0 text-center text-2xs text-white/60">
+                    {index + 1}
+                  </span>
+                )}
+                <span className="truncate font-semibold">{entry.name}</span>
+                {entry.score === null ? null : (
+                  <span className="ml-auto shrink-0 tabular-nums text-white/75">{entry.score}</span>
+                )}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </TourImage>
       <span className="grid gap-0.5 px-0.5">
         <span className="truncate text-sm font-semibold text-fg-secondary transition-colors group-hover:text-fg">
           {tour.name}
         </span>
-        <span className="truncate text-xs text-fg-muted">{meta || tour.info.location || " "}</span>
+        <span className="truncate text-xs text-fg-muted">
+          {top[0] ? `Won by ${top[0].name}` : meta || tour.info.location || " "}
+        </span>
       </span>
     </button>
   );

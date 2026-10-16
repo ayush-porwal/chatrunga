@@ -1,8 +1,10 @@
 import type {
+  BroadcastFideTimeControl,
   BroadcastListing,
   BroadcastPlayer,
   BroadcastResult,
   BroadcastRound,
+  BroadcastStanding,
   BroadcastTopPage,
   BroadcastTour
 } from "@chaturanga/shared/types/broadcast";
@@ -19,11 +21,33 @@ export type HubSections = {
  * live, the rest are between rounds or about to start (upcoming, by their next round's start).
  */
 export function hubSections(page: BroadcastTopPage): HubSections {
-  const live = page.active.filter((listing) => listing.round?.ongoing);
-  const upcoming = page.active
+  // Only Lichess's official events (ranked by it); search still finds the others.
+  const active = page.active.filter(isOfficial);
+  const live = active.filter((listing) => listing.round?.ongoing);
+  const upcoming = active
     .filter((listing) => !listing.round?.ongoing)
     .sort((a, b) => startOf(a) - startOf(b));
-  return { live, upcoming, past: page.past };
+  return { live, upcoming, past: page.past.filter(isOfficial) };
+}
+
+function isOfficial({ tour }: BroadcastListing): boolean {
+  return tour.tier !== null;
+}
+
+/** What the hub shows: one speed (FIDE's category) or all. */
+export type HubFilter = { speed: BroadcastFideTimeControl | "all" };
+
+export const NO_HUB_FILTER: HubFilter = { speed: "all" };
+
+/** The sections with only the events `filter` keeps. */
+export function filterHub(sections: HubSections, filter: HubFilter): HubSections {
+  const keep = ({ tour }: BroadcastListing) =>
+    filter.speed === "all" || tour.info.fideTimeControl === filter.speed;
+  return {
+    live: sections.live.filter(keep),
+    upcoming: sections.upcoming.filter(keep),
+    past: sections.past.filter(keep)
+  };
 }
 
 function startOf(listing: BroadcastListing): number {
@@ -114,16 +138,56 @@ export function playerLabel(player: BroadcastPlayer): string {
   return player.title ? `${player.title} ${player.name}` : player.name;
 }
 
+/** A name to compare: no accents, lower case. */
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+/** Whether two names are the same player's (whole names, case- and accent-insensitive). */
+export function samePlayer(a: string, b: string): boolean {
+  return fold(a).trim() === fold(b).trim();
+}
+
 /** Whether a player's name matches a search (case- and accent-insensitive, any word order part). */
 export function nameMatches(name: string, query: string): boolean {
-  const fold = (text: string) =>
-    text
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .toLowerCase();
   const haystack = fold(name);
   return fold(query)
     .split(/[\s,]+/)
     .filter(Boolean)
     .every((word) => haystack.includes(word));
+}
+
+/** A chess score: 8.5 → "8½", 0.5 → "½", 3 → "3". */
+export function scoreText(score: number): string {
+  const whole = Math.floor(score);
+  const half = score - whole >= 0.5;
+  return half ? `${whole || ""}½` : String(whole);
+}
+
+/** The first three of a tournament's standings (by rank, else by score), with their scores. */
+export function podium(
+  rows: readonly BroadcastStanding[]
+): { name: string; score: string | null }[] {
+  const order = (row: BroadcastStanding) => row.rank ?? Number.MAX_SAFE_INTEGER;
+  return [...rows]
+    .sort((a, b) => order(a) - order(b) || (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 3)
+    .map((row) => ({ name: row.name, score: row.score === null ? null : scoreText(row.score) }));
+}
+
+/**
+ * The round after `roundId` once that one is finished: started already, or still to start. Null
+ * while it is being played (or not started), or after the last round.
+ */
+export function roundAfter(
+  rounds: readonly BroadcastRound[],
+  roundId: string | null
+): { round: BroadcastRound; started: boolean } | null {
+  const index = rounds.findIndex((round) => round.id === roundId);
+  const next = index < 0 ? undefined : rounds[index + 1];
+  if (!rounds[index]?.finished || !next || next.finished) return null;
+  return { round: next, started: next.ongoing };
 }

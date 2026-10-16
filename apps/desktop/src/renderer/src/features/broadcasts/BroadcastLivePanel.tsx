@@ -1,18 +1,24 @@
 import { useEffect } from "react";
-import { Radio, Undo2 } from "lucide-react";
+import { BookmarkPlus, ChevronDown, Radio, Undo2 } from "lucide-react";
+import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode } from "@chaturanga/shared/chess/pgn";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
+import { useSaveGameMutation } from "../../queries/api";
+import { useBroadcastRoundQuery } from "../../queries/broadcasts";
+import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useBroadcastStore, type BroadcastFollow } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
 import { ClockFace } from "../board/PlayerIdentity";
 import { BoardThumbnail } from "../settings/board-thumbnail";
-import { backToLive, undoBackToLive } from "./broadcast-follow";
-import { LiveDot } from "./broadcast-parts";
+import { backToLive, followedCopy, undoBackToLive } from "./broadcast-follow";
+import { AlertBell, LiveDot } from "./broadcast-parts";
 import { elapsedText, resultText } from "./broadcast-text";
-import { clockToMs, LOW_TIME_MS, useSecondClock } from "./board-state";
+import { clockToMs, dateFromSummary, LOW_TIME_MS, useSecondClock } from "./board-state";
 import { ownMoveCount } from "./live-line";
 
 /** The key that goes back to the live position. */
@@ -50,7 +56,12 @@ function useBackToLiveKey(enabled: boolean): void {
  * exploring away from it with the live position beside "Back to live" (which clears the user's
  * own moves; Undo puts them back). Nothing for any other board.
  */
-export function BroadcastLivePanel() {
+export function BroadcastLivePanel({
+  onOpenGame
+}: {
+  /** Another game of the round on the board (the switcher). */
+  onOpenGame?: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
   const follow = useBroadcastStore((state) => state.follow);
   const board = useGameStore((state) => state.board);
   const moveTree = useGameStore((state) => state.moveTree);
@@ -63,15 +74,89 @@ export function BroadcastLivePanel() {
 
   if (!followed) return null;
   const tipNode = moveTree.find((node) => node.id === liveTip);
-  return exploring ? (
-    <ExploringStrip
-      follow={followed}
-      tipNode={tipNode}
-      startFen={moveTree.at(0)?.fenAfter ?? ""}
-      own={own}
-    />
-  ) : (
-    <FollowingStrip follow={followed} tipFen={tipNode?.fenAfter ?? null} />
+  return (
+    <>
+      <GameBar follow={followed} onOpenGame={onOpenGame} />
+      {exploring ? (
+        <ExploringStrip
+          follow={followed}
+          tipNode={tipNode}
+          startFen={moveTree.at(0)?.fenAfter ?? ""}
+          own={own}
+        />
+      ) : (
+        <FollowingStrip follow={followed} tipFen={tipNode?.fenAfter ?? null} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Over the strip: the round's other games, to switch to (each followed in turn), and a copy of
+ * this one for the library (the board goes on following).
+ */
+function GameBar({
+  follow,
+  onOpenGame
+}: {
+  follow: BroadcastFollow;
+  onOpenGame?: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
+  const round = useBroadcastRoundQuery(follow.roundId);
+  const streamed = useBroadcastStore((state) => state.games);
+  const save = useSaveGameMutation();
+  const detail = round.data;
+  const game = streamed[follow.gameId];
+  const saveCopy = () => {
+    const copy = followedCopy();
+    if (!copy) return;
+    const notices = useAppNoticeStore.getState();
+    save.mutateAsync(copy).then(
+      () => notices.show("Saved a copy to your library.", { tone: "success" }),
+      (error: unknown) => notices.show(`Couldn't save a copy: ${ipcErrorMessage(error)}`)
+    );
+  };
+  return (
+    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line-subtle pr-2 pl-4 text-[0.8125rem]">
+      {detail && onOpenGame ? (
+        // The game shown, as plain text: picking another opens it (followed in its turn).
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <select
+            aria-label="Switch to another game of the round"
+            value={follow.gameId}
+            onChange={(event) => {
+              // Its clock runs from its last move: dated from the round summary if need be.
+              dateFromSummary(detail, event.target.value, round.dataUpdatedAt);
+              onOpenGame(detail, event.target.value);
+            }}
+            className="h-8 min-w-0 flex-1 appearance-none truncate rounded-md bg-transparent pr-6 font-medium text-fg-secondary outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            {detail.games.map((item, index) => (
+              <option key={item.id} value={item.id}>
+                Board {index + 1} · {item.white.name} – {item.black.name} ·{" "}
+                {resultText(streamed[item.id]?.result ?? item.result)}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-1 size-3.5 text-fg-subtle"
+          />
+        </div>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-fg-muted">{follow.tourName}</span>
+      )}
+      {follow.result !== "*" || !game ? null : (
+        <AlertBell board={game} roundId={follow.roundId} className="size-7 opacity-100" />
+      )}
+      <IconButton
+        label="Save a copy to the library"
+        icon={<BookmarkPlus />}
+        size="icon-xs"
+        disabled={save.isPending}
+        onClick={saveCopy}
+      />
+    </div>
   );
 }
 
@@ -99,6 +184,13 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
       <span className="font-semibold text-fg">{over ? "Game over" : "Following live"}</span>
       <span className="truncate text-fg-subtle">{follow.roundName}</span>
       <span className="flex-1" />
+      {cleared ? (
+        <Button size="xs" onClick={undoBackToLive}>
+          <Undo2 />
+          Undo
+        </Button>
+      ) : null}
+      {/* Last: how long the side to move has thought (or the stream's trouble). */}
       {over ? null : connection ? (
         <span className="shrink-0 text-xs text-warn">
           {connection.retrying ? "Reconnecting…" : "Live updates stopped"}
@@ -106,12 +198,6 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
       ) : (
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
       )}
-      {cleared ? (
-        <Button size="xs" className="cursor-pointer" onClick={undoBackToLive}>
-          <Undo2 />
-          Undo
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -161,7 +247,7 @@ function ExploringStrip({
       <Button
         variant="primary"
         size="sm"
-        className="cursor-pointer justify-start"
+        className="justify-start"
         aria-keyshortcuts={BACK_TO_LIVE_KEY}
         onClick={() => backToLive()}
       >

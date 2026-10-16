@@ -1,11 +1,17 @@
 import { memo, useState, type ReactNode } from "react";
-import { ImageIcon } from "lucide-react";
+import { Bell, BellRing, ImageIcon } from "lucide-react";
 import type { BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
+import { formatEngineScore } from "@chaturanga/shared/chess/review";
 import type { Color } from "@chaturanga/shared/types/chess";
+import type { EngineScore } from "@chaturanga/shared/types/engine";
+import type { EvalBarSide } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
+import { useBroadcastStore } from "../../stores/broadcast-store";
+import { evalShare } from "../board/EvalBar";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { clockNowMs, clockText, isLive, LOW_TIME_MS, type BoardModel } from "./board-state";
 import { playerLabel, resultText } from "./broadcast-text";
+import { moveFocusInGrid } from "./grid-keys";
 
 /** The red "Live" pill (a dot and its text). */
 export function LiveBadge({
@@ -151,20 +157,29 @@ function ClockBox({ board, color, now }: { board: BoardModel; color: Color; now:
 
 /**
  * A board of a round: both players with their clocks (the side to move's lit and running), the
- * position with its last move, and the board number with its state. Opens the game.
+ * position with its last move, and the board number with its state. Opens the game; a live one
+ * has a bell for a notification when it ends.
  */
 export const BoardCard = memo(function BoardCard({
   board,
   number,
+  roundId,
   now,
   highlighted,
+  evaluation,
+  evalSide = "left",
   onOpen
 }: {
   board: BoardModel;
   number: number;
+  roundId: string;
   now: number;
   /** The board a search picked: outlined until another is opened. */
   highlighted: boolean;
+  /** The engine's look at the position (`score` null: on its way, or none); absent: not shown. */
+  evaluation?: { score: EngineScore | null };
+  /** Which side of the board its evaluation bar sits (the eval bar's setting). */
+  evalSide?: EvalBarSide;
   onOpen: (gameId: string) => void;
 }) {
   const live = isLive(board);
@@ -173,27 +188,48 @@ export const BoardCard = memo(function BoardCard({
   const low =
     live && (clockNowMs(board, board.sideToMove, now) ?? Number.POSITIVE_INFINITY) < LOW_TIME_MS;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(board.id)}
-      aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
+    <div
+      data-grid-card
       className={cn(
-        "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow,translate] duration-standard ease-enter",
-        "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] focus-visible:ring-2 focus-visible:ring-accent/70 active:translate-y-0",
+        "group relative grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 transition-[border-color,box-shadow,translate] duration-standard ease-enter",
+        "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] has-[>button:active]:translate-y-0 has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-accent/70",
         highlighted ? "border-accent shadow-[0_0_0_3px_rgb(143_182_111/0.18)]" : "border-line"
       )}
     >
-      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
-        <PlayerLine player={board.black} dim={blackLost} size="sm" />
-        <ClockBox board={board} color="black" now={now} />
-      </span>
-      <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
-      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
-        <PlayerLine player={board.white} dim={whiteLost} size="sm" />
-        <ClockBox board={board} color="white" now={now} />
-      </span>
-      <span className="flex h-5.5 items-center justify-between border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
+      {/* The whole card opens the game (the button's ::after covers it); the bell sits above. */}
+      <button
+        type="button"
+        onClick={() => onOpen(board.id)}
+        // The arrow keys move between the grid's boards (Enter opens one).
+        onKeyDown={moveFocusInGrid}
+        aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
+        className="grid min-w-0 gap-1 text-left outline-none after:absolute after:inset-0 after:rounded-[10px]"
+      >
+        <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+          <PlayerLine player={board.black} dim={blackLost} size="sm" />
+          <ClockBox board={board} color="black" now={now} />
+        </span>
+        {/* The evaluation beside the board, on the side the board settings put the eval bar. */}
+        <span className={cn("flex gap-1", evalSide === "right" && "flex-row-reverse")}>
+          {evaluation ? <EvalGauge score={evaluation.score} /> : null}
+          <span className="min-w-0 flex-1">
+            <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
+          </span>
+        </span>
+        <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+          <PlayerLine player={board.white} dim={whiteLost} size="sm" />
+          <ClockBox board={board} color="white" now={now} />
+        </span>
+      </button>
+      <span className="flex h-5.5 items-center justify-between gap-1.5 border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
         <span>Board {number}</span>
+        {evaluation?.score ? (
+          <span className="font-mono text-fg-muted tabular-nums">
+            {formatEngineScore(evaluation.score)}
+          </span>
+        ) : null}
+        <span className="flex-1" />
+        {live ? <AlertBell board={board} number={number} roundId={roundId} /> : null}
         {live ? (
           <span
             className={cn(
@@ -210,6 +246,68 @@ export const BoardCard = memo(function BoardCard({
           </span>
         )}
       </span>
-    </button>
+    </div>
   );
 });
+
+/** A card's evaluation: White's share of a slim bar up the board's side (pulsing while on its way). */
+function EvalGauge({ score }: { score: EngineScore | null }) {
+  return (
+    <span
+      role="img"
+      aria-label={score ? `Evaluation ${formatEngineScore(score)}` : "Evaluating"}
+      title={score ? formatEngineScore(score) : "Evaluating"}
+      className="relative w-1.5 shrink-0 overflow-hidden rounded-full bg-piece-black ring-1 ring-line-strong"
+    >
+      <span
+        className={cn(
+          "absolute inset-x-0 bottom-0 bg-piece-white transition-[height] duration-emphasis ease-standard",
+          !score && "animate-pulse opacity-40"
+        )}
+        style={{ height: `${score ? evalShare(score) : 50}%` }}
+      />
+    </span>
+  );
+}
+
+/** A live board's bell: a desktop notification when its game ends (on, it stays lit). */
+export function AlertBell({
+  board,
+  number,
+  roundId,
+  className
+}: {
+  board: Pick<BoardModel, "id" | "white" | "black">;
+  number?: number;
+  roundId: string;
+  className?: string;
+}) {
+  const on = useBroadcastStore((state) => state.alerts[board.id] !== undefined);
+  const setAlert = useBroadcastStore((state) => state.setAlert);
+  const what = number === undefined ? "this game" : `board ${number}`;
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={on ? `Don't notify me when ${what} ends` : `Notify me when ${what} ends`}
+      title={on ? "You'll be notified when it ends" : "Notify me when it ends"}
+      onClick={() =>
+        setAlert(
+          board.id,
+          on ? null : { roundId, white: playerLabel(board.white), black: playerLabel(board.black) }
+        )
+      }
+      className={cn(
+        "relative z-10 grid size-5 place-items-center rounded-[5px] outline-none transition-[color,opacity,background-color] hover:bg-control focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/70",
+        on ? "text-accent" : "text-fg-subtle opacity-0 group-hover:opacity-100 hover:text-fg",
+        className
+      )}
+    >
+      {on ? (
+        <BellRing aria-hidden="true" className="size-3.25" />
+      ) : (
+        <Bell aria-hidden="true" className="size-3.25" />
+      )}
+    </button>
+  );
+}

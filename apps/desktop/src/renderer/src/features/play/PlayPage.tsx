@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, type ReactNode } from "react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,13 @@ import { ChallengesCard, StartSomethingNewCard } from "./PlaySideCards";
 import { RecentGamesTable } from "./RecentGamesTable";
 import { repertoireCardContent } from "./board-card-text";
 import type { InProgressCard } from "./in-progress";
-import { isFirstRun, topRowSlots } from "./play-layout";
+import {
+  isFirstRun,
+  narrowPlacements,
+  topRowSlots,
+  type NarrowPlacement,
+  type TopSlot
+} from "./play-layout";
 import { recentRows, useRecentGamesQuery } from "./recent-games";
 import { useInProgressCard, usePuzzleOfTheDay } from "./use-play-page-data";
 import "./play.css";
@@ -49,6 +55,39 @@ export type PlayPageProps = {
   onOpenBroadcasts: () => void;
   onOpenBroadcastTournament: (target: TournamentTarget) => void;
 };
+
+/** The loading row's shape: the Play card and three board cards. */
+const SKELETON_SLOTS = topRowSlots({ inProgress: true, repertoire: true, puzzle: true });
+const SKELETON_PLACEMENTS = narrowPlacements(SKELETON_SLOTS);
+
+/**
+ * A top-row slot: its card (the grid item: the wrapper has no box) and where it goes, as CSS
+ * variables play.css reads: its span, and its place in a narrow page (none: not shown there).
+ */
+function PlaySlot({
+  slot,
+  narrow,
+  children
+}: {
+  slot: TopSlot;
+  narrow: NarrowPlacement | null;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="play-slot contents"
+      data-narrow-hidden={narrow ? undefined : ""}
+      style={{
+        "--span": "span" in slot ? slot.span : 1,
+        "--narrow-column": narrow?.column ?? 1,
+        "--narrow-span": narrow?.span ?? 1,
+        "--narrow-row": narrow?.row ?? "1"
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 /** The top row: the Play card's column, then three (play.css: `.play-columns`). */
 const columns = "play-columns grid items-stretch gap-4";
@@ -86,74 +125,77 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
     puzzle: Boolean(puzzleOfTheDay)
   });
 
+  const placements = narrowPlacements(slots);
+  const slotContent = (slot: TopSlot) => {
+    switch (slot.kind) {
+      case "play":
+        return (
+          <PlayCard
+            key="play"
+            span={slot.span}
+            firstRun={firstRun}
+            desktopApiAvailable={desktopApiAvailable}
+            onOpenEngineSettings={props.onOpenEngineSettings}
+            onBeforeEngineGame={props.onBeforeEngineGame}
+            onEngineGameStarted={props.onEngineGameStarted}
+            onFreeBoard={props.onFreeBoard}
+          />
+        );
+      case "in-progress":
+        return card ? (
+          <InProgressBoardCard key="in-progress" card={card} onRejoin={() => rejoin(card, props)} />
+        ) : null;
+      case "repertoire":
+        return repertoire ? (
+          <RepertoireBoardCard
+            key="repertoire"
+            content={repertoire}
+            onReview={props.onRepertoireReview}
+            onResume={props.onRepertoireResume}
+            onStudy={props.onRepertoireStudy}
+          />
+        ) : null;
+      case "puzzle":
+        return puzzleOfTheDay ? (
+          <PuzzleOfTheDayCard
+            key="puzzle"
+            puzzle={puzzleOfTheDay}
+            onSolve={props.onSolvePuzzleOfTheDay}
+          />
+        ) : null;
+      case "filler":
+        return (
+          <FillerCard
+            key="filler"
+            firstRun={firstRun}
+            puzzleDatabase={puzzle.installed}
+            onOpenDatabases={props.onOpenDatabases}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className={pageShell}>
-      <div className="flex min-h-full flex-col p-6">
+      <div className="play-page flex min-h-full flex-col p-6">
         <h1 className="sr-only">Play</h1>
         {loading ? (
           <div className={columns} aria-busy="true" aria-label="Loading">
-            <PlayCardSkeleton />
-            <BoardCardSkeleton />
-            <BoardCardSkeleton />
-            <BoardCardSkeleton />
+            {SKELETON_SLOTS.map((slot, index) => (
+              <PlaySlot key={slot.kind} slot={slot} narrow={SKELETON_PLACEMENTS[index] ?? null}>
+                {slot.kind === "play" ? <PlayCardSkeleton /> : <BoardCardSkeleton />}
+              </PlaySlot>
+            ))}
           </div>
         ) : (
           <div className={cn(columns, reveal)}>
-            {slots.map((slot) => {
-              switch (slot.kind) {
-                case "play":
-                  return (
-                    <PlayCard
-                      key="play"
-                      span={slot.span}
-                      firstRun={firstRun}
-                      desktopApiAvailable={desktopApiAvailable}
-                      onOpenEngineSettings={props.onOpenEngineSettings}
-                      onBeforeEngineGame={props.onBeforeEngineGame}
-                      onEngineGameStarted={props.onEngineGameStarted}
-                      onFreeBoard={props.onFreeBoard}
-                    />
-                  );
-                case "in-progress":
-                  return card ? (
-                    <InProgressBoardCard
-                      key="in-progress"
-                      card={card}
-                      onRejoin={() => rejoin(card, props)}
-                    />
-                  ) : null;
-                case "repertoire":
-                  return repertoire ? (
-                    <RepertoireBoardCard
-                      key="repertoire"
-                      content={repertoire}
-                      onReview={props.onRepertoireReview}
-                      onResume={props.onRepertoireResume}
-                      onStudy={props.onRepertoireStudy}
-                    />
-                  ) : null;
-                case "puzzle":
-                  return puzzleOfTheDay ? (
-                    <PuzzleOfTheDayCard
-                      key="puzzle"
-                      puzzle={puzzleOfTheDay}
-                      onSolve={props.onSolvePuzzleOfTheDay}
-                    />
-                  ) : null;
-                case "filler":
-                  return (
-                    <FillerCard
-                      key="filler"
-                      span={slot.span}
-                      firstRun={firstRun}
-                      puzzleDatabase={puzzle.installed}
-                      onOpenDatabases={props.onOpenDatabases}
-                    />
-                  );
-                default:
-                  return null;
-              }
-            })}
+            {slots.map((slot, index) => (
+              <PlaySlot key={slot.kind} slot={slot} narrow={placements[index] ?? null}>
+                {slotContent(slot)}
+              </PlaySlot>
+            ))}
           </div>
         )}
         <div className={cn(bottomColumns, "mt-4", fill && "flex-1")}>

@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   CalendarDays,
   ChevronLeft,
@@ -8,6 +9,7 @@ import {
   MapPin,
   RotateCcw,
   Search,
+  Star,
   Users
 } from "lucide-react";
 import type {
@@ -24,6 +26,7 @@ import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { pageShell } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
@@ -34,8 +37,16 @@ import {
   useBroadcastTournamentQuery,
   useRoundStream
 } from "../../queries/broadcasts";
+import { useSettingsQuery } from "../../queries/api";
 import { useBroadcastStore } from "../../stores/broadcast-store";
-import { boardModel, isLive, useSecondClock, type BoardModel } from "./board-state";
+import { useBoardEvals, useEvalEngine } from "./board-evals";
+import {
+  boardModel,
+  dateFromSummary,
+  isLive,
+  useSecondClock,
+  type BoardModel
+} from "./board-state";
 import { BoardCard, LiveBadge, LiveDot, TourImage } from "./broadcast-parts";
 import {
   elapsedText,
@@ -44,6 +55,9 @@ import {
   timeControlText,
   tourDates
 } from "./broadcast-text";
+import { Crosstable } from "./Crosstable";
+import { NextRoundNote, useFollowNextRound } from "./NextRoundNote";
+import { useFollowedPlayers } from "./followed-players";
 import type { BroadcastScreen, TournamentTab } from "./navigation";
 
 type BoardFilter = "all" | "live" | "finished";
@@ -58,18 +72,6 @@ export function shownRoundId(
   if (defaultRoundId) return defaultRoundId;
   const started = rounds.filter((round) => round.ongoing || round.finished);
   return started.at(-1)?.id ?? rounds.at(0)?.id ?? null;
-}
-
-/**
- * The analysis board's clock runs from the last move: date a streamed game's from the round
- * summary (read at `readAt`) when the stream can't.
- */
-function dateFromSummary(detail: BroadcastRoundDetail, gameId: string, readAt: number): void {
-  const game = detail.games.find((item) => item.id === gameId);
-  if (!game) return;
-  const store = useBroadcastStore.getState();
-  const board = boardModel(game, store.games[gameId], readAt);
-  if (board.lastMoveAt !== null) store.dateLastMove(gameId, board.lastMove, board.lastMoveAt);
 }
 
 /**
@@ -100,10 +102,13 @@ export function TournamentPage({
     dateFromSummary(detail, gameId, round.dataUpdatedAt);
     onOpenGame(detail, gameId);
   };
+  useFollowNextRound(rounds, roundId, setRound);
+  // Where the shown tab puts its own controls: in the round and tabs row.
+  const [toolsSlot, setToolsSlot] = useState<HTMLDivElement | null>(null);
 
   return (
     <div className={pageShell}>
-      <div className="pointer-cursors flex min-h-full flex-col gap-4 p-6">
+      <div className="flex min-h-full flex-col gap-4 p-6">
         {tour ? (
           <TournamentHeader tour={tour} live={rounds.some((item) => item.ongoing)} />
         ) : (
@@ -123,8 +128,10 @@ export function TournamentPage({
             {ipcErrorMessage(tournament.error)}
           </Notice>
         ) : null}
+        {/* One row: the round, the tabs, then the shown tab's own controls (its slot). */}
         <div className="flex flex-wrap items-center gap-3">
           <RoundStepper rounds={rounds} roundId={roundId} onChange={setRound} />
+          <NextRoundNote rounds={rounds} roundId={roundId} onGo={setRound} />
           <SegmentedControl<TournamentTab>
             ariaLabel="Tournament"
             role="tablist"
@@ -136,16 +143,24 @@ export function TournamentPage({
               { value: "about", label: "About" }
             ]}
           />
+          <div ref={setToolsSlot} className="flex min-w-0 flex-wrap items-center gap-3" />
         </div>
         {screen.tab === "boards" ? (
           <BoardsTab
             roundQuery={round}
             roundId={roundId}
             focusGameId={screen.focusGameId}
+            toolsSlot={toolsSlot}
             onOpenGame={openGame}
           />
         ) : screen.tab === "players" ? (
-          <PlayersTab tourId={screen.tourId} round={round.data ?? null} onOpenGame={openGame} />
+          <PlayersTab
+            toolsSlot={toolsSlot}
+            tourId={screen.tourId}
+            round={round.data ?? null}
+            rounds={rounds.filter((item) => item.ongoing || item.finished)}
+            onOpenGame={openGame}
+          />
         ) : tour ? (
           <AboutTab tour={tour} />
         ) : null}
@@ -164,6 +179,16 @@ function TournamentHeader({ tour, live }: { tour: BroadcastTour; live: boolean }
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className="truncate text-xl font-semibold text-fg">{tour.name}</h1>
           {live ? <LiveBadge /> : null}
+          <a
+            href={tour.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open on Lichess"
+            title="Open on Lichess"
+            className="grid size-7 shrink-0 place-items-center rounded-md text-fg-subtle outline-none transition-colors hover:bg-control hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <ExternalLink aria-hidden="true" className="size-3.75" />
+          </a>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[0.78125rem] text-fg-muted">
           {tour.info.location ? (
@@ -192,12 +217,6 @@ function TournamentHeader({ tour, live }: { tour: BroadcastTour; live: boolean }
           ) : null}
         </div>
       </div>
-      <Button asChild variant="outline" size="sm">
-        <a href={tour.url} target="_blank" rel="noreferrer">
-          <ExternalLink />
-          Open on Lichess
-        </a>
-      </Button>
     </header>
   );
 }
@@ -285,17 +304,34 @@ function BoardsTab({
   roundQuery,
   roundId,
   focusGameId,
+  toolsSlot,
   onOpenGame
 }: {
   roundQuery: ReturnType<typeof useBroadcastRoundQuery>;
   roundId: string | null;
   focusGameId: string | null;
+  toolsSlot: HTMLElement | null;
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   const now = useSecondClock();
   const streamed = useBroadcastStore((state) => state.games);
   const connection = useBroadcastStore((state) => (roundId ? state.connections[roundId] : null));
   const [filter, setFilter] = useState<BoardFilter>("all");
+  const evalsOn = useBroadcastStore((state) => state.evalsOn);
+  const evals = useBroadcastStore((state) => state.evals);
+  const evalEngine = useEvalEngine();
+  const evalSide = useSettingsQuery().data?.analysisEvalBarSide ?? "left";
+  const evalsEngine = useBroadcastStore((state) => state.evalsEngine);
+  const evalError = useBroadcastStore((state) => state.evalError);
+  // A board's evaluation: its score, or on its way (a live board, while evaluating goes on);
+  // nothing for a position that won't be searched, or another engine's score.
+  const boardEvaluation = (board: BoardModel) => {
+    // No engine (none installed, or gone since): nothing fills a bar, so none is drawn.
+    if (!evalsOn || !evalEngine) return undefined;
+    const score = evalsEngine === evalEngine ? evals[board.fen] : undefined;
+    if (score !== undefined) return { score };
+    return isLive(board) && !evalError ? { score: null } : undefined;
+  };
   const [player, setPlayer] = useState("");
   const detail = roundQuery.data;
   const boards = useMemo(
@@ -317,6 +353,12 @@ function BoardsTab({
         nameMatches(board.black.name, player))
   );
 
+  // The live boards shown are evaluated while the switch is on (finished ones stay as they are).
+  useBoardEvals(
+    evalsOn ? shown.flatMap(({ board }) => (isLive(board) ? [board.fen] : [])) : [],
+    evalsOn ? evalEngine : null
+  );
+
   if (roundQuery.isError) {
     return (
       <Notice
@@ -335,7 +377,7 @@ function BoardsTab({
   }
   return (
     <section aria-label="Boards" className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-3">
+      <TabTools slot={toolsSlot}>
         <SegmentedControl<BoardFilter>
           ariaLabel="Show boards"
           size="sm"
@@ -362,28 +404,32 @@ function BoardsTab({
             className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
           />
         </label>
+        <EvalSwitch />
         {connection ? (
           <span className="text-xs text-warn">
             {connection.retrying ? "Live updates paused, reconnecting…" : "Live updates stopped"}
             {connection.error ? ` (${connection.error})` : ""}
           </span>
         ) : null}
-      </div>
+      </TabTools>
       {!detail ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
           {Array.from({ length: 10 }, (_, key) => (
             <Skeleton key={key} className="aspect-[3/4] rounded-[10px]" />
           ))}
         </div>
       ) : shown.length ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
           {shown.map(({ number, board }) => (
             <BoardCard
               key={board.id}
               board={board}
               number={number}
+              roundId={detail.round.id}
               now={now}
               highlighted={board.id === focusGameId}
+              evaluation={boardEvaluation(board)}
+              evalSide={evalSide}
               onOpen={(gameId) => onOpenGame(detail, gameId)}
             />
           ))}
@@ -400,18 +446,52 @@ function BoardsTab({
   );
 }
 
-/** The standings, and each player's game in the round shown (it opens). */
+/** "Evaluations": the live boards' engine bars, on demand (an engine runs while it is on). */
+function EvalSwitch() {
+  const on = useBroadcastStore((state) => state.evalsOn);
+  const setOn = useBroadcastStore((state) => state.setEvalsOn);
+  const error = useBroadcastStore((state) => state.evalError);
+  const engine = useEvalEngine();
+  return (
+    <>
+      <label
+        className="flex shrink-0 items-center gap-2 text-xs text-fg-muted"
+        title={engine ? "Engine bars on the live boards" : "Add an engine in Settings first"}
+      >
+        <Switch checked={on && engine !== null} onCheckedChange={setOn} disabled={!engine} />
+        Evaluations
+      </label>
+      {on && error ? (
+        <span className="text-xs text-danger">Evaluations stopped: {error}</span>
+      ) : null}
+    </>
+  );
+}
+
+/** A tab's own controls: in the page's round and tabs row (`slot`), else above the tab. */
+function TabTools({ slot, children }: { slot: HTMLElement | null; children: ReactNode }) {
+  if (slot) return createPortal(children, slot);
+  return <div className="flex flex-wrap items-center gap-3">{children}</div>;
+}
+
+/** The standings (each player's game in the round shown opens), or the crosstable. */
 function PlayersTab({
   tourId,
   round,
+  rounds,
+  toolsSlot,
   onOpenGame
 }: {
+  toolsSlot: HTMLElement | null;
   tourId: string;
   round: BroadcastRoundDetail | null;
+  /** The tournament's started rounds, in order (the crosstable's columns). */
+  rounds: readonly BroadcastRound[];
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   const players = useBroadcastPlayersQuery(tourId);
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<"standings" | "crosstable">("standings");
   if (players.isError) {
     return (
       <Notice tone="danger" title="Couldn't load the standings">
@@ -424,71 +504,115 @@ function PlayersTab({
   );
   return (
     <section aria-label="Standings" className="grid gap-3">
-      <label className="flex h-8 w-56 items-center gap-2 rounded-lg border border-line bg-surface-sunken px-2.5 text-fg-subtle focus-within:border-accent/60">
-        <Search aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="sr-only">Find a player</span>
-        <input
-          type="search"
-          value={search}
-          placeholder="Find a player"
-          onChange={(event) => setSearch(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
+      <TabTools slot={toolsSlot}>
+        <SegmentedControl<"standings" | "crosstable">
+          ariaLabel="Players view"
+          size="sm"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "standings", label: "Standings" },
+            { value: "crosstable", label: "Crosstable" }
+          ]}
         />
-      </label>
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table className="w-full min-w-[720px] border-collapse text-[0.8125rem]">
-          <thead>
-            <tr className="h-9 border-b border-line-subtle text-left text-xs text-fg-subtle">
-              <th scope="col" className="w-12 pl-4 font-normal">
-                #
-              </th>
-              <th scope="col" className="font-normal">
-                Player
-              </th>
-              <th scope="col" className="w-16 font-normal">
-                Fed
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Rating
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Points
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Perf
-              </th>
-              <th scope="col" className="w-16 text-right font-normal">
-                ±
-              </th>
-              <th scope="col" className="w-72 pl-8 font-normal">
-                {round?.round.name ?? "This round"}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.isPending
-              ? Array.from({ length: 8 }, (_, key) => (
-                  <tr key={key} className="h-10 border-b border-line-subtle">
-                    <td colSpan={8} className="px-4">
-                      <Skeleton className="h-3 w-2/3" />
-                    </td>
-                  </tr>
-                ))
-              : rows.map((row, index) => (
-                  <StandingRow
-                    key={`${row.fideId ?? row.name}`}
-                    row={row}
-                    rank={row.rank ?? index + 1}
-                    game={<PlayerGame round={round} name={row.name} onOpenGame={onOpenGame} />}
-                  />
-                ))}
-          </tbody>
-        </table>
-        {players.data && !rows.length ? (
-          <EmptyState compact title="No players match." className="px-4" />
+        {view === "standings" ? (
+          <label className="flex h-8 w-56 items-center gap-2 rounded-lg border border-line bg-surface-sunken px-2.5 text-fg-subtle focus-within:border-accent/60">
+            <Search aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="sr-only">Find a player</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Find a player"
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
+            />
+          </label>
         ) : null}
-      </div>
+      </TabTools>
+      {view === "crosstable" && players.data ? (
+        <Crosstable standings={players.data} rounds={rounds} onOpenGame={onOpenGame} />
+      ) : (
+        <StandingsTable
+          rows={rows}
+          loading={players.isPending}
+          empty={Boolean(players.data) && !rows.length}
+          round={round}
+          onOpenGame={onOpenGame}
+        />
+      )}
     </section>
+  );
+}
+
+function StandingsTable({
+  rows,
+  loading,
+  empty,
+  round,
+  onOpenGame
+}: {
+  rows: readonly BroadcastStanding[];
+  loading: boolean;
+  /** Players were read, but none matches the search. */
+  empty: boolean;
+  round: BroadcastRoundDetail | null;
+  onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
+  const { followed, toggle: toggleFollow } = useFollowedPlayers();
+  return (
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <table className="w-full min-w-[720px] border-collapse text-[0.8125rem]">
+        <thead>
+          <tr className="h-9 border-b border-line-subtle text-left text-xs text-fg-subtle">
+            <th scope="col" className="w-12 pl-4 font-normal">
+              #
+            </th>
+            <th scope="col" className="font-normal">
+              Player
+            </th>
+            <th scope="col" className="w-16 font-normal">
+              Fed
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Rating
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Points
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Perf
+            </th>
+            <th scope="col" className="w-16 text-right font-normal">
+              ±
+            </th>
+            <th scope="col" className="w-72 pl-8 font-normal">
+              {round?.round.name ?? "This round"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading
+            ? Array.from({ length: 8 }, (_, key) => (
+                <tr key={key} className="h-10 border-b border-line-subtle">
+                  <td colSpan={8} className="px-4">
+                    <Skeleton className="h-3 w-2/3" />
+                  </td>
+                </tr>
+              ))
+            : rows.map((row, index) => (
+                <StandingRow
+                  key={`${row.fideId ?? row.name}`}
+                  row={row}
+                  rank={row.rank ?? index + 1}
+                  game={<PlayerGame round={round} name={row.name} onOpenGame={onOpenGame} />}
+                  followed={followed.includes(row.name)}
+                  onToggleFollow={() => toggleFollow(row.name)}
+                />
+              ))}
+        </tbody>
+      </table>
+      {empty ? <EmptyState compact title="No players match." className="px-4" /> : null}
+    </div>
   );
 }
 
@@ -542,12 +666,17 @@ function diffTone(diff: number | null): string {
 function StandingRow({
   row,
   rank,
-  game
+  game,
+  followed,
+  onToggleFollow
 }: {
   row: BroadcastStanding;
   rank: number;
   /** The player's game in the round shown, if any. */
   game: ReactNode;
+  /** Their games lead the Broadcasts page. */
+  followed: boolean;
+  onToggleFollow: () => void;
 }) {
   const diff = row.ratingDiff;
   return (
@@ -555,6 +684,19 @@ function StandingRow({
       <td className="pl-4 text-fg-subtle tabular-nums">{rank}</td>
       <td>
         <span className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={followed}
+            aria-label={followed ? `Unfollow ${row.name}` : `Follow ${row.name}`}
+            title={followed ? "Following: their games lead the Broadcasts page" : "Follow"}
+            onClick={onToggleFollow}
+            className={cn(
+              "-ml-1 grid size-6 place-items-center rounded-md outline-none transition-colors hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/70",
+              followed ? "text-warn" : "text-fg-subtle hover:text-fg"
+            )}
+          >
+            <Star aria-hidden="true" className={cn("size-3.5", followed && "fill-current")} />
+          </button>
           {row.title ? <span className="text-2xs font-semibold text-warn">{row.title}</span> : null}
           <span className="font-semibold text-fg">{row.name}</span>
         </span>

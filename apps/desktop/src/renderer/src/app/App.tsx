@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { loadSidebarExpanded, saveSidebarExpanded } from "@/lib/layout-prefs";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { useBroadcastFollow } from "../features/broadcasts/broadcast-follow";
+import { useGameEndAlerts } from "../features/broadcasts/game-alerts";
 import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { openReviewSettingsDialog } from "../features/game-review/ReviewSettingsDialog";
@@ -212,6 +213,7 @@ export function App() {
   useLichess({ onGameStart: (load) => board.startOnlineGame(load) });
   useBroadcastEventSubscription();
   useBroadcastFollow();
+  useGameEndAlerts();
   useChesscom();
   // The repertoire board has its own move keys (they must not step the game behind it).
   useMoveKeyboardShortcuts({ enabled: gameBoardViews.has(appView) });

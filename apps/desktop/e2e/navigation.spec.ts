@@ -155,20 +155,17 @@ test("Back to a deleted chapter or game says why and lands somewhere that exists
   await expect(page.getByText("No repertoires yet")).toBeVisible();
   await expect(studyPanel(page)).toHaveCount(0);
 
-  // The hub the study was opened from (now empty), then the second game.
-  await back(page).click();
-  await expect(page.getByText("No repertoires yet")).toBeVisible();
+  // The hub it handed over to is the hub the study was opened from: one step, so Back goes on to
+  // the second game.
   await back(page).click();
   await expectBoard(page, GAMMA);
   // Play, where the second import started.
   await back(page).click();
   await expectPlayPage(page);
-  // The deleted game: you stay on Play, told why, and its step is gone.
+  // The deleted game: you stay on Play, told why, and its step is gone, so the Play the app opened
+  // on and this one are a single step: Back stays on the page no more.
   await back(page).click();
   await expect(page.getByRole("main")).toContainText("That game was deleted.");
-  await expectPlayPage(page);
-  // Play as the app opened, where the first import started.
-  await back(page).click();
   await expectPlayPage(page);
   await expect(back(page)).toBeDisabled();
 });

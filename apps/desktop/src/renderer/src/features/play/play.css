@@ -432,3 +432,31 @@
 .play-columns-bottom {
   grid-template-columns: minmax(0, 1fr) var(--side-column);
 }
+
+/* A top-row card spans its slot's columns (PlaySlot sets the variables on its box-less wrapper). */
+.play-page {
+  container: play-page / inline-size;
+}
+
+.play-slot > * {
+  grid-column: span var(--span, 1);
+}
+
+/*
+ * A narrow page: three columns, the last still the side column. A card takes a column (two board
+ * cards may share one, one above the other) rather than every card squeezing into a quarter.
+ */
+@container play-page (width < 1200px) {
+  .play-columns {
+    grid-template-columns: var(--lead-column) minmax(0, 1fr) var(--side-column);
+  }
+
+  .play-slot > * {
+    grid-column: var(--narrow-column) / span var(--narrow-span);
+    grid-row: var(--narrow-row);
+  }
+
+  .play-slot[data-narrow-hidden] {
+    display: none;
+  }
+}

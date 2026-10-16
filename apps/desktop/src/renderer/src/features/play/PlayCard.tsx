@@ -140,11 +140,7 @@ export const PlayCard = memo(function PlayCard({
   );
 
   return (
-    <section
-      aria-label="Play"
-      className={cn(cardShell, "play-card relative flex flex-col")}
-      style={wide ? { gridColumn: `span ${span}` } : undefined}
-    >
+    <section aria-label="Play" className={cn(cardShell, "play-card relative flex flex-col")}>
       {gear}
       {wide ? (
         <div

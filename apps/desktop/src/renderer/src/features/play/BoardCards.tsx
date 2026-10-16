@@ -298,12 +298,10 @@ export function PuzzleOfTheDayCard({
  * there (fillerCaption). The knights scale down with the card (one column in a small window).
  */
 export function FillerCard({
-  span,
   firstRun,
   puzzleDatabase,
   onOpenDatabases
 }: {
-  span: number;
   firstRun: boolean;
   puzzleDatabase: boolean;
   onOpenDatabases: () => void;
@@ -315,7 +313,6 @@ export function FillerCard({
         cardShell,
         "flex items-center justify-center px-6 py-4 [container-type:inline-size]"
       )}
-      style={{ gridColumn: `span ${span}` }}
     >
       <div className="flex flex-col items-center gap-3.5 text-center">
         <PiecePair piece="knight" pieceClassName="size-[min(8.25rem,44cqw)]" gapClassName="gap-2" />

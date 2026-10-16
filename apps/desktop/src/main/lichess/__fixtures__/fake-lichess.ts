@@ -63,7 +63,12 @@ export function fakeFetch(routes: Partial<Record<string, Handler>>) {
       method: init.method ?? "GET",
       headers: Object.fromEntries(new Headers(init.headers).entries()),
       // Lichess requests send form bodies (URLSearchParams) or none.
-      body: init.body instanceof URLSearchParams ? init.body.toString() : "",
+      body:
+        init.body instanceof URLSearchParams
+          ? init.body.toString()
+          : typeof init.body === "string"
+            ? init.body
+            : "",
       signal: init.signal ?? null
     };
     requests.push(request);

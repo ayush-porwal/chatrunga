@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query";
+import { useLongHidden } from "@/lib/use-long-hidden";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useBroadcastStore } from "../stores/broadcast-store";
 
@@ -45,15 +46,20 @@ export function useBroadcastSearchQuery(query: string) {
   });
 }
 
+/** How often a tournament with rounds still to finish is read again while shown. */
+const TOURNAMENT_REFRESH_MS = 2 * 60_000;
+
 export function useBroadcastTournamentQuery(tourId: string | null) {
   return useQuery({
     queryKey: keys.tournament(tourId ?? ""),
     queryFn: () => requireApi().tournament(tourId ?? ""),
     enabled: Boolean(tourId),
-    staleTime: 2 * 60_000
+    staleTime: 2 * 60_000,
+    // Read again now and then while rounds are still to finish (one ends, the next starts).
+    refetchInterval: (query) =>
+      query.state.data?.rounds.some((round) => !round.finished) ? TOURNAMENT_REFRESH_MS : false
   });
 }
-
 /** A round's boards as they stood when read (prefetching uses the same options). */
 export function roundQueryOptions(roundId: string) {
   return queryOptions({
@@ -108,23 +114,43 @@ export function useBroadcastEventSubscription() {
   );
 }
 
-/** Keeps the round's live stream open while mounted (the main process shares it between watchers). */
-export function useRoundStream(roundId: string | null) {
+/** How long a hidden window keeps its live streams (a quick switch away doesn't drop them). */
+const HIDDEN_GRACE_MS = 60_000;
+
+/**
+ * Keeps the rounds' live streams open while mounted (the main process shares each between its
+ * watchers). Unless `whileHidden`, they close once the window has been hidden a minute, and open
+ * again (every game sent anew) when it shows: nobody is looking, and Lichess's limits are shared.
+ */
+export function useRoundStreams(
+  roundIds: readonly string[],
+  { whileHidden = false }: { whileHidden?: boolean } = {}
+) {
+  const longHidden = useLongHidden(HIDDEN_GRACE_MS);
+  const watched = longHidden && !whileHidden ? "" : [...new Set(roundIds)].sort().join(" ");
   useEffect(() => {
     const api = window.chaturanga?.broadcasts;
-    if (!api || !roundId) return;
+    if (!api || !watched) return;
+    const ids = watched.split(" ");
     let mounted = true;
-    // A watch starts clean: the main process says if its stream (still) has trouble.
-    useBroadcastStore.getState().setConnection(roundId, null);
-    api.watchRound(roundId).catch((error: unknown) => {
-      if (!mounted) return;
-      useBroadcastStore
-        .getState()
-        .setConnection(roundId, { error: ipcErrorMessage(error), retrying: false });
-    });
+    for (const roundId of ids) {
+      // A watch starts clean: the main process says if its stream (still) has trouble.
+      useBroadcastStore.getState().setConnection(roundId, null);
+      api.watchRound(roundId).catch((error: unknown) => {
+        if (!mounted) return;
+        useBroadcastStore
+          .getState()
+          .setConnection(roundId, { error: ipcErrorMessage(error), retrying: false });
+      });
+    }
     return () => {
       mounted = false;
-      api.unwatchRound(roundId).catch(() => undefined);
+      for (const roundId of ids) api.unwatchRound(roundId).catch(() => undefined);
     };
-  }, [roundId]);
+  }, [watched]);
+}
+
+/** Keeps one round's live stream open while mounted (see useRoundStreams). */
+export function useRoundStream(roundId: string | null) {
+  useRoundStreams(roundId ? [roundId] : []);
 }

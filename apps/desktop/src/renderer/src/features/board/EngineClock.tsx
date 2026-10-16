@@ -4,7 +4,7 @@ import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display"
 import { clockNow, remainingClockMs, useGameStore } from "../../stores/game-store";
 import { ClockFace } from "./PlayerIdentity";
 
-/** Under this much time the clock turns red, shows tenths and pulses while it runs. */
+/** Under this much time the clock turns red and shows tenths. */
 const LOW_TIME_MS = 20_000;
 const TENTHS_BELOW_MS = 10_000;
 

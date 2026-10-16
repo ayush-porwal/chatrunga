@@ -57,6 +57,7 @@ export function captureBoard(
   const follow = useBroadcastStore.getState().follow;
   return {
     gameId: game.gameId,
+    board: game.board,
     // Nothing to reload an unsaved game from: keep it whole.
     session: game.gameId ? null : game.toSession(),
     // An unchanged copy (Play from here, no move played yet) comes back unsaved too.

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { createGameFromFen, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import type { BroadcastLiveGame, BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
-import type { GameHeaders, GameSession } from "@chaturanga/shared/types/chess";
+import type { GameHeaders, GameSession, SaveGameInput } from "@chaturanga/shared/types/chess";
 import { useRoundStream } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
@@ -132,6 +132,26 @@ export function applyLiveGame(game: BroadcastLiveGame): void {
     merged.liveIds.every((id, index) => id === follow.liveIds[index]);
   if (!sameLine || game.result !== follow.result)
     useBroadcastStore.getState().patchFollow({ liveIds: merged.liveIds, result: game.result });
+}
+
+/**
+ * A library copy of the followed board as it stands (your moves included): a new game of its own,
+ * which the board's following never touches. Null when no broadcast game is followed here.
+ */
+export function followedCopy(): SaveGameInput | null {
+  const { follow } = useBroadcastStore.getState();
+  const state = useGameStore.getState();
+  if (follow?.board !== state.board) return null;
+  return {
+    id: crypto.randomUUID(),
+    source: "pgn-import",
+    headers: state.headers,
+    rootFen: state.moveTree.at(0)?.fenAfter ?? state.currentFen,
+    currentFen: state.currentFen,
+    currentNodeId: state.currentNodeId,
+    pgn: exportGameToPgn({ headers: state.headers, moveTree: state.moveTree }),
+    moveTree: state.moveTree
+  };
 }
 
 /** Back to the live position, clearing every move the user played (undo puts them back). */

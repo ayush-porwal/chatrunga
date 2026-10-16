@@ -12,14 +12,25 @@ import { currentGame, type AppNavigation } from "./app-navigation";
 /** How long a click waits for the round's stream to send the game's moves. */
 const GAME_WAIT_MS = 15_000;
 
-/** The game as the round's stream last sent it, waiting a while for its first sending. */
-function streamedGame(gameId: string): Promise<StreamedGame | null> {
+/** How long a round's stream opened for a click stays watched: the follow's own watch takes over. */
+const HANDOVER_MS = 5000;
+
+/**
+ * The game as its round's stream last sent it, waiting a while for its first sending. A round no
+ * view streams (a crosstable game of an earlier round) is watched meanwhile.
+ */
+function streamedGame(gameId: string, roundId: string): Promise<StreamedGame | null> {
   const ready = useBroadcastStore.getState().games[gameId];
   if (ready) return Promise.resolve(ready);
+  const api = window.chaturanga?.broadcasts;
+  api?.watchRound(roundId).catch(() => undefined);
   return new Promise((resolve) => {
     const done = (game: StreamedGame | null) => {
       unsubscribe();
       clearTimeout(timer);
+      setTimeout(() => {
+        api?.unwatchRound(roundId).catch(() => undefined);
+      }, HANDOVER_MS);
       resolve(game);
     };
     const unsubscribe = useBroadcastStore.subscribe((state) => {
@@ -44,7 +55,7 @@ export function useBroadcastCommands(nav: AppNavigation) {
    */
   async function openBroadcastGame(detail: BroadcastRoundDetail, gameId: string) {
     const request = ++latestNavigation.current;
-    const game = await streamedGame(gameId);
+    const game = await streamedGame(gameId, detail.round.id);
     // Another navigation (a click elsewhere, Back) meanwhile: it wins.
     if (request !== latestNavigation.current) return;
     if (!game) {

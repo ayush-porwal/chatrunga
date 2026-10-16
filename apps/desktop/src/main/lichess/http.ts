@@ -83,6 +83,8 @@ export type LichessRequest = {
   method?: "GET" | "POST" | "DELETE";
   /** Sent as application/x-www-form-urlencoded; null / undefined fields are left out. */
   form?: Record<string, FormValue>;
+  /** Sent as text/plain (when there is no `form`). */
+  text?: string;
   accept?: string;
   signal?: AbortSignal;
   /** Explicit token (the OAuth flow, before it is saved); otherwise `getToken()`. */
@@ -127,10 +129,13 @@ export class LichessClient {
     const usesSavedToken = request.auth !== false && request.token === undefined;
     const sentToken = await this.tokenFor(request);
     if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
-    let body: URLSearchParams | undefined;
+    let body: URLSearchParams | string | undefined;
     if (request.form) {
       body = formBody(request.form);
       headers["Content-Type"] = "application/x-www-form-urlencoded";
+    } else if (request.text !== undefined) {
+      body = request.text;
+      headers["Content-Type"] = "text/plain";
     }
     let response: Response;
     try {

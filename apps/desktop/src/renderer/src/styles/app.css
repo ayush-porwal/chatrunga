@@ -209,11 +209,14 @@
 }
 
 /*
- * The pointer over everything clickable inside (buttons, links, options, pickers), for pages of
- * cards and rows that read as content until hovered (the broadcasts pages).
+ * The pointer over everything clickable (buttons, links, options, pickers), app-wide. In the base
+ * layer, so a utility (`cursor-grab`, `cursor-not-allowed`) still wins where one is set.
  */
-@utility pointer-cursors {
-  & :is(button, a[href], select, [role="option"]):not(:disabled, [aria-disabled="true"]) {
+@layer base {
+  :is(button, a[href], select, summary, [role="option"], [role="tab"]):not(
+    :disabled,
+    [aria-disabled="true"]
+  ) {
     cursor: pointer;
   }
 }

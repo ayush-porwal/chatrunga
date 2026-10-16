@@ -8,6 +8,7 @@ import {
   backToLive,
   broadcastSession,
   followBoard,
+  followedCopy,
   isFollowedBoard,
   undoBackToLive,
   type BroadcastGameRef
@@ -118,6 +119,16 @@ describe("following a broadcast game on the board", () => {
     undoBackToLive();
     expect(useGameStore.getState().moveTree).toHaveLength(6);
     expect(useBroadcastStore.getState().cleared).toBeNull();
+  });
+
+  it("copies the board for the library as a game of its own, the user's moves included", () => {
+    open(liveGame(MOVES));
+    expect(useGameStore.getState().makeUciMove("g1f3")).toBe(true);
+    const copy = followedCopy();
+    expect(copy).toMatchObject({ source: "pgn-import", headers: { white: "GM Carlsen" } });
+    expect(copy?.moveTree).toHaveLength(4);
+    expect(copy?.pgn).toContain("2. Nf3");
+    expect(copy?.id).not.toBe(useGameStore.getState().gameId);
   });
 
   it("records the result once the game ends, and stops with another board", () => {

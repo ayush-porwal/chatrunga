@@ -15,6 +15,7 @@ import {
 } from "../features/board/WorkspaceTabBar";
 import { MoveNavigation } from "../features/board/MoveNavigation";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
+import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import { BroadcastLivePanel } from "../features/broadcasts/BroadcastLivePanel";
 import { MoveList } from "../features/game/MoveList";
 import {
@@ -56,7 +57,8 @@ export const GameWorkspace = memo(function GameWorkspace({
   onStartAnalysis,
   onStopAnalysis,
   onOpenSettings,
-  onExportPgn
+  onExportPgn,
+  onOpenBroadcastGame
 }: {
   /** Library tab: open a saved game on the board. */
   onOpenGame: (id: string) => void;
@@ -68,6 +70,8 @@ export const GameWorkspace = memo(function GameWorkspace({
   onOpenSettings?: () => void;
   /** The Moves tab's Export PGN: the game with its analysis. */
   onExportPgn: () => void;
+  /** A followed broadcast's switcher: another game of its round on the board. */
+  onOpenBroadcastGame?: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   // The per-move parts (board, footer) subscribe on their own, so stepping through the game
   // re-renders them and not the whole workspace (tabs, panel, puzzle card).
@@ -102,7 +106,7 @@ export const GameWorkspace = memo(function GameWorkspace({
       {shownTab === "notation" ? (
         <div className="flex h-full min-h-0 flex-col">
           {/* A followed broadcast game: following live, or the way back to it. */}
-          <BroadcastLivePanel />
+          <BroadcastLivePanel onOpenGame={onOpenBroadcastGame} />
           {engineShown ? (
             <EngineStatusPanel
               onOpenSettings={onOpenSettings}
@@ -113,7 +117,9 @@ export const GameWorkspace = memo(function GameWorkspace({
           {/* A puzzle card taller than the panel (a short window, an explanation) scrolls with the
               moves rather than running under the footer. The tree's header sits right under the
               engine block. */}
+          {/* The part that gives the review charts their height when they are dragged taller. */}
           <div
+            data-panel-yields
             className={cn(
               "scroll-area flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3",
               (!engineShown || puzzlePanel) && "pt-3"

@@ -105,6 +105,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   private readonly client: LichessClient;
   /** The decrypted token, cached so each request doesn't go back to the keychain. */
   private token: string | null = null;
+  /** Whether the token last asked about may read studies (broadcastToken). */
+  private studyScope: { token: string; granted: boolean } | null = null;
   private connectController: AbortController | null = null;
   private eventStream: { controller: AbortController; opened: Promise<void> } | null = null;
   private seekController: AbortController | null = null;
@@ -618,6 +620,34 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     void this.readStatus()
       .then((status) => this.emitEvent({ type: "status", status }))
       .catch((error) => logger.error("lichess", "status read failed:", error));
+  }
+
+  /**
+   * The saved token when it may read studies (`study:read`: broadcasts are studies), else null.
+   * Lichess refuses a token without the scope rather than ignoring it, so one signed in before
+   * the app asked for it is never sent. Lichess is asked once per token (`/api/token/test`).
+   */
+  async broadcastToken(): Promise<string | null> {
+    const token = await this.getToken().catch(() => null);
+    if (!token) return null;
+    if (this.studyScope?.token !== token) {
+      const granted = await this.tokenHasScope(token, "study:read").catch(() => null);
+      // Unknown (Lichess unreachable): asked again next time.
+      if (granted === null) return null;
+      this.studyScope = { token, granted };
+    }
+    return this.studyScope.granted ? token : null;
+  }
+
+  private async tokenHasScope(token: string, scope: string): Promise<boolean> {
+    const body = await this.client.json("/api/token/test", {
+      method: "POST",
+      auth: false,
+      text: token
+    });
+    const entry = body[token];
+    if (!isRecord(entry) || typeof entry.scopes !== "string") return false;
+    return entry.scopes.split(",").includes(scope);
   }
 
   private async getToken(): Promise<string | null> {
