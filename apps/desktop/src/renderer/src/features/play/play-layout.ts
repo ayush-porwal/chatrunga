@@ -43,6 +43,37 @@ export function topRowSlots(cards: {
   return slots;
 }
 
+/** Columns of the top row in a narrow page: the Play card's, one between, the side column. */
+const NARROW_COLUMNS = 3;
+
+/** Where a top-row slot sits in a narrow page: its first column and span, and its grid rows. */
+export type NarrowPlacement = { column: number; span: number; row: string };
+
+/**
+ * The top row of a narrow page (play.css: three columns, the last the side column): the Play card
+ * keeps its preview-board layout in two columns when it had it, the board cards take a column
+ * each, and when there are more of them than columns the first two share one, one above the
+ * other. The filler takes the columns left (null: none are, it isn't shown).
+ */
+export function narrowPlacements(slots: readonly TopSlot[]): (NarrowPlacement | null)[] {
+  const play = slots.find((slot) => slot.kind === "play");
+  const playSpan = play ? Math.min(play.span, 2) : 1;
+  const free = NARROW_COLUMNS - playSpan;
+  const cards = slots.filter((slot) => slot.kind !== "play" && slot.kind !== "filler").length;
+  const stacked = cards > free;
+  // With two cards one above the other, everything else spans both rows.
+  const full = stacked ? "1 / span 2" : "1";
+  let card = 0;
+  return slots.map((slot) => {
+    if (slot.kind === "play") return { column: 1, span: playSpan, row: full };
+    if (slot.kind === "filler")
+      return cards < free ? { column: playSpan + 1 + cards, span: free - cards, row: full } : null;
+    const index = card++;
+    if (stacked && index < 2) return { column: playSpan + 1, span: 1, row: String(index + 1) };
+    return { column: playSpan + 1 + (stacked ? index - 1 : index), span: 1, row: full };
+  });
+}
+
 const LICHESS_MODES: readonly PlayOpponent[] = ["pool", "friend", "ai"];
 
 export function isLichessMode(mode: PlayOpponent): boolean {

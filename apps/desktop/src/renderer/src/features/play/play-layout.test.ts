@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import {
   isFirstRun,
+  narrowPlacements,
   playEngineOrder,
   resolvePlayMode,
   savePlaySettings,
@@ -52,6 +53,40 @@ describe("topRowSlots", () => {
       { kind: "play", span: 2 },
       { kind: "in-progress" },
       { kind: "filler", span: 1 }
+    ]);
+  });
+});
+
+describe("narrowPlacements", () => {
+  it("stacks two board cards in one column when they don't fit one to a column", () => {
+    // Play, then three cards in two free columns: the first two share the middle one.
+    expect(
+      narrowPlacements(topRowSlots({ inProgress: true, repertoire: true, puzzle: true }))
+    ).toStrictEqual([
+      { column: 1, span: 1, row: "1 / span 2" },
+      { column: 2, span: 1, row: "1" },
+      { column: 2, span: 1, row: "2" },
+      { column: 3, span: 1, row: "1 / span 2" }
+    ]);
+    // The wide Play card keeps two columns: both cards go to the side column.
+    expect(
+      narrowPlacements(topRowSlots({ inProgress: false, repertoire: true, puzzle: true }))
+    ).toStrictEqual([
+      { column: 1, span: 2, row: "1 / span 2" },
+      { column: 3, span: 1, row: "1" },
+      { column: 3, span: 1, row: "2" }
+    ]);
+  });
+
+  it("gives each card a column when they fit, the filler only the columns left", () => {
+    expect(
+      narrowPlacements(topRowSlots({ inProgress: false, repertoire: false, puzzle: true }))
+    ).toStrictEqual([{ column: 1, span: 2, row: "1" }, { column: 3, span: 1, row: "1" }, null]);
+    expect(
+      narrowPlacements(topRowSlots({ inProgress: false, repertoire: false, puzzle: false }))
+    ).toStrictEqual([
+      { column: 1, span: 2, row: "1" },
+      { column: 3, span: 1, row: "1" }
     ]);
   });
 });
