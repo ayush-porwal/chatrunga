@@ -165,3 +165,6 @@ export type BroadcastEvent =
       error: string | null;
       retrying: boolean;
     };
+
+/** A desktop notification about a broadcast game ("Carlsen – Gukesh: 1–0"). */
+export type BroadcastAlert = { title: string; body: string };

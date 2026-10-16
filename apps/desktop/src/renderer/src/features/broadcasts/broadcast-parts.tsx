@@ -1,8 +1,9 @@
 import { memo, useState, type ReactNode } from "react";
-import { ImageIcon } from "lucide-react";
+import { Bell, BellRing, ImageIcon } from "lucide-react";
 import type { BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { cn } from "@/lib/utils";
+import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { clockNowMs, clockText, isLive, LOW_TIME_MS, type BoardModel } from "./board-state";
 import { playerLabel, resultText } from "./broadcast-text";
@@ -152,17 +153,20 @@ function ClockBox({ board, color, now }: { board: BoardModel; color: Color; now:
 
 /**
  * A board of a round: both players with their clocks (the side to move's lit and running), the
- * position with its last move, and the board number with its state. Opens the game.
+ * position with its last move, and the board number with its state. Opens the game; a live one
+ * has a bell for a notification when it ends.
  */
 export const BoardCard = memo(function BoardCard({
   board,
   number,
+  roundId,
   now,
   highlighted,
   onOpen
 }: {
   board: BoardModel;
   number: number;
+  roundId: string;
   now: number;
   /** The board a search picked: outlined until another is opened. */
   highlighted: boolean;
@@ -174,29 +178,37 @@ export const BoardCard = memo(function BoardCard({
   const low =
     live && (clockNowMs(board, board.sideToMove, now) ?? Number.POSITIVE_INFINITY) < LOW_TIME_MS;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(board.id)}
-      // The arrow keys move between the grid's boards (Enter opens one).
-      onKeyDown={moveFocusInGrid}
-      aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
+    <div
+      data-grid-card
       className={cn(
-        "group grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 text-left outline-none transition-[border-color,box-shadow,translate] duration-standard ease-enter",
-        "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] focus-visible:ring-2 focus-visible:ring-accent/70 active:translate-y-0",
+        "group relative grid min-w-0 gap-1 rounded-[10px] border bg-surface p-2 transition-[border-color,box-shadow,translate] duration-standard ease-enter",
+        "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] has-[>button:active]:translate-y-0 has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-accent/70",
         highlighted ? "border-accent shadow-[0_0_0_3px_rgb(143_182_111/0.18)]" : "border-line"
       )}
     >
-      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
-        <PlayerLine player={board.black} dim={blackLost} size="sm" />
-        <ClockBox board={board} color="black" now={now} />
-      </span>
-      <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
-      <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
-        <PlayerLine player={board.white} dim={whiteLost} size="sm" />
-        <ClockBox board={board} color="white" now={now} />
-      </span>
-      <span className="flex h-5.5 items-center justify-between border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
+      {/* The whole card opens the game (the button's ::after covers it); the bell sits above. */}
+      <button
+        type="button"
+        onClick={() => onOpen(board.id)}
+        // The arrow keys move between the grid's boards (Enter opens one).
+        onKeyDown={moveFocusInGrid}
+        aria-label={`Board ${number}: ${playerLabel(board.white)} against ${playerLabel(board.black)}, ${resultText(board.result)}. Open in analysis.`}
+        className="grid min-w-0 gap-1 text-left outline-none after:absolute after:inset-0 after:rounded-[10px]"
+      >
+        <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+          <PlayerLine player={board.black} dim={blackLost} size="sm" />
+          <ClockBox board={board} color="black" now={now} />
+        </span>
+        <BoardThumbnail fen={board.fen} lastMove={board.lastMove} rounded="md" />
+        <span className="flex h-6.5 min-w-0 items-center justify-between gap-1.5">
+          <PlayerLine player={board.white} dim={whiteLost} size="sm" />
+          <ClockBox board={board} color="white" now={now} />
+        </span>
+      </button>
+      <span className="flex h-5.5 items-center justify-between gap-1.5 border-t border-line-subtle px-0.5 pt-0.5 text-2xs text-fg-subtle">
         <span>Board {number}</span>
+        <span className="flex-1" />
+        {live ? <AlertBell board={board} number={number} roundId={roundId} /> : null}
         {live ? (
           <span
             className={cn(
@@ -213,6 +225,48 @@ export const BoardCard = memo(function BoardCard({
           </span>
         )}
       </span>
-    </button>
+    </div>
   );
 });
+
+/** A live board's bell: a desktop notification when its game ends (on, it stays lit). */
+export function AlertBell({
+  board,
+  number,
+  roundId,
+  className
+}: {
+  board: Pick<BoardModel, "id" | "white" | "black">;
+  number?: number;
+  roundId: string;
+  className?: string;
+}) {
+  const on = useBroadcastStore((state) => state.alerts[board.id] !== undefined);
+  const setAlert = useBroadcastStore((state) => state.setAlert);
+  const what = number === undefined ? "this game" : `board ${number}`;
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={on ? `Don't notify me when ${what} ends` : `Notify me when ${what} ends`}
+      title={on ? "You'll be notified when it ends" : "Notify me when it ends"}
+      onClick={() =>
+        setAlert(
+          board.id,
+          on ? null : { roundId, white: playerLabel(board.white), black: playerLabel(board.black) }
+        )
+      }
+      className={cn(
+        "relative z-10 grid size-5 place-items-center rounded-[5px] outline-none transition-[color,opacity,background-color] hover:bg-control focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/70",
+        on ? "text-accent" : "text-fg-subtle opacity-0 group-hover:opacity-100 hover:text-fg",
+        className
+      )}
+    >
+      {on ? (
+        <BellRing aria-hidden="true" className="size-3.25" />
+      ) : (
+        <Bell aria-hidden="true" className="size-3.25" />
+      )}
+    </button>
+  );
+}

@@ -8,6 +8,7 @@ import {
   MapPin,
   RotateCcw,
   Search,
+  Star,
   Users
 } from "lucide-react";
 import type {
@@ -44,6 +45,7 @@ import {
   timeControlText,
   tourDates
 } from "./broadcast-text";
+import { useFollowedPlayers } from "./followed-players";
 import type { BroadcastScreen, TournamentTab } from "./navigation";
 
 type BoardFilter = "all" | "live" | "finished";
@@ -382,6 +384,7 @@ function BoardsTab({
               key={board.id}
               board={board}
               number={number}
+              roundId={detail.round.id}
               now={now}
               highlighted={board.id === focusGameId}
               onOpen={(gameId) => onOpenGame(detail, gameId)}
@@ -411,6 +414,7 @@ function PlayersTab({
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   const players = useBroadcastPlayersQuery(tourId);
+  const { followed, toggle: toggleFollow } = useFollowedPlayers();
   const [search, setSearch] = useState("");
   if (players.isError) {
     return (
@@ -480,6 +484,8 @@ function PlayersTab({
                     row={row}
                     rank={row.rank ?? index + 1}
                     game={<PlayerGame round={round} name={row.name} onOpenGame={onOpenGame} />}
+                    followed={followed.includes(row.name)}
+                    onToggleFollow={() => toggleFollow(row.name)}
                   />
                 ))}
           </tbody>
@@ -542,12 +548,17 @@ function diffTone(diff: number | null): string {
 function StandingRow({
   row,
   rank,
-  game
+  game,
+  followed,
+  onToggleFollow
 }: {
   row: BroadcastStanding;
   rank: number;
   /** The player's game in the round shown, if any. */
   game: ReactNode;
+  /** Their games lead the Broadcasts page. */
+  followed: boolean;
+  onToggleFollow: () => void;
 }) {
   const diff = row.ratingDiff;
   return (
@@ -555,6 +566,19 @@ function StandingRow({
       <td className="pl-4 text-fg-subtle tabular-nums">{rank}</td>
       <td>
         <span className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={followed}
+            aria-label={followed ? `Unfollow ${row.name}` : `Follow ${row.name}`}
+            title={followed ? "Following: their games lead the Broadcasts page" : "Follow"}
+            onClick={onToggleFollow}
+            className={cn(
+              "-ml-1 grid size-6 place-items-center rounded-md outline-none transition-colors hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/70",
+              followed ? "text-warn" : "text-fg-subtle hover:text-fg"
+            )}
+          >
+            <Star aria-hidden="true" className={cn("size-3.5", followed && "fill-current")} />
+          </button>
           {row.title ? <span className="text-2xs font-semibold text-warn">{row.title}</span> : null}
           <span className="font-semibold text-fg">{row.name}</span>
         </span>

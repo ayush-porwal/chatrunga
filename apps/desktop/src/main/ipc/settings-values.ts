@@ -98,6 +98,7 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   engineThreads: nullable(number(1, 1024, true)),
   engineHashMb: number(ENGINE_HASH_MB_RANGE.min, ENGINE_HASH_MB_RANGE.max, true),
   recentFilePaths: list(text(4096), 50),
+  followedBroadcastPlayers: list(text(200), 200),
   updatesAutoDownload: bool,
   usageAnalyticsEnabled: bool,
   lc0AutoDetect: bool,

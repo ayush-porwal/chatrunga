@@ -30,6 +30,7 @@ import {
   type HubSections
 } from "./broadcast-text";
 import { BroadcastSearch } from "./BroadcastSearch";
+import { FollowedGames } from "./FollowedGames";
 import type { TournamentTarget } from "./navigation";
 
 /** Lichess's broadcast calendar (every upcoming event, beyond the few listed here). */
@@ -66,6 +67,11 @@ export function BroadcastsPage({
   const top = useBroadcastTopQuery();
   const filter = useBroadcastStore((state) => state.hubFilter);
   const sections = top.data ? filterHub(hubSections(top.data), filter) : null;
+  // The rounds the live cards read: search and "Your players" use them, at no request of their own.
+  const previewedRoundIds =
+    sections?.live
+      .slice(0, PREVIEWED_LIVE)
+      .flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? [];
   // Skeletons only while loading: after a failure the notice above says why.
   const loading = !sections && !top.isError;
   const open = (listing: BroadcastListing) =>
@@ -81,18 +87,11 @@ export function BroadcastsPage({
       <h1 className="sr-only">Broadcasts</h1>
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <BroadcastSearch
-            liveRoundIds={
-              // The rounds the live cards already read (no request of the search's own).
-              sections?.live
-                .slice(0, PREVIEWED_LIVE)
-                .flatMap((listing) => (listing.round ? [listing.round.id] : [])) ?? []
-            }
-            onOpen={onOpenTournament}
-          />
+          <BroadcastSearch liveRoundIds={previewedRoundIds} onOpen={onOpenTournament} />
         </div>
         <HubFilters filter={filter} />
       </div>
+      <FollowedGames roundIds={previewedRoundIds} onOpen={onOpenTournament} />
       {top.isError ? (
         <Notice
           tone="danger"

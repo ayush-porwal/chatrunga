@@ -1,6 +1,7 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain, Notification } from "electron";
+import type { BroadcastAlert } from "@chaturanga/shared/types/broadcast";
 import { broadcast } from "../ipc/broadcast";
-import { asString, fail } from "../ipc/fields";
+import { asObject, asString, fail } from "../ipc/fields";
 import { BroadcastService } from "./broadcast-service";
 import { BROADCAST_ID } from "./normalize";
 
@@ -31,6 +32,24 @@ function searchQuery(value: unknown): string {
   return query;
 }
 
+function broadcastAlert(value: unknown): BroadcastAlert {
+  const alert = asObject(value, "alert");
+  return { title: asString(alert.title, "title", 120), body: asString(alert.body, "body", 300) };
+}
+
+/** Shows `alert` as a desktop notification; clicking it brings the window to the front. */
+function notify(alert: BroadcastAlert): void {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({ title: alert.title, body: alert.body, silent: false });
+  notification.on("click", () => {
+    const window = BrowserWindow.getAllWindows().at(0);
+    if (!window) return;
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  });
+  notification.show();
+}
+
 /** Lichess broadcasts (public data, no account). Live games go out on `broadcast:event`. */
 export function registerBroadcastIpc(): void {
   const broadcasts = getBroadcastService();
@@ -54,6 +73,9 @@ export function registerBroadcastIpc(): void {
   ipcMain.handle("broadcasts:unwatchRound", (_event, id: unknown) =>
     broadcasts.unwatchRound(broadcastId(id, "round id"))
   );
+  ipcMain.handle("broadcasts:notify", (_event, alert: unknown) => {
+    notify(broadcastAlert(alert));
+  });
 }
 
 /** App quit: closes the round streams, if any were opened. */

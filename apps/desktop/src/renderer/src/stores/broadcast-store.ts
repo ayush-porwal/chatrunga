@@ -29,6 +29,9 @@ export type BroadcastFollow = {
   result: BroadcastResult;
 };
 
+/** A game you asked to hear about when it ends (a desktop notification), with its players. */
+export type GameAlert = { roundId: string; white: string; black: string };
+
 /** What "Back to live" cleared, kept for its undo (on the board it was cleared on). */
 type ClearedMoves = { board: number; removed: MoveNode[] };
 
@@ -40,6 +43,8 @@ type BroadcastStore = {
   cleared: ClearedMoves | null;
   /** The hub's filter, kept while the app runs (into a tournament and back). */
   hubFilter: HubFilter;
+  /** The games to notify about when they end, by game id (while the app runs). */
+  alerts: Partial<Record<string, GameAlert>>;
   receiveGame: (game: BroadcastLiveGame) => void;
   /**
    * When a streamed game's last move was played, from the round summary's think time (the stream
@@ -51,6 +56,8 @@ type BroadcastStore = {
   patchFollow: (patch: Partial<Omit<BroadcastFollow, "board">>) => void;
   setCleared: (cleared: ClearedMoves | null) => void;
   setHubFilter: (filter: HubFilter) => void;
+  /** Asks for an alert when the game ends (`alert`), or drops it (null). */
+  setAlert: (gameId: string, alert: GameAlert | null) => void;
 };
 
 export const useBroadcastStore = create<BroadcastStore>((set) => ({
@@ -59,6 +66,7 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   follow: null,
   cleared: null,
   hubFilter: NO_HUB_FILTER,
+  alerts: {},
   receiveGame: (game) =>
     set((state) => {
       const previous = state.games[game.id];
@@ -83,5 +91,10 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   patchFollow: (patch) =>
     set((state) => (state.follow ? { follow: { ...state.follow, ...patch } } : state)),
   setCleared: (cleared) => set({ cleared }),
-  setHubFilter: (hubFilter) => set({ hubFilter })
+  setHubFilter: (hubFilter) => set({ hubFilter }),
+  setAlert: (gameId, alert) =>
+    set((state) => {
+      const { [gameId]: _dropped, ...rest } = state.alerts;
+      return { alerts: alert ? { ...rest, [gameId]: alert } : rest };
+    })
 }));

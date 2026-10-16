@@ -37,6 +37,7 @@ import type {
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
 import type {
+  BroadcastAlert,
   BroadcastEvent,
   BroadcastListing,
   BroadcastRoundDetail,
@@ -410,6 +411,11 @@ export type ChaturangaApi = {
      */
     watchRound(roundId: string): Promise<void>;
     unwatchRound(roundId: string): Promise<void>;
+    /**
+     * A desktop notification about a game you asked to hear about (it ended); clicking it brings
+     * the app to the front. Nothing where the system has no notifications.
+     */
+    notify(alert: BroadcastAlert): Promise<void>;
   };
 
   /**

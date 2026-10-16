@@ -10,7 +10,7 @@ import { useGameStore } from "../../stores/game-store";
 import { ClockFace } from "../board/PlayerIdentity";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { backToLive, undoBackToLive } from "./broadcast-follow";
-import { LiveDot } from "./broadcast-parts";
+import { AlertBell, LiveDot } from "./broadcast-parts";
 import { elapsedText, resultText } from "./broadcast-text";
 import { clockToMs, LOW_TIME_MS, useSecondClock } from "./board-state";
 import { ownMoveCount } from "./live-line";
@@ -78,7 +78,8 @@ export function BroadcastLivePanel() {
 /** On the live position: following it (how long the side to move has thought), or its result. */
 function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: string | null }) {
   const cleared = useBroadcastStore((state) => state.cleared);
-  const lastMoveAt = useBroadcastStore((state) => state.games[follow.gameId]?.lastMoveAt ?? null);
+  const game = useBroadcastStore((state) => state.games[follow.gameId]);
+  const lastMoveAt = game?.lastMoveAt ?? null;
   const connection = useBroadcastStore((state) => state.connections[follow.roundId] ?? null);
   const over = follow.result !== "*";
   return (
@@ -105,6 +106,9 @@ function FollowingStrip({ follow, tipFen }: { follow: BroadcastFollow; tipFen: s
         </span>
       ) : (
         <ThinkingTime lastMoveAt={lastMoveAt} fen={tipFen} />
+      )}
+      {over || !game ? null : (
+        <AlertBell board={game} roundId={follow.roundId} className="size-6 opacity-100" />
       )}
       {cleared ? (
         <Button size="xs" onClick={undoBackToLive}>

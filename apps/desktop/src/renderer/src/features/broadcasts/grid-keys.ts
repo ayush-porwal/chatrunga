@@ -28,17 +28,22 @@ export function gridStep(
 }
 
 /**
- * Moves the focus between the cards of the grid the event's card sits in (its siblings), with the
- * arrow keys, Home and End. The columns are counted from the cards on the first row.
+ * Moves the focus between the cards of the grid the event's element sits in (its card: the
+ * closest `[data-grid-card]`, or the element itself), with the arrow keys, Home and End. The
+ * columns are counted from the cards on the first row; a card's first button takes the focus.
  */
 export function moveFocusInGrid(event: KeyboardEvent<HTMLElement>): void {
-  const grid = event.currentTarget.parentElement;
+  const card = event.currentTarget.closest<HTMLElement>("[data-grid-card]") ?? event.currentTarget;
+  const grid = card.parentElement;
   if (!grid) return;
   const cards = [...grid.children].filter((child) => child instanceof HTMLElement);
   const top = cards.at(0)?.offsetTop;
-  const columns = cards.filter((card) => card.offsetTop === top).length;
-  const next = gridStep(event.key, cards.indexOf(event.currentTarget), cards.length, columns);
+  const columns = cards.filter((item) => item.offsetTop === top).length;
+  const next = gridStep(event.key, cards.indexOf(card), cards.length, columns);
   if (next === null) return;
+  const target = cards[next];
+  const focusable = target.matches("button") ? target : target.querySelector("button");
+  if (!focusable) return;
   event.preventDefault();
-  cards[next]?.focus();
+  focusable.focus();
 }
