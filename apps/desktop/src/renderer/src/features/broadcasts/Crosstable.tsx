@@ -26,13 +26,17 @@ export function Crosstable({
   rounds: readonly BroadcastRound[];
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
-  const details = useQueries({
+  const reads = useQueries({
     queries: rounds.map((round) => ({
       ...roundQueryOptions(round.id),
       staleTime: round.finished ? Number.POSITIVE_INFINITY : LIVE_ROUND_STALE_MS
     })),
-    combine: (results) => results.map((result) => result.data ?? null)
+    combine: (results) => ({
+      details: results.map((result) => result.data ?? null),
+      failed: results.map((result) => result.isError)
+    })
   });
+  const { details, failed } = reads;
   const rows = crosstable(standings, details);
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface">
@@ -79,7 +83,11 @@ export function Crosstable({
                 const detail = details[index];
                 return (
                   <td key={rounds[index]?.id ?? index} className="text-center">
-                    {detail === null ? (
+                    {detail === null && failed[index] ? (
+                      <span className="text-fg-subtle" title="Couldn't load this round">
+                        ?
+                      </span>
+                    ) : detail === null ? (
                       <Skeleton className="mx-auto h-3 w-8" />
                     ) : cell ? (
                       <CrossCellButton
