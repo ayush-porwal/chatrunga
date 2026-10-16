@@ -46,15 +46,20 @@ export function useBroadcastSearchQuery(query: string) {
   });
 }
 
+/** How often a tournament with rounds still to finish is read again while shown. */
+const TOURNAMENT_REFRESH_MS = 2 * 60_000;
+
 export function useBroadcastTournamentQuery(tourId: string | null) {
   return useQuery({
     queryKey: keys.tournament(tourId ?? ""),
     queryFn: () => requireApi().tournament(tourId ?? ""),
     enabled: Boolean(tourId),
-    staleTime: 2 * 60_000
+    staleTime: 2 * 60_000,
+    // Read again now and then while rounds are still to finish (one ends, the next starts).
+    refetchInterval: (query) =>
+      query.state.data?.rounds.some((round) => !round.finished) ? TOURNAMENT_REFRESH_MS : false
   });
 }
-
 /** A round's boards as they stood when read (prefetching uses the same options). */
 export function roundQueryOptions(roundId: string) {
   return queryOptions({

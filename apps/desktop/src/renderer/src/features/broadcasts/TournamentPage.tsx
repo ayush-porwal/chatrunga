@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -41,10 +41,13 @@ import { BoardCard, LiveBadge, LiveDot, TourImage } from "./broadcast-parts";
 import {
   elapsedText,
   nameMatches,
+  roundAfter,
   roundStatus,
+  startsText,
   timeControlText,
   tourDates
 } from "./broadcast-text";
+import { Crosstable } from "./Crosstable";
 import { useFollowedPlayers } from "./followed-players";
 import type { BroadcastScreen, TournamentTab } from "./navigation";
 
@@ -60,6 +63,62 @@ export function shownRoundId(
   if (defaultRoundId) return defaultRoundId;
   const started = rounds.filter((round) => round.ongoing || round.finished);
   return started.at(-1)?.id ?? rounds.at(0)?.id ?? null;
+}
+
+/**
+ * Watching a round live as it finishes, the page moves on to the next round when it starts. A
+ * round looked at after it finished stays put (the note offers the next one).
+ */
+function useFollowNextRound(
+  rounds: readonly BroadcastRound[],
+  roundId: string | null,
+  setRound: (id: string) => void
+): void {
+  const watchedLive = useRef<string | null>(null);
+  const ongoing = rounds.some((item) => item.id === roundId && item.ongoing);
+  const after = roundAfter(rounds, roundId);
+  const nextStarted = after?.started ? after.round.id : null;
+  useEffect(() => {
+    if (ongoing) {
+      watchedLive.current = roundId;
+      return;
+    }
+    if (nextStarted && watchedLive.current === roundId) {
+      watchedLive.current = null;
+      setRound(nextStarted);
+    }
+  }, [ongoing, nextStarted, roundId, setRound]);
+}
+
+/** After a finished round: the next one has started (and a way to it), or when it starts. */
+function NextRoundNote({
+  rounds,
+  roundId,
+  onGo
+}: {
+  rounds: readonly BroadcastRound[];
+  roundId: string | null;
+  onGo: (roundId: string) => void;
+}) {
+  const now = useMinuteClock();
+  const after = roundAfter(rounds, roundId);
+  if (!after) return null;
+  const { round, started } = after;
+  if (started)
+    return (
+      <Button size="xs" variant="primary" onClick={() => onGo(round.id)}>
+        <LiveDot pulse />
+        {round.name} has started
+        <ChevronRight />
+      </Button>
+    );
+  if (round.startsAt === null) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+      <Clock aria-hidden="true" className="size-3.5" />
+      {round.name}: {startsText(round.startsAt, now).toLowerCase()}
+    </span>
+  );
 }
 
 /**
@@ -102,6 +161,7 @@ export function TournamentPage({
     dateFromSummary(detail, gameId, round.dataUpdatedAt);
     onOpenGame(detail, gameId);
   };
+  useFollowNextRound(rounds, roundId, setRound);
 
   return (
     <div className={pageShell}>
@@ -127,6 +187,7 @@ export function TournamentPage({
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <RoundStepper rounds={rounds} roundId={roundId} onChange={setRound} />
+          <NextRoundNote rounds={rounds} roundId={roundId} onGo={setRound} />
           <SegmentedControl<TournamentTab>
             ariaLabel="Tournament"
             role="tablist"
@@ -147,7 +208,12 @@ export function TournamentPage({
             onOpenGame={openGame}
           />
         ) : screen.tab === "players" ? (
-          <PlayersTab tourId={screen.tourId} round={round.data ?? null} onOpenGame={openGame} />
+          <PlayersTab
+            tourId={screen.tourId}
+            round={round.data ?? null}
+            rounds={rounds.filter((item) => item.ongoing || item.finished)}
+            onOpenGame={openGame}
+          />
         ) : tour ? (
           <AboutTab tour={tour} />
         ) : null}
@@ -403,19 +469,22 @@ function BoardsTab({
   );
 }
 
-/** The standings, and each player's game in the round shown (it opens). */
+/** The standings (each player's game in the round shown opens), or the crosstable. */
 function PlayersTab({
   tourId,
   round,
+  rounds,
   onOpenGame
 }: {
   tourId: string;
   round: BroadcastRoundDetail | null;
+  /** The tournament's started rounds, in order (the crosstable's columns). */
+  rounds: readonly BroadcastRound[];
   onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
 }) {
   const players = useBroadcastPlayersQuery(tourId);
-  const { followed, toggle: toggleFollow } = useFollowedPlayers();
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<"standings" | "crosstable">("standings");
   if (players.isError) {
     return (
       <Notice tone="danger" title="Couldn't load the standings">
@@ -428,73 +497,115 @@ function PlayersTab({
   );
   return (
     <section aria-label="Standings" className="grid gap-3">
-      <label className="flex h-8 w-56 items-center gap-2 rounded-lg border border-line bg-surface-sunken px-2.5 text-fg-subtle focus-within:border-accent/60">
-        <Search aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="sr-only">Find a player</span>
-        <input
-          type="search"
-          value={search}
-          placeholder="Find a player"
-          onChange={(event) => setSearch(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
+      <div className="flex flex-wrap items-center gap-3">
+        <SegmentedControl<"standings" | "crosstable">
+          ariaLabel="Players view"
+          size="sm"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "standings", label: "Standings" },
+            { value: "crosstable", label: "Crosstable" }
+          ]}
         />
-      </label>
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table className="w-full min-w-[720px] border-collapse text-[0.8125rem]">
-          <thead>
-            <tr className="h-9 border-b border-line-subtle text-left text-xs text-fg-subtle">
-              <th scope="col" className="w-12 pl-4 font-normal">
-                #
-              </th>
-              <th scope="col" className="font-normal">
-                Player
-              </th>
-              <th scope="col" className="w-16 font-normal">
-                Fed
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Rating
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Points
-              </th>
-              <th scope="col" className="w-20 text-right font-normal">
-                Perf
-              </th>
-              <th scope="col" className="w-16 text-right font-normal">
-                ±
-              </th>
-              <th scope="col" className="w-72 pl-8 font-normal">
-                {round?.round.name ?? "This round"}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.isPending
-              ? Array.from({ length: 8 }, (_, key) => (
-                  <tr key={key} className="h-10 border-b border-line-subtle">
-                    <td colSpan={8} className="px-4">
-                      <Skeleton className="h-3 w-2/3" />
-                    </td>
-                  </tr>
-                ))
-              : rows.map((row, index) => (
-                  <StandingRow
-                    key={`${row.fideId ?? row.name}`}
-                    row={row}
-                    rank={row.rank ?? index + 1}
-                    game={<PlayerGame round={round} name={row.name} onOpenGame={onOpenGame} />}
-                    followed={followed.includes(row.name)}
-                    onToggleFollow={() => toggleFollow(row.name)}
-                  />
-                ))}
-          </tbody>
-        </table>
-        {players.data && !rows.length ? (
-          <EmptyState compact title="No players match." className="px-4" />
+        {view === "standings" ? (
+          <label className="flex h-8 w-56 items-center gap-2 rounded-lg border border-line bg-surface-sunken px-2.5 text-fg-subtle focus-within:border-accent/60">
+            <Search aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="sr-only">Find a player</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Find a player"
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-fg outline-none placeholder:text-fg-subtle"
+            />
+          </label>
         ) : null}
       </div>
+      {view === "crosstable" && players.data ? (
+        <Crosstable standings={players.data} rounds={rounds} onOpenGame={onOpenGame} />
+      ) : (
+        <StandingsTable
+          rows={rows}
+          loading={players.isPending}
+          empty={Boolean(players.data) && !rows.length}
+          round={round}
+          onOpenGame={onOpenGame}
+        />
+      )}
     </section>
+  );
+}
+
+function StandingsTable({
+  rows,
+  loading,
+  empty,
+  round,
+  onOpenGame
+}: {
+  rows: readonly BroadcastStanding[];
+  loading: boolean;
+  /** Players were read, but none matches the search. */
+  empty: boolean;
+  round: BroadcastRoundDetail | null;
+  onOpenGame: (detail: BroadcastRoundDetail, gameId: string) => void;
+}) {
+  const { followed, toggle: toggleFollow } = useFollowedPlayers();
+  return (
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <table className="w-full min-w-[720px] border-collapse text-[0.8125rem]">
+        <thead>
+          <tr className="h-9 border-b border-line-subtle text-left text-xs text-fg-subtle">
+            <th scope="col" className="w-12 pl-4 font-normal">
+              #
+            </th>
+            <th scope="col" className="font-normal">
+              Player
+            </th>
+            <th scope="col" className="w-16 font-normal">
+              Fed
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Rating
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Points
+            </th>
+            <th scope="col" className="w-20 text-right font-normal">
+              Perf
+            </th>
+            <th scope="col" className="w-16 text-right font-normal">
+              ±
+            </th>
+            <th scope="col" className="w-72 pl-8 font-normal">
+              {round?.round.name ?? "This round"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading
+            ? Array.from({ length: 8 }, (_, key) => (
+                <tr key={key} className="h-10 border-b border-line-subtle">
+                  <td colSpan={8} className="px-4">
+                    <Skeleton className="h-3 w-2/3" />
+                  </td>
+                </tr>
+              ))
+            : rows.map((row, index) => (
+                <StandingRow
+                  key={`${row.fideId ?? row.name}`}
+                  row={row}
+                  rank={row.rank ?? index + 1}
+                  game={<PlayerGame round={round} name={row.name} onOpenGame={onOpenGame} />}
+                  followed={followed.includes(row.name)}
+                  onToggleFollow={() => toggleFollow(row.name)}
+                />
+              ))}
+        </tbody>
+      </table>
+      {empty ? <EmptyState compact title="No players match." className="px-4" /> : null}
+    </div>
   );
 }
 

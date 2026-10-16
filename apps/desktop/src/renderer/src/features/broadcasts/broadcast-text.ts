@@ -4,6 +4,7 @@ import type {
   BroadcastPlayer,
   BroadcastResult,
   BroadcastRound,
+  BroadcastStanding,
   BroadcastTopPage,
   BroadcastTour
 } from "@chaturanga/shared/types/broadcast";
@@ -144,4 +145,36 @@ export function nameMatches(name: string, query: string): boolean {
     .split(/[\s,]+/)
     .filter(Boolean)
     .every((word) => haystack.includes(word));
+}
+
+/** A chess score: 8.5 → "8½", 0.5 → "½", 3 → "3". */
+export function scoreText(score: number): string {
+  const whole = Math.floor(score);
+  const half = score - whole >= 0.5;
+  return half ? `${whole || ""}½` : String(whole);
+}
+
+/** The first three of a tournament's standings (by rank, else by score), with their scores. */
+export function podium(
+  rows: readonly BroadcastStanding[]
+): { name: string; score: string | null }[] {
+  const order = (row: BroadcastStanding) => row.rank ?? Number.MAX_SAFE_INTEGER;
+  return [...rows]
+    .sort((a, b) => order(a) - order(b) || (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 3)
+    .map((row) => ({ name: row.name, score: row.score === null ? null : scoreText(row.score) }));
+}
+
+/**
+ * The round after `roundId` once that one is finished: started already, or still to start. Null
+ * while it is being played (or not started), or after the last round.
+ */
+export function roundAfter(
+  rounds: readonly BroadcastRound[],
+  roundId: string | null
+): { round: BroadcastRound; started: boolean } | null {
+  const index = rounds.findIndex((round) => round.id === roundId);
+  const next = index < 0 ? undefined : rounds[index + 1];
+  if (!rounds[index]?.finished || !next || next.finished) return null;
+  return { round: next, started: next.ongoing };
 }

@@ -9,6 +9,9 @@ import {
   filterHub,
   hubSections,
   NO_HUB_FILTER,
+  podium,
+  roundAfter,
+  scoreText,
   nameMatches,
   roundStatus,
   startsText,
@@ -58,6 +61,49 @@ const listing = (id: string, ongoing: boolean, startsAt: number | null): Broadca
 const at = (local: string) => new Date(local).getTime();
 
 describe("broadcast text", () => {
+  it("points past a finished round to the next, started or not", () => {
+    const rounds = [
+      { ...ROUND, id: "Round001", finished: true },
+      { ...ROUND, id: "Round002", ongoing: true },
+      { ...ROUND, id: "Round003" }
+    ];
+    expect(roundAfter(rounds, "Round001")).toStrictEqual({ round: rounds[1], started: true });
+    expect(roundAfter(rounds, "Round002")).toBeNull();
+    expect(roundAfter([rounds[0], rounds[2]], "Round001")).toStrictEqual({
+      round: rounds[2],
+      started: false
+    });
+    expect(roundAfter(rounds, "Round003")).toBeNull();
+  });
+
+  it("writes scores with halves, and puts the first three of the standings on the podium", () => {
+    expect([scoreText(8.5), scoreText(0.5), scoreText(3), scoreText(0)]).toStrictEqual([
+      "8½",
+      "½",
+      "3",
+      "0"
+    ]);
+    const row = (name: string, rank: number | null, score: number | null) => ({
+      name,
+      title: null,
+      rating: null,
+      federation: null,
+      fideId: null,
+      rank,
+      score,
+      played: null,
+      performance: null,
+      ratingDiff: null
+    });
+    expect(
+      podium([row("C", 3, 6), row("A", 1, 8.5), row("D", null, 9), row("B", 2, 7)])
+    ).toStrictEqual([
+      { name: "A", score: "8½" },
+      { name: "B", score: "7" },
+      { name: "C", score: "6" }
+    ]);
+  });
+
   it("keeps the events of one speed, or only the official ones", () => {
     const blitz = tour({ id: "Blitz001", info: { ...tour().info, fideTimeControl: "blitz" } });
     const official = tour({

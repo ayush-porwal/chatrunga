@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { CalendarDays, ChevronRight, Clock, MapPin, Radio, RotateCcw } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { CalendarDays, ChevronRight, Clock, MapPin, Radio, RotateCcw, Trophy } from "lucide-react";
 import type {
   BroadcastGame,
   BroadcastListing,
@@ -16,13 +16,18 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { sectionTitle } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
-import { useBroadcastRoundQuery, useBroadcastTopQuery } from "../../queries/broadcasts";
+import {
+  useBroadcastPlayersQuery,
+  useBroadcastRoundQuery,
+  useBroadcastTopQuery
+} from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { LiveBadge, PlayerLine, TourImage } from "./broadcast-parts";
 import {
   filterHub,
   hubSections,
+  podium,
   startsText,
   timeControlText,
   tourDates,
@@ -527,6 +532,10 @@ function LiveEventSkeleton() {
 
 function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen: () => void }) {
   const { tour } = listing;
+  // The standings are read once the card is pointed at (each is a request), then kept.
+  const [wanted, setWanted] = useState(false);
+  const standings = useBroadcastPlayersQuery(tour.id, wanted);
+  const top = standings.data ? podium(standings.data) : [];
   const meta = [timeControlText(tour)?.split(" · ")[0], tourDates(tour)]
     .filter(Boolean)
     .join(" · ");
@@ -534,6 +543,8 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
     <button
       type="button"
       onClick={onOpen}
+      onPointerEnter={() => setWanted(true)}
+      onFocus={() => setWanted(true)}
       className={cn(
         PAST_CARD_WIDTH,
         "group flex shrink-0 flex-col gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
@@ -545,12 +556,38 @@ function PastEventCard({ listing, onOpen }: { listing: BroadcastListing; onOpen:
           "aspect-[2/1] w-full rounded-lg ring-1 ring-transparent transition-shadow group-hover:ring-accent/60",
           zoomOnHover
         )}
-      />
+      >
+        {top.length ? (
+          // The podium, over the banner while the card is pointed at.
+          <span className="absolute inset-0 flex flex-col justify-end gap-0.5 bg-linear-to-t from-black/85 via-black/55 to-transparent px-2.5 pb-2 opacity-0 transition-opacity duration-standard group-hover:opacity-100 group-focus-visible:opacity-100">
+            {top.map((entry, index) => (
+              <span
+                key={entry.name}
+                className="flex items-center gap-1.5 text-xs text-white/90 [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]"
+              >
+                {index === 0 ? (
+                  <Trophy aria-hidden="true" className="size-3 shrink-0 text-warn" />
+                ) : (
+                  <span className="w-3 shrink-0 text-center text-2xs text-white/60">
+                    {index + 1}
+                  </span>
+                )}
+                <span className="truncate font-semibold">{entry.name}</span>
+                {entry.score === null ? null : (
+                  <span className="ml-auto shrink-0 tabular-nums text-white/75">{entry.score}</span>
+                )}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </TourImage>
       <span className="grid gap-0.5 px-0.5">
         <span className="truncate text-sm font-semibold text-fg-secondary transition-colors group-hover:text-fg">
           {tour.name}
         </span>
-        <span className="truncate text-xs text-fg-muted">{meta || tour.info.location || " "}</span>
+        <span className="truncate text-xs text-fg-muted">
+          {top[0] ? `Won by ${top[0].name}` : meta || tour.info.location || " "}
+        </span>
       </span>
     </button>
   );
