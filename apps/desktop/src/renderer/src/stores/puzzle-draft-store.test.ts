@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
-import {
-  DEFAULT_PUZZLE_FILTERS,
-  draftFromSessionConfig,
-  usePuzzleDraftStore
-} from "./puzzle-draft-store";
+import { DEFAULT_PUZZLE_FILTERS, usePuzzleDraftStore } from "./puzzle-draft-store";
 
 describe("puzzle draft store", () => {
   it("keeps the filters, and a reset keeps the chosen database", () => {
@@ -20,72 +15,5 @@ describe("puzzle draft store", () => {
       databaseId: "db1",
       ...DEFAULT_PUZZLE_FILTERS
     });
-  });
-
-  it("prefills from a running set's config, so Edit set reopens the same filters", () => {
-    const config: PuzzleSessionConfig = {
-      databaseId: "db2",
-      mode: "position-training",
-      lichess: {
-        ratingMin: 1000,
-        ratingMax: 1900,
-        popularityMin: 20,
-        lengths: ["short"],
-        themes: ["fork"],
-        openings: ["Ruy_Lopez"],
-        side: "white"
-      },
-      position: { difficultyMin: 2, difficultyMax: 3, tags: ["space"] }
-    };
-    const draft = draftFromSessionConfig(config);
-    expect(draft).toStrictEqual({
-      databaseId: "db2",
-      themes: ["fork"],
-      lengths: ["short"],
-      openings: ["Ruy_Lopez"],
-      side: "white",
-      ratingMin: 1000,
-      ratingMax: 1900,
-      difficulty: null,
-      popularityMin: 20,
-      difficultyMin: 2,
-      difficultyMax: 3,
-      positionTags: ["space"]
-    });
-    // A copy: editing the draft never changes the running set.
-    draft.positionTags.push("trading");
-    expect(config.position.tags).toStrictEqual(["space"]);
-    usePuzzleDraftStore.getState().update(draftFromSessionConfig(config));
-    expect(usePuzzleDraftStore.getState().draft).toMatchObject({
-      databaseId: "db2",
-      positionTags: ["space"],
-      difficultyMax: 3
-    });
-    expect(draftFromSessionConfig({ ...config, databaseId: null }).databaseId).toBe("");
-  });
-
-  it('round-trips "Around my rating", so Edit set keeps the difficulty instead of the range it gave', () => {
-    const config: PuzzleSessionConfig = {
-      databaseId: "db1",
-      mode: "lichess-puzzle",
-      difficulty: "harder",
-      lichess: {
-        ratingMin: 1650,
-        ratingMax: 1950,
-        popularityMin: 0,
-        lengths: [],
-        themes: [],
-        openings: [],
-        side: "any"
-      },
-      position: { difficultyMin: 1, difficultyMax: 4, tags: [] }
-    };
-    expect(draftFromSessionConfig(config)).toMatchObject({
-      difficulty: "harder",
-      ratingMin: 1650,
-      ratingMax: 1950
-    });
-    // A set from before the choice existed was a hand-picked range.
-    expect(draftFromSessionConfig({ ...config, difficulty: undefined }).difficulty).toBeNull();
   });
 });

@@ -414,7 +414,6 @@ export function App() {
         nextPending={nextPuzzle.isPending}
         onNextPuzzle={on.nextPuzzle}
         onPlayEngineFromHere={on.playEngineFromPuzzle}
-        onEditSet={on.editPuzzleSet}
         puzzleConfig={puzzleSession.config}
       />
     ),
@@ -423,7 +422,6 @@ export function App() {
       nextPuzzle.isPending,
       on.nextPuzzle,
       on.playEngineFromPuzzle,
-      on.editPuzzleSet,
       puzzleSession.config
     ]
   );

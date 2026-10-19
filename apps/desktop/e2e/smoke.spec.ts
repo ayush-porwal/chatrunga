@@ -161,8 +161,10 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
   await page.getByRole("button", { name: "Start puzzle set" }).click();
   const puzzle = page.getByRole("region", { name: "Puzzle" });
   const title = puzzle.getByRole("heading", { level: 2 });
+  const puzzleId = puzzle.getByText(/^Puzzle #/);
   // Every row a quick scan of the file's start can reach is `qA0000` (see the fixture).
-  await expect(title).toHaveText("Puzzle #qA0000", { timeout: 30_000 });
+  await expect(puzzleId).toHaveText("Puzzle #qA0000", { timeout: 30_000 });
+  await expect(title).toHaveText("White to move");
 
   // Two scans, both in puzzle-scan-worker.js: the quick one that answered the first puzzle, and
   // the whole-file one it started, which keeps a sample of every match in the file.
@@ -184,13 +186,21 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
   // the whole-file scan's sample, and is a `qB` row only that scan reached. (For the sample to hold
   // none, all 64 of its rows would have to come from the first sixth of the file: about 1 in 10^50.)
   await expect(puzzle).toContainText("0 of 1 move found");
+  // Showing the solution of an undecided puzzle fails it: it asks first, and Keep solving keeps it hidden.
+  await puzzle.getByRole("button", { name: "Show solution" }).click();
+  const confirm = page.getByRole("dialog", { name: "Show the solution?" });
+  await expect(confirm).toContainText("counts as failed");
+  await confirm.getByRole("button", { name: "Keep solving" }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(puzzle.getByRole("list", { name: "Solution moves" })).toHaveCount(0);
+  await expect(puzzle).not.toContainText("Failed");
   await clickSquare(page, "h5");
   await clickSquare(page, "f7");
   const next = page.getByRole("button", { name: "Next puzzle", exact: true });
   await expect(next).toBeVisible();
   await next.click();
-  await expect(title).toHaveText(/^Puzzle #qB\d{4}$/);
-  const id = (await title.textContent())?.replace("Puzzle #", "");
+  await expect(puzzleId).toHaveText(/^Puzzle #qB\d{4}$/);
+  const id = (await puzzleId.textContent())?.replace("Puzzle #", "");
   expect(whole?.ids).toContain(id);
 });
 

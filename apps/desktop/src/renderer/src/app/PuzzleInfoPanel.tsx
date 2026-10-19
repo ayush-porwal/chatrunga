@@ -11,11 +11,7 @@ import { cn } from "@/lib/utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { PuzzleExplanation } from "../features/puzzles/PuzzleExplanation";
 import { explainOutcome } from "../features/puzzles/puzzle-explanation";
-import {
-  formatPuzzleTag,
-  puzzleDatasetLabel,
-  puzzleSetSummary
-} from "../features/puzzles/puzzle-set";
+import { formatPuzzleTag, puzzleDatasetLabel } from "../features/puzzles/puzzle-set";
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
 import {
@@ -33,8 +29,6 @@ type PanelProps = {
   nextPending: boolean;
   onNextPuzzle: () => void;
   onPlayEngineFromHere: () => void;
-  /** Back to the Puzzles page with this set's filters, to change them and start a new set. */
-  onEditSet: () => void;
   puzzleConfig: PuzzleSessionConfig | null;
 };
 
@@ -85,7 +79,6 @@ function PuzzleCard({
   lastExpectedMove,
   nextError,
   nextPending,
-  onEditSet,
   onNextPuzzle,
   onPlayEngineFromHere,
   outcome,
@@ -173,16 +166,24 @@ function PuzzleCard({
 
       <PuzzleThemes puzzle={puzzle} outcome={outcome} />
 
-      <PuzzleSource puzzle={puzzle} puzzleConfig={puzzleConfig} onEditSet={onEditSet} />
+      <PuzzleSource puzzle={puzzle} puzzleConfig={puzzleConfig} />
     </section>
   );
 }
 
-/** The puzzle's number, with its rating and difficulty when the dataset has them. */
+/**
+ * Who is to move (the solver's side), the puzzle's number under it, and its rating and difficulty
+ * when the dataset has them.
+ */
 function PuzzleHeading({ puzzle }: { puzzle: PuzzleSample }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <h2 className={cn(sectionTitle, "truncate")}>Puzzle #{puzzle.id}</h2>
+      <div className="grid min-w-0 gap-0.5">
+        <h2 className={cn(sectionTitle, "truncate")}>
+          {puzzle.sideToMove === "white" ? "White" : "Black"} to move
+        </h2>
+        <p className="truncate text-2xs text-fg-subtle">Puzzle #{puzzle.id}</p>
+      </div>
       <div className="flex shrink-0 items-center gap-3 text-right">
         {puzzle.rating ? (
           <span className="grid gap-0.5">
@@ -269,32 +270,26 @@ function PuzzleThemes({ outcome, puzzle }: { outcome: PuzzleOutcome; puzzle: Puz
   );
 }
 
-/** Where the puzzle comes from: the set it was drawn from (to edit) and its source game. */
+/** Where the puzzle comes from: the dataset it was drawn from and its source game. */
 function PuzzleSource({
-  onEditSet,
   puzzle,
   puzzleConfig
-}: Pick<PanelProps, "onEditSet" | "puzzleConfig"> & { puzzle: PuzzleSample }) {
-  // Play's Puzzle of the day says so where the set is named (the set's filters draw the next ones).
+}: Pick<PanelProps, "puzzleConfig"> & { puzzle: PuzzleSample }) {
+  // Play's Puzzle of the day says so where the set is named.
   const ofTheDay = puzzleConfig?.puzzleOfTheDayId === puzzle.id;
   const setLine = puzzleConfig
     ? ofTheDay
       ? "Puzzle of the day"
-      : puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName))
+      : puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName)
     : null;
   if (!setLine && !puzzle.gameUrl) return null;
   return (
     <div className="grid gap-1.5">
       {setLine ? (
-        <div className="flex min-w-0 items-baseline justify-between gap-3">
-          <p className="min-w-0 text-xs leading-5 text-fg-muted">
-            {ofTheDay ? null : <span className="text-fg-subtle">Set: </span>}
-            {setLine}
-          </p>
-          <Button type="button" variant="link" size="xs" className="shrink-0" onClick={onEditSet}>
-            Edit set
-          </Button>
-        </div>
+        <p className="min-w-0 text-xs leading-5 text-fg-muted">
+          {ofTheDay ? null : <span className="text-fg-subtle">Set: </span>}
+          {setLine}
+        </p>
       ) : null}
       {puzzle.gameUrl ? (
         <a
