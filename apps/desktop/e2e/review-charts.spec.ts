@@ -170,8 +170,8 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await nxe5.hover();
   const tooltip = charts(page).locator("[data-chart-tooltip]");
   await expect(tooltip).toContainText("4. Nxe5 · Blunder");
-  await expect(tooltip).toContainText(/You \d+% · Opponent \d+%/);
-  await expect(tooltip).toContainText("0:06 spent");
+  await expect(tooltip).toContainText(/Your chances\s*\d+%\s*Opponent's\s*\d+%/);
+  await expect(tooltip).toContainText(/Time spent\s*0:06/);
   // The same move's bar on the time strip shows the same tooltip.
   await view(page, "times").locator('rect[data-ply="7"]').hover();
   await expect(tooltip).toContainText("4. Nxe5 · Blunder");

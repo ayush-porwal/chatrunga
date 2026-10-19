@@ -5,7 +5,8 @@ import type { MoveReview, RatingPrediction } from "@chaturanga/shared/types/engi
 import {
   buildReviewChartData,
   chartMark,
-  chartTooltipLines,
+  chartTooltip,
+  chartTooltipText,
   nearestPointIndex,
   type ChartPoint,
   type ReviewChartInput
@@ -93,10 +94,10 @@ describe("review chart data", () => {
       mover: "white"
     });
     expect(unreviewed).toMatchObject({ hasEvals: false, hasDifficulty: false, hasTimes: true });
-    expect(chartTooltipLines(unreviewed.points[7], "white", null)).toStrictEqual([
-      "4. Nxe5",
-      "0:10 spent"
-    ]);
+    expect(chartTooltip(unreviewed.points[7], "white", null)).toStrictEqual({
+      title: "4. Nxe5",
+      rows: [{ label: "Time spent", value: "0:10" }]
+    });
     // A review still running: the moves it has reached have evaluations, the rest wait.
     const running = buildReviewChartData({ ...input(trap), moves: trap.slice(0, 4) });
     expect(running.points[4].whiteWin).not.toBeNull();
@@ -133,19 +134,28 @@ describe("chart helpers", () => {
   };
 
   it("writes the tooltip from the reviewed side, leaving out what is unknown", () => {
-    expect(chartTooltipLines(point, "white", 1500)).toStrictEqual([
-      "52. Ne4 · Blunder",
-      "You 3% · Opponent 97%",
-      "12% at 1500 find the best move",
-      "0:43 spent"
-    ]);
+    const tooltip = chartTooltip(point, "white", 1500);
+    expect(tooltip).toStrictEqual({
+      title: "52. Ne4 · Blunder",
+      rows: [
+        { label: "Your chances", value: "3%" },
+        { label: "Opponent's", value: "97%" },
+        { label: "Best move at 1500", value: "12%" },
+        { label: "Time spent", value: "0:43" }
+      ]
+    });
+    expect(chartTooltipText(tooltip)).toBe(
+      "52. Ne4 · Blunder, Your chances 3%, Opponent's 97%, Best move at 1500 12%, Time spent 0:43"
+    );
     expect(
-      chartTooltipLines(
-        { ...point, annotation: null, bestChance: null, spentMs: null },
-        "black",
-        null
-      )
-    ).toStrictEqual(["52. Ne4", "You 97% · Opponent 3%"]);
+      chartTooltip({ ...point, annotation: null, bestChance: null, spentMs: null }, "black", null)
+    ).toStrictEqual({
+      title: "52. Ne4",
+      rows: [
+        { label: "Your chances", value: "97%" },
+        { label: "Opponent's", value: "3%" }
+      ]
+    });
   });
 
   it("colours every mark but Book", () => {
