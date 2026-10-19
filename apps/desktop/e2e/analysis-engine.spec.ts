@@ -204,3 +204,31 @@ test("an engine that dies during an engine game stops its clock and says so", as
     "true"
   );
 });
+
+test("an engine game in progress shows its opponent's row but none of its search until it is decided", async ({
+  launch,
+  profile
+}) => {
+  const log = join(profile, "fake-engine.log");
+  const { page } = await launch();
+  await skipWelcome(page);
+  // The fake answers every engine-game search with 1. Nf3 (a line scored +0.30): the engine is White.
+  await registerFakeEngine(page, log, "stockfish");
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Switch colours" }).click();
+  await page.getByRole("button", { name: "Start game", exact: true }).click();
+
+  const moves = page.getByRole("tree", { name: "Game moves" });
+  await expect(moves.getByRole("button", { name: "Nf3", exact: true })).toBeVisible({
+    timeout: 15_000
+  });
+  const panel = page.getByRole("region", { name: "Engine" });
+  await expect(panel.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
+  // Its score, best move and line would be outside help.
+  await expect(panel).not.toContainText(/Depth|Score|Best/);
+  await expect(panel.getByRole("button", { name: /^Go to / })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Resign" }).click();
+  // Decided, its Depth / Score / Best strip is back.
+  await expect(panel).toContainText(/Depth.*Score.*Best/);
+});

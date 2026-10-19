@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { analysisEngineFor, analysisLimitLabel } from "./analysis-engine";
-import { onPausedPosition, pausedStatusLabel, type PausedAnalysis } from "./live-analysis";
+import {
+  engineHolder,
+  onPausedPosition,
+  pausedStatusLabel,
+  type PausedAnalysis
+} from "./live-analysis";
 import { EngineAvatar } from "./EngineAvatar";
 import {
   EngineLines,
@@ -38,7 +43,7 @@ const goToLine: GoToLine = (target) => {
 export type EnginePanelPosition = LinesPosition & {
   /** Live analysis runs (not an engine game's opponent): Restart is offered. */
   analysing: boolean;
-  /** An engine game's opponent: its one line is shown. */
+  /** An engine game's opponent: its one line is shown once the game is decided. */
   engineGame: boolean;
 };
 
@@ -339,8 +344,9 @@ function StudyEngineWaiting({
  * status, Restart and the Analysis switch: live analysis on and off, the only Start / Stop for the
  * board's engine), then while it's on the Depth / Score / Best strip and the lines. Switched off
  * with lines found, it's paused: they stay as they were. Off, only the row shows, so the tree gets
- * the space. With no engine installed, or during a Lichess game, one compact row says so in the
- * engine row's place.
+ * the space. While an engine game is being played only the row shows (its opponent's score and
+ * line would be outside help). With no engine installed, or during a Lichess game, one compact
+ * row says so in the engine row's place.
  */
 export function EngineStatusPanel({
   onOpenSettings,
@@ -459,6 +465,8 @@ function BoardEngine({
   const analysisSettings = useAnalysisSettings();
   // The switch is off with nothing paused and no engine game holds the engine: only the row shows.
   const off = !analysing && !engineGame && !paused;
+  // An engine game still being played: its opponent's search is the answer, so none of it shows.
+  const gameOn = useGameStore((state) => engineHolder(state, false) === "engine-game");
   const engine = useRowEngine(off ? null : activeEngineId);
   const interactions = useLineInteractions(fen);
   const { primary, bestSan } = usePrincipalLine(fen, readout);
@@ -497,7 +505,7 @@ function BoardEngine({
           {error}
         </Notice>
       ) : null}
-      {off ? null : (
+      {off || gameOn ? null : (
         <div className={cn("grid gap-2.5", failed && "opacity-45")}>
           <EngineStats
             primary={primary}
