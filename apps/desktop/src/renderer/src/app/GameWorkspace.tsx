@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, type ReactNode } from "react";
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -35,6 +35,7 @@ import { hasMoves } from "../features/repertoire/add-from-game";
 import { ADD_NEEDS_SAVE, captureBoardSource } from "../features/repertoire/board-source";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
+import { useBoardSettingsStore } from "../stores/board-settings-store";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
@@ -95,6 +96,7 @@ export const GameWorkspace = memo(function GameWorkspace({
           panelId={panelId}
           tab={shownTab}
           withLibrary={puzzleTabs === "none"}
+          withExplanation={puzzleTabs !== "none"}
           libraryView={libraryView}
           onChange={onSideTabChange}
           onExportPgn={onExportPgn}
@@ -149,6 +151,7 @@ const PanelTabBar = memo(function PanelTabBar({
   panelId,
   tab,
   withLibrary,
+  withExplanation,
   libraryView,
   onChange,
   onExportPgn
@@ -157,6 +160,8 @@ const PanelTabBar = memo(function PanelTabBar({
   tab: SideTab;
   /** A puzzle has no Library. */
   withLibrary: boolean;
+  /** A puzzle: its explanation's settings join the analysis settings. */
+  withExplanation: boolean;
   libraryView: LibraryView;
   onChange: (tab: SideTab) => void;
   onExportPgn: () => void;
@@ -179,7 +184,7 @@ const PanelTabBar = memo(function PanelTabBar({
         tab === "notation" ? (
           <>
             <ExportPgnButton onClick={onExportPgn} />
-            <AnalysisSettingsButton />
+            <AnalysisSettingsButton withExplanation={withExplanation} />
           </>
         ) : (
           <LibraryActions view={libraryView} />
@@ -332,19 +337,31 @@ function AddToRepertoireButton() {
 
 const addToRepertoireButton = <AddToRepertoireButton />;
 const boardView = <BoardView />;
-/** Opens the live analysis settings (engine, lines, search limit, board display). */
-function AnalysisSettingsButton() {
-  const [open, setOpen] = useState(false);
+/**
+ * Opens the game view's settings: live analysis (engine, lines, search limit, board display) and,
+ * on a puzzle board, the explanation's (its engine and AI commentary). The puzzle card opens the
+ * same dialog (see the board settings store).
+ */
+function AnalysisSettingsButton({ withExplanation }: { withExplanation: boolean }) {
+  const openTab = useBoardSettingsStore((state) => state.openTab);
+  const { open, close } = useBoardSettingsStore.getState();
   return (
     <>
       <IconButton
         label="Analysis settings"
         icon={<Settings />}
         size="icon-xs"
-        onClick={() => setOpen(true)}
+        onClick={() => open("analysis")}
         className="shrink-0"
       />
-      {open ? <AnalysisSettingsDialog onClose={() => setOpen(false)} /> : null}
+      {openTab ? (
+        <AnalysisSettingsDialog
+          tab={openTab}
+          onTabChange={open}
+          withExplanation={withExplanation}
+          onClose={close}
+        />
+      ) : null}
     </>
   );
 }

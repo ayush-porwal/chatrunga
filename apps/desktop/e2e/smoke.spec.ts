@@ -198,6 +198,21 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
   await clickSquare(page, "f7");
   const next = page.getByRole("button", { name: "Next puzzle", exact: true });
   await expect(next).toBeVisible();
+  // One row: Next puzzle, then Play engine from here (off: the position is mate) and Explain with
+  // AI as icon buttons (Explain waits for an OpenRouter key, which this profile has none of).
+  await expect(puzzle.getByRole("button", { name: "Play engine from here" })).toBeDisabled();
+  await expect(puzzle.getByRole("button", { name: "Explain with AI" })).toBeDisabled();
+  // One settings dialog for the board: live analysis, and the explanation's engine and commentary.
+  await page.getByRole("button", { name: "Analysis settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings.getByRole("tab", { name: "Analysis" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await settings.getByRole("tab", { name: "Puzzle explanation" }).click();
+  await expect(settings).toContainText("Commentary");
+  await settings.getByRole("button", { name: "Done" }).click();
+  await expect(settings).toHaveCount(0);
   await next.click();
   await expect(puzzleId).toHaveText(/^Puzzle #qB\d{4}$/);
   const id = (await puzzleId.textContent())?.replace("Puzzle #", "");

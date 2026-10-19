@@ -3,6 +3,7 @@ import { ExternalLink, Loader2, Puzzle, Swords } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { positionStatus } from "@/lib/position-status";
@@ -114,6 +115,16 @@ function PuzzleCard({
   const solution = useMemo(() => solutionLine(puzzle), [puzzle]);
   // Solved or failed: the AI explanation is offered (never while pending).
   const explainKind = explainOutcome(outcome, firstWrongMove, broken);
+  const nextActions = (
+    <PuzzleNextActions
+      complete={complete}
+      broken={broken}
+      terminal={terminal}
+      nextPending={nextPending}
+      onNextPuzzle={onNextPuzzle}
+      onPlayEngineFromHere={onPlayEngineFromHere}
+    />
+  );
 
   return (
     <section className="grid shrink-0 gap-3 border-b border-line-subtle pb-3" aria-label="Puzzle">
@@ -137,24 +148,22 @@ function PuzzleCard({
       <PuzzleRatingLine />
 
       {complete || failed || broken ? (
-        <PuzzleNextActions
-          complete={complete}
-          broken={broken}
-          terminal={terminal}
-          nextError={nextError}
-          nextPending={nextPending}
-          onNextPuzzle={onNextPuzzle}
-          onPlayEngineFromHere={onPlayEngineFromHere}
-        />
-      ) : null}
-
-      {explainKind ? (
-        <PuzzleExplanation
-          puzzle={puzzle}
-          kind={explainKind}
-          wrong={firstWrongMove}
-          linkMoves={complete}
-        />
+        <div className="grid animate-rise-in gap-2">
+          {explainKind ? (
+            <PuzzleExplanation
+              puzzle={puzzle}
+              kind={explainKind}
+              wrong={firstWrongMove}
+              linkMoves={complete}
+              actions={nextActions}
+            />
+          ) : (
+            <div className="flex items-center gap-2">{nextActions}</div>
+          )}
+          {nextError ? (
+            <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice>
+          ) : null}
+        </div>
       ) : null}
 
       <PuzzleSolution
@@ -202,28 +211,30 @@ function PuzzleHeading({ puzzle }: { puzzle: PuzzleSample }) {
   );
 }
 
-/** What to do once the puzzle is over (or failed): the next one, or play the engine from here. */
+/**
+ * What to do once the puzzle is over (or failed), one row: Next puzzle, then Play engine from here
+ * (solved only) as an icon button. Explain with AI joins the row when it is offered.
+ */
 function PuzzleNextActions({
   broken,
   complete,
-  nextError,
   nextPending,
   onNextPuzzle,
   onPlayEngineFromHere,
   terminal
-}: Pick<PanelProps, "nextError" | "nextPending" | "onNextPuzzle" | "onPlayEngineFromHere"> & {
+}: Pick<PanelProps, "nextPending" | "onNextPuzzle" | "onPlayEngineFromHere"> & {
   broken: boolean;
   complete: boolean;
   terminal: boolean;
 }) {
   const over = complete || broken;
   return (
-    <div className="grid animate-rise-in gap-2">
+    <>
       {/* Finished or broken: on to the next one. Failed and unfinished: the next one is there to skip to. */}
       <Button
         type="button"
         variant={over ? "primary" : "outline"}
-        className={over ? "h-10" : undefined}
+        className="min-w-0 flex-1"
         disabled={nextPending}
         onClick={onNextPuzzle}
       >
@@ -231,25 +242,22 @@ function PuzzleNextActions({
         {nextPending ? "Finding the next puzzle…" : "Next puzzle"}
       </Button>
       {complete ? (
-        <Button
-          type="button"
+        <IconButton
+          // Disabled once the position is over (mate or stalemate): there is nothing to play.
+          label="Play engine from here"
+          icon={swordsIcon}
           variant="outline"
+          size="icon"
+          className="shrink-0"
           disabled={terminal}
           onClick={onPlayEngineFromHere}
-          title={
-            terminal ? "This position is already finished" : "Continue against the default engine"
-          }
-        >
-          <Swords />
-          Play engine from here
-        </Button>
+        />
       ) : null}
-      {nextError ? (
-        <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice>
-      ) : null}
-    </div>
+    </>
   );
 }
+
+const swordsIcon = <Swords />;
 
 function PuzzleThemes({ outcome, puzzle }: { outcome: PuzzleOutcome; puzzle: PuzzleSample }) {
   // A theme like "mate in 2" or "fork" gives the answer away, so the puzzle's own tags wait until
