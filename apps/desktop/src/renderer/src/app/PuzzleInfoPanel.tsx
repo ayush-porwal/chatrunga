@@ -243,8 +243,9 @@ function PuzzleNextActions({
       </Button>
       {complete ? (
         <IconButton
-          // Disabled once the position is over (mate or stalemate): there is nothing to play.
           label="Play engine from here"
+          // Over (mate or stalemate): nothing to play on, and the tooltip says so.
+          disabledReason="This position is already finished"
           icon={swordsIcon}
           variant="outline"
           size="icon"

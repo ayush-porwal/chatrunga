@@ -200,7 +200,11 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
   await expect(next).toBeVisible();
   // One row: Next puzzle, then Play engine from here (off: the position is mate) and Explain with
   // AI as icon buttons (Explain waits for an OpenRouter key, which this profile has none of).
-  await expect(puzzle.getByRole("button", { name: "Play engine from here" })).toBeDisabled();
+  const playEngine = puzzle.getByRole("button", { name: "Play engine from here" });
+  await expect(playEngine).toBeDisabled();
+  // Disabled, it still says why on hover.
+  await playEngine.hover();
+  await expect(page.getByRole("tooltip")).toHaveText("This position is already finished");
   await expect(puzzle.getByRole("button", { name: "Explain with AI" })).toBeDisabled();
   // One settings dialog for the board: live analysis, and the explanation's engine and commentary.
   await page.getByRole("button", { name: "Analysis settings", exact: true }).click();
