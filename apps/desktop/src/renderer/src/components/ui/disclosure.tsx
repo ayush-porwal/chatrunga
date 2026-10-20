@@ -21,6 +21,7 @@ import { usePresence } from "@/components/ui/use-presence";
 function Disclosure({
   title,
   summary,
+  open,
   defaultOpen = false,
   onOpenChange,
   variant = "inline",
@@ -29,6 +30,8 @@ function Disclosure({
   title: React.ReactNode;
   /** Short current-value summary shown on the right while collapsed. */
   summary?: React.ReactNode;
+  /** Open or closed by its owner (told of each toggle through `onOpenChange`), e.g. after a confirmation. */
+  open?: boolean;
   /** Start expanded (read on mount only), e.g. when the section needs the user's attention. */
   defaultOpen?: boolean;
   /** Told each time the user opens or closes it. */
@@ -38,7 +41,8 @@ function Disclosure({
   children: React.ReactNode;
 }) {
   const panel = variant === "panel";
-  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = React.useState(defaultOpen);
+  const isOpen = open ?? ownOpen;
   const contentId = React.useId();
   const { present } = usePresence(isOpen, motion.ms.standard);
   // The body mounts collapsed and expands on the next frame, so the grid rows have a start value.
@@ -59,7 +63,7 @@ function Disclosure({
         aria-expanded={isOpen}
         aria-controls={contentId}
         onClick={() => {
-          setIsOpen(!isOpen);
+          if (open === undefined) setOwnOpen(!isOpen);
           onOpenChange?.(!isOpen);
         }}
         className={cn(

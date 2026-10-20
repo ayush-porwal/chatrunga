@@ -3,10 +3,15 @@
  * game's phases and marked moves, the difficulty and move-time strips, the move axis, the cursor
  * lines and the hover tooltip. They share one geometry, so one ply lines up in every view.
  */
-import { memo } from "react";
+import { Fragment, memo } from "react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { MoveMarkGlyph } from "../board/MoveMarkGlyph";
-import { chartMark, type ChartPoint, type ReviewChartData } from "./review-charts";
+import {
+  chartMark,
+  type ChartPoint,
+  type ChartTooltipRow,
+  type ReviewChartData
+} from "./review-charts";
 import { STRIP_INSET, WIN_TOP } from "./review-chart-layout";
 import { annotationTone } from "@/lib/ui";
 
@@ -383,27 +388,32 @@ export const AxisLayer = memo(function AxisLayer({ scale }: { scale: Scale }) {
   );
 });
 
-/** The hovered move's tooltip, beside its line (to the left in the charts' right half). */
+/**
+ * The hovered move's tooltip, beside its line (to the left in the charts' right half): the move
+ * and its mark, then its details as a table, labels left and values right.
+ */
 export function ChartTooltip({
   point,
-  lines,
+  tooltip,
   x,
   width
 }: {
   point: ChartPoint;
-  lines: string[];
+  tooltip: { title: string; rows: ChartTooltipRow[] };
   x: number;
   width: number;
 }) {
   const left = x > width / 2;
-  const [title, ...rest] = lines;
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute top-4 z-10 grid max-w-56 gap-0.5 rounded-lg border border-line bg-surface-raised px-2 py-1.5 text-2xs text-fg-muted shadow-popover"
+      className="pointer-events-none absolute top-4 z-10 grid gap-1 rounded-lg border border-line bg-surface-raised px-2 py-1.5 text-2xs text-fg-muted shadow-popover"
       style={{
         left: x,
-        transform: left ? "translateX(calc(-100% - 10px))" : "translateX(10px)"
+        // Never past the charts' edges (they clip it), however wide its rows make it.
+        transform: left
+          ? `translateX(max(calc(-100% - 10px), ${-x}px))`
+          : `translateX(min(10px, calc(${width - x}px - 100%)))`
       }}
       data-chart-tooltip
     >
@@ -416,13 +426,18 @@ export function ChartTooltip({
             </g>
           </svg>
         ) : null}
-        {title}
+        {tooltip.title}
       </p>
-      {rest.map((line) => (
-        <p key={line} className="whitespace-nowrap">
-          {line}
-        </p>
-      ))}
+      {tooltip.rows.length ? (
+        <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 whitespace-nowrap">
+          {tooltip.rows.map((row) => (
+            <Fragment key={row.label}>
+              <dt>{row.label}</dt>
+              <dd className="text-right font-mono text-fg-secondary tabular-nums">{row.value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : null}
     </div>
   );
 }

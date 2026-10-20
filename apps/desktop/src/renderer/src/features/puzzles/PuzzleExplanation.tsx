@@ -1,12 +1,10 @@
-import { Fragment, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { KeyRound, Loader2, MessageSquareOff, RefreshCw, Settings, Sparkles } from "lucide-react";
 import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
 import {
@@ -15,11 +13,11 @@ import {
   useSettingsQuery,
   useUpdateSettingMutation
 } from "../../queries/api";
+import { useBoardSettingsStore } from "../../stores/board-settings-store";
 import { useGameStore } from "../../stores/game-store";
 import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import { tokenizeCommentary } from "../game-review/commentary-moves";
 import { MoveLink } from "../game-review/MoveLinks";
-import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
 import { useOpenSettings } from "../settings/settings-link";
 import { uciLineToSan } from "../game-review/review-utils";
 import { explainEngine, explanationKey } from "./puzzle-explanation";
@@ -31,18 +29,21 @@ import {
 } from "./puzzle-explanation-store";
 import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
-const settingsIcon = <Settings />;
+const sparklesIcon = <Sparkles />;
+const runningIcon = <Loader2 className="animate-spin" />;
 
 /**
- * "Explain with AI" in the puzzle card, once the puzzle is solved or failed: one button, then the
- * coach's explanation (headline and body) with Regenerate, and a gear for the engine and
- * commentary settings it shares with Game review.
+ * The puzzle card's actions once it is solved or failed (`actions`: Next puzzle, Play engine from
+ * here), with "Explain with AI" as the last icon button of the row; under the row, the coach's
+ * explanation (headline and body), its progress, or why it can't be asked. Its engine and
+ * commentary settings (shared with Game review) are in the Moves tab's settings dialog.
  */
 export function PuzzleExplanation({
   puzzle,
   kind,
   wrong,
-  linkMoves
+  linkMoves,
+  actions
 }: {
   puzzle: PuzzleSample;
   kind: PuzzleOutcomeKind;
@@ -50,13 +51,14 @@ export function PuzzleExplanation({
   wrong: PuzzleWrongMove | null;
   /** The solution is on the board's line: its moves in the text jump there. */
   linkMoves: boolean;
+  /** The row's other buttons, before Explain. */
+  actions: ReactNode;
 }) {
   const settingsQuery = useSettingsQuery();
   const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
   const update = useUpdateSettingMutation();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const key = explanationKey(puzzle, kind, wrong);
   const entry = usePuzzleExplanationStore((state) => state.entries[key]);
   const view = explainView({
@@ -81,47 +83,22 @@ export function PuzzleExplanation({
   );
   const explain = () =>
     void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
-  const openSettings = () => setSettingsOpen(true);
+  const openSettings = () => useBoardSettingsStore.getState().open("explanation");
   const openAppSettings = useOpenSettings();
-  const gear = (
-    <IconButton
-      label="Explanation settings"
-      icon={settingsIcon}
-      size="icon-sm"
-      onClick={openSettings}
-    />
-  );
+  const running = view.kind === "analysing" || view.kind === "writing";
+  // Asked again once there is an explanation (or an error); never while one is being written.
+  const askable =
+    view.kind === "idle" ? !view.disabled : view.kind === "ready" || view.kind === "error";
 
   const viewContent = () => {
     switch (view.kind) {
       case "idle":
-        return (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              disabled={view.disabled}
-              onClick={explain}
-            >
-              <Sparkles />
-              Explain with AI
-            </Button>
-            {gear}
-          </div>
-        );
+        return null;
       case "analysing":
       case "writing":
         return <ExplainProgress phase={view.kind} engineName={engine?.name} model={model} />;
       case "ready":
-        return (
-          <ExplanationCard
-            explanation={view.explanation}
-            line={proseLine}
-            onRegenerate={explain}
-            onOpenSettings={openSettings}
-          />
-        );
+        return <ExplanationCard explanation={view.explanation} line={proseLine} />;
       case "error":
         return (
           <ExplainError
@@ -139,37 +116,28 @@ export function PuzzleExplanation({
             // The key lives in app Settings → AI (every AI feature shares it).
             onAddKey={openAppSettings ? () => openAppSettings("ai") : openSettings}
             onTurnOn={() => update.mutate({ key: "reviewCommentaryEnabled", value: true })}
-            onOpenSettings={openSettings}
           />
         );
     }
   };
 
   return (
-    <div className="grid gap-2" aria-label="AI explanation" role="group">
-      {viewContent()}
-      {settingsOpen
-        ? createPortal(
-            <Dialog
-              title="Explanation settings"
-              description="Shared with Game review: the engine that analyses the puzzle and the AI that explains it."
-              onClose={() => setSettingsOpen(false)}
-              footer={
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setSettingsOpen(false)}
-                >
-                  Done
-                </Button>
-              }
-            >
-              <ReviewSettingsPanel settings={settings} />
-            </Dialog>,
-            document.body
-          )
-        : null}
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2">
+        {actions}
+        <IconButton
+          label={view.kind === "ready" ? "Explain again with AI" : "Explain with AI"}
+          icon={running ? runningIcon : sparklesIcon}
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          disabled={!askable}
+          onClick={explain}
+        />
+      </div>
+      <div className="grid gap-2 empty:hidden" aria-label="AI explanation" role="group">
+        {viewContent()}
+      </div>
     </div>
   );
 }
@@ -206,17 +174,13 @@ function ExplainProgress({
   );
 }
 
-/** The coach's explanation: its model, Regenerate and the settings, then the headline and text. */
+/** The coach's explanation: its model, then the headline and text. */
 function ExplanationCard({
   explanation,
-  line,
-  onRegenerate,
-  onOpenSettings
+  line
 }: {
   explanation: Extract<ExplainView, { kind: "ready" }>["explanation"];
   line: PuzzleProseLine | null;
-  onRegenerate: () => void;
-  onOpenSettings: () => void;
 }) {
   return (
     <article className="grid animate-rise-in gap-1.5 rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
@@ -228,13 +192,6 @@ function ExplanationCard({
         >
           {shortModelName(explanation.providerModel)}
         </span>
-        <IconButton label="Regenerate" icon={<RefreshCw />} size="icon-xs" onClick={onRegenerate} />
-        <IconButton
-          label="Explanation settings"
-          icon={settingsIcon}
-          size="icon-xs"
-          onClick={onOpenSettings}
-        />
       </div>
       {explanation.headline ? (
         <h3 className="font-serif text-base font-semibold leading-6 text-fg">
@@ -271,18 +228,10 @@ function ExplainError({
             Settings
           </Button>
         ) : (
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="outline" size="xs" onClick={onRetry}>
-              <RefreshCw />
-              Retry
-            </Button>
-            <IconButton
-              label="Explanation settings"
-              icon={settingsIcon}
-              size="icon-xs"
-              onClick={onOpenSettings}
-            />
-          </div>
+          <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+            <RefreshCw />
+            Retry
+          </Button>
         )
       }
     >
@@ -295,13 +244,11 @@ function ExplainError({
 function ExplainUnavailable({
   reason,
   onAddKey,
-  onTurnOn,
-  onOpenSettings
+  onTurnOn
 }: {
   reason: "no-key" | "off";
   onAddKey: () => void;
   onTurnOn: () => void;
-  onOpenSettings: () => void;
 }) {
   const noKey = reason === "no-key";
   return (
@@ -319,17 +266,9 @@ function ExplainUnavailable({
           Add API key
         </Button>
       ) : (
-        <>
-          <Button type="button" variant="outline" size="xs" onClick={onTurnOn}>
-            Turn on
-          </Button>
-          <IconButton
-            label="Explanation settings"
-            icon={settingsIcon}
-            size="icon-xs"
-            onClick={onOpenSettings}
-          />
-        </>
+        <Button type="button" variant="outline" size="xs" onClick={onTurnOn}>
+          Turn on
+        </Button>
       )}
     </div>
   );

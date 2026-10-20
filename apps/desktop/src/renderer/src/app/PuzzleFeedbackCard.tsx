@@ -47,11 +47,11 @@ export type PuzzleFeedbackState = {
   playerMoves: number;
 };
 
-type FeedbackCopy = { headline: string; detail: string; failedNote: string | null };
+type FeedbackCopy = { headline: string; detail: string | null; failedNote: string | null };
 
 function liveHeadline(kind: PuzzleFeedbackKind): string {
   if (kind === "correct") return "Correct";
-  return kind === "wrong" ? "Not quite" : "Your turn";
+  return kind === "wrong" ? "Not quite" : "Find the best move";
 }
 
 function failedDetail(afterWrongMove: boolean, finished: boolean): string {
@@ -60,13 +60,13 @@ function failedDetail(afterWrongMove: boolean, finished: boolean): string {
 }
 
 // The store's sentence repeats the headline for correct / solved; keep only what adds to it.
-function liveDetail(kind: PuzzleFeedbackKind, feedback: string | null): string {
-  if (kind === "idle") return "Find the best move.";
+function liveDetail(kind: PuzzleFeedbackKind, feedback: string | null): string | null {
+  if (kind === "idle") return null;
   if (kind === "correct") return feedback && feedback !== "Correct." ? feedback : "Keep going.";
   return feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.";
 }
 
-// Side to move is in the summary above the panel (and the mark's dot): the idle card just asks.
+// Side to move is the puzzle's heading (and the mark's dot): the idle card just asks.
 function feedbackCopy(state: PuzzleFeedbackState, settled: boolean): FeedbackCopy {
   const failed = state.outcome === "failed";
   if (state.kind === "broken") {
@@ -152,7 +152,7 @@ export function PuzzleFeedbackCard({
           >
             {headline}
           </p>
-          <p className="text-xs leading-5 text-fg-secondary">{detail}</p>
+          {detail ? <p className="text-xs leading-5 text-fg-secondary">{detail}</p> : null}
           {wrong && expectedSan ? (
             <span className="sr-only"> Expected move: {expectedSan}.</span>
           ) : null}

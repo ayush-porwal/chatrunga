@@ -159,24 +159,41 @@ export function nearestPointIndex(points: readonly Pick<ChartPoint, "ply">[], pl
   return low;
 }
 
+/** One row of the charts' tooltip: what it is, and its value. */
+export type ChartTooltipRow = { label: string; value: string };
+
 /**
- * The charts' tooltip for a point, one line each, leaving out what the review doesn't know:
- * "52. Ne4 · Blunder", "You 3% · Opponent 97%", "12% at 1500 find the best move", "0:43 spent".
+ * The charts' tooltip for a point: its move and mark ("52. Ne4 · Blunder"), then a row each for
+ * what the review knows of it: both sides' winning chances, how often players at the Maia model's
+ * rating find the best move, and the time spent.
  */
-export function chartTooltipLines(
+export function chartTooltip(
   point: ChartPoint,
   reviewedSide: Color,
   model: number | null
-): string[] {
-  const lines = [
-    point.annotation ? `${point.label} · ${annotationLabel(point.annotation)}` : point.label
-  ];
+): { title: string; rows: ChartTooltipRow[] } {
+  const title = point.annotation
+    ? `${point.label} · ${annotationLabel(point.annotation)}`
+    : point.label;
+  const rows: ChartTooltipRow[] = [];
   if (point.whiteWin !== null) {
     const you = Math.round(reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin);
-    lines.push(`You ${you}% · Opponent ${100 - you}%`);
+    rows.push(
+      { label: "Your chances", value: `${you}%` },
+      { label: "Opponent's", value: `${100 - you}%` }
+    );
   }
   if (point.bestChance !== null && model !== null)
-    lines.push(`${Math.round(point.bestChance * 100)}% at ${model} find the best move`);
-  if (point.spentMs !== null) lines.push(`${formatMillisecondsClock(point.spentMs)} spent`);
-  return lines;
+    rows.push({
+      label: `Best move at ${model}`,
+      value: `${Math.round(point.bestChance * 100)}%`
+    });
+  if (point.spentMs !== null)
+    rows.push({ label: "Time spent", value: formatMillisecondsClock(point.spentMs) });
+  return { title, rows };
+}
+
+/** The tooltip as one sentence, for screen readers: "52. Ne4 · Blunder, Your chances 3%, …". */
+export function chartTooltipText(tooltip: ReturnType<typeof chartTooltip>): string {
+  return [tooltip.title, ...tooltip.rows.map((row) => `${row.label} ${row.value}`)].join(", ");
 }

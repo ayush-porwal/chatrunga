@@ -15,7 +15,8 @@ import { useOpenSettings } from "../settings/settings-link";
 import { pickMaiaEngines } from "./review-engine-picker";
 import {
   buildReviewChartData,
-  chartTooltipLines,
+  chartTooltip,
+  chartTooltipText,
   nearestPointIndex,
   type ChartMainlineMove,
   type ChartPoint,
@@ -341,7 +342,7 @@ function ChartViews({
         </p>
         {focused && selected ? (
           <p aria-live="polite" className="sr-only">
-            {chartTooltipLines(selected, reviewedSide, data.model).join(", ")}
+            {chartTooltipText(chartTooltip(selected, reviewedSide, data.model))}
           </p>
         ) : null}
         {width > 0 ? (
@@ -378,7 +379,7 @@ function ChartViews({
         {hovered && width > 0 ? (
           <ChartTooltip
             point={hovered}
-            lines={chartTooltipLines(hovered, reviewedSide, data.model)}
+            tooltip={chartTooltip(hovered, reviewedSide, data.model)}
             x={scale.x(hovered.ply)}
             width={width}
           />

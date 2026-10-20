@@ -9,12 +9,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { SegmentedControl, tabPanelProps } from "@/components/ui/segmented-control";
 import { SettingsGroup, SettingsGroupRow, settingsRowSelect } from "@/components/ui/settings-group";
 import { fieldHint } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { BoardSettingsGroup } from "../board/BoardSettingsGroup";
+import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
+import type { BoardSettingsTab } from "../../stores/board-settings-store";
 import { ENGINE_PERFORMANCE_DESCRIPTION, EnginePerformanceRows } from "../settings/EngineSettings";
 import { useSetSetting } from "../settings/use-set-setting";
 import { analysisEngineFor } from "./analysis-engine";
@@ -34,29 +36,42 @@ const limitOptions: readonly { value: AnalysisLimit; label: string }[] = [
 /** Seconds per position offered for a timed search (Lichess and Chess.com offer similar steps). */
 const TIME_OPTIONS_SEC = [1, 2, 3, 5, 10, 15, 30, 60, 120, 300];
 
+const tabOptions: readonly { value: BoardSettingsTab; label: string }[] = [
+  { value: "analysis", label: "Analysis" },
+  { value: "explanation", label: "Puzzle explanation" }
+];
+
+const TAB_DESCRIPTIONS: Record<BoardSettingsTab, string> = {
+  analysis: "Changes apply right away; a running analysis restarts with them.",
+  explanation:
+    "Shared with Game review: the engine that analyses the puzzle and the AI that explains it."
+};
+
 /**
- * Live analysis settings, as Lichess and Chess.com offer them, in three groups of rows: Engine
- * (which engine, how many lines, how far to search: until stopped, a depth, or a time per
- * position), Board (the engine arrows and the evaluation bar, shared with Review settings) and
- * Performance (threads and memory). Changes apply at once: a running analysis restarts with them.
+ * The game view's settings, from the Moves tab's cog. On a puzzle board two tabs: Analysis, and
+ * the puzzle explanation's engine and AI commentary (Game review's settings); elsewhere only
+ * Analysis. Changes apply at once.
  */
-export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
-  const ids = useId();
+export function AnalysisSettingsDialog({
+  tab,
+  onTabChange,
+  withExplanation,
+  onClose
+}: {
+  tab: BoardSettingsTab;
+  onTabChange: (tab: BoardSettingsTab) => void;
+  /** A puzzle board: the explanation's settings get a tab of their own. */
+  withExplanation: boolean;
+  onClose: () => void;
+}) {
+  const panelId = useId();
   const settingsQuery = useSettingsQuery();
   const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
-  const engines = useEnginesQuery();
-  const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
-  const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);
-  const engine = usable.find((item) => item.id === engineId) ?? null;
-  const setSetting = useSetSetting();
-  const timeOptions = TIME_OPTIONS_SEC.includes(settings.analysisTimeSec)
-    ? TIME_OPTIONS_SEC
-    : [...TIME_OPTIONS_SEC, settings.analysisTimeSec].sort((a, b) => a - b);
-
+  const shown = withExplanation ? tab : "analysis";
   return (
     <Dialog
-      title="Analysis settings"
-      description="Changes apply right away; a running analysis restarts with them."
+      title={withExplanation ? "Settings" : "Analysis settings"}
+      description={TAB_DESCRIPTIONS[shown]}
       size="sm"
       onClose={onClose}
       bodyClassName="grid gap-3.5"
@@ -68,6 +83,48 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
         </div>
       }
     >
+      {withExplanation ? (
+        <SegmentedControl
+          ariaLabel="Settings"
+          role="tablist"
+          fullWidth
+          size="sm"
+          panelId={panelId}
+          value={shown}
+          onChange={onTabChange}
+          options={tabOptions}
+        />
+      ) : null}
+      <div {...(withExplanation ? tabPanelProps(panelId, shown) : {})} className="grid gap-3.5">
+        {shown === "analysis" ? (
+          <AnalysisSettingsGroups settings={settings} />
+        ) : (
+          <ReviewSettingsPanel settings={settings} />
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Live analysis settings, as Lichess and Chess.com offer them, in three groups of rows: Engine
+ * (which engine, how many lines, how far to search: until stopped, a depth, or a time per
+ * position), Board (the engine arrows and the evaluation bar, shared with Review settings) and
+ * Performance (threads and memory). A running analysis restarts with a change.
+ */
+function AnalysisSettingsGroups({ settings }: { settings: AppSettings }) {
+  const ids = useId();
+  const engines = useEnginesQuery();
+  const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
+  const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);
+  const engine = usable.find((item) => item.id === engineId) ?? null;
+  const setSetting = useSetSetting();
+  const timeOptions = TIME_OPTIONS_SEC.includes(settings.analysisTimeSec)
+    ? TIME_OPTIONS_SEC
+    : [...TIME_OPTIONS_SEC, settings.analysisTimeSec].sort((a, b) => a - b);
+
+  return (
+    <>
       <SettingsGroup title="Engine">
         <SettingsGroupRow
           label="Engine"
@@ -173,6 +230,6 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
           selectClassName={settingsRowSelect}
         />
       </SettingsGroup>
-    </Dialog>
+    </>
   );
 }

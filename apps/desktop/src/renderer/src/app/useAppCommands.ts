@@ -17,7 +17,7 @@ import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useLichessStore } from "../stores/lichess-store";
-import { draftFromSessionConfig, usePuzzleDraftStore } from "../stores/puzzle-draft-store";
+import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { currentGame, type AppNavigation } from "./app-navigation";
@@ -173,13 +173,6 @@ export function useAppCommands({
     ),
     nextPuzzle: useEventCallback(puzzles.loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(puzzles.playEngineFromCurrentPuzzlePosition),
-    // The puzzle card's "Edit set": the Puzzles page with the running set's filters, to start a new set.
-    editPuzzleSet: useEventCallback(() => {
-      const activePuzzleConfig = nav.puzzleSession.config;
-      if (activePuzzleConfig)
-        usePuzzleDraftStore.getState().update(draftFromSessionConfig(activePuzzleConfig));
-      nav.openPuzzlesPage();
-    }),
     reviewCurrentGame: useEventCallback(() => void board.openSelectedGameReview("current")),
     reviewEngineGame: useEventCallback(() => void board.reviewFinishedEngineGame()),
     repertoireHub: useEventCallback(() => repertoire.openRepertoireHub()),
