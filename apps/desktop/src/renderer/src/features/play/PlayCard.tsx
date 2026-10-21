@@ -32,8 +32,14 @@ import {
   type CardView,
   type LichessContext
 } from "./play-card-views";
-import { WIDE_CONTROLS_MAX, WIDE_GAP, resolvePlayMode, savePlaySettings } from "./play-layout";
-import { useWidePreviewSize } from "./use-wide-preview-size";
+import {
+  WIDE_CONTROLS_MAX,
+  WIDE_GAP,
+  resolvePlayMode,
+  savePlaySettings,
+  widePreviewBoardSize
+} from "./play-layout";
+import { useContentBox } from "./use-content-box";
 import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setup";
 
 const cardShell = "min-w-0 rounded-xl border border-line bg-surface leading-[1.43]";
@@ -66,7 +72,9 @@ export const PlayCard = memo(function PlayCard({
   onFreeBoard
 }: PlayCardProps) {
   const wideBodyRef = useRef<HTMLDivElement | null>(null);
-  const boardSize = useWidePreviewSize(wideBodyRef, wide);
+  // The preview board's edge, from the wide body's inside.
+  const wideBody = useContentBox(wideBodyRef, { active: wide });
+  const boardSize = wideBody ? widePreviewBoardSize(wideBody.width, wideBody.height) : null;
   const settings = useSettingsQuery();
   const lichess = useLichessPlayAccount();
   const liveGame = useLichessStore(selectLiveGameInProgress);

@@ -29,7 +29,7 @@ import {
   type PlayGrid
 } from "./play-layout";
 import { recentRows, useRecentGamesQuery } from "./recent-games";
-import { usePageContentSize } from "./use-page-content-size";
+import { useContentBox } from "./use-content-box";
 import { useInProgressCard, usePuzzleOfTheDay } from "./use-play-page-data";
 import "./play.css";
 
@@ -78,7 +78,7 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   const [mountedWhileLoading] = useState(loading);
   const reveal = mountedWhileLoading ? "animate-fade-in" : undefined;
   const pageRef = useRef<HTMLDivElement | null>(null);
-  const size = usePageContentSize(pageRef);
+  const size = useContentBox(pageRef, { viewportHeight: true });
 
   const firstRun = isFirstRun({ engineCount: page.engineCount, hasAccount: page.hasAccount });
   const { card, repertoire, puzzleOfTheDay } = boardCardsFor(page, {
