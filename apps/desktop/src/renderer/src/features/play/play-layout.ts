@@ -34,8 +34,11 @@ export const PLAY_GAP = 16;
 const ROW_SHARE = 0.44;
 const ROW_MIN = 372;
 const ROW_MAX = 420;
-/** A board card beyond its board: its padding and border, the tag, title and detail, the button. */
-const BOARD_CARD_CHROME = 142;
+/**
+ * A board card beyond its board: its padding and border, the tag, title and details, the button.
+ * The tallest card's: the Repertoire card's review, whose positions-due line is a second detail.
+ */
+const BOARD_CARD_CHROME = 164;
 /** A board card's padding and border across (px). */
 const BOARD_CARD_FRAME = 26;
 /** The Play column (the Play card, Recent games under it) is never narrower (px). */
@@ -57,6 +60,11 @@ export type PlayGrid = {
   sideWidth: number;
   /** The Play card has room for its preview board. */
   wide: boolean;
+  /**
+   * Too narrow for the board cards beside the Play column's minimum (a window zoomed in): one
+   * column, the Play card, the board cards, Recent games and the side cards one under the other.
+   */
+  stacked: boolean;
 };
 
 /**
@@ -64,7 +72,8 @@ export type PlayGrid = {
  * show (`cards`). One row height for the whole top row, from the window's height, so every board
  * is square at it; as many board cards as leave the Play column its minimum (the filler takes one
  * card's place when there are none); the side column exactly as wide as the cards above it, so
- * both rows' edges line up; the Play column takes the rest of the width.
+ * both rows' edges line up; the Play column takes the rest of the width. Where even one card
+ * beside the Play column's minimum doesn't fit, everything goes in one column instead.
  */
 export function playGrid({
   width,
@@ -78,6 +87,18 @@ export function playGrid({
   const rowHeight = Math.round(Math.min(ROW_MAX, Math.max(ROW_MIN, height * ROW_SHARE)));
   const cardWidth = rowHeight - BOARD_CARD_CHROME + BOARD_CARD_FRAME;
   const across = (count: number) => count * cardWidth + (count - 1) * PLAY_GAP;
+  if (width - cardWidth - PLAY_GAP < PLAY_MIN) {
+    const fit = Math.max(1, Math.floor((width + PLAY_GAP) / (cardWidth + PLAY_GAP)));
+    return {
+      rowHeight,
+      cardWidth,
+      cards: Math.min(cards, fit),
+      playWidth: width,
+      sideWidth: width,
+      wide: width >= PLAY_WIDE,
+      stacked: true
+    };
+  }
   let slots = Math.max(1, cards);
   while (slots > 1 && width - across(slots) - PLAY_GAP < PLAY_MIN) slots -= 1;
   const sideWidth = across(slots);
@@ -88,7 +109,8 @@ export function playGrid({
     cards: Math.min(cards, slots),
     playWidth,
     sideWidth,
-    wide: playWidth >= PLAY_WIDE
+    wide: playWidth >= PLAY_WIDE,
+    stacked: false
   };
 }
 

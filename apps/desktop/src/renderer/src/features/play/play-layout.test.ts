@@ -61,6 +61,17 @@ describe("playGrid", () => {
     expect(grid.sideWidth).toBe(grid.cardWidth);
   });
 
+  it("goes to one column where the Play column's minimum and a card don't fit side by side", () => {
+    // A window zoomed in: the page's content box narrower than the Play column and one card.
+    const grid = playGrid({ width: 560, height: 590, cards: 3 });
+    expect(grid.stacked).toBe(true);
+    expect(grid.playWidth).toBe(560);
+    expect(grid.sideWidth).toBe(560);
+    // As many cards as fit across it.
+    expect(grid.cards).toBe(Math.floor((560 + PLAY_GAP) / (grid.cardWidth + PLAY_GAP)));
+    expect(playGrid({ ...smallest, cards: 3 }).stacked).toBe(false);
+  });
+
   it("gives the Play column the rest of the width", () => {
     const grid = playGrid({ ...wide, cards: 1 });
     expect(grid.playWidth).toBe(wide.width - grid.sideWidth - PLAY_GAP);

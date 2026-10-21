@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type ReactNode } from "react";
+import { memo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,13 @@ import { ChallengesCard, StartSomethingNewCard } from "./PlaySideCards";
 import { RecentGamesTable } from "./RecentGamesTable";
 import { repertoireCardContent } from "./board-card-text";
 import type { InProgressCard } from "./in-progress";
-import { boardCardKinds, isFirstRun, playGrid, type BoardCardKind } from "./play-layout";
+import {
+  boardCardKinds,
+  isFirstRun,
+  playGrid,
+  type BoardCardKind,
+  type PlayGrid
+} from "./play-layout";
 import { recentRows, useRecentGamesQuery } from "./recent-games";
 import { usePageContentSize } from "./use-page-content-size";
 import { useInProgressCard, usePuzzleOfTheDay } from "./use-play-page-data";
@@ -105,15 +111,7 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
       <div ref={pageRef} className="flex min-h-full flex-col p-6">
         <h1 className="sr-only">Play</h1>
         {grid ? (
-          <div
-            className={cn("grid gap-4", fill && "flex-1")}
-            style={{
-              gridTemplateColumns: `minmax(0, 1fr) ${grid.sideWidth}px`,
-              // The Play card's content may need a little more in a setup it doesn't usually
-              // have (a long Lichess notice): the row grows rather than run into Recent games.
-              gridTemplateRows: `minmax(${grid.rowHeight}px, auto) ${fill ? "1fr" : "auto"}`
-            }}
-          >
+          <div className={cn("grid gap-4", fill && "flex-1")} style={gridStyle(grid, fill)}>
             {loading ? (
               <TopRowSkeleton cards={grid.cards} cardWidth={grid.cardWidth} />
             ) : (
@@ -148,21 +146,42 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
                 </div>
               </>
             )}
-            <div className="flex min-w-0 flex-col">
-              <RecentGamesTable
-                excludeGameId={excludeGameId}
-                fill={fill}
-                onOpenGame={props.onOpenGame}
-                onReviewGame={props.onReviewGame}
-              />
-            </div>
-            <SideCards props={props} firstRun={firstRun} loading={loading} />
+            {/* Its columns' widths wait for the board cards' count: no jump once it is known. */}
+            {loading ? null : (
+              <>
+                <div className={cn("flex min-w-0 flex-col", reveal)}>
+                  <RecentGamesTable
+                    excludeGameId={excludeGameId}
+                    fill={fill}
+                    onOpenGame={props.onOpenGame}
+                    onReviewGame={props.onReviewGame}
+                  />
+                </div>
+                <SideCards props={props} firstRun={firstRun} reveal={reveal} />
+              </>
+            )}
           </div>
         ) : null}
       </div>
     </div>
   );
 });
+
+/**
+ * The grid's tracks: the Play column and the cards' (one column when stacked), the top row the
+ * row height. The Play card's content may need a little more in a setup it doesn't usually have
+ * (a long Lichess notice): the row grows rather than run into Recent games.
+ */
+function gridStyle(grid: PlayGrid, fill: boolean): CSSProperties {
+  const top = `minmax(${grid.rowHeight}px, auto)`;
+  const bottom = fill ? "1fr" : "auto";
+  return grid.stacked
+    ? { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: `${top} ${top} auto ${bottom}` }
+    : {
+        gridTemplateColumns: `minmax(0, 1fr) ${grid.sideWidth}px`,
+        gridTemplateRows: `${top} ${bottom}`
+      };
+}
 
 /** A board card's place in the top row: one card's width, the row's height. */
 function CardSlot({ width, children }: { width: number; children: ReactNode }) {
@@ -222,28 +241,28 @@ function BoardCardFor({
 function SideCards({
   props,
   firstRun,
-  loading
+  reveal
 }: {
   props: PlayPageProps;
   firstRun: boolean;
-  loading: boolean;
+  reveal: string | undefined;
 }) {
   return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-4">
+    <div className={cn("flex min-h-0 min-w-0 flex-col gap-4", reveal)}>
       <StartSomethingNewCard
         desktopApiAvailable={props.desktopApiAvailable}
         onAnalyze={props.onAnalyze}
         onPuzzles={props.onPuzzles}
         onImportPgn={props.onImportPgn}
       />
-      {firstRun || loading ? null : <ChallengesCard />}
-      {loading || !props.desktopApiAvailable ? null : (
+      {firstRun ? null : <ChallengesCard />}
+      {props.desktopApiAvailable ? (
         <LiveBroadcastsCard
           className="flex-1"
           onOpenTournament={props.onOpenBroadcastTournament}
           onOpenBroadcasts={props.onOpenBroadcasts}
         />
-      )}
+      ) : null}
     </div>
   );
 }
