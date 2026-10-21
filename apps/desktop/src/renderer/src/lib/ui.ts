@@ -156,9 +156,6 @@ export const popover =
 export const listRow =
   "flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm text-fg-secondary";
 
-/** Clickable list row. Add `listRowSelected` when active. */
-export const listRowInteractive = `${listRow} transition-[color,background-color,border-color,box-shadow,scale] duration-micro ease-standard hover:border-line-strong hover:bg-control active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:active:scale-100`;
-
 export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
 
 /* ------------------------------------------------------------------ review marks */

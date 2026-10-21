@@ -38,20 +38,26 @@ const startOptions = [
   { value: "game" as const, label: "Current game" }
 ];
 
+/** The hub's New menu item the dialog was opened from. */
+export type CreateIntent = "blank" | "import";
+
 /**
- * New repertoire (§5.1): name and the side you train, starting from the initial position or a
- * validated FEN. "Create and import PGN" creates it and goes straight to the import preview.
- * With a game on the board, "Current game" starts from that game's position and, once created,
- * opens "Add to repertoire" for the whole game into the first chapter (`next` is "add-game");
- * "Create and import PGN" ignores it and starts from the initial position.
+ * New repertoire (§5.1): name and the side you train. A blank one starts from the initial position
+ * or a validated FEN; with a game on the board, "Current game" starts from that game's position
+ * and, once created, opens "Add to repertoire" for the whole game into the first chapter (`next`
+ * is "add-game"). From a PGN (`intent` "import"), it starts from the initial position and goes
+ * straight to the import preview.
  */
 export function CreateRepertoireDialog({
+  intent,
   onClose,
   onCreated
 }: {
+  intent: CreateIntent;
   onClose: () => void;
   onCreated: (detail: RepertoireDetail, next: CreateNext) => void;
 }) {
+  const importing = intent === "import";
   const nameId = useId();
   const create = useCreateRepertoireMutation();
   const [name, setName] = useState("");
@@ -114,30 +120,16 @@ export function CreateRepertoireDialog({
   return (
     <Dialog
       size="sm"
-      title="New repertoire"
+      title={importing ? "New repertoire from PGN" : "New repertoire"}
       onClose={onClose}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!canCreate}
-            onClick={() => void submit("import")}
-          >
-            <Upload />
-            Create and import PGN
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled={!canCreate}
-            onClick={() => void submit("study")}
-          >
-            {create.isPending ? "Creating…" : "Create"}
-          </Button>
-        </>
+        <CreateFooter
+          importing={importing}
+          pending={create.isPending}
+          disabled={!canCreate}
+          onCancel={onClose}
+          onCreate={() => void submit(importing ? "import" : "study")}
+        />
       }
       bodyClassName="grid gap-4"
     >
@@ -145,7 +137,7 @@ export function CreateRepertoireDialog({
         className="grid gap-4"
         onSubmit={(event) => {
           event.preventDefault();
-          void submit("study");
+          void submit(importing ? "import" : "study");
         }}
       >
         <Field label="Name" htmlFor={nameId}>
@@ -169,14 +161,16 @@ export function CreateRepertoireDialog({
           />
           <p className={fieldHint}>Flipping the board later never changes this.</p>
         </div>
-        <StartFromFields
-          value={startFrom}
-          onChange={setStartFrom}
-          boardHasGame={boardHasGame}
-          fen={fen}
-          onFenChange={setFen}
-          invalidFen={invalidFen}
-        />
+        {importing ? null : (
+          <StartFromFields
+            value={startFrom}
+            onChange={setStartFrom}
+            boardHasGame={boardHasGame}
+            fen={fen}
+            onFenChange={setFen}
+            invalidFen={invalidFen}
+          />
+        )}
         <button type="submit" hidden aria-label="Create repertoire" />
       </form>
       {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
@@ -184,6 +178,33 @@ export function CreateRepertoireDialog({
         <Notice tone="danger">{ipcErrorMessage(create.error) || "Couldn't create it."}</Notice>
       ) : null}
     </Dialog>
+  );
+}
+
+/** Cancel, and Create ("Create and import PGN" from a PGN). */
+function CreateFooter({
+  importing,
+  pending,
+  disabled,
+  onCancel,
+  onCreate
+}: {
+  importing: boolean;
+  pending: boolean;
+  disabled: boolean;
+  onCancel: () => void;
+  onCreate: () => void;
+}) {
+  return (
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button type="button" variant="primary" size="sm" disabled={disabled} onClick={onCreate}>
+        {importing ? <Upload /> : null}
+        {pending ? "Creating…" : importing ? "Create and import PGN" : "Create"}
+      </Button>
+    </>
   );
 }
 
@@ -217,8 +238,7 @@ function StartFromFields({
         />
         {value === "game" ? (
           <p className={fieldHint}>
-            Starts from the board game's position; next, choose what of the game to add. Create and
-            import PGN starts from the initial position instead.
+            Starts from the board game's position; next, choose what of the game to add.
           </p>
         ) : null}
       </div>

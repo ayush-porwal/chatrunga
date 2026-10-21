@@ -1,29 +1,26 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
-  BookOpen,
   Copy,
   Download,
-  GraduationCap,
-  HardDriveDownload,
+  FilePlus2,
   Library,
   Pencil,
-  Play,
+  Plus,
   Trash2,
   Upload
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import type { MenuItem } from "@/components/ui/menu";
-import { Page, PageHeader } from "@/components/ui/page";
-import { hasDesktopApi } from "@/lib/environment";
+import { IconButton } from "@/components/ui/icon-button";
+import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { pageShell } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
-  repertoireKeys,
   useArchiveRepertoireMutation,
   useDuplicateRepertoireMutation,
   useExportRepertoireMutation,
@@ -32,108 +29,61 @@ import {
   useRepertoiresQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { formatBytes, restoreNotice, shortenPath } from "./backup";
-import { BackupDialog } from "./BackupDialog";
-import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
+import { CardTitleBar } from "../play/card-title";
+import { RecentGamesSearch } from "../play/recent-games-controls";
+import { CreateRepertoireDialog, type CreateIntent } from "./CreateRepertoireDialog";
 import { EditRepertoireDialog } from "./EditRepertoireDialog";
 import { HubNotice, type HubMessage } from "./HubNotice";
 import { ImportPgnDialog } from "./ImportPgnDialog";
-import { BackupMenu, HubStartActions } from "./RepertoireHubActions";
-import { HubEmptyState, HubFilterBar, RepertoireList } from "./RepertoireHubList";
-import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import {
   plural,
   sortedChapters,
   type ResumePracticeTarget,
   type StudyTarget
 } from "./repertoire-chapters";
-import { useHubFilters, useHubTargets } from "./useRepertoireHub";
+import { RepertoireTable, type RowPractice } from "./RepertoireTable";
+import { useHubFilters, useHubResume, useStudyFromHub } from "./useRepertoireHub";
 
-/** Backups go through main-owned native dialogs, so they're hidden outside the desktop app. */
-function nativeBackupsAvailable(): boolean {
-  return hasDesktopApi() && typeof window.chaturanga?.repertoires.exportBackup === "function";
-}
+const TITLE_ID = "repertoire-hub-title";
 
 /**
- * The repertoire hub (§5.1): review what's due, create, filter and search repertoires, and act on
- * each one (study, practice, import/export PGN, back up, duplicate, archive, delete). Native backup
- * and restore live in the header's Backup menu (desktop only).
+ * The repertoire hub (§5.1), laid out as Play: one card of the repertoires, as a table. A row
+ * opens Study at the chapter last studied; Practice starts a session (due positions first, then
+ * new ones) or resumes the unfinished one; the ⋯ menu edits, imports and exports, duplicates,
+ * archives and deletes. The title bar searches, shows the archived ones instead, and starts a new
+ * repertoire (blank, or from a PGN). Backups live in Settings.
  */
 export function RepertoireHubPage({
   onStudy,
   onPractice,
-  onResume,
-  onReview
+  onResume
 }: {
   onStudy: (target: StudyTarget) => void;
+  /** Practice: a session starts at once with the repertoire's practice settings. */
   onPractice: (repertoireId: string) => void;
   /** The unfinished practice session (e.g. after a restart). */
   onResume: (target: ResumePracticeTarget) => void;
-  /** Practice set up as a review of everything due. */
-  onReview: (repertoireId: string) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
-  const backups = desktop && nativeBackupsAvailable();
-  const queryClient = useQueryClient();
   const filters = useHubFilters();
   // "Last studied" is relative to when the hub opened (render stays pure).
   const [now] = useState(() => Date.now());
   const list = useRepertoiresQuery(filters.listFilters);
-  const targets = useHubTargets();
+  const resume = useHubResume();
   const duplicate = useDuplicateRepertoireMutation();
   const archive = useArchiveRepertoireMutation();
   const remove = useRemoveRepertoireMutation();
-  const removeChapter = useRemoveChapterMutation();
-  /** The empty first chapter of a repertoire created to import into; the import replaces it. */
-  const [placeholder, setPlaceholder] = useState<{
-    repertoireId: string;
-    chapterId: string;
-  } | null>(null);
   const exportMutation = useExportRepertoireMutation();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<CreateIntent | null>(null);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
   const [editing, setEditing] = useState<RepertoireSummary | null>(null);
-  /** The backup dialog's scope: every repertoire, or one. */
-  const [backupTarget, setBackupTarget] = useState<"all" | RepertoireSummary | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  // The open study draft, so a restore that replaces its repertoire can ask before discarding it.
-  const draftRepertoireId = useRepertoireWorkspaceStore((state) => state.repertoireId);
-  const draftDirty = useRepertoireWorkspaceStore((state) => state.dirty);
   const [notice, setNotice] = useState<HubMessage | null>(null);
-  const { resume } = targets;
 
   const fail = (error: unknown, fallback: string) =>
     setNotice({ tone: "danger", text: ipcErrorMessage(error) || fallback });
 
-  /** Study opens the last chapter studied, else the first one. */
-  async function study(id: string) {
-    const api = window.chaturanga?.repertoires;
-    if (!api) return;
-    try {
-      const detail = await queryClient.fetchQuery({
-        queryKey: repertoireKeys.detail(id),
-        queryFn: () => api.get(id)
-      });
-      const last = detail.workspace?.lastChapterId;
-      const chapter =
-        detail.chapters.find((item) => item.id === last) ?? sortedChapters(detail.chapters).at(0);
-      if (!chapter) {
-        setNotice({
-          tone: "info",
-          text: "This repertoire has no chapters yet. Import a PGN to add some."
-        });
-        return;
-      }
-      onStudy({
-        repertoireId: id,
-        chapterId: chapter.id,
-        nodeId: chapter.id === last ? (detail.workspace?.lastNodeId ?? null) : null
-      });
-    } catch (error) {
-      fail(error, "Couldn't open that repertoire.");
-    }
-  }
+  const study = useStudyFromHub(onStudy, setNotice);
 
   function exportPgn(item: RepertoireSummary) {
     setNotice(null);
@@ -155,45 +105,16 @@ export function RepertoireHubPage({
     );
   }
 
-  /** A repertoire's menu: study, practice, edit, import/export, back up, duplicate, archive, delete. */
+  /** A row's ⋯ menu: edit, import/export, duplicate, archive, delete. */
   function actionsFor(item: RepertoireSummary): (MenuItem | false)[] {
     return [
-      { label: "Study", icon: <BookOpen />, onSelect: () => void study(item.id) },
-      ...(resume?.repertoireId === item.id
-        ? [
-            {
-              label: resume.label,
-              icon: <Play />,
-              onSelect: () => onResume(resume)
-            }
-          ]
-        : []),
-      {
-        label: "Practice",
-        icon: <GraduationCap />,
-        // The main process refuses practice on an archived repertoire.
-        disabled: Boolean(item.archivedAt),
-        onSelect: () => onPractice(item.id)
-      },
-      {
-        label: "Edit repertoire",
-        icon: <Pencil />,
-        onSelect: () => setEditing(item)
-      },
-      {
-        label: "Import PGN",
-        icon: <Upload />,
-        onSelect: () => setImportTarget(item.id)
-      },
+      { label: "Edit repertoire", icon: <Pencil />, onSelect: () => setEditing(item) },
+      { label: "Import PGN", icon: <Upload />, onSelect: () => setImportTarget(item.id) },
       { label: "Export PGN", icon: <Download />, onSelect: () => exportPgn(item) },
-      backups && {
-        label: "Back up this repertoire…",
-        icon: <HardDriveDownload />,
-        onSelect: () => setBackupTarget(item)
-      },
       {
         label: "Duplicate",
         icon: <Copy />,
+        divided: true,
         onSelect: () =>
           duplicate.mutate(
             { id: item.id },
@@ -208,11 +129,7 @@ export function RepertoireHubPage({
         icon: item.archivedAt ? <ArchiveRestore /> : <Archive />,
         onSelect: () =>
           archive.mutate(
-            {
-              id: item.id,
-              archived: !item.archivedAt,
-              expectedRevision: item.revision
-            },
+            { id: item.id, archived: !item.archivedAt, expectedRevision: item.revision },
             { onError: (error) => fail(error, "Couldn't change it.") }
           )
       },
@@ -220,10 +137,22 @@ export function RepertoireHubPage({
         label: "Delete",
         icon: <Trash2 />,
         destructive: true,
+        divided: true,
         onSelect: () => setDeleting(item)
       }
     ];
   }
+
+  /** The title bar's New menu: a blank repertoire, or one from a PGN. */
+  const newItems: MenuItem[] = [
+    { label: "Blank repertoire", icon: <Plus />, onSelect: () => setCreating("blank") },
+    { label: "Import PGN", icon: <FilePlus2 />, onSelect: () => setCreating("import") }
+  ];
+
+  const practiceFor = (item: RepertoireSummary): RowPractice =>
+    resume?.repertoireId === item.id
+      ? { kind: "resume", description: resume.description }
+      : { kind: "practice" };
 
   function confirmDelete(repertoire: RepertoireSummary) {
     remove.mutate(
@@ -243,71 +172,42 @@ export function RepertoireHubPage({
     );
   }
 
-  if (!desktop) {
-    return (
-      <Page>
-        <PageHeader title="Repertoire" />
-        <EmptyState
-          icon={<Library />}
-          title="Repertoires need the desktop app"
-          description="Your repertoires, practice schedule and progress are stored by the app."
-        />
-      </Page>
-    );
-  }
-
   return (
-    <Page>
-      <PageHeader
-        title="Repertoire"
-        description="Build the openings you play, then practise one decision at a time."
-        actions={
-          <>
-            {backups ? (
-              <BackupMenu
-                onBackUpAll={() => setBackupTarget("all")}
-                onRestore={() => setRestoring(true)}
+    <div className={pageShell}>
+      <div className="flex min-h-full flex-col gap-4 p-6">
+        <h1 className="sr-only">Repertoire</h1>
+        {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
+        <RepertoiresCard desktop={desktop} filters={filters} list={list} actions={newItems}>
+          <RepertoireTable
+            list={list}
+            now={now}
+            labelledBy={TITLE_ID}
+            practiceFor={practiceFor}
+            actionsFor={actionsFor}
+            onStudy={(id) => void study(id)}
+            onPractice={(item) => {
+              if (resume?.repertoireId === item.id) onResume(resume);
+              else onPractice(item.id);
+            }}
+            empty={
+              <HubEmptyState
+                archived={filters.archived}
+                query={filters.query.trim()}
+                onCreate={() => setCreating("blank")}
               />
-            ) : null}
-            <HubStartActions
-              targets={targets}
-              onStudy={onStudy}
-              onResume={onResume}
-              onReview={onReview}
-              onCreate={() => setCreating(true)}
-            />
-          </>
-        }
-      />
-
-      <HubFilterBar filters={filters} />
-
-      {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
-
-      <RepertoireList
-        list={list}
-        now={now}
-        onStudy={(id) => void study(id)}
-        actionsFor={actionsFor}
-        empty={<HubEmptyState filters={filters} onCreate={() => setCreating(true)} />}
-      />
-
-      {creating ? (
-        <CreateRepertoireDialog
-          onClose={() => setCreating(false)}
-          onCreated={(detail, next) => {
-            setCreating(false);
-            const first = sortedChapters(detail.chapters).at(0);
-            if (next === "import") {
-              setImportTarget(detail.id);
-              setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);
-            } else if (next === "study" && first) {
-              onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
             }
-            // "add-game": the Add to repertoire dialog is open over the hub.
-          }}
-        />
-      ) : null}
+          />
+        </RepertoiresCard>
+      </div>
+
+      <HubCreateImport
+        creating={creating}
+        importTarget={importTarget}
+        onCreatingChange={setCreating}
+        onImportTargetChange={setImportTarget}
+        onStudy={onStudy}
+        onNotice={setNotice}
+      />
       {editing ? (
         <EditRepertoireDialog
           repertoire={editing}
@@ -318,15 +218,152 @@ export function RepertoireHubPage({
           }}
         />
       ) : null}
+      {deleting ? (
+        <DeleteRepertoireDialog
+          repertoire={deleting}
+          pending={remove.isPending}
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => confirmDelete(deleting)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The hub's one card (as Play's Recent games): the title bar with the count and its tools, then
+ * `children` (the table), or why repertoires need the desktop app. An empty, unfiltered list
+ * stretches it down the page.
+ */
+function RepertoiresCard({
+  desktop,
+  filters,
+  list,
+  actions,
+  children
+}: {
+  desktop: boolean;
+  filters: ReturnType<typeof useHubFilters>;
+  list: ReturnType<typeof useRepertoiresQuery>;
+  /** The New menu's items. */
+  actions: MenuItem[];
+  children: ReactNode;
+}) {
+  const shown = list.data?.length ?? 0;
+  const searching = Boolean(filters.query.trim());
+  const fill = !desktop || (list.isSuccess && !shown && !filters.archived && !searching);
+  return (
+    <section
+      aria-labelledby={TITLE_ID}
+      className={cn(
+        "min-w-0 rounded-xl border border-line bg-surface",
+        fill ? "flex flex-1 flex-col" : null
+      )}
+    >
+      <CardTitleBar
+        id={TITLE_ID}
+        title={filters.archived ? "Archived repertoires" : "Repertoires"}
+        count={list.isSuccess && !searching ? shown : null}
+        actions={desktop ? <HubTitleActions filters={filters} newItems={actions} /> : null}
+      />
+      {desktop ? (
+        children
+      ) : (
+        <EmptyState
+          className="m-auto"
+          icon={<Library />}
+          title="Repertoires need the desktop app"
+          description="Your repertoires, practice schedule and progress are stored by the app."
+        />
+      )}
+    </section>
+  );
+}
+
+/** The card title bar's tools: search, archived instead of active ones, and New (last). */
+function HubTitleActions({
+  filters,
+  newItems
+}: {
+  filters: ReturnType<typeof useHubFilters>;
+  newItems: MenuItem[];
+}) {
+  return (
+    <>
+      <RecentGamesSearch
+        query={filters.query}
+        onQueryChange={filters.setQuery}
+        label="Search repertoires"
+      />
+      <IconButton
+        label={filters.archived ? "Show active repertoires" : "Show archived"}
+        icon={<Archive />}
+        aria-pressed={filters.archived}
+        className={filters.archived ? "bg-control text-fg" : undefined}
+        onClick={() => filters.setArchived(!filters.archived)}
+      />
+      <OverflowMenu
+        label="New repertoire"
+        trigger={{ text: "New", icon: <Plus />, variant: "primary", compact: true }}
+        items={newItems}
+      />
+    </>
+  );
+}
+
+/**
+ * New repertoire (blank, or from a PGN) and Import PGN: a repertoire created to import into has an
+ * empty first chapter, which the import replaces.
+ */
+function HubCreateImport({
+  creating,
+  importTarget,
+  onCreatingChange,
+  onImportTargetChange,
+  onStudy,
+  onNotice
+}: {
+  creating: CreateIntent | null;
+  importTarget: string | null;
+  onCreatingChange: (intent: CreateIntent | null) => void;
+  onImportTargetChange: (repertoireId: string | null) => void;
+  onStudy: (target: StudyTarget) => void;
+  onNotice: (notice: HubMessage) => void;
+}) {
+  const removeChapter = useRemoveChapterMutation();
+  /** The empty first chapter of a repertoire created to import into; the import replaces it. */
+  const [placeholder, setPlaceholder] = useState<{
+    repertoireId: string;
+    chapterId: string;
+  } | null>(null);
+  return (
+    <>
+      {creating ? (
+        <CreateRepertoireDialog
+          intent={creating}
+          onClose={() => onCreatingChange(null)}
+          onCreated={(detail, next) => {
+            onCreatingChange(null);
+            const first = sortedChapters(detail.chapters).at(0);
+            if (next === "import") {
+              onImportTargetChange(detail.id);
+              setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);
+            } else if (next === "study" && first) {
+              onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
+            }
+            // "add-game": the Add to repertoire dialog is open over the hub.
+          }}
+        />
+      ) : null}
       {importTarget ? (
         <ImportPgnDialog
           repertoireId={importTarget}
           onClose={() => {
-            setImportTarget(null);
+            onImportTargetChange(null);
             setPlaceholder(null);
           }}
           onImported={(result) => {
-            setImportTarget(null);
+            onImportTargetChange(null);
             setPlaceholder(null);
             const empty = result.repertoire.chapters.find(
               (chapter) =>
@@ -341,63 +378,54 @@ export function RepertoireHubPage({
                 expectedRevision: result.repertoire.revision
               });
             }
-            setNotice({
+            onNotice({
               tone: "success",
               text: `Imported ${plural(result.chaptersAdded, "chapter")} into “${result.repertoire.name}”.`
             });
           }}
         />
       ) : null}
-      {backupTarget ? (
-        <BackupDialog
-          repertoire={backupTarget === "all" ? undefined : backupTarget}
-          onClose={() => setBackupTarget(null)}
-          onSaved={(result) => {
-            setBackupTarget(null);
-            setNotice({
-              tone: "success",
-              text: `Backup saved (${plural(result.repertoireCount, "repertoire")}, ${formatBytes(result.bytes)}) to ${shortenPath(result.savedPath)}.`,
-              details: result.warnings,
-              path: result.savedPath
-            });
-          }}
-        />
-      ) : null}
-      {restoring ? (
-        <RestoreBackupDialog
-          draft={{ repertoireId: draftRepertoireId, dirty: draftDirty }}
-          onClose={() => setRestoring(false)}
-          onRestored={(preview, input, result) => {
-            setRestoring(false);
-            // A replaced repertoire's open study draft describes content that no longer exists
-            // (the dialog asked first when the draft had unsaved edits).
-            const draft = useRepertoireWorkspaceStore.getState();
-            const replaced = result.restored.some(
-              (item) => item.mode === "replace" && item.repertoireId === draft.repertoireId
-            );
-            if (replaced) draft.reset();
-            const message = restoreNotice(preview, input, result);
-            const only = result.restored.length === 1 ? result.restored[0] : null;
-            setNotice({
-              tone: "success",
-              text: message.text,
-              details: message.details,
-              action: only
-                ? { label: "Open", onSelect: () => void study(only.repertoireId) }
-                : undefined
-            });
-          }}
-        />
-      ) : null}
-      {deleting ? (
-        <DeleteRepertoireDialog
-          repertoire={deleting}
-          pending={remove.isPending}
-          onCancel={() => setDeleting(null)}
-          onConfirm={() => confirmDelete(deleting)}
-        />
-      ) : null}
-    </Page>
+    </>
+  );
+}
+
+/** No repertoire listed: none matches the search, none is archived, or none exists yet. */
+function HubEmptyState({
+  archived,
+  query,
+  onCreate
+}: {
+  archived: boolean;
+  query: string;
+  onCreate: () => void;
+}) {
+  if (query) {
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No repertoires match “{query}”
+      </p>
+    );
+  }
+  if (archived) {
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No archived repertoires
+      </p>
+    );
+  }
+  return (
+    <EmptyState
+      className="m-auto"
+      icon={<Library />}
+      title="No repertoires yet"
+      description="Start one for each side you play — for example “My 1.e4 repertoire” or “Black against 1.e4”."
+      action={
+        <Button type="button" variant="primary" onClick={onCreate}>
+          <Plus />
+          Create repertoire
+        </Button>
+      }
+    />
   );
 }
 

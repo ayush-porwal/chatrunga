@@ -27,6 +27,7 @@ import { ChesscomAccountSection } from "../chesscom/ChesscomAccount";
 import { YourPictureSection } from "./YourPictureSection";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { UsageDataSection } from "./UsageDataSection";
+import { RepertoireBackupSection } from "../repertoire/RepertoireBackupSection";
 import { useOnboardingSession } from "../onboarding/useOnboarding";
 import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
@@ -42,6 +43,7 @@ export type SettingsSectionId =
   | "picture"
   | "updates"
   | "usage"
+  | "backups"
   | "welcome";
 type SectionId = SettingsSectionId;
 
@@ -67,7 +69,7 @@ export const SettingsPage = memo(function SettingsPage({
     "ratings",
     "engines",
     "ai",
-    ...(desktopApiAvailable ? (["updates", "usage", "welcome"] as const) : [])
+    ...(desktopApiAvailable ? (["updates", "usage", "backups", "welcome"] as const) : [])
   ];
   const contentRef = useRef<HTMLDivElement>(null);
   const active = useScrollSpy(contentRef, sections);
@@ -148,6 +150,9 @@ export const SettingsPage = memo(function SettingsPage({
             </SectionAnchor>
             <SectionAnchor id="usage">
               <UsageDataSection appearance={appearance} />
+            </SectionAnchor>
+            <SectionAnchor id="backups" wide>
+              <RepertoireBackupSection />
             </SectionAnchor>
             <SectionAnchor id="welcome" wide>
               <WelcomeSection />

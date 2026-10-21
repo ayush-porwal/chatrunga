@@ -239,7 +239,6 @@ export function AppPages({
             onStudy={on.openRepertoireStudy}
             onPractice={on.openRepertoirePractice}
             onResume={on.resumeRepertoirePractice}
-            onReview={on.reviewRepertoire}
           />
         ) : view === "repertoire-study" || view === "repertoire-practice" ? (
           <RepertoireScreenPage

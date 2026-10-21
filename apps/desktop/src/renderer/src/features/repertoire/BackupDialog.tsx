@@ -11,21 +11,19 @@ import { useExportBackupMutation, useRepertoiresQuery } from "../../queries/repe
 import { backupSummary } from "./backup";
 
 /**
- * Back up repertoires to a native backup file (design §10): a summary of what's included, whether
- * practice progress goes with it, then the main-owned save dialog. A cancelled save dialog closes
- * this one quietly; a failure stays here until retried or closed.
+ * Back up every repertoire, archived ones included, to a native backup file (design §10): a
+ * summary of what's included, whether practice progress goes with it, then the main-owned save
+ * dialog. A cancelled save dialog closes this one quietly; a failure stays here until retried or
+ * closed.
  */
 export function BackupDialog({
-  repertoire,
   onClose,
   onSaved
 }: {
-  /** One repertoire to back up; omitted backs up every repertoire, archived ones included. */
-  repertoire?: { id: string; name: string; chapterCount: number };
   onClose: () => void;
   onSaved: (result: ExportBackupResult & { savedPath: string }) => void;
 }) {
-  // Summaries of the whole collection (the hub list is filtered, and leaves out archived ones).
+  // Summaries of the whole collection, archived ones included.
   const active = useRepertoiresQuery({ color: "all", archived: false });
   const archived = useRepertoiresQuery({ color: "all", archived: true });
   const exportBackup = useExportBackupMutation();
@@ -33,17 +31,14 @@ export function BackupDialog({
   const [error, setError] = useState<string | null>(null);
 
   const all = [...(active.data ?? []), ...(archived.data ?? [])];
-  const summary = repertoire
-    ? backupSummary([repertoire])
-    : active.isPending || archived.isPending
-      ? "Counting repertoires…"
-      : backupSummary(all);
-  const empty = !repertoire && !active.isPending && !archived.isPending && all.length === 0;
+  const counting = active.isPending || archived.isPending;
+  const summary = counting ? "Counting repertoires…" : backupSummary(all);
+  const empty = !counting && all.length === 0;
 
   function save() {
     setError(null);
     exportBackup.mutate(
-      { repertoireIds: repertoire ? [repertoire.id] : undefined, includeProgress },
+      { includeProgress },
       {
         onSuccess: (result) => {
           const savedPath = result.savedPath;
@@ -58,7 +53,7 @@ export function BackupDialog({
   return (
     <Dialog
       size="sm"
-      title={repertoire ? `Back up “${repertoire.name}”` : "Back up all repertoires"}
+      title="Back up all repertoires"
       description={summary}
       onClose={onClose}
       bodyClassName="grid gap-3"
