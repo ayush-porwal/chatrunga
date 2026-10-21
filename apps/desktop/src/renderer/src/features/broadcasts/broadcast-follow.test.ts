@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { BroadcastLiveGame, BroadcastMove } from "@chaturanga/shared/types/broadcast";
+import { watchBoardSounds } from "../../app/useMoveSounds";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
 import {
@@ -9,11 +10,19 @@ import {
   broadcastSession,
   followBoard,
   followedCopy,
+  followLiveMoves,
   isFollowedBoard,
   undoBackToLive,
   type BroadcastGameRef
 } from "./broadcast-follow";
 import { mergeLiveLine } from "./live-line";
+
+// The moves the board sounds, by SAN.
+const sounded = vi.hoisted(() => [] as string[]);
+vi.mock("../../sounds/sounds", () => ({
+  playMoveSound: (san: string) => sounded.push(san),
+  playSound: () => undefined
+}));
 
 const REF: BroadcastGameRef = {
   tourId: "Tour0001",
@@ -141,5 +150,38 @@ describe("following a broadcast game on the board", () => {
 
     useGameStore.getState().reset();
     expect(isFollowedBoard(useGameStore.getState().board)).toBe(false);
+  });
+
+  it("moves the board only while followed, catching up silently when followed again", () => {
+    const NF3: BroadcastMove = { uci: "g1f3", san: "Nf3", clock: null };
+    const NC6: BroadcastMove = { uci: "b8c6", san: "Nc6", clock: null };
+    const BB5: BroadcastMove = { uci: "f1b5", san: "Bb5", clock: null };
+    open(liveGame(MOVES));
+    const stopSounds = watchBoardSounds();
+    sounded.length = 0;
+    try {
+      let stopFollowing = followLiveMoves();
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3]));
+      expect(sans()).toBe("Nf3");
+      expect(sounded).toStrictEqual(["Nf3"]);
+
+      // Another page: the game goes on, the board (and its sound) doesn't.
+      stopFollowing();
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6]));
+      expect(sans()).toBe("Nf3");
+      expect(useGameStore.getState().moveTree).toHaveLength(4);
+      expect(sounded).toStrictEqual(["Nf3"]);
+
+      // Back on the board: the move played meanwhile is put in without a sound, then it follows.
+      stopFollowing = followLiveMoves();
+      expect(sans()).toBe("Nc6");
+      expect(sounded).toStrictEqual(["Nf3"]);
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6, BB5]));
+      expect(sans()).toBe("Bb5");
+      expect(sounded).toStrictEqual(["Nf3", "Bb5"]);
+      stopFollowing();
+    } finally {
+      stopSounds();
+    }
   });
 });

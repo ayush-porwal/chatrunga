@@ -1,11 +1,19 @@
 // Broadcasts: a tournament relayed by Lichess, from the hub to a live game on the analysis board
 // and back to its live position. Lichess's answers are recorded files (fixtures.ts).
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { clickSquare, expect, routeToFile, sidebar, skipWelcome, test } from "./app";
-import { writeBroadcastFixtures } from "./fixtures";
+import {
+  clickSquare,
+  expect,
+  registerFakeEngine,
+  routeToFile,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
+import { endBroadcastGame, writeBroadcastFixtures } from "./fixtures";
 
 /** Where a run saves its screens for a look (unset: none are taken). */
 const SCREENS = process.env.CHATURANGA_E2E_SCREENS;
@@ -13,6 +21,14 @@ const SCREENS = process.env.CHATURANGA_E2E_SCREENS;
 async function screen(page: Page, name: string): Promise<void> {
   if (SCREENS) await page.screenshot({ path: join(SCREENS, `${name}.png`) });
 }
+
+/** The `position` commands the fake engine was sent, in order (none before it starts). */
+const enginePositions = (log: string) =>
+  existsSync(log)
+    ? readFileSync(log, "utf8")
+        .split("\n")
+        .filter((line) => line.startsWith("position"))
+    : [];
 
 test("follows a broadcast game live on the analysis board, and goes back to live", async ({
   launch
@@ -139,4 +155,43 @@ test("follows a player, rings a board, switches games and keeps a copy", async (
   await page.getByRole("button", { name: "Save a copy to the library" }).click();
   await expect(page.getByText("Saved a copy to your library.")).toBeVisible();
   await screen(page, "9-switched");
+});
+
+test("a followed game waits behind other pages, then catches up when shown again", async ({
+  launch,
+  profile
+}) => {
+  const log = join(profile, "fake-engine.log");
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "stockfish");
+  const dir = mkdtempSync(join(tmpdir(), "broadcast-"));
+  for (const [url, file] of Object.entries(writeBroadcastFixtures(dir)))
+    await routeToFile(app, url, file);
+
+  // Board 1 followed on the Analyze board, analysed live at 17... Nc7.
+  const broadcasts = sidebar(page).getByRole("button", { name: "Broadcasts", exact: true });
+  const event = page.getByRole("button", { name: /FIDE Grand Swiss 2026/ });
+  await broadcasts.click();
+  await event.click();
+  const boards = page.getByRole("region", { name: "Boards" });
+  await boards.getByRole("button", { name: /^Board 1:/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Following live" })).toBeVisible();
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect.poll(() => enginePositions(log).at(-1), { timeout: 15_000 }).toMatch(/ e8c7$/);
+
+  // Back to the tournament, where the round's stream brings 18. Nf3 and Black's resignation.
+  await broadcasts.click();
+  endBroadcastGame(dir);
+  await event.click();
+  await expect(boards.getByRole("button", { name: /^Board 1: .*, 1–0\./ })).toBeVisible();
+  // The board left behind didn't take the move: nothing searched (or sounded) its new position.
+  expect(enginePositions(log).filter((line) => line.endsWith(" d2f3"))).toStrictEqual([]);
+
+  // Shown again, it catches up: the result, and analysis (on again) of the new live position.
+  await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Game over" })).toBeVisible();
+  await analysis.click();
+  await expect.poll(() => enginePositions(log).at(-1), { timeout: 15_000 }).toMatch(/ d2f3$/);
 });

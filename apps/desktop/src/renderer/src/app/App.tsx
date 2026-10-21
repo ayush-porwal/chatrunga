@@ -212,7 +212,8 @@ export function App() {
 
   useLichess({ onGameStart: (load) => board.startOnlineGame(load) });
   useBroadcastEventSubscription();
-  useBroadcastFollow();
+  // A followed broadcast game moves on only while its board is shown.
+  useBroadcastFollow(appView === "game");
   useGameEndAlerts();
   useChesscom();
   // The repertoire board has its own move keys (they must not step the game behind it).
