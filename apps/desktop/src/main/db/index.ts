@@ -445,6 +445,55 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     database.exec(`UPDATE game_reviews
       SET engine_id = NULLIF(trim(json_extract(review_json, '$.engineId')), '')
       WHERE json_valid(review_json) AND json_type(review_json, '$.engineId') = 'text'`);
+  },
+  // 13: imported chess books (main/books): the book and its import's state, each page's image
+  // file, text as read and lines (kept so a resumed import pays for nothing twice), and its
+  // chapters with the repertoire chapter each became. A book goes with its repertoire.
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS books (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      author TEXT,
+      color TEXT CHECK (color IN ('white', 'black')),
+      page_count INTEGER NOT NULL,
+      printed_page_offset INTEGER,
+      source_name TEXT NOT NULL,
+      metadata_title TEXT,
+      sha256 TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('adding-pages', 'ready', 'running', 'paused', 'failed', 'done')),
+      stage TEXT,
+      ocr_model TEXT NOT NULL,
+      structure_model TEXT NOT NULL,
+      outline_json TEXT,
+      repertoire_id TEXT REFERENCES repertoires(id) ON DELETE CASCADE,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    database.exec("CREATE INDEX IF NOT EXISTS books_repertoire_idx ON books(repertoire_id)");
+    database.exec("CREATE INDEX IF NOT EXISTS books_sha256_idx ON books(sha256)");
+    database.exec(`CREATE TABLE IF NOT EXISTS book_pages (
+      book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      page_index INTEGER NOT NULL,
+      printed_page INTEGER,
+      image_file TEXT NOT NULL,
+      ocr_text TEXT,
+      ocr_status TEXT NOT NULL DEFAULT 'pending' CHECK (ocr_status IN ('pending', 'done')),
+      lines_json TEXT,
+      lines_status TEXT NOT NULL DEFAULT 'pending' CHECK (lines_status IN ('pending', 'done', 'failed')),
+      PRIMARY KEY (book_id, page_index)
+    )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS book_chapters (
+      book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      idx INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      first_page INTEGER NOT NULL,
+      last_page INTEGER NOT NULL,
+      repertoire_chapter_id TEXT REFERENCES repertoire_chapters(id) ON DELETE SET NULL,
+      report_json TEXT,
+      PRIMARY KEY (book_id, idx)
+    )`);
   }
 ];
 

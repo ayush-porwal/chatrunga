@@ -10,7 +10,7 @@ import { DEFAULT_BOOK_OCR_MODEL, DEFAULT_COMMENTARY_MODEL } from "../llm/models"
 export type ModelPrice = { prompt: number; completion: number; image: number };
 
 /** Prices used when OpenRouter's model list can't be read. */
-export const FALLBACK_MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
+export const FALLBACK_MODEL_PRICES: Readonly<Partial<Record<string, ModelPrice>>> = {
   [DEFAULT_BOOK_OCR_MODEL]: { prompt: 0.5e-6, completion: 3e-6, image: 0 },
   [DEFAULT_COMMENTARY_MODEL]: { prompt: 1e-6, completion: 5e-6, image: 0 }
 };

@@ -73,6 +73,9 @@ vi.mock("../repertoire/service", () => {
   };
 });
 
+const sweepBookFiles = vi.fn();
+vi.mock("../books", () => ({ sweepBookFiles }));
+
 const { registerRepertoireIpc } = await import("./repertoire-handler");
 const { ImportCancelledError } = await import("../repertoire/import-job");
 const { IMPORT_CANCELLED_REPLY } = await import("@chaturanga/shared/types/repertoire");
@@ -415,6 +418,14 @@ describe("registerRepertoireIpc", () => {
     } finally {
       previewOutcome = null;
     }
+  });
+
+  it("deletes the page images of a removed repertoire's book after the removal", async () => {
+    sweepBookFiles.mockClear();
+    await expect(invoke("remove", { id: "r1", expectedRevision: 1 })).resolves.toBe(
+      "removeRepertoire"
+    );
+    await vi.waitFor(() => expect(sweepBookFiles).toHaveBeenCalledTimes(1));
   });
 
   it("parses backup inputs and never accepts a filesystem path", () => {

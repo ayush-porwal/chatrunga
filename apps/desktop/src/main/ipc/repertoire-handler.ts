@@ -42,6 +42,7 @@ import {
 } from "../repertoire/service";
 import { IMPORT_CANCELLED_REPLY } from "@chaturanga/shared/types/repertoire";
 import { ImportCancelledError } from "../repertoire/import-job";
+import { logger } from "../logger";
 import { asId } from "./fields";
 import {
   parseAddFromGameInput,
@@ -154,9 +155,14 @@ export function registerRepertoireIpc(): void {
     const parsed = parseArchiveRepertoireInput(input);
     return withRepertoireWriteGate(() => archiveRepertoire(parsed));
   });
-  ipcMain.handle("repertoires:remove", (_event, input: unknown) => {
+  ipcMain.handle("repertoires:remove", async (_event, input: unknown) => {
     const parsed = parseRemoveRepertoireInput(input);
-    return withRepertoireWriteGate(() => removeRepertoire(parsed));
+    const removed = await withRepertoireWriteGate(() => removeRepertoire(parsed));
+    // A book's rows went with its repertoire; its page images go now (in the background).
+    import("../books")
+      .then((books) => books.sweepBookFiles())
+      .catch((error: unknown) => logger.error("books", "sweeping book pages failed:", error));
+    return removed;
   });
   // A cancelled preview resolves with a marker the preload turns back into the rejection, so a
   // cancel (an expected outcome) isn't logged as a failed handler.

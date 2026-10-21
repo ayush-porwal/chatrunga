@@ -153,6 +153,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerLichessIpc();
   registerChesscomIpc();
   registerProfileIpc();
+  registerBooksIpc();
   registerBroadcastIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
@@ -630,6 +631,26 @@ function registerProfileIpc(): void {
   ipcMain.handle("profile:removePicture", () =>
     profile().then((pictures) => pictures.removeProfilePicture())
   );
+}
+
+/**
+ * Chess book import (main/books), loaded with the first request: the renderer renders the PDF and
+ * sends its pages; main reads them with OpenRouter (the key stays here) and writes the repertoire.
+ */
+function registerBooksIpc(): void {
+  const books = () => import("../books");
+  ipcMain.handle("books:estimate", async (_e, input: unknown) =>
+    (await books()).estimateBook(input)
+  );
+  ipcMain.handle("books:create", async (_e, input: unknown) => (await books()).createBook(input));
+  ipcMain.handle("books:addPage", async (_e, input: unknown) => (await books()).addBookPage(input));
+  ipcMain.handle("books:start", async (_e, id: unknown) => (await books()).startBook(id));
+  ipcMain.handle("books:resume", async (_e, id: unknown) => (await books()).resumeBook(id));
+  ipcMain.handle("books:cancel", async (_e, id: unknown) => (await books()).cancelBook(id));
+  ipcMain.handle("books:get", async (_e, id: unknown) => (await books()).getBook(id));
+  ipcMain.handle("books:list", async () => (await books()).listBooks());
+  ipcMain.handle("books:remove", async (_e, id: unknown) => (await books()).removeBook(id));
+  ipcMain.handle("books:getPages", async (_e, id: unknown) => (await books()).bookPages(id));
 }
 
 /**

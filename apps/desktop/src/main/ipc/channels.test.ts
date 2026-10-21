@@ -62,6 +62,23 @@ describe("IPC channels", () => {
     ).toStrictEqual([]);
   });
 
+  it("exposes every declared books method on its own channel, with progress events", () => {
+    const requested = matches(preload, /ipcRenderer\.invoke\(\s*"(books:\w+)"/g);
+    const api = readFileSync(
+      join(src, "../../../packages/shared/src/ipc/chaturanga-api.ts"),
+      "utf8"
+    );
+    const start = api.indexOf("\n  books: {");
+    const declared = api.slice(start, api.indexOf("\n  };", start));
+    const methods = [...matches(declared, /^ {4}(\w+)[(<]/gm)].filter(
+      (name) => !name.startsWith("on")
+    );
+    expect([...requested].sort()).toStrictEqual(methods.map((name) => `books:${name}`).sort());
+    expect(matches(preload, /subscribe(?:<[^>]*>)?\(\s*"(books:\w+)"/g)).toStrictEqual(
+      new Set(["books:progress"])
+    );
+  });
+
   it("exposes the repertoire namespace, including its lookups and the change event", () => {
     const requested = matches(preload, /ipcRenderer\.invoke\(\s*"(repertoires:\w+)"/g);
     for (const lookup of [

@@ -76,8 +76,8 @@ describe("book prompts", () => {
 describe("estimateBookImport", () => {
   it("scales with the page count at the models' prices", () => {
     const prices = {
-      ocrPrice: FALLBACK_MODEL_PRICES[DEFAULT_BOOK_OCR_MODEL],
-      structurePrice: FALLBACK_MODEL_PRICES[DEFAULT_COMMENTARY_MODEL]
+      ocrPrice: FALLBACK_MODEL_PRICES[DEFAULT_BOOK_OCR_MODEL]!,
+      structurePrice: FALLBACK_MODEL_PRICES[DEFAULT_COMMENTARY_MODEL]!
     };
     const book = estimateBookImport({ pageCount: 352, ...prices });
     expect(book.costUsd).toBeGreaterThan(2);
