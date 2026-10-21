@@ -156,11 +156,15 @@ describe("following a broadcast game on the board", () => {
     const NF3: BroadcastMove = { uci: "g1f3", san: "Nf3", clock: null };
     const NC6: BroadcastMove = { uci: "b8c6", san: "Nc6", clock: null };
     const BB5: BroadcastMove = { uci: "f1b5", san: "Bb5", clock: null };
+    const A6: BroadcastMove = { uci: "a7a6", san: "a6", clock: null };
+    const BA4: BroadcastMove = { uci: "b5a4", san: "Ba4", clock: null };
     open(liveGame(MOVES));
     const stopSounds = watchBoardSounds();
     sounded.length = 0;
     try {
+      // The round's stream, watched, first sends the game as it stands; then its new moves.
       let stopFollowing = followLiveMoves();
+      useBroadcastStore.getState().receiveGame(liveGame(MOVES));
       useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3]));
       expect(sans()).toBe("Nf3");
       expect(sounded).toStrictEqual(["Nf3"]);
@@ -176,9 +180,21 @@ describe("following a broadcast game on the board", () => {
       stopFollowing = followLiveMoves();
       expect(sans()).toBe("Nc6");
       expect(sounded).toStrictEqual(["Nf3"]);
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6]));
       useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6, BB5]));
       expect(sans()).toBe("Bb5");
       expect(sounded).toStrictEqual(["Nf3", "Bb5"]);
+
+      // Away with nothing streaming the round: back, its reopened stream's first sending brings
+      // the move played meanwhile, silently too; the next one sounds.
+      stopFollowing();
+      stopFollowing = followLiveMoves();
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6, BB5, A6]));
+      expect(sans()).toBe("a6");
+      expect(sounded).toStrictEqual(["Nf3", "Bb5"]);
+      useBroadcastStore.getState().receiveGame(liveGame([...MOVES, NF3, NC6, BB5, A6, BA4]));
+      expect(sans()).toBe("Ba4");
+      expect(sounded).toStrictEqual(["Nf3", "Bb5", "Ba4"]);
       stopFollowing();
     } finally {
       stopSounds();

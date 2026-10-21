@@ -177,18 +177,25 @@ export function undoBackToLive(): void {
 }
 
 /**
- * Merges the followed game's moves into its board as they arrive, starting with any that arrived
- * while it wasn't followed (put in silently: they weren't played just now). Returns the stop.
+ * Merges the followed game's moves into its board as they arrive, starting with any played while
+ * it wasn't followed (put in silently: they weren't played just now). Returns the stop.
  */
 export function followLiveMoves(): () => void {
   const { follow, games } = useBroadcastStore.getState();
   const waiting = follow ? games[follow.gameId] : undefined;
   if (waiting) withoutMoveSounds(() => applyLiveGame(waiting));
+  // The stream (re)opened with it sends every game once: the followed game's first sending is
+  // catching up too.
+  let catchingUp = follow?.gameId ?? null;
   return useBroadcastStore.subscribe((state, previous) => {
     const gameId = state.follow?.gameId;
     if (!gameId) return;
     const game = state.games[gameId];
-    if (game && game !== previous.games[gameId]) applyLiveGame(game);
+    if (!game || game === previous.games[gameId]) return;
+    if (gameId === catchingUp) {
+      catchingUp = null;
+      withoutMoveSounds(() => applyLiveGame(game));
+    } else applyLiveGame(game);
   });
 }
 
