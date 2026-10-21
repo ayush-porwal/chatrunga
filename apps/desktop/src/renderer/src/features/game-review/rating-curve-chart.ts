@@ -73,8 +73,9 @@ export function percent(value: number): string {
 }
 
 /**
- * The prediction the Human moves table reads: Maia 3's at the mover's rating, else (Maia 1) the
- * level nearest the user's rating, `bucket`, when Maia ran there.
+ * The prediction the Human moves table reads: Maia 3's at the mover's rating, else the move's
+ * prediction at `bucket` (markedRating): Maia 1's level nearest the user's rating, when Maia ran
+ * there, or, on a Maia 3 move a partial run missed, its curve's point at the mover's rating.
  */
 export function tablePrediction(move: MoveReview, bucket: number): RatingPrediction | undefined {
   return (

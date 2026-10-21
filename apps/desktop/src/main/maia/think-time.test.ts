@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MAX_THINK_MS, MIN_THINK_MS, maiaThinkMs, type MaiaThinkInput } from "./think-time";
+import {
+  MAX_THINK_MS,
+  MIN_THINK_MS,
+  OPENING_FIRST_MS,
+  OPENING_STEP_MS,
+  maiaThinkMs,
+  type MaiaThinkInput
+} from "./think-time";
 
 /** A seeded random (mulberry32): the same draws on every run. */
 function seeded(seed: number): () => number {
@@ -46,6 +53,26 @@ describe("maiaThinkMs", () => {
     expect(maiaThinkMs({ ...midgame, moveNumber: 1 })).toBeLessThan(
       maiaThinkMs({ ...midgame, moveNumber: 15 }) * 0.5
     );
+    // ×0.1 on move 1: 300 s over 39.5 moves, ×1.1 for the top move at 40%.
+    expect(maiaThinkMs({ ...midgame, moveNumber: 1 })).toBe(835);
+    // Move 20 is the middlegame's full budget: the same as before the opening ramp.
+    expect(maiaThinkMs(midgame)).toBe(11_000);
+  });
+
+  it("opens a 15+10 game in a few seconds, however unclear the position or long the draw", () => {
+    const rapid = { ...midgame, remainingMs: 900_000, incrementMs: 10_000, moveNumber: 1 };
+    for (const topProb of [0, 0.2, 0.4, 0.8, 1]) {
+      for (const draw of [0, 0.5, 0.99]) {
+        const ms = maiaThinkMs({ ...rapid, topProb, random: () => draw });
+        expect(ms).toBeGreaterThanOrEqual(MIN_THINK_MS);
+        expect(ms).toBeLessThanOrEqual(OPENING_FIRST_MS);
+      }
+    }
+    // An hour's clock opens no slower, and each later opening move may take a little longer.
+    const hour = { ...rapid, remainingMs: 3_600_000, topProb: 0, random: () => 0.99 };
+    expect(maiaThinkMs(hour)).toBe(OPENING_FIRST_MS);
+    expect(maiaThinkMs({ ...hour, moveNumber: 5 })).toBe(OPENING_FIRST_MS + 4 * OPENING_STEP_MS);
+    expect(maiaThinkMs({ ...hour, moveNumber: 20 })).toBe(MAX_THINK_MS);
   });
 
   it("varies with the draw, within ±25%", () => {

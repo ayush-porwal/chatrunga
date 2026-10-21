@@ -263,6 +263,43 @@ describe("AssetManager", () => {
     expect(events.at(-1)).toBe("ready");
   });
 
+  it("offers the model a later build pins as Maia 3's update, and Update installs it", async () => {
+    const pinned = manifestWithMaia3({
+      url: MODEL_URL,
+      sizeBytes: modelBytes.length,
+      sha256: sha256(modelBytes)
+    });
+    // Not installed: a download, not an update.
+    const fresh = makeManager(pinned);
+    await fresh.init();
+    expect((await fresh.getStatus()).maia3.updateAvailable).toBe(false);
+    await fresh.downloadAsset("maia3");
+    expect((await fresh.getStatus()).maia3.updateAvailable).toBe(false);
+
+    // The next release pins another commit: a new version, file and hash.
+    const nextBytes = Buffer.from("fake maia 3 model, retrained");
+    const nextUrl = "https://raw.githubusercontent.com/test/next/model.onnx";
+    routes[nextUrl] = () => new Response(nextBytes);
+    const later = makeManager({
+      ...ENGINE_MANIFEST,
+      maia3: {
+        version: "maia3-next",
+        file: { url: nextUrl, sizeBytes: nextBytes.length, sha256: sha256(nextBytes) }
+      }
+    });
+    await later.init();
+    expect((await later.getStatus()).maia3).toMatchObject({
+      installedVersion: "maia3-test",
+      latestVersion: "maia3-next",
+      updateAvailable: true
+    });
+    await later.downloadAsset("maia3");
+    const record = later.getInstalled().maia3;
+    expect(record).toMatchObject({ state: "installed", version: "maia3-next" });
+    expect(readFileSync(record.installedPath!)).toStrictEqual(nextBytes);
+    expect((await later.getStatus()).maia3.updateAvailable).toBe(false);
+  });
+
   it("refuses the Maia 3 model from any host but raw GitHub", async () => {
     routes[NETWORK_URL] = () => new Response(modelBytes);
     const manager = makeManager(
@@ -589,6 +626,40 @@ describe("AssetManager", () => {
     const savedText = readFileSync(statePath, "utf-8");
     await makeManager().init();
     expect(readFileSync(statePath, "utf-8")).toBe(savedText);
+  });
+
+  it("never deletes a Maia 1 file a record marked custom, even at the name of our own download", async () => {
+    const engines = path.join(userDataDir, "engines");
+    mkdirSync(engines, { recursive: true });
+    const usersWeight = path.join(engines, "maia-1500.pb.gz");
+    const ourWeight = path.join(engines, "maia-1100.pb.gz");
+    writeFileSync(usersWeight, "user's weights");
+    writeFileSync(ourWeight, "weights");
+    const statePath = path.join(userDataDir, "engine-assets.json");
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        records: [
+          storedRecord("maia-1500", "custom", usersWeight),
+          storedRecord("maia-1100", "installed", ourWeight)
+        ]
+      })
+    );
+
+    await makeManager().init();
+    expect(existsSync(usersWeight)).toBe(true);
+    expect(existsSync(ourWeight)).toBe(false);
+    // Its record stays (not an asset any more), so a later launch still knows the file is the user's.
+    const saved = JSON.parse(readFileSync(statePath, "utf-8")) as SavedAssets;
+    expect(saved.records.map((r) => r.id)).toStrictEqual(["maia-1500"]);
+    const next = makeManager();
+    await next.init();
+    expect(existsSync(usersWeight)).toBe(true);
+    expect(Object.keys(next.getInstalled())).not.toContain("maia-1500");
+    // Writing the state keeps it too.
+    await next.removeAsset("stockfish");
+    await makeManager().init();
+    expect(existsSync(usersWeight)).toBe(true);
   });
 
   it("serializes concurrent state writes without temp-file collisions", async () => {

@@ -18,6 +18,7 @@ import { ReviewSummaryTab } from "./ReviewSummaryTab";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
+import { maiaCurveSource } from "./maia-curve-source";
 import { ReviewCharts } from "./ReviewCharts";
 import { useAnalysisFollow } from "./useAnalysisFollow";
 import { useReviewPanelAnchor } from "./useReviewPanelAnchor";
@@ -448,15 +449,16 @@ const ReviewTabBar = memo(function ReviewTabBar({
 const EMPTY_MOVES: MoveReview[] = [];
 
 /**
- * Where a move's rating curve is read from: a finished Maia 3 review (null otherwise). Main reads
- * it once the autosave has written the review, moments after it finishes; until then the curve
- * query asks again (queries/maia.ts).
+ * Where a move's rating curve is read from, and the ratings Maia read each side at: a finished
+ * Maia 3 review (null otherwise). Main reads it once the autosave has written the review, moments
+ * after it finishes; until then the curve query asks again (queries/maia.ts).
  */
 function useMaiaCurveSource(review: GameReview | null, running: boolean, gameId: string | null) {
-  const savedReviewId = !running && review?.maia?.model === "maia3" ? review.reviewId : undefined;
+  const reviewId = running ? undefined : review?.reviewId;
+  const maia = review?.maia;
   return useMemo(
-    () => (gameId && savedReviewId ? { gameId, reviewId: savedReviewId } : null),
-    [gameId, savedReviewId]
+    () => maiaCurveSource(gameId, reviewId ? { reviewId, maia } : null),
+    [gameId, reviewId, maia]
   );
 }
 

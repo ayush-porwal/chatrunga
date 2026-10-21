@@ -4,8 +4,6 @@ import type { Color } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import type { TacticalFact } from "@chaturanga/shared/schemas";
 import { formatMillisecondsDuration } from "@chaturanga/shared/chess/clock-display";
-import { nearestRating } from "@chaturanga/shared/chess/rating-curve";
-import { MAIA_BUCKETS } from "@chaturanga/shared/schemas/constants";
 import {
   buildEngineSignals,
   buildTacticalFacts,
@@ -25,6 +23,7 @@ import {
   type PredictionCurve
 } from "./rating-curve-chart";
 import { moverOf } from "./review-summary";
+import { curveRequest, markedRating, type MaiaCurveSource } from "./maia-curve-source";
 import { useMaia3Installed, useMaiaCurveQuery } from "../../queries/maia";
 import { useReviewStore } from "../../stores/review-store";
 import { ipcErrorMessage } from "@/lib/ipc-error";
@@ -74,7 +73,7 @@ export function ReviewEnginePanel({
   reviewedSide: Color;
   /** The display name of the engine the review's evaluations are from (null: unknown). */
   evalEngine: string | null;
-  /** The saved review a Maia 3 move's curve is read for (null: none, or not saved yet). */
+  /** The saved Maia 3 review a move's curve is read for, and its side ratings (null: none, or not saved yet). */
   maiaCurveSource: MaiaCurveSource | null;
   /** Offered as the "No review yet" action. */
   onAnalyze?: () => void;
@@ -302,10 +301,10 @@ function HumanAndEngine({
   running: boolean;
 }) {
   const annotation = move.assessment?.annotation ?? null;
-  const mover = move.moverPrediction;
   // Maia 3 reads the mover at their rating; Maia 1 the user at the nearest of its levels.
-  const marked = mover?.rating ?? nearestRating(MAIA_BUCKETS, userRating);
-  const markLabel = !mover || moverOf(move) === reviewedSide ? "You" : "Opponent";
+  const marked = markedRating(move, curveSource, userRating);
+  const maia3 = Boolean(move.moverPrediction) || curveSource !== null;
+  const markLabel = !maia3 || moverOf(move) === reviewedSide ? "You" : "Opponent";
   const tableSource = tablePrediction(move, marked);
   const human = useMemo(() => humanMoveRows(move, tableSource), [move, tableSource]);
   const engine = useMemo(
@@ -413,9 +412,6 @@ function HumanCurve({
   );
 }
 
-/** Where a Maia 3 move's curve is read from: the saved review it belongs to. */
-type MaiaCurveSource = { gameId: string; reviewId: string };
-
 type MoveCurve =
   | { status: "ready"; curve: PredictionCurve }
   | { status: "loading" }
@@ -424,10 +420,10 @@ type MoveCurve =
 
 /**
  * The move's rating curve: the predictions it carries (Maia 1's levels, or a Maia 3 curve saved
- * with it), else for a Maia 3 move of a saved review (`source`) Maia 3's, read on demand once.
+ * with it), else for any move of a saved Maia 3 review (`source`) Maia 3's, read on demand once
+ * (a move a partial Maia run missed too: see curveRequest).
  */
 function useMoveCurve(move: MoveReview, marked: number, source: MaiaCurveSource | null): MoveCurve {
-  const maia3 = Boolean(move.moverPrediction);
   // Maia 1's five levels, or a Maia 3 curve saved with the move (none during the run).
   const storedCurve = useMemo(
     () =>
@@ -436,7 +432,7 @@ function useMoveCurve(move: MoveReview, marked: number, source: MaiaCurveSource 
         : null,
     [marked, move]
   );
-  const input = maia3 && !storedCurve && source ? { ...source, nodeId: move.nodeId } : null;
+  const input = curveRequest(source, move, storedCurve !== null);
   const query = useMaiaCurveQuery(input);
   // Into the shown review too, so the coach and the next visit read it without asking again.
   const read = query.data;

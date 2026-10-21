@@ -99,7 +99,12 @@ test("Maia plays at the rating chosen in Play settings, named for it, and replie
     )
     .toBe(1100);
 
-  // Untimed, Maia answers at once: 1. e4 and its reply.
+  // Untimed (the time control's first stop: the card may remember a clock), Maia answers at once:
+  // 1. e4 and its reply.
+  const timeControl = playCard(page).getByRole("slider", { name: "Time control" });
+  await timeControl.focus();
+  await timeControl.press("Home");
+  await expect(timeControl).toHaveAttribute("aria-valuetext", "No clock");
   await playCard(page).getByRole("button", { name: "Start game", exact: true }).click();
   await clickSquare(page, "e2");
   await clickSquare(page, "e4");

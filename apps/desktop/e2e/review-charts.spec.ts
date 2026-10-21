@@ -360,6 +360,10 @@ test("Maia 3 reads each side at its game rating: human moves and the curve acros
   await expect(
     charts(page).getByRole("button", { name: "Difficulty at 1800 · Maia" })
   ).toBeVisible();
+  // The new review opens on its Moves tab: 4. Nxe5 again, on the Engine tab, reads White at 1800.
+  await view(page, "winning-chances").locator('circle[data-ply="7"]').click();
+  await expect(counter(page)).toHaveText("4 / 7");
+  await reviewTabs(page).getByRole("tab", { name: "Engine", exact: true }).click();
   await expect(page.getByRole("table", { name: /Human moves at 1800$/ })).toBeVisible();
 });
 

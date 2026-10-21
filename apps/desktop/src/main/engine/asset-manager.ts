@@ -54,6 +54,7 @@ import { downloadToFile } from "./http-download";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { parseStoredJson } from "../stored-json";
 import { errorCode } from "../system-error";
+import type { StoredRetiredRecord } from "./retired-maia";
 
 const exec = promisify(execFile);
 
@@ -74,7 +75,7 @@ const exec = promisify(execFile);
  *   can point it at their own `.pb` / `.pb.gz` instead (a "custom" path, as for the engines).
  *
  * Maia 1 (five Lc0 weight files, `maia-1100` … `maia-1900`) is retired: init() deletes their files
- * and forgets their records.
+ * and forgets their records, never a file the user chose as their own (retired-maia.ts).
  *
  * Install pipeline: download (resumable, host allow-listed) → verify (sha256 digest when
  * published, and the server-reported length) → extract into a staging dir → chmod (engine
@@ -82,8 +83,9 @@ const exec = promisify(execFile);
  * never changes, so an update keeps the engines table pointing at the same file. Nothing downloaded is executed
  * here. One retry on failure (a digest mismatch discards the partial first).
  *
- * Updates are never applied silently: status() reports `updateAvailable` and the user
- * triggers downloadAsset() again.
+ * Updates are never applied silently: status() reports `updateAvailable` (a newer GitHub release,
+ * or a Maia 3 model other than the one this build pins) and the user triggers downloadAsset()
+ * again.
  *
  * State lives in JSON at `userData/engine-assets.json` (release cache next to it).
  */
@@ -92,11 +94,6 @@ const STATE_FILE = "engine-assets.json";
 const RELEASE_CACHE_FILE = "engine-releases-cache.json";
 /** An explicit "check for updates" reuses a lookup this recent instead of asking GitHub again. */
 const CHECK_MAX_AGE_MS = 60 * 1000;
-
-/** Maia 1's asset ids, retired: their weights were `<id>.pb.gz` in the engines folder (see init). */
-const RETIRED_MAIA_IDS: readonly string[] = [1100, 1300, 1500, 1700, 1900].map(
-  (rating) => `maia-${rating}`
-);
 
 export type AssetId = "stockfish" | "lc0" | "lc0-network" | "maia3";
 
@@ -238,10 +235,12 @@ function downloadableStatus(record: AssetRecord, resolved: ResolvedDownload): As
     installedVersion,
     latestVersion: resolved.version,
     // Only a live (or cached) GitHub answer can say there is something newer: the
-    // fallback manifest may well be older than what is installed.
+    // fallback manifest may well be older than what is installed. A pinned file (Maia 3's model,
+    // its URL a commit and its sha256 fixed) is this build's choice: any other version installed
+    // is replaced by it.
     updateAvailable:
       record.state === "installed" &&
-      resolved.source === "github" &&
+      (resolved.source === "github" || (resolved.source === "fixed" && resolved.sha256 !== null)) &&
       isDifferentVersion(installedVersion, resolved.version),
     downloadSizeBytes: resolved.sizeBytes,
     latestSource: resolved.source,
@@ -325,6 +324,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   /** Tail of the serialized state-file writes (see saveState). */
   private stateWrites: Promise<void> = Promise.resolve();
   private stateWriteSeq = 0;
+  /**
+   * Maia 1 records an older build marked `custom` at a name the retirement deletes: the file is the
+   * user's, so it stays, and so does its record (written back with the state; see retired-maia.ts).
+   */
+  private retiredCustom: StoredRetiredRecord[] = [];
 
   constructor(opts: AssetManagerOptions) {
     super();
@@ -347,9 +351,15 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     await mkdir(this.enginesDir, { recursive: true });
     await this.loadState();
     await this.cleanupLeftovers();
-    await this.removeRetiredMaia().catch((error: unknown) => {
-      logger.warn("asset-manager", "removing the retired Maia 1 weights failed:", errorText(error));
-    });
+    await import("./retired-maia")
+      .then(({ removeRetiredMaia }) => removeRetiredMaia(this.enginesDir, this.retiredCustom))
+      .catch((error: unknown) => {
+        logger.warn(
+          "asset-manager",
+          "removing the retired Maia 1 weights failed:",
+          errorText(error)
+        );
+      });
   }
 
   getInstalled(): Record<AssetId, AssetRecord> {
@@ -678,31 +688,6 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     await unlink(file).catch(() => undefined);
   }
 
-  /**
-   * Maia 1 is replaced by Maia 3: deletes the weights, their partial downloads and the licence
-   * copy this manager put in the engines folder (loadState has forgotten their records; a custom
-   * file the user chose is never deleted). Idempotent; a file that can't go is logged.
-   */
-  private async removeRetiredMaia(): Promise<void> {
-    const downloadsDir = path.join(this.enginesDir, ".downloads");
-    const partials = (await readdir(downloadsDir).catch(() => [] as string[]))
-      .filter((name) => RETIRED_MAIA_IDS.some((id) => name.startsWith(`${id}--`)))
-      .map((name) => path.join(downloadsDir, name));
-    const files = [
-      ...RETIRED_MAIA_IDS.map((id) => path.join(this.enginesDir, `${id}.pb.gz`)),
-      ...partials,
-      path.join(this.enginesDir, "LICENSE_MAIA.txt")
-    ];
-    await Promise.all(
-      files.map((file) =>
-        unlink(file).catch((error: unknown) => {
-          if (errorCode(error) !== "ENOENT")
-            logger.warn("asset-manager", `could not delete ${file}:`, errorText(error));
-        })
-      )
-    );
-  }
-
   private releaseReposForPlatform(): string[] {
     const key = this.platformKey;
     if (!key) return [];
@@ -780,15 +765,22 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       // A damaged file may hold null entries.
       const parsed = parseStoredJson<{ records?: (AssetRecord | null)[] }>(raw);
       let changed = false;
+      const unknown: StoredRetiredRecord[] = [];
       for (const record of parsed.records ?? []) {
         if (!isAssetId(record?.id)) {
-          // Maia 1's records (retired, see removeRetiredMaia) are forgotten.
-          changed ||= RETIRED_MAIA_IDS.includes(String(record?.id));
+          // Not one of today's assets: Maia 1's (retired-maia.ts sorts them) or junk.
+          if (record) unknown.push(record);
           continue;
         }
         const restored = this.withExistingFiles(record);
         changed ||= restored !== record;
         this.state.set(record.id, restored);
+      }
+      if (unknown.length > 0) {
+        const { sortRetiredRecords } = await import("./retired-maia");
+        const retired = sortRetiredRecords(unknown, this.enginesDir);
+        this.retiredCustom = retired.kept;
+        changed ||= retired.forgot;
       }
       if (changed) await this.saveState();
     } catch {
@@ -814,7 +806,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   private saveState(): Promise<void> {
     const write = async () => {
-      const payload = { records: [...this.state.values()] };
+      const payload = { records: [...this.state.values(), ...this.retiredCustom] };
       const tmp = `${this.statePath}.${process.pid}.${++this.stateWriteSeq}.tmp`;
       await writeFile(tmp, JSON.stringify(payload, null, 2), "utf-8");
       await rename(tmp, this.statePath);
