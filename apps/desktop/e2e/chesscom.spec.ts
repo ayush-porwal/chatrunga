@@ -23,11 +23,21 @@ import { RUY_LOPEZ_PGN, writePgn } from "./fixtures";
 const API = "https://api.chess.com/pub/player/ayush_p64";
 const FIXTURES = join(desktopDir, "src/main/chesscom/__fixtures__");
 
-/** Chess.com's answers for the account: its profile, ratings and three months of games. */
+/** A 1×1 PNG: the account's picture. */
+const AVATAR_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+/** Chess.com's answers for the account: its profile, picture, ratings and three months of games. */
 async function serveChesscom(app: ElectronApplication, profile: string): Promise<void> {
   const emptyMonth = join(profile, "chesscom-empty-month.json");
   writeFileSync(emptyMonth, JSON.stringify({ games: [] }));
+  const avatar = join(profile, "chesscom-avatar.png");
+  writeFileSync(avatar, AVATAR_PNG);
   const routes: [string, string][] = [
+    // profile.json's `avatar`.
+    ["https://images.chesscomfiles.com/uploads/v1/user/1.png", avatar],
     [API, join(FIXTURES, "profile.json")],
     [`${API}/stats`, join(FIXTURES, "stats.json")],
     [`${API}/games/archives`, join(FIXTURES, "archives.json")],
@@ -131,6 +141,8 @@ test("a chess.com account imports its games under their own source, in the libra
   const card = chesscomCard(page);
   for (const badge of ["Rapid 1684", "Blitz 1662", "Bullet 1490", "Daily 1550"])
     await expect(card.getByText(badge, { exact: true })).toBeVisible();
+  // The account's picture is downloaded (through the picture session) and becomes yours.
+  await expect(page.locator("#settings-picture")).toContainText("From Chess.com");
   // Only chess.com is connected: it fills the ratings (Daily is Correspondence), read-only;
   // Classical has no chess.com rating and stays an input. No picker with one account.
   const ratings = ratingsGroup(page);
@@ -214,7 +226,7 @@ test("a chess.com account imports its games under their own source, in the libra
   await expect(recent.getByRole("button", { name: /^rook_n_roll vs ayush_p64$/ })).toBeVisible();
 });
 
-test("disconnecting chess.com can remove its games; the ratings stay, typed-in", async ({
+test("disconnecting chess.com can remove its games and drops its picture; the ratings stay, typed-in", async ({
   launch,
   profile
 }) => {
@@ -234,6 +246,8 @@ test("disconnecting chess.com can remove its games; the ratings stay, typed-in",
   await dialog.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(card.getByLabel("Chess.com username")).toBeVisible();
+  // Its picture goes with it.
+  await expect(page.locator("#settings-picture")).toContainText("None: your colour shows");
 
   const ratings = ratingsGroup(page);
   await expect(ratings.getByRole("spinbutton", { name: "Rapid", exact: true })).toHaveValue("1684");

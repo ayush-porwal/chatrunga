@@ -19,6 +19,11 @@ export type LichessAccount = {
   id: string;
   username: string;
   title: string | null;
+  /**
+   * The account's flair ("objects.crown"), null without one: Lichess has no profile photos, so it
+   * stands for "your picture" (main/profile-picture keeps a copy of its image).
+   */
+  flair: string | null;
   perfs: Partial<Record<LichessSpeed, LichessPerf>>;
   connectedAt: number;
   /** When games were last imported (epoch ms), null before the first import. */

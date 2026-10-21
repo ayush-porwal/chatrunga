@@ -187,6 +187,12 @@ const api: ChaturangaApi = {
     unwatchRound: (roundId) => ipcRenderer.invoke("broadcasts:unwatchRound", roundId),
     notify: (alert) => ipcRenderer.invoke("broadcasts:notify", alert)
   },
+  profile: {
+    picture: () => ipcRenderer.invoke("profile:picture"),
+    choosePicture: () => ipcRenderer.invoke("profile:choosePicture"),
+    removePicture: () => ipcRenderer.invoke("profile:removePicture"),
+    onPictureChanged: subscribe<void>("profile:pictureChanged")
+  },
   // Chess.com account and import (main/chesscom).
   chesscom: {
     status: () => ipcRenderer.invoke("chesscom:status"),

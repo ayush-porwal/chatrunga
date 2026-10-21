@@ -3,17 +3,20 @@ import { SideDot } from "@/components/ui/side-dot";
 import type { EngineIdentity } from "@/lib/engine-identity";
 import { cn } from "@/lib/utils";
 import { EngineAvatar } from "../analysis/EngineAvatar";
+import { useYourPicture, YourAvatar } from "../profile/YourAvatar";
+import { sideMark } from "../profile/side-mark";
 
 /**
- * Player label next to a board: the side's tile (a side dot on a rounded square, or the engine's
- * image slot), name, optional Elo and hint. Shared by the game board (BoardView) and the game
- * review board via <PlayerRow> so both read the same.
+ * Player label next to a board: the side's tile (the engine's image slot, your picture on your
+ * side, else a side dot on a rounded square), name, optional Elo and hint. Shared by the game
+ * board (BoardView) and the game review board via <PlayerRow> so both read the same.
  */
 function PlayerIdentity({
   color,
   name,
   elo,
   engine = null,
+  you = false,
   hint = null,
   className
 }: {
@@ -22,13 +25,19 @@ function PlayerIdentity({
   elo?: string | null;
   /** When the side is played by an engine: its image slot (EngineAvatar) instead of the side dot. */
   engine?: EngineIdentity | null;
+  /** The side is yours: your picture (when you have one) instead of the side dot. */
+  you?: boolean;
   hint?: ReactNode;
   className?: string;
 }) {
+  const yours = useYourPicture();
+  const mark = sideMark(engine, you ? yours : null);
   return (
     <div className={cn("flex min-w-0 items-center gap-2.5 text-sm", className)}>
-      {engine ? (
-        <EngineAvatar engine={engine} size="sm" />
+      {mark.kind === "engine" ? (
+        <EngineAvatar engine={mark.engine} size="sm" />
+      ) : mark.kind === "you" ? (
+        <YourAvatar picture={mark.picture} size="sm" />
       ) : (
         <span
           aria-hidden="true"
@@ -93,6 +102,7 @@ export const PlayerRow = memo(function PlayerRow({
   name,
   elo = null,
   engine = null,
+  you = false,
   hint = null,
   clock = null,
   clockActive = false
@@ -101,13 +111,14 @@ export const PlayerRow = memo(function PlayerRow({
   name: string;
   elo?: string | null;
   engine?: EngineIdentity | null;
+  you?: boolean;
   hint?: ReactNode;
   clock?: ReactNode;
   clockActive?: boolean;
 }) {
   return (
     <div className="flex h-8 w-full min-w-0 items-center justify-between gap-3 px-0.5">
-      <PlayerIdentity color={color} name={name} elo={elo} engine={engine} hint={hint} />
+      <PlayerIdentity color={color} name={name} elo={elo} engine={engine} you={you} hint={hint} />
       {typeof clock === "string" ? (
         clock ? (
           <ClockFace color={color} text={clock} active={clockActive} />

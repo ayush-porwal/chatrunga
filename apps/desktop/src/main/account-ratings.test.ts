@@ -15,6 +15,7 @@ const LICHESS: LichessAccount = {
   id: "ayushp",
   username: "ayushp",
   title: null,
+  flair: null,
   perfs: {
     bullet: { rating: 1689, games: 10, provisional: false },
     blitz: { rating: 1741, games: 10, provisional: false },
@@ -29,6 +30,7 @@ const CHESSCOM: ChesscomAccount = {
   id: "ayush_p64",
   username: "ayush_p64",
   title: null,
+  avatar: null,
   ratings: { rapid: 1684, blitz: 1662, bullet: 1490, daily: 1550 },
   connectedAt: 1,
   lastSyncAt: null

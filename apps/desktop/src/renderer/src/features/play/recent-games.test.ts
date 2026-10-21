@@ -10,7 +10,8 @@ import {
   reviewSummary,
   savedGameFacts,
   scoresFor,
-  userSide
+  userSide,
+  yourSideOf
 } from "./recent-games";
 
 const summary = (id: string, overrides: Partial<GameSummary> = {}): GameSummary => ({
@@ -60,6 +61,19 @@ describe("Recent games rows", () => {
     ).toBe("black");
     // Nobody known: White at the bottom.
     expect(userSide(summary("g"), ["someone_else"])).toBe("white");
+  });
+
+  it("knows your side only from a You side or a connected account's name", () => {
+    expect(yourSideOf(summary("g", { white: "You", black: "Maia 1500" }), [])).toBe("white");
+    // The "You" side first, then Lichess, then Chess.com.
+    expect(yourSideOf(summary("g", { white: "You", black: "ayush" }), ["ayush"])).toBe("white");
+    expect(
+      yourSideOf(summary("g", { white: "Ayush", black: "kakashi" }), ["ayush", "kakashi"])
+    ).toBe("white");
+    // Someone else's game, a free board (both or neither "You"): nobody's yours.
+    expect(yourSideOf(summary("g"), [null, "someone_else"])).toBeNull();
+    expect(yourSideOf(summary("g", { white: "You", black: "You" }), [])).toBeNull();
+    expect(yourSideOf(summary("g", { white: null, black: null }), ["ayush"])).toBeNull();
   });
 
   it("counts the main line in full moves and tints the move on the board", () => {

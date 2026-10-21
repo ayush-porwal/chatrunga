@@ -25,11 +25,11 @@ import type {
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { CustomClockSteppers, TimeControlSlider, type SliderStop } from "./TimeControlSlider";
 import {
-  KingTile,
   MatchSide,
   NoOpponentSide,
   OpponentTile,
   WaitBar,
+  YouTile,
   footButton,
   playSegAccentClass,
   playSegClass
@@ -77,7 +77,7 @@ export type CardView = {
 export function firstRunView(ways: ReactNode): CardView {
   return {
     header: {
-      you: <MatchSide tile={<KingTile color="white" />} name="You" detail="" />,
+      you: <MatchSide tile={<YouTile color="white" />} name="You" detail="" />,
       opponent: <NoOpponentSide />,
       onSwap: null,
       bare: false
@@ -135,7 +135,7 @@ function LichessYou({
   locked: boolean;
 }) {
   return (
-    <MatchSide tile={<KingTile color={color} />} name="You" detail={locked ? "" : (rating ?? "")} />
+    <MatchSide tile={<YouTile color={color} />} name="You" detail={locked ? "" : (rating ?? "")} />
   );
 }
 
@@ -330,12 +330,12 @@ export function engineView({
   handoffStrip: ReactNode;
   enginesWay: ReactNode;
 }): CardView {
-  const you = <MatchSide tile={<KingTile color={engine.humanColor} />} name="You" />;
+  const you = <MatchSide tile={<YouTile color={engine.humanColor} />} name="You" />;
   // No engine yet: the way to get one, in place of the clock and the button.
   if (engine.enginesLoaded && !engine.engines.length) {
     return {
       header: {
-        you: <MatchSide tile={<KingTile color={engine.humanColor} />} name="You" detail="" />,
+        you: <MatchSide tile={<YouTile color={engine.humanColor} />} name="You" detail="" />,
         opponent: <NoOpponentSide />,
         onSwap: null,
         bare: false

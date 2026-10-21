@@ -191,6 +191,17 @@ export type WindowGlassState = {
   active: boolean;
 };
 
+/**
+ * Your picture (main/profile-picture), as every "You" shows it: the photo chosen in Settings, else
+ * the connected Chess.com account's picture, else the connected Lichess account's flair. `src` is
+ * the app's own copy (a `chaturanga-image:` URL); both null when there is none (the side's colour
+ * shows instead).
+ */
+export type YourPicture = {
+  src: string | null;
+  source: "upload" | "chesscom" | "lichess" | null;
+};
+
 /** `process.platform`, spelled out so the renderer (which has no Node types) can use it. */
 export type Platform =
   | "aix"
@@ -440,6 +451,20 @@ export type ChaturangaApi = {
     disconnect(options: { removeGames: boolean }): Promise<ChesscomStatus>;
     /** Imports new finished games; progress arrives as `sync` events. */
     syncGames(): Promise<ChesscomSyncResult>;
+  };
+
+  /** Your picture (see YourPicture). */
+  profile: {
+    picture(): Promise<YourPicture>;
+    /**
+     * Opens a picture file dialog; the picture chosen (a copy of it) becomes yours. Resolves with
+     * your picture after (unchanged when cancelled); rejects when the file can't be used.
+     */
+    choosePicture(): Promise<YourPicture>;
+    /** Forgets the chosen photo: an account's picture, if any, shows again. */
+    removePicture(): Promise<YourPicture>;
+    /** Your picture changed (chosen, removed, or an account's picture came or went). */
+    onPictureChanged(callback: () => void): Unsubscribe;
   };
 
   /**

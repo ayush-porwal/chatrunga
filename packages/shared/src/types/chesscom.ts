@@ -24,6 +24,11 @@ export type ChesscomAccount = {
   /** The username as chess.com shows it. */
   username: string;
   title: string | null;
+  /**
+   * The profile picture's address (on images.chesscomfiles.com), null without one. The main process
+   * keeps a copy for "your picture" (main/profile-picture); the renderer never loads it from the web.
+   */
+  avatar: string | null;
   ratings: ChesscomRatings;
   connectedAt: number;
   /** When games were last imported (epoch ms), null before the first import. */

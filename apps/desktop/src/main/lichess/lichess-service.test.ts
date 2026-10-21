@@ -14,6 +14,7 @@ const ACCOUNT: LichessAccount = {
   id: "kenneth",
   username: "Kenneth",
   title: null,
+  flair: null,
   perfs: {},
   connectedAt: 1000,
   lastSyncAt: null
@@ -642,12 +643,13 @@ describe("lichess service", () => {
       });
     });
 
-    it("reads the account's ratings again and keeps them with the account", async () => {
+    it("reads the account's ratings and flair again and keeps them with the account", async () => {
       const { service, store, events } = await setup({
         "GET /api/account": () =>
           json({
             id: "kenneth",
             username: "Kenneth",
+            flair: "objects.crown",
             perfs: {
               blitz: { rating: 1720, games: 300, prov: false },
               rapid: { rating: 1810, games: 4, prov: true }
@@ -660,7 +662,12 @@ describe("lichess service", () => {
         rapid: { rating: 1810, games: 4, provisional: true }
       });
       // The rest of the account is as it was connected.
-      expect((await store.status()).account).toStrictEqual({ ...ACCOUNT, perfs: account?.perfs });
+      expect(account?.flair).toBe("objects.crown");
+      expect((await store.status()).account).toStrictEqual({
+        ...ACCOUNT,
+        perfs: account?.perfs,
+        flair: "objects.crown"
+      });
       await vi.waitFor(() =>
         expect(events.at(-1)).toMatchObject({
           type: "status",

@@ -86,20 +86,28 @@ export function playerName(game: Pick<GameSummary, Color>, color: Color): string
 }
 
 /**
- * The side the user played, which the thumbnail shows at the bottom: the "You" side of an engine
- * game, else the side named after a connected account (Lichess, Chess.com), else White.
+ * The side the user played: the "You" side of an engine game, else the side named after a
+ * connected account (Lichess, Chess.com); null when neither tells (someone else's game).
  */
-export function userSide(
+export function yourSideOf(
   game: Pick<GameSummary, Color>,
   usernames: readonly (string | null)[]
-): Color {
+): Color | null {
   const you = (color: Color) => game[color]?.trim() === "You";
   if (you("white") !== you("black")) return you("white") ? "white" : "black";
   for (const username of usernames) {
     const side = sideNamed(game, username);
     if (side) return side;
   }
-  return "white";
+  return null;
+}
+
+/** The side the thumbnail shows at the bottom: the side the user played, else White. */
+export function userSide(
+  game: Pick<GameSummary, Color>,
+  usernames: readonly (string | null)[]
+): Color {
+  return yourSideOf(game, usernames) ?? "white";
 }
 
 /**

@@ -14,6 +14,7 @@ import { reviewMoveShapes } from "../board/board-shapes";
 import { boardMoveMark } from "../board/move-mark";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { useSavedEngineSide } from "../game/use-saved-engine-side";
+import { useYourSide } from "../profile/YourAvatar";
 import { ReviewBoard } from "./ReviewBoard";
 import { uciSquares } from "./review-utils";
 
@@ -86,12 +87,14 @@ export function ReviewBoardStage({
   const toMove = sideToMove(boardFen);
   // An engine game's engine side shows the engine's picture.
   const engineSide = useSavedEngineSide(headers);
+  const yourSide = useYourSide(headers.white, headers.black);
   const playerRow = (player: typeof top) => (
     <PlayerRow
       name={player.name}
       elo={player.elo}
       color={player.color}
       engine={engineSide?.side === player.color ? engineSide.engine : null}
+      you={yourSide === player.color}
       clock={clocks?.[player.color] ?? null}
       clockActive={toMove === player.color}
     />

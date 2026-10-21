@@ -93,7 +93,7 @@
   box-shadow: none;
 }
 
-/* The opponent's colour, on the tile's corner. */
+/* The opponent's colour (or yours, on your picture), on the tile's corner. */
 .play-tile-dot {
   position: absolute;
   right: -3px;
@@ -102,6 +102,11 @@
   height: 18px;
   border: 2.5px solid var(--color-surface);
   border-radius: 9999px;
+}
+
+/* Your colour is picked at random: half of each. */
+.play-tile-dot-split {
+  background: linear-gradient(90deg, var(--color-piece-white) 50%, var(--color-piece-black) 50%);
 }
 
 .play-swap,

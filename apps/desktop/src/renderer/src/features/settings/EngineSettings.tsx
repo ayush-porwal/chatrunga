@@ -1,4 +1,5 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import { PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
 import { useState } from "react";
 import {
   Download,
@@ -60,7 +61,7 @@ const nnWeightsDialogFilters: DialogFileFilter[] = [
 ];
 
 const engineImageDialogFilters: DialogFileFilter[] = [
-  { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] },
+  { name: "Images", extensions: PICTURE_FILE_EXTENSIONS },
   { name: "All files", extensions: ["*"] }
 ];
 

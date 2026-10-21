@@ -8,6 +8,7 @@ const ACCOUNT: ChesscomAccount = {
   id: "ayush_p64",
   username: "ayush_p64",
   title: null,
+  avatar: null,
   ratings: { rapid: 1684 },
   connectedAt: 1,
   lastSyncAt: null

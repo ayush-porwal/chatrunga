@@ -123,14 +123,20 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
   }
 
   /**
-   * Reads the account's ratings again and saves them. Null when no account is connected (or it
-   * changed meanwhile); rejects when chess.com can't be reached.
+   * Reads the account's ratings and profile picture again and saves them. Null when no account is
+   * connected (or it changed meanwhile); rejects when chess.com can't be reached.
    */
   async refreshAccount(): Promise<ChesscomAccount | null> {
     const account = await this.options.store.account();
     if (!account) return null;
     const ratings = parseStats(await this.client.json(playerPath(account.id, "/stats")));
-    const saved = await this.options.store.updateRatings(account.id, ratings);
+    // A profile that can't be read (or reached) keeps the picture known.
+    const avatar = (await this.client.json(playerPath(account.id)).then(parseProfile, () => null))
+      ?.avatar;
+    const saved = await this.options.store.updateRatings(account.id, {
+      ratings,
+      avatar: avatar === undefined ? account.avatar : avatar
+    });
     if (saved) this.emitStatus();
     return saved;
   }

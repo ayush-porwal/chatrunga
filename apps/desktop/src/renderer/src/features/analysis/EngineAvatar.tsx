@@ -20,6 +20,19 @@ const SIZES = {
   fill: "size-full rounded-[inherit]"
 } as const;
 
+export type AvatarSize = keyof typeof SIZES;
+
+/**
+ * The image slot at a size: its square and rounding, the neutral tile and the edge every picture
+ * shares (an engine's here, yours in YourAvatar).
+ */
+export function avatarSlotClass(size: AvatarSize): string {
+  return cn(
+    "@container relative inline-grid shrink-0 place-items-center overflow-hidden bg-control shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08),0_4px_10px_-6px_rgb(0_0_0/0.7)]",
+    SIZES[size]
+  );
+}
+
 /**
  * An engine's picture in a rounded square: its own image, else its family's logo (Stockfish,
  * Maia, Lc0), else its initials on a tile tinted from its name; an empty tile for no engine (none
@@ -33,7 +46,7 @@ export function EngineAvatar({
   className
 }: {
   engine: EngineIdentity | null | undefined;
-  size?: keyof typeof SIZES;
+  size?: AvatarSize;
   /** Screen-reader text, where the slot needs a name of its own. */
   label?: string;
   className?: string;
@@ -49,11 +62,7 @@ export function EngineAvatar({
   return (
     <span
       aria-hidden={label ? undefined : "true"}
-      className={cn(
-        "@container relative inline-grid shrink-0 place-items-center overflow-hidden bg-control shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08),0_4px_10px_-6px_rgb(0_0_0/0.7)]",
-        SIZES[size],
-        className
-      )}
+      className={cn(avatarSlotClass(size), className)}
       style={
         picture?.kind === "monogram"
           ? { backgroundColor: `oklch(0.42 0.07 ${picture.hue})` }

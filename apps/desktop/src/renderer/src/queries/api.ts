@@ -18,6 +18,7 @@ import { emptyTabCounts, type LibraryTab } from "@chaturanga/shared/types/librar
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
+import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
@@ -26,7 +27,8 @@ const queryKeys = {
   engines: ["engines"] as const,
   games: ["games"] as const,
   settings: ["settings"] as const,
-  openRouter: ["openrouter"] as const
+  openRouter: ["openrouter"] as const,
+  yourPicture: ["yourPicture"] as const
 };
 
 function api() {
@@ -63,6 +65,44 @@ export function useSettingsChangedSubscription() {
       ),
     [queryClient]
   );
+}
+
+/** Reads your picture again when the main process says it changed (see useYourPictureQuery). Mount once. */
+export function useYourPictureSubscription() {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      api()?.profile.onPictureChanged(
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.yourPicture })
+      ),
+    [queryClient]
+  );
+}
+
+const NO_PICTURE: YourPicture = { src: null, source: null };
+
+/**
+ * Your picture and where it comes from (main/profile-picture). Read again when it changes: a photo
+ * chosen or removed, an account connected or disconnected.
+ */
+export function useYourPictureQuery() {
+  return useQuery({
+    queryKey: queryKeys.yourPicture,
+    queryFn: async () => (await api()?.profile.picture()) ?? NO_PICTURE,
+    staleTime: Number.POSITIVE_INFINITY
+  });
+}
+
+/** Settings → Your picture: Choose picture… (the file dialog) and Remove. */
+export function useYourPictureMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: "choose" | "remove") =>
+      action === "choose"
+        ? requireApi().profile.choosePicture()
+        : requireApi().profile.removePicture(),
+    onSuccess: (picture) => queryClient.setQueryData(queryKeys.yourPicture, picture)
+  });
 }
 
 export function useEnginesQuery() {

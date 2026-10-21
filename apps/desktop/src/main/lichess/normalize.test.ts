@@ -203,6 +203,7 @@ describe("normalizeAccount", () => {
           id: "georges",
           username: "Georges",
           title: "FM",
+          flair: "objects.crown",
           perfs: {
             blitz: { games: 12, rating: 1800, rd: 60, prog: 5 },
             rapid: { games: 3, rating: 1500, rd: 150, prog: 0, prov: true },
@@ -216,6 +217,7 @@ describe("normalizeAccount", () => {
       id: "georges",
       username: "Georges",
       title: "FM",
+      flair: "objects.crown",
       perfs: {
         blitz: { rating: 1800, games: 12, provisional: false },
         rapid: { rating: 1500, games: 3, provisional: true }
@@ -223,6 +225,14 @@ describe("normalizeAccount", () => {
       connectedAt: 1000,
       lastSyncAt: null
     });
+  });
+
+  it("keeps only a flair's name, never a path or an address", () => {
+    const flair = (value: unknown) =>
+      normalizeAccount({ id: "a", username: "A", flair: value }, 0).flair;
+    expect(flair("nature.octopus-howard")).toBe("nature.octopus-howard");
+    for (const value of ["../x.y", "objects/crown", "https://x.y", "Objects.Crown", "crown", 5])
+      expect(flair(value)).toBeNull();
   });
 
   it("requires a username", () => {

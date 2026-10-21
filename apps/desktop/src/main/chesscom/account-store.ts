@@ -9,6 +9,7 @@ import {
 } from "@chaturanga/shared/types/chesscom";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 import { createSerialQueue, readJsonObject, writePrivateJsonFile } from "../secure-json-file";
+import { httpsAddress } from "./client";
 import type { ImportCursor } from "./game-import";
 
 type StoredAccount = {
@@ -47,6 +48,7 @@ function readAccount(value: unknown): ChesscomAccount | null {
     id,
     username: typeof username === "string" && username.toLowerCase() === id ? username : id,
     title: typeof value.title === "string" ? value.title : null,
+    avatar: httpsAddress(value.avatar),
     ratings: readRatings(value.ratings),
     connectedAt: finite(value.connectedAt) ?? 0,
     lastSyncAt: finite(value.lastSyncAt)
@@ -114,12 +116,15 @@ export class ChesscomAccountStore {
     });
   }
 
-  /** The account's ratings read again; null when it is no longer the one connected. */
-  updateRatings(accountId: string, ratings: ChesscomRatings): Promise<ChesscomAccount | null> {
+  /** The account's ratings and picture read again; null when it is no longer the one connected. */
+  updateRatings(
+    accountId: string,
+    fresh: Pick<ChesscomAccount, "ratings" | "avatar">
+  ): Promise<ChesscomAccount | null> {
     return this.serialize(async () => {
       const current = await this.read();
       if (current.account?.id !== accountId) return null;
-      const account = { ...current.account, ratings };
+      const account = { ...current.account, ...fresh };
       await this.write({ ...current, account });
       return account;
     });
