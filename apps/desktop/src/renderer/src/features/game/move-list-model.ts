@@ -151,34 +151,89 @@ export type MoveListItem =
   /** The BEST line under a marked error (only while it is unfolded). */
   | { kind: "best"; node: MoveNode }
   /** A variation's line row (one per line; nested lines follow their parent, one deeper). */
-  | { kind: "variation"; row: VariationRow };
+  | { kind: "variation"; row: VariationRow }
+  /**
+   * A move's comment under the row holding the move (`showComments`). `move` names the move
+   * ("4… Qg5") where the row holds others; null for the only commented move of a main-line pair.
+   */
+  | { kind: "comment"; node: MoveNode; depth: number; move: string | null };
 
 /**
- * The main line's rows: each move pair, then the opening row when the pair holds the last book
- * move, then the unfolded BEST lines of its moves (White's, Black's), then the variations played
- * instead of its moves (White's, Black's), each followed by the variations nested in it.
+ * The main line's rows: each move pair (then its moves' comments, with `showComments`), then the
+ * opening row when the pair holds the last book move, then the unfolded BEST lines of its moves
+ * (White's, Black's), then the variations played instead of its moves (White's, Black's), each
+ * followed by its comments and the variations nested in it.
  */
 export function mainlineItems(
   model: TreeModel,
   {
     bookEndNodeId = null,
-    showsBestLine = () => false
+    showsBestLine = () => false,
+    showComments = false
   }: {
     bookEndNodeId?: string | null;
     /** Whether the move's BEST line is drawn (it has one and it is unfolded). */
     showsBestLine?: (node: MoveNode) => boolean;
+    /** Each move's comment under the row holding the move. */
+    showComments?: boolean;
   } = {}
 ): MoveListItem[] {
   const items: MoveListItem[] = [];
   for (const row of model.mainline) {
     items.push({ kind: "moves", number: row.number, white: row.white, black: row.black });
     const moves = [row.white, row.black].filter((node): node is MoveNode => Boolean(node));
+    if (showComments) items.push(...pairComments(row.number, row.white, row.black));
     const bookEnd = moves.find((node) => node.id === bookEndNodeId);
     if (bookEnd) items.push({ kind: "opening", afterNodeId: bookEnd.id });
     for (const node of moves) if (showsBestLine(node)) items.push({ kind: "best", node });
     for (const node of moves)
-      for (const variation of model.variationsByMove.get(node.id) ?? [])
+      for (const variation of model.variationsByMove.get(node.id) ?? []) {
         items.push({ kind: "variation", row: variation });
+        if (showComments) items.push(...variationComments(variation));
+      }
   }
   return items;
+}
+
+function hasComment(node: MoveNode | undefined): node is MoveNode {
+  return Boolean(node?.comment?.trim());
+}
+
+/** A main-line pair's comments, White's then Black's (each named when both have one). */
+function pairComments(
+  number: number,
+  white: MoveNode | undefined,
+  black: MoveNode | undefined
+): MoveListItem[] {
+  const both = hasComment(white) && hasComment(black);
+  const items: MoveListItem[] = [];
+  if (hasComment(white)) {
+    items.push({
+      kind: "comment",
+      node: white,
+      depth: 0,
+      move: both ? `${number}. ${white.san}` : null
+    });
+  }
+  if (hasComment(black)) {
+    items.push({
+      kind: "comment",
+      node: black,
+      depth: 0,
+      move: both ? `${number}… ${black.san}` : null
+    });
+  }
+  return items;
+}
+
+/** A variation's comments, each named by its move (the line holds several). */
+function variationComments(row: VariationRow): MoveListItem[] {
+  return row.moves
+    .filter(({ node }) => hasComment(node))
+    .map(({ node, number }) => ({
+      kind: "comment" as const,
+      node,
+      depth: row.depth,
+      move: [number, node.san].filter(Boolean).join(" ")
+    }));
 }

@@ -242,14 +242,16 @@ function FilterMenuItem({
 /**
  * Search, folded into a magnifier until opened: then a field (✕ or Esc clears it and folds it
  * back, focus returning to the magnifier). Leaving the field with text in it folds it too; the
- * search still applies, and the magnifier carries a dot.
+ * search still applies, and the magnifier carries a dot. `label` names it ("Search games").
  */
 export function RecentGamesSearch({
   query,
-  onQueryChange
+  onQueryChange,
+  label = "Search games"
 }: {
   query: string;
   onQueryChange: (query: string) => void;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -273,7 +275,7 @@ export function RecentGamesSearch({
     return (
       <IconButton
         ref={buttonRef}
-        label={active ? `Search: ${query.trim()}` : "Search games"}
+        label={active ? `Search: ${query.trim()}` : label}
         icon={
           <>
             <Search />
@@ -307,8 +309,8 @@ export function RecentGamesSearch({
         }}
         onBlur={() => setOpen(false)}
         maxLength={GAME_SEARCH_MAX_LENGTH}
-        aria-label="Search games"
-        placeholder="Search games"
+        aria-label={label}
+        placeholder={label}
         className="h-8 pl-8 pr-8 [&::-webkit-search-cancel-button]:hidden"
       />
       <IconButton

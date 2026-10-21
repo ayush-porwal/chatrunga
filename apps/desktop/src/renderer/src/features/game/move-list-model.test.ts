@@ -181,8 +181,34 @@ describe("mainlineItems", () => {
         return `best ${item.node.san}`;
       case "variation":
         return `variation ${item.row.depth}: ${variationText(item.row.moves)}`;
+      case "comment":
+        return `comment ${item.depth}${item.move ? ` ${item.move}` : ""}: ${item.node.comment}`;
     }
   };
+
+  it("puts each move's comment under its row only when comments are shown", () => {
+    const { game: commented } = importPgnText(
+      "1. e4 {Best by test} e5 2. Nf3 {Develops} Nc6 {Defends} (2… d6 {Philidor} 3. d4) 3. Bc4 *"
+    );
+    const model = buildTreeModel(commented.moveTree);
+    expect(mainlineItems(model).map(describeItem)).toStrictEqual([
+      "1: e4 e5",
+      "2: Nf3 Nc6",
+      "variation 0: 2… d6 3. d4",
+      "3: Bc4"
+    ]);
+    expect(mainlineItems(model, { showComments: true }).map(describeItem)).toStrictEqual([
+      "1: e4 e5",
+      // The pair's only comment needs no name; two in one pair are named.
+      "comment 0: Best by test",
+      "2: Nf3 Nc6",
+      "comment 0 2. Nf3: Develops",
+      "comment 0 2… Nc6: Defends",
+      "variation 0: 2… d6 3. d4",
+      "comment 0 2… d6: Philidor",
+      "3: Bc4"
+    ]);
+  });
 
   it("pairs the moves by number, two to a row", () => {
     const model = buildTreeModel(game.moveTree);

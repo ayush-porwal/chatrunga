@@ -13,6 +13,8 @@ type MenuItem = {
   onSelect: () => void;
   disabled?: boolean;
   destructive?: boolean;
+  /** Starts a new group: a rule above it (not on the first item shown). */
+  divided?: boolean;
 };
 
 /**
@@ -28,25 +30,46 @@ type MenuItem = {
  * floats on a frosted backdrop layer that stays still while the list animates above it.
  * Placement: below the trigger, or above it when the list would be cut off at the bottom of a
  * scrolling container (the last rows of a list) or the window.
+ * Controlled (`open` + `onOpenChange`) when something else opens it too (a right-click).
  */
 function OverflowMenu({
   label,
   items,
   trigger,
-  size = "icon-sm"
+  size = "icon-sm",
+  open: controlledOpen,
+  onOpenChange
 }: {
   label: string;
   items: readonly (MenuItem | false | null | undefined)[];
-  /** A labelled outline button ("Backup") instead of the "⋯" icon, for a page header's menu. */
-  trigger?: { text: string; icon?: React.ReactNode };
+  /**
+   * A labelled button ("Backup", outline unless `variant` says otherwise) instead of the "⋯" icon,
+   * for a page header's or card title bar's menu (`compact`: the 32px `sm` size).
+   */
+  trigger?: {
+    text: string;
+    icon?: React.ReactNode;
+    variant?: "outline" | "primary";
+    compact?: boolean;
+  };
   /** The "⋯" button's size (a dense row's 28px `icon-xs`). */
   size?: "icon-sm" | "icon-xs";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [ownOpen, setOwnOpen] = React.useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      setOwnOpen(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange]
+  );
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const visibleItems = items.filter((item): item is MenuItem => Boolean(item));
 
-  const close = React.useCallback(() => setOpen(false), []);
+  const close = React.useCallback(() => setOpen(false), [setOpen]);
   useDismiss(rootRef, open, close);
   const { present, state } = usePresence(open);
   const listRef = React.useRef<HTMLDivElement | null>(null);
@@ -68,10 +91,11 @@ function OverflowMenu({
       {trigger ? (
         <Button
           type="button"
-          variant="outline"
+          variant={trigger.variant ?? "outline"}
+          size={trigger.compact ? "sm" : "default"}
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
         >
           {trigger.icon}
           {trigger.text}
@@ -84,7 +108,7 @@ function OverflowMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           tooltip={!open}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
         />
       )}
       {present ? (
@@ -112,27 +136,31 @@ function OverflowMenu({
               above ? "origin-bottom-right" : "origin-top-right"
             )}
           >
-            {visibleItems.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                disabled={item.disabled}
-                tabIndex={state === "closed" ? -1 : undefined}
-                onClick={() => {
-                  setOpen(false);
-                  item.onSelect();
-                }}
-                className={cn(
-                  "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm outline-none transition-colors focus-visible:bg-control disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-                  item.destructive
-                    ? "text-danger hover:bg-danger-soft"
-                    : "text-fg-secondary hover:bg-control hover:text-fg"
-                )}
-              >
-                {item.icon}
-                {item.label}
-              </button>
+            {visibleItems.map((item, index) => (
+              <React.Fragment key={item.label}>
+                {item.divided && index > 0 ? (
+                  <span role="separator" className="mx-1 my-1 h-px bg-line-subtle" />
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={item.disabled}
+                  tabIndex={state === "closed" ? -1 : undefined}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                  className={cn(
+                    "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm outline-none transition-colors focus-visible:bg-control disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+                    item.destructive
+                      ? "text-danger hover:bg-danger-soft"
+                      : "text-fg-secondary hover:bg-control hover:text-fg"
+                  )}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              </React.Fragment>
             ))}
           </div>
         </div>

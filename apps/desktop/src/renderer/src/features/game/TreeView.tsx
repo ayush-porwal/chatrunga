@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode
 } from "react";
 import { Check, Trash2 } from "lucide-react";
@@ -76,6 +77,14 @@ type TreeViewProps = {
    */
   collapsedRows?: ReadonlyMap<string, number>;
   onExpandRow?: (nodeId: string) => void;
+  /** Each move's comment under the row holding it (Study). */
+  showComments?: boolean;
+  /** Controls drawn on the selected move, always visible (Study's move menu). */
+  selectedActions?: ReactNode;
+  /** A move was right-clicked (it is selected first): open its actions. */
+  onMoveContextMenu?: (nodeId: string) => void;
+  /** A class for a move's SAN by node id (Study: the kind of move), unless it carries a mark. */
+  moveTones?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -103,7 +112,11 @@ export function TreeView({
   className,
   ariaLabel = "Move tree",
   collapsedRows,
-  onExpandRow
+  onExpandRow,
+  showComments = false,
+  selectedActions,
+  onMoveContextMenu,
+  moveTones
 }: TreeViewProps) {
   const model = useMemo(() => buildTreeModel(nodes, ROOT_ID), [nodes]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -180,10 +193,14 @@ export function TreeView({
   const cellProps = (node: MoveNode) => {
     const review = reviews?.get(node.id);
     const foldable = hasBestLine(review);
+    // While a BEST line is on the board, its move is the current one, not the error's.
+    const selected = selectedNodeId === node.id && !activeBestLine;
     return {
       node,
-      // While a BEST line is on the board, its move is the current one, not the error's.
-      selected: selectedNodeId === node.id && !activeBestLine,
+      selected,
+      actions: selected ? selectedActions : undefined,
+      tone: moveTones?.get(node.id),
+      onContextMenu: onMoveContextMenu,
       review,
       commentary: commentaryByNodeId?.get(node.id),
       showScores,
@@ -205,7 +222,7 @@ export function TreeView({
   const cell = (node: MoveNode | undefined) =>
     node ? <MoveCell {...cellProps(node)} /> : <span aria-hidden="true" />;
 
-  const items = mainlineItems(model, { bookEndNodeId, showsBestLine });
+  const items = mainlineItems(model, { bookEndNodeId, showsBestLine, showComments });
 
   return (
     <div
@@ -277,12 +294,24 @@ export function TreeView({
                   row={item.row}
                   gridClassName={ROW_GRID}
                   currentNodeId={currentIn(item.row)}
+                  currentActions={currentIn(item.row) ? selectedActions : undefined}
+                  moveTones={moveTones}
+                  onMoveContextMenu={onMoveContextMenu}
                   reviews={reviews}
                   collapsedRows={collapsedRows}
                   onSelectNode={onSelectNode}
                   onDeleteLine={onDeleteLine}
                   onPromoteVariation={onPromoteVariation}
                   onExpandRow={onExpandRow}
+                />
+              );
+            case "comment":
+              return (
+                <CommentRow
+                  key={`comment-${item.node.id}`}
+                  text={item.node.comment ?? ""}
+                  move={item.move}
+                  depth={item.depth}
                 />
               );
           }
@@ -316,9 +345,33 @@ function OpeningRow({ opening, gridClassName }: { opening: GameOpening; gridClas
   );
 }
 
+/** Comments indent as their variation rows do (LineRow), up to as many levels. */
+const MAX_COMMENT_INDENT = 4;
+
+/** A move's comment under its row, in the secondary text (named by its move where needed). */
+function CommentRow({ text, move, depth }: { text: string; move: string | null; depth: number }) {
+  const indent = Math.min(depth, MAX_COMMENT_INDENT) * 0.875;
+  return (
+    <div className={cn("grid", ROW_GRID)}>
+      <p
+        className="col-[2/-1] mb-1 min-w-0 px-1.5 text-xs leading-relaxed whitespace-pre-line break-words text-fg-muted"
+        style={indent ? { marginInlineStart: `${indent}rem` } : undefined}
+      >
+        {move ? <span className="mr-1.5 font-mono text-fg-subtle">{move}</span> : null}
+        {text.trim()}
+      </p>
+    </div>
+  );
+}
+
 type MoveCellProps = {
   node: MoveNode;
   selected: boolean;
+  /** Drawn at the end of the selected move, always visible (`selectedActions`). */
+  actions?: ReactNode;
+  /** The SAN's class when the move carries no mark (`moveTones`). */
+  tone?: string;
+  onContextMenu?: (nodeId: string) => void;
   review?: MoveReview;
   commentary?: ReviewCommentary;
   showScores: boolean;
@@ -340,6 +393,9 @@ type MoveCellProps = {
 const MoveCell = memo(function MoveCell({
   node,
   selected,
+  actions,
+  tone,
+  onContextMenu,
   review,
   commentary,
   showScores,
@@ -351,6 +407,13 @@ const MoveCell = memo(function MoveCell({
   onToggleLine
 }: MoveCellProps) {
   const annotation = review?.assessment?.annotation ?? null;
+  const openActions = onContextMenu
+    ? (event: MouseEvent) => {
+        event.preventDefault();
+        onSelectNode(node.id);
+        onContextMenu(node.id);
+      }
+    : undefined;
 
   return (
     <div
@@ -369,11 +432,13 @@ const MoveCell = memo(function MoveCell({
         className={cn(
           "flex h-8 w-full min-w-0 items-center gap-[0.4375rem] rounded-[0.3125rem] px-1.5 text-left text-[0.90625rem] font-medium tracking-[0.01em] outline-none",
           "focus-visible:ring-2 focus-visible:ring-accent/50",
-          moveTextClass(annotation, selected)
+          moveTextClass(annotation, selected, tone),
+          actions ? "pr-8" : null
         )}
         title={moveTitle(node, review)}
         onMouseDown={keepFocusOnPress}
         onClick={() => onSelectNode(node.id)}
+        onContextMenu={openActions}
       >
         {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
         <span aria-hidden className="w-[1.125rem] shrink-0" />
@@ -394,7 +459,9 @@ const MoveCell = memo(function MoveCell({
           onToggleLine={onToggleLine}
         />
       ) : null}
-      {selected && onDeleteLine ? (
+      {actions ? (
+        <span className="absolute right-0.5 top-1/2 flex -translate-y-1/2">{actions}</span>
+      ) : selected && onDeleteLine ? (
         <IconButton
           label={`Delete line from ${node.san ?? "selected move"}`}
           icon={<Trash2 />}
@@ -473,14 +540,18 @@ function moveTitle(node: MoveNode, review: MoveReview | undefined): string {
   return `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`;
 }
 
-/** The SAN's colour: its mark's, else the current move's stronger text. */
-function moveTextClass(annotation: MoveAnnotation | null, selected: boolean): string {
-  const tone = annotation
+/** The SAN's colour: its mark's, else the current move's stronger text, else its `tone`. */
+function moveTextClass(
+  annotation: MoveAnnotation | null,
+  selected: boolean,
+  tone: string | undefined
+): string {
+  const text = annotation
     ? annotationTone[annotation].text
     : selected
       ? "text-fg"
-      : "text-fg-secondary";
-  return cn(tone, selected && "font-semibold");
+      : (tone ?? "text-fg-secondary");
+  return cn(text, selected && "font-semibold");
 }
 
 /**

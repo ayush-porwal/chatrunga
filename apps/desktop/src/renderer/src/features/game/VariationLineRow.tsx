@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { ArrowUpToLine, Trash2 } from "lucide-react";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
@@ -24,6 +24,9 @@ export const VariationLineRow = memo(function VariationLineRow({
   row,
   gridClassName,
   currentNodeId,
+  currentActions,
+  moveTones,
+  onMoveContextMenu,
   reviews,
   collapsedRows,
   onSelectNode,
@@ -35,6 +38,12 @@ export const VariationLineRow = memo(function VariationLineRow({
   gridClassName: string;
   /** The current move, when it is a move of this row (null otherwise). */
   currentNodeId: string | null;
+  /** The current move's controls (Study's move menu), shown at the row's end at all times. */
+  currentActions?: ReactNode;
+  /** A class for a move's SAN by node id, unless it carries a mark (see TreeView). */
+  moveTones?: ReadonlyMap<string, string>;
+  /** A move was right-clicked (selected first): open its actions. */
+  onMoveContextMenu?: (nodeId: string) => void;
   reviews?: ReadonlyMap<string, MoveReview>;
   /** Study's collapsed branches (node id → moves hidden behind it), drawn as "… N more moves". */
   collapsedRows?: ReadonlyMap<string, number>;
@@ -77,12 +86,21 @@ export const VariationLineRow = memo(function VariationLineRow({
           className={cn(
             lineMoveClassName({
               current,
-              toneClassName: annotation ? annotationTone[annotation].text : undefined
+              toneClassName: annotation ? annotationTone[annotation].text : moveTones?.get(node.id)
             }),
             "cursor-pointer"
           )}
           onMouseDown={keepFocusOnPress}
           onClick={() => onSelectNode(node.id)}
+          onContextMenu={
+            onMoveContextMenu
+              ? (event) => {
+                  event.preventDefault();
+                  onSelectNode(node.id);
+                  onMoveContextMenu(node.id);
+                }
+              : undefined
+          }
         >
           {node.san ? <FigureSan san={node.san} /> : san}
         </button>
@@ -128,6 +146,7 @@ export const VariationLineRow = memo(function VariationLineRow({
       entries={entries}
       currentKey={currentNodeId}
       actions={onPromoteVariation || onDeleteLine ? actions : null}
+      pinnedActions={currentActions}
     />
   );
 });
