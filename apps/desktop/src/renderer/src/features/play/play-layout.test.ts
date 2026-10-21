@@ -1,93 +1,90 @@
 import { describe, expect, it } from "vitest";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import {
+  boardCardKinds,
   isFirstRun,
-  narrowPlacements,
   playEngineOrder,
+  playGrid,
   resolvePlayMode,
   savePlaySettings,
-  topRowSlots,
   widePreviewBoardSize
 } from "./play-layout";
 
-describe("topRowSlots", () => {
-  it("keeps the Play card narrow beside a game in progress, then the cards in order", () => {
-    expect(topRowSlots({ inProgress: true, repertoire: true, puzzle: true })).toStrictEqual([
-      { kind: "play", span: 1 },
-      { kind: "in-progress" },
-      { kind: "repertoire" },
-      { kind: "puzzle" }
+describe("boardCardKinds", () => {
+  it("lists the cards with something to show, in their order", () => {
+    expect(boardCardKinds({ inProgress: true, repertoire: true, puzzle: true })).toStrictEqual([
+      "in-progress",
+      "repertoire",
+      "puzzle"
     ]);
-  });
-
-  it("widens the Play card when nothing is in progress", () => {
-    expect(topRowSlots({ inProgress: false, repertoire: true, puzzle: true })).toStrictEqual([
-      { kind: "play", span: 2 },
-      { kind: "repertoire" },
-      { kind: "puzzle" }
+    expect(boardCardKinds({ inProgress: false, repertoire: false, puzzle: true })).toStrictEqual([
+      "puzzle"
     ]);
-  });
-
-  it("fills the columns left over with the filler card", () => {
-    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: true })).toStrictEqual([
-      { kind: "play", span: 1 },
-      { kind: "in-progress" },
-      { kind: "puzzle" },
-      { kind: "filler", span: 1 }
-    ]);
-    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: true })).toStrictEqual([
-      { kind: "play", span: 2 },
-      { kind: "puzzle" },
-      { kind: "filler", span: 1 }
-    ]);
-  });
-
-  it("gives the Play card one of the filler's columns when it would take two or more", () => {
-    // First run, or nothing to show beside it: Play across three columns, the filler in one.
-    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: false })).toStrictEqual([
-      { kind: "play", span: 3 },
-      { kind: "filler", span: 1 }
-    ]);
-    // A game in progress and no other card: the Play card widens (to its preview-board layout).
-    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: false })).toStrictEqual([
-      { kind: "play", span: 2 },
-      { kind: "in-progress" },
-      { kind: "filler", span: 1 }
-    ]);
+    expect(boardCardKinds({ inProgress: false, repertoire: false, puzzle: false })).toStrictEqual(
+      []
+    );
   });
 });
 
-describe("narrowPlacements", () => {
-  it("stacks two board cards in one column when they don't fit one to a column", () => {
-    // Play, then three cards in two free columns: the first two share the middle one.
-    expect(
-      narrowPlacements(topRowSlots({ inProgress: true, repertoire: true, puzzle: true }))
-    ).toStrictEqual([
-      { column: 1, span: 1, row: "1 / span 2" },
-      { column: 2, span: 1, row: "1" },
-      { column: 2, span: 1, row: "2" },
-      { column: 3, span: 1, row: "1 / span 2" }
-    ]);
-    // The wide Play card keeps two columns: both cards go to the side column.
-    expect(
-      narrowPlacements(topRowSlots({ inProgress: false, repertoire: true, puzzle: true }))
-    ).toStrictEqual([
-      { column: 1, span: 2, row: "1 / span 2" },
-      { column: 3, span: 1, row: "1" },
-      { column: 3, span: 1, row: "2" }
-    ]);
+describe("playGrid", () => {
+  // Page content boxes: the smallest window (980×680), 1440×900, 1920×1080.
+  const smallest = { width: 732, height: 590 };
+  const laptop = { width: 1192, height: 810 };
+  const wide = { width: 1672, height: 990 };
+
+  it("makes the side column exactly as wide as the board cards above it", () => {
+    for (const size of [smallest, laptop, wide])
+      for (const cards of [0, 1, 2, 3]) {
+        const grid = playGrid({ ...size, cards });
+        const slots = Math.max(1, grid.cards);
+        expect(grid.sideWidth).toBe(slots * grid.cardWidth + (slots - 1) * 16);
+        expect(grid.playWidth + 16 + grid.sideWidth).toBeLessThanOrEqual(size.width);
+      }
   });
 
-  it("gives each card a column when they fit, the filler only the columns left", () => {
-    expect(
-      narrowPlacements(topRowSlots({ inProgress: false, repertoire: false, puzzle: true }))
-    ).toStrictEqual([{ column: 1, span: 2, row: "1" }, { column: 3, span: 1, row: "1" }, null]);
-    expect(
-      narrowPlacements(topRowSlots({ inProgress: false, repertoire: false, puzzle: false }))
-    ).toStrictEqual([
-      { column: 1, span: 2, row: "1" },
-      { column: 3, span: 1, row: "1" }
-    ]);
+  it("takes the row height from the window's, within its bounds", () => {
+    expect(playGrid({ width: 1192, height: 900, cards: 3 }).rowHeight).toBe(396);
+    expect(playGrid({ ...laptop, cards: 3 }).rowHeight).toBe(372);
+    expect(playGrid({ width: 1192, height: 2000, cards: 3 }).rowHeight).toBe(420);
+  });
+
+  it("leaves out the last board cards when the Play column would get too narrow", () => {
+    expect(playGrid({ ...smallest, cards: 3 }).cards).toBe(1);
+    expect(playGrid({ ...laptop, cards: 3 }).cards).toBe(3);
+    expect(playGrid({ ...wide, cards: 2 }).cards).toBe(2);
+  });
+
+  it("gives the filler one card's place when there is no board card", () => {
+    const grid = playGrid({ ...laptop, cards: 0 });
+    expect(grid.cards).toBe(0);
+    expect(grid.sideWidth).toBe(grid.cardWidth);
+  });
+
+  it("draws in the rem a large window steps up to: its gap, the cards' sizes and the bounds", () => {
+    // app.css: 18px at ≥2560×1200. The gap is 1rem; the row's floor and the cards scale with it.
+    const grid = playGrid({ width: 2200, height: 600, cards: 3, rem: 18 });
+    expect(grid.rowHeight).toBe(Math.round((372 * 18) / 16));
+    expect(grid.cardWidth).toBe(Math.round(grid.rowHeight - (164 * 18) / 16 + (24 * 18) / 16 + 2));
+    expect(grid.sideWidth).toBe(3 * grid.cardWidth + 2 * 18);
+    expect(grid.playWidth).toBe(2200 - grid.sideWidth - 18);
+  });
+
+  it("goes to one column where the Play column's minimum and a card don't fit side by side", () => {
+    // A window zoomed in: the page's content box narrower than the Play column and one card.
+    const grid = playGrid({ width: 560, height: 590, cards: 3 });
+    expect(grid.stacked).toBe(true);
+    expect(grid.playWidth).toBe(560);
+    expect(grid.sideWidth).toBe(560);
+    // As many cards as fit across it.
+    expect(grid.cards).toBe(Math.floor((560 + 16) / (grid.cardWidth + 16)));
+    expect(playGrid({ ...smallest, cards: 3 }).stacked).toBe(false);
+  });
+
+  it("gives the Play column the rest of the width", () => {
+    const grid = playGrid({ ...wide, cards: 1 });
+    expect(grid.playWidth).toBe(wide.width - grid.sideWidth - 16);
+    expect(grid.wide).toBe(true);
+    expect(playGrid({ ...smallest, cards: 1 }).wide).toBe(false);
   });
 });
 

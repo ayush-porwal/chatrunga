@@ -1,77 +1,131 @@
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 
-/** Columns of the Play page's top row (Play card + board cards) and of the row under it. */
-const PLAY_COLUMNS = 4;
-
 /**
  * How many of the newest games the page reads: the Recent games table's rows (10) plus the one the
  * In progress card may take out of it. The table and the page share this query (one key).
  */
 export const RECENT_GAMES_FETCH = 11;
 
-export type TopSlot =
-  | { kind: "play"; span: 1 | 2 | 3 }
-  | { kind: "in-progress" }
-  | { kind: "repertoire" }
-  | { kind: "puzzle" }
-  /** The knights illustration, filling the columns nothing else takes. */
-  | { kind: "filler"; span: number };
+/** A board card beside the Play card. */
+export type BoardCardKind = "in-progress" | "repertoire" | "puzzle";
 
 /**
- * The top row, left to right: the Play card (two columns, with its preview board, when nothing is in
- * progress), then the board cards that have something to show, in a fixed order, then the filler
- * card across whatever columns are left. When the filler would take two columns or more, the Play
- * card takes one of them: its preview board then has room to fill the card's height.
+ * The board cards with something to show, in their order: In progress, Repertoire, Puzzle of the
+ * day. When the row has no room for all of them the last ones are left out.
  */
-export function topRowSlots(cards: {
+export function boardCardKinds(cards: {
   inProgress: boolean;
   repertoire: boolean;
   puzzle: boolean;
-}): TopSlot[] {
-  const boardCards: TopSlot[] = [];
-  if (cards.inProgress) boardCards.push({ kind: "in-progress" });
-  if (cards.repertoire) boardCards.push({ kind: "repertoire" });
-  if (cards.puzzle) boardCards.push({ kind: "puzzle" });
-  let play: 1 | 2 | 3 = cards.inProgress ? 1 : 2;
-  let left = PLAY_COLUMNS - play - boardCards.length;
-  if (left >= 2) {
-    play = play === 1 ? 2 : 3;
-    left -= 1;
-  }
-  const slots: TopSlot[] = [{ kind: "play", span: play }, ...boardCards];
-  if (left > 0) slots.push({ kind: "filler", span: left });
-  return slots;
+}): BoardCardKind[] {
+  const kinds: BoardCardKind[] = [];
+  if (cards.inProgress) kinds.push("in-progress");
+  if (cards.repertoire) kinds.push("repertoire");
+  if (cards.puzzle) kinds.push("puzzle");
+  return kinds;
 }
 
-/** Columns of the top row in a narrow page: the Play card's, one between, the side column. */
-const NARROW_COLUMNS = 3;
+/*
+ * The sizes below are px at the default 16px rem: the cards' padding, text, buttons and the page's
+ * gap (`gap-4`, 1rem) are rem-based, and app.css steps the rem up in large windows, so playGrid
+ * scales them by the rem it is given.
+ */
+/**
+ * The top row's height: this share of the page's visible height, within its bounds. The floor is
+ * what the Play card needs at its tallest (New game / This position, the time control).
+ */
+const ROW_SHARE = 0.44;
+const ROW_MIN = 372;
+const ROW_MAX = 420;
+/**
+ * A board card beyond its board: its padding and border, the tag, title and details, the button.
+ * The tallest card's: the Repertoire card's review, whose positions-due line is a second detail.
+ */
+const BOARD_CARD_CHROME = 164;
+/** A board card's padding (p-3, 1.5rem across) and its border (2px, which doesn't scale). */
+const BOARD_CARD_PADDING = 24;
+const BOARD_CARD_BORDER = 2;
+/** The Play column (the Play card, Recent games under it) is never narrower. */
+const PLAY_MIN = 340;
+/** From this width the Play card shows its preview board. */
+const PLAY_WIDE = 560;
 
-/** Where a top-row slot sits in a narrow page: its first column and span, and its grid rows. */
-export type NarrowPlacement = { column: number; span: number; row: string };
+/** The Play page's grid: two columns shared by both rows, and the top row's height. */
+export type PlayGrid = {
+  /** The top row's height: every card in it is this tall. */
+  rowHeight: number;
+  /** A board card's width (its board is that less its frame, square). */
+  cardWidth: number;
+  /** How many board cards fit (the first ones of boardCardKinds). */
+  cards: number;
+  /** The Play card's column, Recent games' too. */
+  playWidth: number;
+  /** The board cards' column (the filler's when there are none), the side cards' too. */
+  sideWidth: number;
+  /** The Play card has room for its preview board. */
+  wide: boolean;
+  /**
+   * Too narrow for the board cards beside the Play column's minimum (a window zoomed in): one
+   * column, the Play card, the board cards, Recent games and the side cards one under the other.
+   */
+  stacked: boolean;
+};
 
 /**
- * The top row of a narrow page (play.css: three columns, the last the side column): the Play card
- * keeps its preview-board layout in two columns when it had it, the board cards take a column
- * each, and when there are more of them than columns the first two share one, one above the
- * other. The filler takes the columns left (null: none are, it isn't shown).
+ * The page's grid for its content box (`width` × the visible `height`), the board cards to show
+ * (`cards`) and the root font size (`rem`, the page's gap). One row height for the whole top row, from the window's height, so every board
+ * is square at it; as many board cards as leave the Play column its minimum (the filler takes one
+ * card's place when there are none); the side column exactly as wide as the cards above it, so
+ * both rows' edges line up; the Play column takes the rest of the width. Where even one card
+ * beside the Play column's minimum doesn't fit, everything goes in one column instead.
  */
-export function narrowPlacements(slots: readonly TopSlot[]): (NarrowPlacement | null)[] {
-  const play = slots.find((slot) => slot.kind === "play");
-  const playSpan = play ? Math.min(play.span, 2) : 1;
-  const free = NARROW_COLUMNS - playSpan;
-  const cards = slots.filter((slot) => slot.kind !== "play" && slot.kind !== "filler").length;
-  const stacked = cards > free;
-  // With two cards one above the other, everything else spans both rows.
-  const full = stacked ? "1 / span 2" : "1";
-  let card = 0;
-  return slots.map((slot) => {
-    if (slot.kind === "play") return { column: 1, span: playSpan, row: full };
-    if (slot.kind === "filler")
-      return cards < free ? { column: playSpan + 1 + cards, span: free - cards, row: full } : null;
-    const index = card++;
-    if (stacked && index < 2) return { column: playSpan + 1, span: 1, row: String(index + 1) };
-    return { column: playSpan + 1 + (stacked ? index - 1 : index), span: 1, row: full };
-  });
+export function playGrid({
+  width,
+  height,
+  cards,
+  rem = 16
+}: {
+  width: number;
+  height: number;
+  cards: number;
+  rem?: number;
+}): PlayGrid {
+  const scaled = (px: number) => (px * rem) / 16;
+  const gap = rem;
+  const rowHeight = Math.round(
+    Math.min(scaled(ROW_MAX), Math.max(scaled(ROW_MIN), height * ROW_SHARE))
+  );
+  const cardWidth = Math.round(
+    rowHeight - scaled(BOARD_CARD_CHROME) + scaled(BOARD_CARD_PADDING) + BOARD_CARD_BORDER
+  );
+  const across = (count: number) => count * cardWidth + (count - 1) * gap;
+  const playMin = scaled(PLAY_MIN);
+  const playWide = scaled(PLAY_WIDE);
+  if (width - cardWidth - gap < playMin) {
+    const fit = Math.max(1, Math.floor((width + gap) / (cardWidth + gap)));
+    return {
+      rowHeight,
+      cardWidth,
+      cards: Math.min(cards, fit),
+      playWidth: width,
+      sideWidth: width,
+      wide: width >= playWide,
+      stacked: true
+    };
+  }
+  let slots = Math.max(1, cards);
+  while (slots > 1 && width - across(slots) - gap < playMin) slots -= 1;
+  const sideWidth = across(slots);
+  const playWidth = Math.max(0, width - sideWidth - gap);
+  return {
+    rowHeight,
+    cardWidth,
+    cards: Math.min(cards, slots),
+    playWidth,
+    sideWidth,
+    wide: playWidth >= playWide,
+    stacked: false
+  };
 }
 
 const LICHESS_MODES: readonly PlayOpponent[] = ["pool", "friend", "ai"];
@@ -163,6 +217,8 @@ export function playEngineOrder<T extends { name: string }>(engines: readonly T[
 
 /** The wide Play card's gap between the preview board and the controls (px). */
 export const WIDE_GAP = 24;
+/** The controls column never gets wider than this: the board and the controls stay together. */
+export const WIDE_CONTROLS_MAX = 440;
 /** The controls column never gets narrower than this (the slider's labels must fit). */
 const WIDE_CONTROLS_MIN = 300;
 
