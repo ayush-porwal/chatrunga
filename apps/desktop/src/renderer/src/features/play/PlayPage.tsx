@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -21,14 +21,9 @@ import { ChallengesCard, StartSomethingNewCard } from "./PlaySideCards";
 import { RecentGamesTable } from "./RecentGamesTable";
 import { repertoireCardContent } from "./board-card-text";
 import type { InProgressCard } from "./in-progress";
-import {
-  isFirstRun,
-  narrowPlacements,
-  topRowSlots,
-  type NarrowPlacement,
-  type TopSlot
-} from "./play-layout";
+import { boardCardKinds, isFirstRun, playGrid, type BoardCardKind } from "./play-layout";
 import { recentRows, useRecentGamesQuery } from "./recent-games";
+import { usePageContentSize } from "./use-page-content-size";
 import { useInProgressCard, usePuzzleOfTheDay } from "./use-play-page-data";
 import "./play.css";
 
@@ -56,49 +51,16 @@ export type PlayPageProps = {
   onOpenBroadcastTournament: (target: TournamentTarget) => void;
 };
 
-/** The loading row's shape: the Play card and three board cards. */
-const SKELETON_SLOTS = topRowSlots({ inProgress: true, repertoire: true, puzzle: true });
-const SKELETON_PLACEMENTS = narrowPlacements(SKELETON_SLOTS);
-
-/**
- * A top-row slot: its card (the grid item: the wrapper has no box) and where it goes, as CSS
- * variables play.css reads: its span, and its place in a narrow page (none: not shown there).
- */
-function PlaySlot({
-  slot,
-  narrow,
-  children
-}: {
-  slot: TopSlot;
-  narrow: NarrowPlacement | null;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className="play-slot contents"
-      data-narrow-hidden={narrow ? undefined : ""}
-      style={{
-        "--span": "span" in slot ? slot.span : 1,
-        "--narrow-column": narrow?.column ?? 1,
-        "--narrow-span": narrow?.span ?? 1,
-        "--narrow-row": narrow?.row ?? "1"
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** The top row: the Play card's column, then three (play.css: `.play-columns`). */
-const columns = "play-columns grid items-stretch gap-4";
-/** The row under it: the table under the first columns, the side cards under the last one. */
-const bottomColumns = "play-columns-bottom grid items-stretch gap-4";
+/** The loading row's shape: the Play card and all three board cards (as many as fit). */
+const SKELETON_CARDS = 3;
 
 /**
  * Play, where the app opens: the Play card (you against the opponent from Play settings), the
  * board cards with something to pick up (the game in progress, the repertoire positions due, the
- * puzzle of the day), then Recent games and the side cards. The Play card takes two columns when
- * nothing is in progress; columns nothing else takes go to the filler card.
+ * puzzle of the day), then Recent games and the side cards. Two columns shared by both rows (see
+ * playGrid): the Play card over Recent games, the board cards over the side cards, so the edges
+ * line up at every window size. Board cards that don't fit are left out; with none, the filler
+ * card takes one card's place.
  */
 export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   const { desktopApiAvailable } = props;
@@ -109,6 +71,8 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   // Fade the cards in only when they replace the skeleton.
   const [mountedWhileLoading] = useState(loading);
   const reveal = mountedWhileLoading ? "animate-fade-in" : undefined;
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const size = usePageContentSize(pageRef);
 
   const firstRun = isFirstRun({ engineCount: page.engineCount, hasAccount: page.hasAccount });
   const { card, repertoire, puzzleOfTheDay } = boardCardsFor(page, {
@@ -119,115 +83,170 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   // An empty library: the table stretches to the bottom of the window.
   const fill = games.isSuccess && recentRows(games.data, excludeGameId).length === 0;
 
-  const slots = topRowSlots({
+  const kinds = boardCardKinds({
     inProgress: Boolean(card),
     repertoire: Boolean(repertoire),
     puzzle: Boolean(puzzleOfTheDay)
   });
+  const grid = size ? playGrid({ ...size, cards: loading ? SKELETON_CARDS : kinds.length }) : null;
 
-  const placements = narrowPlacements(slots);
-  const slotContent = (slot: TopSlot) => {
-    switch (slot.kind) {
-      case "play":
-        return (
-          <PlayCard
-            key="play"
-            span={slot.span}
-            firstRun={firstRun}
-            desktopApiAvailable={desktopApiAvailable}
-            onOpenEngineSettings={props.onOpenEngineSettings}
-            onBeforeEngineGame={props.onBeforeEngineGame}
-            onEngineGameStarted={props.onEngineGameStarted}
-            onFreeBoard={props.onFreeBoard}
-          />
-        );
-      case "in-progress":
-        return card ? (
-          <InProgressBoardCard key="in-progress" card={card} onRejoin={() => rejoin(card, props)} />
-        ) : null;
-      case "repertoire":
-        return repertoire ? (
-          <RepertoireBoardCard
-            key="repertoire"
-            content={repertoire}
-            onReview={props.onRepertoireReview}
-            onResume={props.onRepertoireResume}
-            onStudy={props.onRepertoireStudy}
-          />
-        ) : null;
-      case "puzzle":
-        return puzzleOfTheDay ? (
-          <PuzzleOfTheDayCard
-            key="puzzle"
-            puzzle={puzzleOfTheDay}
-            onSolve={props.onSolvePuzzleOfTheDay}
-          />
-        ) : null;
-      case "filler":
-        return (
-          <FillerCard
-            key="filler"
-            firstRun={firstRun}
-            puzzleDatabase={puzzle.installed}
-            onOpenDatabases={props.onOpenDatabases}
-          />
-        );
-      default:
-        return null;
-    }
-  };
+  const boardCard = (kind: BoardCardKind) => (
+    <BoardCardFor
+      kind={kind}
+      card={card}
+      repertoire={repertoire}
+      puzzleOfTheDay={puzzleOfTheDay}
+      props={props}
+    />
+  );
 
   return (
     <div className={pageShell}>
-      <div className="play-page flex min-h-full flex-col p-6">
+      <div ref={pageRef} className="flex min-h-full flex-col p-6">
         <h1 className="sr-only">Play</h1>
-        {loading ? (
-          <div className={columns} aria-busy="true" aria-label="Loading">
-            {SKELETON_SLOTS.map((slot, index) => (
-              <PlaySlot key={slot.kind} slot={slot} narrow={SKELETON_PLACEMENTS[index] ?? null}>
-                {slot.kind === "play" ? <PlayCardSkeleton /> : <BoardCardSkeleton />}
-              </PlaySlot>
-            ))}
-          </div>
-        ) : (
-          <div className={cn(columns, reveal)}>
-            {slots.map((slot, index) => (
-              <PlaySlot key={slot.kind} slot={slot} narrow={placements[index] ?? null}>
-                {slotContent(slot)}
-              </PlaySlot>
-            ))}
-          </div>
-        )}
-        <div className={cn(bottomColumns, "mt-4", fill && "flex-1")}>
-          <div className="flex min-w-0 flex-col">
-            <RecentGamesTable
-              excludeGameId={excludeGameId}
-              fill={fill}
-              onOpenGame={props.onOpenGame}
-              onReviewGame={props.onReviewGame}
-            />
-          </div>
-          <div className="flex min-h-0 min-w-0 flex-col gap-4">
-            <StartSomethingNewCard
-              desktopApiAvailable={desktopApiAvailable}
-              onAnalyze={props.onAnalyze}
-              onPuzzles={props.onPuzzles}
-              onImportPgn={props.onImportPgn}
-            />
-            {firstRun || loading ? null : <ChallengesCard />}
-            {loading || !desktopApiAvailable ? null : (
-              <LiveBroadcastsCard
-                className="flex-1"
-                onOpenTournament={props.onOpenBroadcastTournament}
-                onOpenBroadcasts={props.onOpenBroadcasts}
-              />
+        {grid ? (
+          <div
+            className={cn("grid gap-4 self-center", fill && "flex-1")}
+            style={{
+              gridTemplateColumns: `${grid.playWidth}px ${grid.sideWidth}px`,
+              // The Play card's content may need a little more in a setup it doesn't usually
+              // have (a long Lichess notice): the row grows rather than run into Recent games.
+              gridTemplateRows: `minmax(${grid.rowHeight}px, auto) ${fill ? "1fr" : "auto"}`
+            }}
+          >
+            {loading ? (
+              <TopRowSkeleton cards={grid.cards} cardWidth={grid.cardWidth} />
+            ) : (
+              <>
+                <div className={cn("flex min-w-0 flex-col *:flex-1", reveal)}>
+                  <PlayCard
+                    wide={grid.wide}
+                    firstRun={firstRun}
+                    desktopApiAvailable={desktopApiAvailable}
+                    onOpenEngineSettings={props.onOpenEngineSettings}
+                    onBeforeEngineGame={props.onBeforeEngineGame}
+                    onEngineGameStarted={props.onEngineGameStarted}
+                    onFreeBoard={props.onFreeBoard}
+                  />
+                </div>
+                <div className={cn("flex min-w-0 gap-4", reveal)}>
+                  {grid.cards ? (
+                    kinds.slice(0, grid.cards).map((kind) => (
+                      <CardSlot key={kind} width={grid.cardWidth}>
+                        {boardCard(kind)}
+                      </CardSlot>
+                    ))
+                  ) : (
+                    <CardSlot width={grid.cardWidth}>
+                      <FillerCard
+                        firstRun={firstRun}
+                        puzzleDatabase={puzzle.installed}
+                        onOpenDatabases={props.onOpenDatabases}
+                      />
+                    </CardSlot>
+                  )}
+                </div>
+              </>
             )}
+            <div className="flex min-w-0 flex-col">
+              <RecentGamesTable
+                excludeGameId={excludeGameId}
+                fill={fill}
+                onOpenGame={props.onOpenGame}
+                onReviewGame={props.onReviewGame}
+              />
+            </div>
+            <SideCards props={props} firstRun={firstRun} loading={loading} />
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
 });
+
+/** A board card's place in the top row: one card's width, the row's height. */
+function CardSlot({ width, children }: { width: number; children: ReactNode }) {
+  return (
+    <div className="flex shrink-0 flex-col *:flex-1" style={{ width }}>
+      {children}
+    </div>
+  );
+}
+
+/** The top row while the page's first data arrives: the Play card and as many board cards as fit. */
+function TopRowSkeleton({ cards, cardWidth }: { cards: number; cardWidth: number }) {
+  return (
+    <>
+      <div className="flex min-w-0 flex-col *:flex-1" aria-busy="true" aria-label="Loading">
+        <PlayCardSkeleton />
+      </div>
+      <div className="flex min-w-0 gap-4" aria-hidden="true">
+        {Array.from({ length: cards }, (_, index) => (
+          <CardSlot key={index} width={cardWidth}>
+            <BoardCardSkeleton />
+          </CardSlot>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** One board card, by its kind (null when it has nothing to show). */
+function BoardCardFor({
+  kind,
+  card,
+  repertoire,
+  puzzleOfTheDay,
+  props
+}: ReturnType<typeof boardCardsFor> & { kind: BoardCardKind; props: PlayPageProps }) {
+  switch (kind) {
+    case "in-progress":
+      return card ? <InProgressBoardCard card={card} onRejoin={() => rejoin(card, props)} /> : null;
+    case "repertoire":
+      return repertoire ? (
+        <RepertoireBoardCard
+          content={repertoire}
+          onReview={props.onRepertoireReview}
+          onResume={props.onRepertoireResume}
+          onStudy={props.onRepertoireStudy}
+        />
+      ) : null;
+    case "puzzle":
+      return puzzleOfTheDay ? (
+        <PuzzleOfTheDayCard puzzle={puzzleOfTheDay} onSolve={props.onSolvePuzzleOfTheDay} />
+      ) : null;
+  }
+}
+
+/** The side column under the board cards: Start something new, challenges, live broadcasts. */
+function SideCards({
+  props,
+  firstRun,
+  loading
+}: {
+  props: PlayPageProps;
+  firstRun: boolean;
+  loading: boolean;
+}) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-col gap-4">
+      <StartSomethingNewCard
+        desktopApiAvailable={props.desktopApiAvailable}
+        onAnalyze={props.onAnalyze}
+        onPuzzles={props.onPuzzles}
+        onImportPgn={props.onImportPgn}
+      />
+      {firstRun || loading ? null : <ChallengesCard />}
+      {loading || !props.desktopApiAvailable ? null : (
+        <LiveBroadcastsCard
+          className="flex-1"
+          onOpenTournament={props.onOpenBroadcastTournament}
+          onOpenBroadcasts={props.onOpenBroadcasts}
+        />
+      )}
+    </div>
+  );
+}
 
 /**
  * What the page shows and whether all of it has been read (`settled`): the final layout depends on

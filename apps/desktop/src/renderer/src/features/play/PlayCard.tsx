@@ -39,8 +39,8 @@ import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setu
 const cardShell = "min-w-0 rounded-xl border border-line bg-surface leading-[1.43]";
 
 export type PlayCardProps = {
-  /** Columns the card spans; two or more: wide, with the preview board on the left. */
-  span: 1 | 2 | 3;
+  /** Room for the preview board, on the left. */
+  wide: boolean;
   /** No engine and no Lichess account yet: the two ways to get an opponent. */
   firstRun: boolean;
   desktopApiAvailable: boolean;
@@ -57,7 +57,7 @@ export type PlayCardProps = {
  * row's height. Wide, a preview board sits on the left.
  */
 export const PlayCard = memo(function PlayCard({
-  span,
+  wide,
   firstRun,
   desktopApiAvailable,
   onOpenEngineSettings,
@@ -65,7 +65,6 @@ export const PlayCard = memo(function PlayCard({
   onEngineGameStarted,
   onFreeBoard
 }: PlayCardProps) {
-  const wide = span > 1;
   const wideBodyRef = useRef<HTMLDivElement | null>(null);
   const boardSize = useWidePreviewSize(wideBodyRef, wide);
   const settings = useSettingsQuery();
@@ -145,9 +144,8 @@ export const PlayCard = memo(function PlayCard({
       {wide ? (
         <div
           ref={wideBodyRef}
-          // At least the mock's 300px board tall; the board itself never sets the height (it is
-          // sized to the body), so the row can shrink back when the window does.
-          className="grid min-h-[324px] flex-1 py-3 pl-3 pr-4"
+          // The board never sets the height (it is sized to the body, the row's height).
+          className="grid min-h-0 flex-1 py-3 pl-3 pr-4"
           style={{
             columnGap: WIDE_GAP,
             gridTemplateColumns: boardSize
