@@ -4,11 +4,10 @@
  */
 
 /**
- * Default model for review commentary. Claude Sonnet writes natural coaching
- * prose while following the grounding rules. Only applies when the user has
- * not chosen a model; a saved choice is never overridden.
+ * Default model for review commentary. Only applies when the user has not
+ * chosen a model; a saved choice is never overridden.
  */
-export const DEFAULT_COMMENTARY_MODEL = "anthropic/claude-sonnet-4.6";
+export const DEFAULT_COMMENTARY_MODEL = "anthropic/claude-haiku-5.5";
 
 /**
  * Small/fast model families ("flash", "mini", "haiku", ...) tend to recite the

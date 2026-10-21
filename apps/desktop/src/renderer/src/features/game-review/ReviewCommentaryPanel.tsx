@@ -528,7 +528,7 @@ function CommentarySkeleton({
   );
 }
 
-/** "anthropic/claude-sonnet-4.6" → "claude-sonnet-4.6"; the full id is in the tooltip. */
+/** "anthropic/claude-haiku-5.5" → "claude-haiku-5.5"; the full id is in the tooltip. */
 function shortModelName(model: string): string {
   return model.split("/").pop() || model;
 }

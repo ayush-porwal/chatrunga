@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
 import {
   analyticsRedactor,
@@ -77,13 +78,13 @@ async function run(
   let clock = 0;
   const result = await generateOpenRouterCommentary(payloads, {
     apiKey: "unit-test-key",
-    model: "anthropic/claude-sonnet-4.6",
+    model: DEFAULT_COMMENTARY_MODEL,
     fetchImpl,
     monotonic: () => (clock += 100),
     report: commentaryReporter(
       service,
       { reviewId: REVIEW, gameId: "g1", trigger },
-      { model: "anthropic/claude-sonnet-4.6", detail: "balanced" }
+      { model: DEFAULT_COMMENTARY_MODEL, detail: "balanced" }
     )
   });
   const events = (
@@ -136,7 +137,7 @@ describe("commentary analytics", () => {
     ]);
     const [first, retry] = of("$ai_generation");
     expect(first).toMatchObject({
-      $ai_model: "anthropic/claude-sonnet-4.6",
+      $ai_model: DEFAULT_COMMENTARY_MODEL,
       $ai_provider: "openrouter",
       $ai_input_tokens: 900,
       $ai_output_tokens: 80,

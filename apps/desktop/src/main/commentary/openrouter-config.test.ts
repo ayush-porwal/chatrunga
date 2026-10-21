@@ -93,7 +93,7 @@ describe("OpenRouterConfigStore", () => {
       "Secure key storage"
     );
     expect(await store.get()).toStrictEqual({
-      model: "anthropic/claude-sonnet-4.6",
+      model: "anthropic/claude-haiku-5.5",
       hasApiKey: false
     });
   });
