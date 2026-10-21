@@ -106,9 +106,9 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
         <h1 className="sr-only">Play</h1>
         {grid ? (
           <div
-            className={cn("grid gap-4 self-center", fill && "flex-1")}
+            className={cn("grid gap-4", fill && "flex-1")}
             style={{
-              gridTemplateColumns: `${grid.playWidth}px ${grid.sideWidth}px`,
+              gridTemplateColumns: `minmax(0, 1fr) ${grid.sideWidth}px`,
               // The Play card's content may need a little more in a setup it doesn't usually
               // have (a long Lichess notice): the row grows rather than run into Recent games.
               gridTemplateRows: `minmax(${grid.rowHeight}px, auto) ${fill ? "1fr" : "auto"}`

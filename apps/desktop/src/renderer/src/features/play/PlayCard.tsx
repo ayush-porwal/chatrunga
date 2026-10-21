@@ -32,7 +32,7 @@ import {
   type CardView,
   type LichessContext
 } from "./play-card-views";
-import { WIDE_GAP, resolvePlayMode, savePlaySettings } from "./play-layout";
+import { WIDE_CONTROLS_MAX, WIDE_GAP, resolvePlayMode, savePlaySettings } from "./play-layout";
 import { useWidePreviewSize } from "./use-wide-preview-size";
 import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setup";
 
@@ -144,13 +144,15 @@ export const PlayCard = memo(function PlayCard({
       {wide ? (
         <div
           ref={wideBodyRef}
-          // The board never sets the height (it is sized to the body, the row's height).
-          className="grid min-h-0 flex-1 py-3 pl-3 pr-4"
+          // The board never sets the height (it is sized to the body, the row's height). In a wide
+          // card the board and the controls (never wider than WIDE_CONTROLS_MAX) stay together in
+          // the middle, rather than the controls stretching across it.
+          className="grid min-h-0 flex-1 justify-center py-3 pl-3 pr-4"
           style={{
             columnGap: WIDE_GAP,
             gridTemplateColumns: boardSize
-              ? `${boardSize}px minmax(0, 1fr)`
-              : "minmax(0, 47.7%) minmax(0, 1fr)"
+              ? `${boardSize}px minmax(0, ${WIDE_CONTROLS_MAX}px)`
+              : `minmax(0, 47.7%) minmax(0, ${WIDE_CONTROLS_MAX}px)`
           }}
         >
           <PreviewBoard view={view} size={boardSize} />

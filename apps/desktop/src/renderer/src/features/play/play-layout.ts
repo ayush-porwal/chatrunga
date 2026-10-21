@@ -38,9 +38,8 @@ const ROW_MAX = 420;
 const BOARD_CARD_CHROME = 142;
 /** A board card's padding and border across (px). */
 const BOARD_CARD_FRAME = 26;
-/** The Play column (the Play card, Recent games under it): never narrower, never wider (px). */
+/** The Play column (the Play card, Recent games under it) is never narrower (px). */
 const PLAY_MIN = 340;
-const PLAY_MAX = 720;
 /** From this width the Play card shows its preview board. */
 const PLAY_WIDE = 560;
 
@@ -65,8 +64,7 @@ export type PlayGrid = {
  * show (`cards`). One row height for the whole top row, from the window's height, so every board
  * is square at it; as many board cards as leave the Play column its minimum (the filler takes one
  * card's place when there are none); the side column exactly as wide as the cards above it, so
- * both rows' edges line up; the Play column capped, and the grid centred, so a wide window doesn't
- * stretch it.
+ * both rows' edges line up; the Play column takes the rest of the width.
  */
 export function playGrid({
   width,
@@ -83,7 +81,7 @@ export function playGrid({
   let slots = Math.max(1, cards);
   while (slots > 1 && width - across(slots) - PLAY_GAP < PLAY_MIN) slots -= 1;
   const sideWidth = across(slots);
-  const playWidth = Math.max(0, Math.min(PLAY_MAX, width - sideWidth - PLAY_GAP));
+  const playWidth = Math.max(0, width - sideWidth - PLAY_GAP);
   return {
     rowHeight,
     cardWidth,
@@ -183,6 +181,8 @@ export function playEngineOrder<T extends { name: string }>(engines: readonly T[
 
 /** The wide Play card's gap between the preview board and the controls (px). */
 export const WIDE_GAP = 24;
+/** The controls column never gets wider than this: the board and the controls stay together. */
+export const WIDE_CONTROLS_MAX = 440;
 /** The controls column never gets narrower than this (the slider's labels must fit). */
 const WIDE_CONTROLS_MIN = 300;
 

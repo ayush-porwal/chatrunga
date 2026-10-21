@@ -61,9 +61,9 @@ describe("playGrid", () => {
     expect(grid.sideWidth).toBe(grid.cardWidth);
   });
 
-  it("caps the Play column, so a wide window centres the grid instead of stretching it", () => {
+  it("gives the Play column the rest of the width", () => {
     const grid = playGrid({ ...wide, cards: 1 });
-    expect(grid.playWidth).toBe(720);
+    expect(grid.playWidth).toBe(wide.width - grid.sideWidth - PLAY_GAP);
     expect(grid.wide).toBe(true);
     expect(playGrid({ ...smallest, cards: 1 }).wide).toBe(false);
   });
