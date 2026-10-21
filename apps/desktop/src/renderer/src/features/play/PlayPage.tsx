@@ -94,7 +94,15 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
     repertoire: Boolean(repertoire),
     puzzle: Boolean(puzzleOfTheDay)
   });
-  const grid = size ? playGrid({ ...size, cards: loading ? SKELETON_CARDS : kinds.length }) : null;
+  // The rem the page's gap-4 and the cards' sizes are drawn in (app.css steps it in large windows,
+  // and a step comes with a resize, which measures the page again).
+  const grid = size
+    ? playGrid({
+        ...size,
+        cards: loading ? SKELETON_CARDS : kinds.length,
+        rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
+      })
+    : null;
 
   const boardCard = (kind: BoardCardKind) => (
     <BoardCardFor

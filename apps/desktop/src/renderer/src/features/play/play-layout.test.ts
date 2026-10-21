@@ -3,7 +3,6 @@ import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import {
   boardCardKinds,
   isFirstRun,
-  PLAY_GAP,
   playEngineOrder,
   playGrid,
   resolvePlayMode,
@@ -38,8 +37,8 @@ describe("playGrid", () => {
       for (const cards of [0, 1, 2, 3]) {
         const grid = playGrid({ ...size, cards });
         const slots = Math.max(1, grid.cards);
-        expect(grid.sideWidth).toBe(slots * grid.cardWidth + (slots - 1) * PLAY_GAP);
-        expect(grid.playWidth + PLAY_GAP + grid.sideWidth).toBeLessThanOrEqual(size.width);
+        expect(grid.sideWidth).toBe(slots * grid.cardWidth + (slots - 1) * 16);
+        expect(grid.playWidth + 16 + grid.sideWidth).toBeLessThanOrEqual(size.width);
       }
   });
 
@@ -61,6 +60,15 @@ describe("playGrid", () => {
     expect(grid.sideWidth).toBe(grid.cardWidth);
   });
 
+  it("draws in the rem a large window steps up to: its gap, the cards' sizes and the bounds", () => {
+    // app.css: 18px at ≥2560×1200. The gap is 1rem; the row's floor and the cards scale with it.
+    const grid = playGrid({ width: 2200, height: 600, cards: 3, rem: 18 });
+    expect(grid.rowHeight).toBe(Math.round((372 * 18) / 16));
+    expect(grid.cardWidth).toBe(Math.round(grid.rowHeight - (164 * 18) / 16 + (24 * 18) / 16 + 2));
+    expect(grid.sideWidth).toBe(3 * grid.cardWidth + 2 * 18);
+    expect(grid.playWidth).toBe(2200 - grid.sideWidth - 18);
+  });
+
   it("goes to one column where the Play column's minimum and a card don't fit side by side", () => {
     // A window zoomed in: the page's content box narrower than the Play column and one card.
     const grid = playGrid({ width: 560, height: 590, cards: 3 });
@@ -68,13 +76,13 @@ describe("playGrid", () => {
     expect(grid.playWidth).toBe(560);
     expect(grid.sideWidth).toBe(560);
     // As many cards as fit across it.
-    expect(grid.cards).toBe(Math.floor((560 + PLAY_GAP) / (grid.cardWidth + PLAY_GAP)));
+    expect(grid.cards).toBe(Math.floor((560 + 16) / (grid.cardWidth + 16)));
     expect(playGrid({ ...smallest, cards: 3 }).stacked).toBe(false);
   });
 
   it("gives the Play column the rest of the width", () => {
     const grid = playGrid({ ...wide, cards: 1 });
-    expect(grid.playWidth).toBe(wide.width - grid.sideWidth - PLAY_GAP);
+    expect(grid.playWidth).toBe(wide.width - grid.sideWidth - 16);
     expect(grid.wide).toBe(true);
     expect(playGrid({ ...smallest, cards: 1 }).wide).toBe(false);
   });
