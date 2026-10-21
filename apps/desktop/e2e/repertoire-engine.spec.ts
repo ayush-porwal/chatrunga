@@ -117,8 +117,8 @@ function seedRepertoire(page: Page) {
 }
 
 const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
-/** Analyze and Play from here: icons in the side panel's status row, on the selected position. */
-const positionActions = (page: Page) => page.getByRole("group", { name: "Position actions" });
+/** The titlebar, with Analyze and Play from here (on the selected position). */
+const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const enginePanel = (page: Page) =>
   studyPanel(page).getByRole("region", { name: "Engine analysis" });
 const chapterMoves = (page: Page) => page.getByRole("tree", { name: "Chapter moves" });
@@ -172,23 +172,20 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   await expect(chapterMoves(page)).toBeVisible();
   const board = page.getByRole("region", { name: "Board" }).locator("cg-board");
 
-  // Analyze and Play from here are icons in the side panel's status row, acting on the selected
-  // position, and the chapter's Rehearse and Practice share one row under the moves.
-  await expect(studyPanel(page).getByRole("group", { name: "Position actions" })).toBeVisible();
-  const analyze = positionActions(page).getByRole("button", { name: "Analyze", exact: true });
+  // Analyze and Play from here are titlebar actions on the selected position; the chapter's
+  // Practice sits under the moves.
+  const analyze = titlebar(page).getByRole("button", { name: "Analyze", exact: true });
   await analyze.hover();
   await expect(page.getByRole("tooltip")).toContainText("Analyze this position with the engine");
-  const rehearse = studyPanel(page).getByRole("button", { name: "Rehearse this chapter" });
-  const practise = studyPanel(page).getByRole("button", { name: "Practice this chapter" });
+  const practise = studyPanel(page).getByRole("button", { name: "Practice", exact: true });
   for (const [width, height] of [
     [1680, 1050],
     [1280, 800]
   ] as const) {
     const [shownWidth, shownHeight] = await resizeWindow(app, page, width, height);
-    // Both read once the layout has settled, so neither is compared against a stale box.
-    const rehearseBox = await settledBox(rehearse);
-    const practiseBox = await settledBox(practise);
-    expect(rehearseBox.y).toBe(practiseBox.y);
+    // Read once the layout has settled, so it isn't checked against a stale box.
+    await settledBox(practise);
+    await expect(practise).toBeInViewport();
     if (ACTIONS_SCREENSHOT) {
       await page.screenshot({ path: `${ACTIONS_SCREENSHOT}-${shownWidth}x${shownHeight}.png` });
     }
@@ -197,10 +194,8 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   const boardBox = await settledBox(board);
 
   // Analyze opens the panel in place (no other screen) with the start position's lines and the bar.
-  await expect(analyze).toHaveAttribute("aria-expanded", "false");
   await expect(analyze).toHaveAttribute("aria-pressed", "false");
   await analyze.click();
-  await expect(analyze).toHaveAttribute("aria-expanded", "true");
   await expect(analyze).toHaveAttribute("aria-pressed", "true");
   await expect(enginePanel(page)).toBeVisible();
   await expect(enginePanel(page).getByRole("heading", { name: "Fake UCI" })).toBeVisible({
@@ -260,7 +255,7 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   await expect(preview).not.toContainText("Line score");
   await expect(preview).not.toContainText("Nf6");
   await expect(preview).not.toContainText("d3");
-  // It never grows the panel or covers the moves and their Undo / Redo under it.
+  // It never grows the panel or covers the moves under it.
   expect(await studyPanelLayout(page)).toMatchObject({ engineOverflow: 0, rowsInside: true });
   const previewBox = (await preview.boundingBox())!;
   const panelBox = (await studyPanel(page).boundingBox())!;
@@ -292,27 +287,25 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   // Closing the panel stops the engine; the bar goes with it.
   await enginePanel(page).getByRole("button", { name: "Close the engine" }).click();
   await expect(enginePanel(page)).toHaveCount(0);
-  await expect(analyze).toHaveAttribute("aria-expanded", "false");
+  await expect(analyze).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("img", { name: /^Evaluation / })).toHaveCount(0);
   await expect.poll(() => engineCommands(log).at(-1)).toBe("stop");
   await expect.poll(() => board.boundingBox()).toEqual(boardBox);
   // The toggle is a keyboard control: Enter opens the panel again, at the same board size.
   await analyze.focus();
   await page.keyboard.press("Enter");
-  await expect(analyze).toHaveAttribute("aria-expanded", "true");
+  await expect(analyze).toHaveAttribute("aria-pressed", "true");
   await expect(addLine(page, "Nf6")).toBeVisible();
   await expect.poll(() => board.boundingBox()).toEqual(boardBox);
 });
-
-const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 
 /** From anywhere: the repertoire's Study (at its last position), with the engine panel searching. */
 async function studyWithEngine(page: Page) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
-  const analyze = positionActions(page).getByRole("button", { name: "Analyze", exact: true });
+  const analyze = titlebar(page).getByRole("button", { name: "Analyze", exact: true });
   // Each visit starts with the panel closed.
-  await expect(analyze).toHaveAttribute("aria-expanded", "false");
+  await expect(analyze).toHaveAttribute("aria-pressed", "false");
   await analyze.click();
   await expect(addLine(page, "e4")).toBeVisible({ timeout: 15_000 });
 }
@@ -332,13 +325,10 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
   await registerFakeEngine(page, log, "lines");
   await seedRepertoire(page);
 
-  // The breadcrumb back to the repertoires.
+  // The sidebar's Repertoire, back to the repertoires.
   await studyWithEngine(page);
   let from = engineCommands(log).length;
-  await page
-    .getByRole("navigation", { name: "Repertoire location" })
-    .getByRole("button", { name: "Repertoire", exact: true })
-    .click();
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await expect(
     page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true })
   ).toBeVisible();
@@ -405,7 +395,7 @@ test("Play from here stops the panel's search and the engine game gets the engin
   await expect(addLine(page, "Nf6")).toBeVisible();
 
   const from = engineCommands(log).length;
-  await positionActions(page).getByRole("button", { name: "Play from here", exact: true }).click();
+  await titlebar(page).getByRole("button", { name: "Play from here", exact: true }).click();
   await expect(page.getByText(`${REPERTOIRE} › Italian`)).toBeVisible();
   await expectStoppedSince(log, from);
   // Black (the engine) is to move after 3. Bc4: the game asks the engine for its move.
@@ -448,7 +438,7 @@ test("Back from Study with the engine panel open to an analysis board analyses t
   await add.click();
   await page.getByRole("button", { name: "Open chapter", exact: true }).click();
   await expect(studyPanel(page)).toBeVisible();
-  const analyze = positionActions(page).getByRole("button", { name: "Analyze", exact: true });
+  const analyze = titlebar(page).getByRole("button", { name: "Analyze", exact: true });
   await analyze.click();
   await expect(addLine(page, "e4")).toBeVisible({ timeout: 15_000 });
 

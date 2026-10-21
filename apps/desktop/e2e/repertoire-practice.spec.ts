@@ -69,12 +69,18 @@ async function storedProgress(app: ElectronApplication, page: Page, profile: str
   return document.repertoires[0].progress;
 }
 
-/** Opens the repertoire's chapter in Study, then its practice setup. */
-async function openPracticeSetup(page: Page) {
+const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
+
+/** Opens the repertoire's chapter in Study. */
+async function openStudy(page: Page) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await page.getByRole("button", { name: "Study White practice", exact: true }).click();
-  await page.getByRole("button", { name: "Practice this chapter", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start review", exact: true })).toBeVisible();
+  await expect(studyPanel(page).getByRole("tree", { name: "Chapter moves" })).toBeVisible();
+}
+
+/** Study's Practice: nothing is due yet, so the session asks the new decisions. */
+async function practise(page: Page) {
+  await studyPanel(page).getByRole("button", { name: "Practice", exact: true }).click();
 }
 
 test("practice shows an answer's notes only after grading, waits for Next, and retries the misses", async ({
@@ -84,11 +90,15 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   const { app, page } = await launch();
   await skipWelcome(page);
   await seedRepertoire(page);
-  await openPracticeSetup(page);
+  await openStudy(page);
 
-  await page.getByRole("radio", { name: "Learn new", exact: true }).click();
-  await page.getByLabel("Next card").selectOption({ label: "When I press Next" });
-  await page.getByRole("button", { name: "Start learning", exact: true }).click();
+  // The repertoire settings: the next card waits for Next.
+  await studyPanel(page).getByRole("button", { name: "Repertoire settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Repertoire settings" });
+  await settings.getByLabel("Next card").selectOption({ label: "When I press Next" });
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(settings).toBeHidden();
+  await practise(page);
   const panel = practicePanel(page);
   await expect(panel).toContainText("1 of 3");
 
@@ -168,9 +178,8 @@ test("a missed position's Study link opens it in its chapter", async ({ launch }
   const { page } = await launch();
   await skipWelcome(page);
   await seedRepertoire(page);
-  await openPracticeSetup(page);
-  await page.getByRole("radio", { name: "Learn new", exact: true }).click();
-  await page.getByRole("button", { name: "Start learning", exact: true }).click();
+  await openStudy(page);
+  await practise(page);
   const panel = practicePanel(page);
   await expect(panel).toContainText("1 of 3");
   await panel.getByRole("button", { name: "Reveal", exact: true }).click();

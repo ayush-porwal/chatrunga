@@ -1,7 +1,8 @@
 // Repertoire journeys for a chapter with nothing to practise (its moves kept as reference, as when
 // they were played while studying or a whole game was added): Study says why and makes it
-// practised in one click, practice explains its empty states and leads back to Study, and Rehearse
-// this chapter starts instead of spinning. How to run them: playwright.config.ts.
+// practised in one click, practice explains its empty states and leads back to Study, and a
+// rehearsal of the chapter (Practice set to Lines) starts instead of spinning. How to run them:
+// playwright.config.ts.
 import type { Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import { clickSquare, expect, sidebar, skipWelcome, test } from "./app";
@@ -51,7 +52,7 @@ function seedSicilian(
         });
         revision = saved.repertoire.revision;
       }
-      // Study opens after 1... c5, where "Your choices here" lists 2. Nf3.
+      // Study opens after 1... c5, where White decides 2. Nf3.
       const c5 = chapter.tree.find((node) => node.san === "c5")!;
       await api.saveWorkspace({
         repertoireId: created.id,
@@ -70,7 +71,21 @@ function seedSicilian(
 
 const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
 const practicePanel = (page: Page) => page.getByRole("complementary", { name: "Practice" });
-const notice = (page: Page) => page.getByRole("status", { name: "Why nothing is practised" });
+const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
+/** The study footer's one-click fix when the chapter practises nothing. */
+const includeButton = (page: Page) =>
+  studyPanel(page).getByRole("button", { name: "Include in practice", exact: true });
+const practiceButton = (page: Page) =>
+  studyPanel(page).getByRole("button", { name: "Practice", exact: true });
+
+/** The repertoire's unique practised decisions (the hub's Positions column). */
+function decisionCount(page: Page) {
+  return page.evaluate(async (name) => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
+    const [repertoire] = await api.list({ query: name });
+    return repertoire.decisionCount;
+  }, REPERTOIRE);
+}
 
 async function openHub(page: Page) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -82,7 +97,27 @@ async function openHub(page: Page) {
 async function openStudy(page: Page) {
   await openHub(page);
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
-  await expect(studyPanel(page).getByText("Decisions", { exact: true })).toBeVisible();
+  await expect(studyPanel(page).getByRole("tree", { name: "Chapter moves" })).toBeVisible();
+}
+
+/** The repertoire settings (the tab bar's cog): Practice → Lines, saved. */
+async function practiseLines(page: Page) {
+  await page.getByRole("button", { name: "Repertoire settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Repertoire settings" });
+  await dialog
+    .getByRole("radiogroup", { name: "Practice" })
+    .getByRole("radio", { name: "Lines", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
+
+/** The selected move's menu (the starting position's: `name` "Starting position") → `item`. */
+async function moveMenu(page: Page, name: string, item: string) {
+  await studyPanel(page)
+    .getByRole("button", { name: `${name} actions`, exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test("a chapter of reference moves says why, offers no dead buttons, and is practised in one click", async ({
@@ -94,84 +129,49 @@ test("a chapter of reference moves says why, offers no dead buttons, and is prac
   await openStudy(page);
   const panel = studyPanel(page);
 
-  // Why, in one sentence: White's first move is kept as reference, so nothing after it is asked.
-  // What the fix does (and why moves start as reference) is its description and tooltip.
-  await expect(
-    notice(page).getByText("1. e4 is reference only, so nothing from it on is asked.", {
-      exact: true
-    })
-  ).toBeVisible();
-  const include = notice(page).getByRole("button", { name: "Include in practice", exact: true });
+  // Why, in one line: White's moves are kept as reference (why moves start that way is its
+  // tooltip); what the fix does is the fix's description.
+  const why = panel.getByText("Your moves here are kept as reference.");
+  await expect(why).toBeVisible();
+  await expect(why).toHaveAttribute("title", /start as reference until you accept them/);
+  const include = includeButton(page);
   await expect(include).toHaveAccessibleDescription(
-    /start as reference until you accept them.*Undo reverts it/
+    /accepts your first move at each position.*Undo reverts it/
   );
-  await include.hover();
-  await expect(page.getByRole("tooltip")).toContainText("accepts your first move at each position");
-  await expect(panel.getByText("0 in this chapter")).toBeVisible();
-
-  // The choice explains itself instead of "Not trained here / reference".
-  const choices = panel.getByRole("region", { name: "Choices at this position" });
-  await expect(choices.getByText(/^Not practised:/)).toBeVisible();
-  await expect(
-    choices.getByText("kept as reference · not practised because 1. e4 is reference only")
-  ).toBeVisible();
-
-  // The training marks: plain names, their state and effect, tucked under Advanced.
-  const practiceHere = panel.getByRole("region", { name: "Practice at this move" });
-  await expect(practiceHere).toContainText("Not practised: 1. e4 is reference only");
-  await practiceHere.getByRole("button", { name: /Advanced: training marks/ }).click();
-  const start = practiceHere.getByRole("switch", { name: "Start practice here" });
-  await expect(start).toHaveAttribute("aria-checked", "false");
-  await expect(
-    practiceHere.getByText("Practice begins at this move", { exact: false })
-  ).toBeVisible();
-  await expect(
-    practiceHere.getByText("No change to what this chapter practises").first()
-  ).toBeVisible();
-
-  // Nothing to practise: both actions are disabled, with the reason beside them.
-  const practise = panel.getByRole("button", { name: "Practice this chapter", exact: true });
-  const rehearse = panel.getByRole("button", { name: "Rehearse this chapter", exact: true });
-  await expect(practise).toBeDisabled();
-  await expect(rehearse).toBeDisabled();
-  await expect(
-    panel.getByText("Nothing to practise yet: your moves here are kept as reference.")
-  ).toBeVisible();
+  expect(await decisionCount(page)).toBe(0);
 
   // One click: the import default — White's moves accepted, Black's replies covered.
   await include.click();
-  await expect(notice(page)).toHaveCount(0);
-  await expect(panel.getByText("4 in this chapter")).toBeVisible();
-  await expect(choices.getByText(/^Preferred:/)).toBeVisible();
-  await expect(practiceHere).toContainText("Practised");
-  await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
-  await expect(practise).toBeEnabled();
+  await expect(include).toHaveCount(0);
+  await expect(why).toHaveCount(0);
+  await expect(titlebar(page)).toContainText("Saved");
+  await expect.poll(() => decisionCount(page)).toBe(4);
 
-  // Practice now asks the four decisions; the first is answered on the board.
-  await practise.click();
-  await page.getByRole("radio", { name: "Learn new", exact: true }).click();
-  await page.getByRole("button", { name: "Start learning", exact: true }).click();
+  // Practice now asks the four decisions (nothing is due: the new ones); the first is answered
+  // on the board.
+  await practiceButton(page).click();
   await expect(practicePanel(page)).toContainText("1 of 4");
   await clickSquare(page, "e2");
   await clickSquare(page, "e4");
   await expect(practicePanel(page).getByText("You played e4.")).toBeVisible();
 });
 
-test("Rehearse this chapter on the user's chapter starts a rehearsal instead of spinning", async ({
+test("Practice set to Lines rehearses the user's chapter instead of spinning", async ({
   launch
 }) => {
   const { page } = await launch();
   await skipWelcome(page);
   await seedSicilian(page);
   await openStudy(page);
-  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
-  await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
+  await includeButton(page).click();
+  await expect(titlebar(page)).toContainText("Saved");
 
-  await studyPanel(page)
-    .getByRole("button", { name: "Rehearse this chapter", exact: true })
-    .click();
+  // Lines (the repertoire settings): Study's Practice rehearses the open chapter.
+  await practiseLines(page);
+  await practiceButton(page).click();
   const panel = practicePanel(page);
   await expect(panel).toBeVisible();
+  await expect(panel.getByRole("tab", { name: "Rehearsal", exact: true })).toBeVisible();
   await expect(page.getByRole("status", { name: "Starting practice" })).toHaveCount(0);
   // The line is played move by move: 1. e4, the chapter's reply 1... c5, then 2. Nf3.
   await clickSquare(page, "e2");
@@ -189,30 +189,29 @@ test("practice explains a repertoire with nothing to practise and leads back to 
   await skipWelcome(page);
   await seedSicilian(page);
   await openHub(page);
-  await page.getByRole("button", { name: `${REPERTOIRE} actions`, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Practice", exact: true }).click();
+  await page.getByRole("button", { name: `Practice ${REPERTOIRE}`, exact: true }).click();
 
-  // Explained before any start, and every Start is disabled with the reason.
+  // The start finds nothing to ask: the chapter is named with its cause, and the settings are a
+  // click away.
   await expect(page.getByText("Nothing to practise in “Chapter 1”")).toBeVisible();
   await expect(page.getByText("1. e4 is reference only", { exact: false })).toBeVisible();
-  for (const [mode, start] of [
-    ["Review due", "Start review"],
-    ["Learn new", "Start learning"],
-    ["Rehearse lines", "Start rehearsal"]
-  ]) {
-    await page.getByRole("radio", { name: mode, exact: true }).click();
-    await expect(page.getByRole("button", { name: start, exact: true })).toBeDisabled();
-    await expect(
-      page.getByText("Nothing in this repertoire is practised yet — see why above.")
-    ).toBeVisible();
-  }
+  await expect(page.getByRole("button", { name: "Practice settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Starting practice" })).toHaveCount(0);
 
-  // The way back: Study at the position whose choices list the reference move.
+  // The way back: Study at the position where the reference move is played (the start), with
+  // the footer's why and fix.
   await page.getByRole("button", { name: "Fix in Study", exact: true }).click();
-  await expect(notice(page)).toBeVisible();
-  const choices = studyPanel(page).getByRole("region", { name: "Choices at this position" });
-  await expect(choices.getByRole("button", { name: "e4", exact: true })).toBeVisible();
-  await expect(choices.getByText(/^Reference only:/)).toBeVisible();
+  await expect(includeButton(page)).toBeVisible();
+  await expect(studyPanel(page).getByText("Your moves here are kept as reference.")).toBeVisible();
+  await expect(
+    studyPanel(page).getByRole("button", { name: "Starting position", exact: true })
+  ).toHaveAttribute("aria-current", "step");
+  await expect(
+    studyPanel(page).getByRole("tree", { name: "Chapter moves" }).getByRole("button", {
+      name: "e4",
+      exact: true
+    })
+  ).toBeVisible();
 });
 
 test("an empty review explains itself and Learn new starts from the same screen", async ({
@@ -222,59 +221,77 @@ test("an empty review explains itself and Learn new starts from the same screen"
   await skipWelcome(page);
   await seedSicilian(page, { reference: false });
   await openStudy(page);
-  await studyPanel(page)
-    .getByRole("button", { name: "Practice this chapter", exact: true })
-    .click();
 
-  // Review due with no new cards: nothing is due yet.
-  await page.getByRole("radio", { name: "Review due", exact: true }).click();
-  await page.getByRole("spinbutton", { name: "New cards" }).fill("0");
-  const start = page.getByRole("button", { name: "Start review", exact: true });
-  await start.click();
+  // Positions with no new cards (the repertoire settings): only due ones, and none is due yet.
+  await page.getByRole("button", { name: "Repertoire settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Repertoire settings" });
+  await expect(settings.getByRole("radio", { name: "Positions", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await settings.getByRole("spinbutton", { name: /^New cards/ }).fill("0");
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(settings).toBeHidden();
+  await practiceButton(page).click();
   await expect(page.getByText("No reviews due", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Everything in this scope is scheduled for later.", { exact: false })
   ).toBeVisible();
-  // The form stayed as it was (no flicker back to defaults).
-  await expect(page.getByRole("spinbutton", { name: "New cards" })).toHaveValue("0");
+  // The settings it started with are a click away, as saved.
+  await page.getByRole("button", { name: "Practice settings", exact: true }).click();
+  await expect(settings.getByRole("spinbutton", { name: /^New cards/ })).toHaveValue("0");
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(settings).toBeHidden();
 
   await page.getByRole("button", { name: "Learn new", exact: true }).click();
   await expect(practicePanel(page)).toContainText("1 of 4");
 });
 
-test("Rehearse from here and Rehearse this chapter know about paused decisions", async ({
-  launch
-}) => {
+test("rehearsing the chapter knows about paused decisions", async ({ launch }) => {
   const { page } = await launch();
   await skipWelcome(page);
   await seedSicilian(page, { reference: false, pgn: "1. e4 c5 2. Nf3 *" });
   await openStudy(page);
-  const panel = studyPanel(page);
-  const titlebar = page.getByRole("banner", { name: "Titlebar" });
-  const pause = async () => {
-    await page.getByRole("tab", { name: "Notes", exact: true }).click();
-    await page.getByRole("switch", { name: "Pause this decision", exact: true }).click();
-    await expect(titlebar).toContainText("Saved");
-    await page.getByRole("tab", { name: "Moves", exact: true }).click();
-  };
-  const fromHere = panel.getByRole("button", { name: "Rehearse from here", exact: true });
-  const rehearse = panel.getByRole("button", { name: "Rehearse this chapter", exact: true });
+  await practiseLines(page);
 
-  // After 1... c5 the line asks 2. Nf3; paused, it has nothing to ask from here.
-  await expect(fromHere).toBeVisible();
-  await pause();
-  await expect(fromHere).toHaveCount(0);
-  await expect(rehearse).toBeEnabled();
-
-  // With 1. e4 paused too, nothing in the chapter is asked.
-  await panel.getByRole("button", { name: "First move", exact: true }).click();
-  await pause();
-  const reason = "Every decision in this chapter is paused (see Notes).";
-  await expect(panel.getByText(reason)).toBeVisible();
-  await expect(rehearse).toBeDisabled();
+  // The start's decision (1. e4) paused: the move menu offers to resume it.
+  await studyPanel(page).getByRole("button", { name: "Starting position", exact: true }).click();
+  await moveMenu(page, "Starting position", "Pause practice for this position");
+  await expect(titlebar(page)).toContainText("Saved");
+  const startActions = studyPanel(page).getByRole("button", {
+    name: "Starting position actions",
+    exact: true
+  });
+  await startActions.click();
   await expect(
-    panel.getByRole("button", { name: "Practice this chapter", exact: true })
-  ).toBeDisabled();
+    page.getByRole("menuitem", { name: "Resume practice for this position", exact: true })
+  ).toBeVisible();
+  await startActions.click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+
+  // The rehearsal plays 1. e4 for you and asks 2. Nf3 after the reply.
+  await practiceButton(page).click();
+  const panel = practicePanel(page);
+  await expect(panel.getByRole("tab", { name: "Rehearsal", exact: true })).toBeVisible();
+  await expect(panel.getByText("The reply: c5.")).toBeVisible();
+  await clickSquare(page, "g1");
+  await clickSquare(page, "f3");
+  await expect(panel.getByText("Line complete", { exact: false })).toBeVisible();
+
+  // With 2. Nf3 paused too, nothing in the chapter is asked, and practice says so.
+  await openStudy(page);
+  await studyPanel(page)
+    .getByRole("tree", { name: "Chapter moves" })
+    .getByRole("button", { name: "c5", exact: true })
+    .click();
+  await moveMenu(page, "c5", "Pause practice for this position");
+  await expect(titlebar(page)).toContainText("Saved");
+  await practiceButton(page).click();
+  await expect(page.getByText("Nothing to rehearse from here", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("paused decisions are played for you", { exact: false })
+  ).toBeVisible();
+  await expect(practicePanel(page)).toHaveCount(0);
 });
 
 test("Include in practice asks before accepting a move where another chapter plays a different one", async ({
@@ -299,22 +316,25 @@ test("Include in practice asks before accepting a move where another chapter pla
     { name: REPERTOIRE, revision }
   );
   await openStudy(page);
-  const panel = studyPanel(page);
-  await expect(panel.getByText("0 in this chapter")).toBeVisible();
+  // "Alapin" practises 1. e4 and 2. c3; this chapter nothing.
+  await expect(includeButton(page)).toBeVisible();
+  expect(await decisionCount(page)).toBe(2);
 
   // Accepting 2. Nf3 there would change what "Alapin" practises too: it asks first.
-  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
-  const question = notice(page).getByRole("group", { name: "Include in practice?" });
+  await includeButton(page).click();
+  const question = page.getByRole("dialog", { name: "Include in practice?" });
   await expect(question).toContainText(
     "Your other chapters play a different move after 1. e4 c5. Including also accepts 2. Nf3 there."
   );
   await question.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(question).toHaveCount(0);
-  await expect(panel.getByText("0 in this chapter")).toBeVisible();
+  await expect(includeButton(page)).toBeVisible();
+  expect(await decisionCount(page)).toBe(2);
 
-  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
+  await includeButton(page).click();
   await question.getByRole("button", { name: "Include anyway", exact: true }).click();
-  await expect(notice(page)).toHaveCount(0);
-  await expect(panel.getByText("4 in this chapter")).toBeVisible();
-  await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
+  await expect(includeButton(page)).toHaveCount(0);
+  await expect(titlebar(page)).toContainText("Saved");
+  // 2. Nf3, 3. d4 and 4. Nxd4 join the start's 1. e4 (shared with "Alapin").
+  await expect.poll(() => decisionCount(page)).toBe(4);
 });

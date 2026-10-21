@@ -135,6 +135,8 @@ test("edits a repertoire's name and tags; the hub search finds the new tag", asy
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Saved the details of “Sicilian Najdorf”.")).toBeVisible();
 
+  // The card title bar's magnifier opens the search field.
+  await page.getByRole("button", { name: "Search repertoires", exact: true }).click();
   const search = page.getByRole("searchbox", { name: "Search repertoires" });
   await search.fill("najdorf-bg5");
   const list = page.getByRole("list", { name: "Repertoires" });
@@ -397,10 +399,7 @@ test(
       return { perChapterSaves100Ms, bulk100Ms, bulk499Ms: Math.round(performance.now() - start) };
     });
 
-    await page
-      .getByRole("navigation", { name: "Repertoire location" })
-      .getByRole("button", { name: "Repertoire", exact: true })
-      .click();
+    await openHub(page);
     await page.getByRole("button", { name: "Large collection actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Import PGN", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Import PGN" });
