@@ -83,6 +83,7 @@ test("a picture chosen in Settings shows on the Play card and on your side of th
   await expect(yourPicture(pictureCard(page))).toHaveCount(0);
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(moves.getByRole("button", { name: "e5", exact: true })).toBeVisible();
-  await expect(page.getByText("You", { exact: true }).filter({ visible: true })).toHaveCount(1);
+  await expect(playerRow(page, "You")).toBeVisible();
+  await expect(yourPicture(playerRow(page, "You"))).toHaveCount(0);
   await expect(page.locator('img[src^="chaturanga-image:"]:visible')).toHaveCount(0);
 });
