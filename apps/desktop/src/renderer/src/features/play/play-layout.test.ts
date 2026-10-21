@@ -86,6 +86,15 @@ describe("playGrid", () => {
     expect(grid.wide).toBe(true);
     expect(playGrid({ ...smallest, cards: 1 }).wide).toBe(false);
   });
+
+  it("shows the preview board only where it fits at full height beside the controls", () => {
+    // Row 372: the board 346 (less the border and py-3), + 24 gap + 300 controls + 30 chrome = 700.
+    const atWidth = (playWidth: number) =>
+      playGrid({ width: playWidth + 234 + 16, height: 810, cards: 1 });
+    expect(atWidth(700).playWidth).toBe(700);
+    expect(atWidth(700).wide).toBe(true);
+    expect(atWidth(699).wide).toBe(false);
+  });
 });
 
 describe("resolvePlayMode", () => {
@@ -129,9 +138,13 @@ describe("savePlaySettings", () => {
       setPlayOpponent: (opponent: PlayOpponent | null) => void (state.playOpponent = opponent)
     };
     const writes: { patch: unknown; fail: () => void }[] = [];
-    const save = (opponent: PlayOpponent, engineId: string | null = null) =>
+    const save = (
+      opponent: PlayOpponent,
+      engineId: string | null = null,
+      maiaRating: number | null = null
+    ) =>
       savePlaySettings(
-        { opponent, engineId },
+        { opponent, engineId, maiaRating },
         () => state,
         (variables, options) => writes.push({ patch: variables.patch, fail: options.onError })
       );
@@ -144,6 +157,14 @@ describe("savePlaySettings", () => {
     expect(state.playOpponent).toBe("engine");
     expect(writes.map((write) => write.patch)).toStrictEqual([
       { playOpponent: "engine", playEngineId: "sf" }
+    ]);
+  });
+
+  it("writes Maia's rating only when it was changed", () => {
+    const { writes, save } = setup(null);
+    save("engine", "maia", 1800);
+    expect(writes.map((write) => write.patch)).toStrictEqual([
+      { playOpponent: "engine", playEngineId: "maia", playMaiaRating: 1800 }
     ]);
   });
 
@@ -172,24 +193,18 @@ describe("isFirstRun", () => {
 });
 
 describe("playEngineOrder", () => {
-  it("lists other engines first, then Maia from the weakest level up", () => {
-    const names = [
-      "Maia 1700 (managed)",
-      "Maia 1900 (managed)",
-      "Maia 1300 (managed)",
-      "Stockfish (managed)",
-      "Maia 1100 (managed)",
-      "Berserk"
+  it("lists the engines by name, Maia last", () => {
+    const engines = [
+      { name: "Maia (managed)", runtime: "maia3" as const },
+      { name: "Stockfish (managed)", runtime: "custom-uci" as const },
+      { name: "Berserk 13", runtime: "custom-uci" as const },
+      { name: "Berserk 9", runtime: "custom-uci" as const }
     ];
-    expect(
-      playEngineOrder(names.map((name) => ({ name }))).map((engine) => engine.name)
-    ).toStrictEqual([
-      "Berserk",
+    expect(playEngineOrder(engines).map((engine) => engine.name)).toStrictEqual([
+      "Berserk 9",
+      "Berserk 13",
       "Stockfish (managed)",
-      "Maia 1100 (managed)",
-      "Maia 1300 (managed)",
-      "Maia 1700 (managed)",
-      "Maia 1900 (managed)"
+      "Maia (managed)"
     ]);
   });
 });
@@ -199,14 +214,8 @@ describe("widePreviewBoardSize", () => {
     expect(widePreviewBoardSize(900, 340)).toBe(340);
   });
 
-  it("gives the controls their room first", () => {
-    // 1440×900, two columns: the mock's 300px board.
-    expect(widePreviewBoardSize(630, 300)).toBe(300);
-    expect(widePreviewBoardSize(630, 340)).toBe(306);
-    expect(widePreviewBoardSize(500, 300)).toBe(176);
-  });
-
-  it("never goes under 120px", () => {
-    expect(widePreviewBoardSize(300, 400)).toBe(120);
+  it("only trims what rounding takes from the controls' room", () => {
+    expect(widePreviewBoardSize(669.5, 346)).toBe(345);
+    expect(widePreviewBoardSize(200, 346)).toBe(0);
   });
 });

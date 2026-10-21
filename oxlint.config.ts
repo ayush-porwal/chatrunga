@@ -28,6 +28,9 @@ export default defineConfig({
     "**/test-results/**",
     "**/playwright-report/**",
     "stockfish/**",
+    // CSSLab's Maia 3 code, vendored byte for byte (apps/desktop/vendor/csslab-maia/PROVENANCE.md):
+    // it runs as published, so it isn't held to (or edited for) this repo's rules.
+    "apps/desktop/vendor/**",
     ".claude/**",
     ".worktrees/**"
   ],

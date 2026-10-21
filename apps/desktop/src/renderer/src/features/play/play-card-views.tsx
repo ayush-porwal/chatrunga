@@ -36,6 +36,7 @@ import {
 } from "./play-card-parts";
 import { PiecePair } from "./piece-art";
 import { ENGINE_CLOCK_PRESETS, clockText, engineClockText, presetIndex } from "./time-control";
+import { maiaPlayerName } from "./engine-game";
 import type { EngineGameSetup } from "./use-engine-game-setup";
 
 const RATED_OPTIONS = [
@@ -378,7 +379,13 @@ export function engineView({
       opponent: (
         <MatchSide
           tile={<OpponentTile kind="engine" engine={selected} side={engineSide} />}
-          name={selected ? engineDisplayName(selected.name) : "Engine"}
+          name={
+            engine.maiaRating !== null
+              ? maiaPlayerName(engine.maiaRating)
+              : selected
+                ? engineDisplayName(selected.name)
+                : "Engine"
+          }
         />
       ),
       onSwap: engine.swapColor,

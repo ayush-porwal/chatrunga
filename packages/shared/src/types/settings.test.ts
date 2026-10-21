@@ -115,7 +115,20 @@ describe("review engine settings", () => {
     expect(defaultSettings.reviewMultiPv).toBe(3);
     expect(defaultSettings.engineHashMb).toBe(128);
     expect(defaultSettings.engineThreads).toBeNull();
-    expect(defaultSettings.reviewMaiaLevels).toBeNull();
+    // Maia 3 reads each side at its own game rating until a rating is chosen.
+    expect(defaultSettings.reviewMaiaRating).toBeNull();
+  });
+
+  it("snaps a stored Maia 3 review rating to its grid and forgets one that isn't a number", () => {
+    const read = (value: unknown) =>
+      normalizeReviewEngineSettings({ ...defaultSettings, reviewMaiaRating: value as number })
+        .reviewMaiaRating;
+    expect(read(1700)).toBe(1700);
+    expect(read(1649)).toBe(1600);
+    expect(read(3000)).toBe(2600);
+    expect(read(null)).toBeNull();
+    expect(read("1700")).toBeNull();
+    expect(read(Number.NaN)).toBeNull();
   });
 
   it("clamps and filters invalid persisted values", () => {
@@ -123,13 +136,11 @@ describe("review engine settings", () => {
       ...defaultSettings,
       reviewMultiPv: 9,
       engineHashMb: "abc" as unknown as number,
-      engineThreads: 0,
-      reviewMaiaLevels: [1900, 1234, 1100] as never
+      engineThreads: 0
     });
     expect(normalized.reviewMultiPv).toBe(5);
     expect(normalized.engineHashMb).toBe(128);
     expect(normalized.engineThreads).toBe(1);
-    expect(normalized.reviewMaiaLevels).toStrictEqual([1100, 1900]);
   });
 
   it("reads a thread count missing from unmerged settings as auto, like resolveEngineThreads", () => {
@@ -242,6 +253,16 @@ describe("normalizePlaySettings", () => {
       playEngineId: 7
     } as unknown as AppSettings;
     expect(normalizePlaySettings(bad)).toMatchObject({ playOpponent: null, playEngineId: null });
+  });
+
+  it("keeps the last Maia rating on its grid, and none until one is chosen", () => {
+    expect(defaultSettings.playMaiaRating).toBeNull();
+    const read = (value: unknown) =>
+      normalizePlaySettings({ ...defaultSettings, playMaiaRating: value as number }).playMaiaRating;
+    expect(read(900)).toBe(900);
+    expect(read(551)).toBe(600);
+    expect(read(undefined)).toBeNull();
+    expect(read({})).toBeNull();
   });
 });
 

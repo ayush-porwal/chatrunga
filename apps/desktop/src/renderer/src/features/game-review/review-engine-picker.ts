@@ -9,11 +9,3 @@ export function pickDefaultEngine(engines: readonly EngineConfig[]): EngineConfi
     null
   );
 }
-
-/**
- * Maia engines with a known rating bucket. Main re-filters (availability,
- * one engine per rating, the `reviewMaiaLevels` setting), so this is a hint.
- */
-export function pickMaiaEngines(engines: readonly EngineConfig[]): EngineConfig[] {
-  return engines.filter((engine) => engine.isAvailable && Boolean(engine.maiaRating));
-}

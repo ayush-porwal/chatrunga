@@ -4,16 +4,11 @@
  */
 import type {
   AnalysisLine,
-  EngineConfig,
   EngineInfo,
   EngineScore,
-  MaiaRating,
-  RatingPrediction,
   TerminalState,
   Wdl
 } from "@chaturanga/shared/types/engine";
-import { isManagedEngine } from "@chaturanga/shared/engine/managed";
-import type { Lc0MoveStat } from "@chaturanga/shared/engine/uci";
 import { parseUci } from "chessops/util";
 import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/chess/position";
 import {
@@ -25,52 +20,9 @@ import {
 } from "@chaturanga/shared/chess/review";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import type { TacticalFact } from "@chaturanga/shared/schemas/tactical-fact";
-import { isOneOf } from "@chaturanga/shared/types/guards";
 
-export const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
-const MAIA_TOP_MOVES = 10;
 /** Same clamp the classifier has always used. */
 const MAX_EVAL_LOSS = 1000;
-
-// ─── Maia engine selection ─────────────────────────────────────────────────
-
-/** Rating bucket for a Maia engine: explicit tag, else a `maia-1500`-style weights/name. */
-export function maiaRatingForEngine(
-  config: Pick<EngineConfig, "maiaRating" | "name" | "weightsPath">
-): MaiaRating | undefined {
-  if (config.maiaRating) return config.maiaRating;
-  return maiaRatingFromText(`${config.name} ${config.weightsPath ?? ""}`);
-}
-
-/** Matches `maia-1500`, `Maia 1900`, `maia_1100.pb.gz` — never a bare number inside another net's name. */
-export function maiaRatingFromText(text: string): MaiaRating | undefined {
-  const match = text.toLowerCase().match(/maia[\s_-]*(1100|1300|1500|1700|1900)(?!\d)/);
-  const rating = match ? Number(match[1]) : null;
-  return isOneOf(MAIA_RATINGS, rating) ? rating : undefined;
-}
-
-/**
- * Picks at most one runnable Maia engine per rating: available, rating known,
- * within `levels` (null = all). When a managed download and a user-added
- * engine claim the same rating, the managed one wins (its paths are known-good).
- */
-export function selectMaiaEnginesForReview(
-  candidates: readonly EngineConfig[],
-  levels: readonly number[] | null
-): (EngineConfig & { maiaRating: MaiaRating })[] {
-  const byRating = new Map<MaiaRating, EngineConfig & { maiaRating: MaiaRating }>();
-  for (const candidate of candidates) {
-    if (!candidate.isAvailable) continue;
-    const rating = maiaRatingForEngine(candidate);
-    if (!rating) continue;
-    if (levels && !levels.includes(rating)) continue;
-    const existing = byRating.get(rating);
-    if (!existing || (!isManagedEngine(existing) && isManagedEngine(candidate))) {
-      byRating.set(rating, { ...candidate, maiaRating: rating });
-    }
-  }
-  return [...byRating.values()].sort((a, b) => a.maiaRating - b.maiaRating);
-}
 
 // ─── Engine output → review data ───────────────────────────────────────────
 
@@ -102,50 +54,6 @@ export function linesFromInfoStream(fen: string, infos: readonly EngineInfo[]): 
       if (info.wdl) line.wdl = info.wdl;
       return line;
     });
-}
-
-/**
- * RatingPrediction from one Maia `go nodes 1` run with VerboseMoveStats. Every
- * legal move is listed with its policy prior P; the root `node` line carries
- * the value head V. `wdl` comes from the regular `info depth 1 ... wdl` line.
- */
-export function buildRatingPrediction(input: {
-  rating: MaiaRating;
-  engineId?: string;
-  fen: string;
-  stats: readonly Lc0MoveStat[];
-  wdl?: Wdl;
-  playedUci: string;
-  bestUci: string | null;
-}): RatingPrediction | null {
-  const moves = input.stats
-    .filter((stat) => stat.move !== "node")
-    .map((stat) => ({ uci: standardCastlingUci(input.fen, stat.move), prob: stat.p }))
-    .sort((a, b) => b.prob - a.prob);
-  if (moves.length === 0) return null;
-  const root = input.stats.find((stat) => stat.move === "node");
-  const playedIndex = moves.findIndex((move) => move.uci === input.playedUci);
-  const bestIndex = input.bestUci ? moves.findIndex((move) => move.uci === input.bestUci) : -1;
-  const prediction: RatingPrediction = {
-    rating: input.rating,
-    topMoves: moves
-      .slice(0, MAIA_TOP_MOVES)
-      .map((move) => ({ uci: move.uci, prob: round4(move.prob) })),
-    playedProb: playedIndex >= 0 ? round4(moves[playedIndex].prob) : 0
-  };
-  if (playedIndex >= 0) prediction.playedRank = playedIndex + 1;
-  if (bestIndex >= 0) {
-    prediction.bestProb = round4(moves[bestIndex].prob);
-    prediction.bestRank = bestIndex + 1;
-  }
-  if (root?.v !== null && root?.v !== undefined) prediction.value = root.v;
-  if (input.wdl) prediction.wdl = input.wdl;
-  if (input.engineId) prediction.engineId = input.engineId;
-  return prediction;
-}
-
-function round4(value: number): number {
-  return Math.round(value * 10000) / 10000;
 }
 
 // ─── Terminal positions ────────────────────────────────────────────────────

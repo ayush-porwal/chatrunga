@@ -1,22 +1,22 @@
-import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import { useEffect, useId, useState, type ReactNode } from "react";
-import {
-  REVIEW_MAIA_LEVELS,
-  type AppSettings,
-  type ReviewMaiaLevel,
-  COMMENTARY_DETAILS
-} from "@chaturanga/shared/types/settings";
+import { useId, type ReactNode } from "react";
+import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
+import { type AppSettings, COMMENTARY_DETAILS } from "@chaturanga/shared/types/settings";
 import {
   useEnginesQuery,
   useOpenRouterConfigQuery,
   useUpdateSettingMutation
 } from "../../queries/api";
-import { pickMaiaEngines } from "./review-engine-picker";
+import { useMaia3Installed } from "../../queries/maia";
 import { useOpenSettings } from "../settings/settings-link";
-import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
+import { MaiaDownloadPrompt } from "./MaiaDownloadPrompt";
+import {
+  reviewRatingLabel,
+  sideRatingsLabel,
+  useReviewRating,
+  useReviewSideRatings
+} from "./use-review-rating";
 import { reviewEngineFor } from "../analysis/analysis-engine";
 import { EnginePicker, engineOption } from "../analysis/EnginePicker";
-import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/settings-group";
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
-import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const searchTimeOptions = [
@@ -45,27 +44,6 @@ const multiPvOptions = ["1", "2", "3", "4", "5"].map((value) => ({ value, label:
 function estimateReviewTime(searchTimeMs: number): string {
   const seconds = (81 * searchTimeMs) / 1000;
   return seconds < 90 ? `~${Math.round(seconds)}s` : `~${Math.round(seconds / 60)} min`;
-}
-
-/** Maia networks are installed but Lc0 isn't (Settings → Engines says what to do). */
-function useMaiaNeedsLc0(): boolean {
-  const [needsLc0, setNeedsLc0] = useState(false);
-  useEffect(() => {
-    let current = true;
-    const refresh = () =>
-      void fetchAssetStatus()
-        .then((status) => {
-          if (current) setNeedsLc0(maiaNeedsLc0(status));
-        })
-        .catch(() => undefined);
-    refresh();
-    const off = window.chaturanga?.onAssetStatusChanged(refresh);
-    return () => {
-      current = false;
-      off?.();
-    };
-  }, []);
-  return needsLc0;
 }
 
 /** The game's own review side (Review as), for the game review's settings dialog. */
@@ -108,43 +86,18 @@ export function ReviewSettingsPanel({
 type SetSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
 
 /**
- * The review's engine: which engine (automatic by default), how long it searches each move, how
- * many lines, whether the Engine tab lists them, and the Maia levels that predict human moves.
+ * The review's engine: which engine (the default engine unless another is chosen), how long it searches each move, how
+ * many lines, whether the Engine tab lists them, and Maia (on or off, and the rating it reads).
  */
 function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetSetting }) {
   const ids = useId();
   const engines = useEnginesQuery();
   const availableEngines = engines.data ?? [];
-  // Automatic: the engine a review runs on when none is chosen.
-  const automaticEngine = reviewEngineFor(availableEngines, null);
-  const engineOptions = [
-    {
-      value: "",
-      engine: automaticEngine,
-      label: automaticEngine
-        ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
-        : "Choose an engine"
-    },
-    ...availableEngines
-      .filter((engine) => !engine.isHumanPrediction)
-      .map((engine) => engineOption(engine))
-  ];
-  const installedMaiaLevels = REVIEW_MAIA_LEVELS.filter((level) =>
-    pickMaiaEngines(availableEngines).some((item) => item.maiaRating === level)
-  );
-  // null = every installed level (including ones downloaded later).
-  const selectedMaiaLevels = settings.reviewMaiaLevels
-    ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
-    : installedMaiaLevels;
-  const needsLc0 = useMaiaNeedsLc0();
-  const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
-    const next = selectedMaiaLevels.includes(level)
-      ? selectedMaiaLevels.filter((value) => value !== level)
-      : installedMaiaLevels.filter(
-          (value) => value === level || selectedMaiaLevels.includes(value)
-        );
-    set("reviewMaiaLevels", next.length === installedMaiaLevels.length ? null : next);
-  };
+  // The engine a review runs on: the chosen one, else the default engine (Stockfish).
+  const reviewEngine = reviewEngineFor(availableEngines, settings.defaultEngineId);
+  const engineOptions = availableEngines
+    .filter((engine) => !engine.isHumanPrediction)
+    .map((engine) => engineOption(engine));
 
   return (
     <SettingsGroup title="Engine">
@@ -156,8 +109,8 @@ function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetS
             id={`${ids}-engine`}
             ariaLabel="Evaluation engine"
             options={engineOptions}
-            value={settings.defaultEngineId ?? ""}
-            onChange={(value) => set("defaultEngineId", value || null)}
+            value={reviewEngine?.id ?? null}
+            onChange={(value) => set("defaultEngineId", value)}
           />
         }
       />
@@ -210,14 +163,7 @@ function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetS
           />
         }
       />
-      <MaiaSetting
-        enabled={settings.reviewUseMaia}
-        installedLevels={installedMaiaLevels}
-        selectedLevels={selectedMaiaLevels}
-        needsLc0={needsLc0}
-        onEnabledChange={(value) => set("reviewUseMaia", value)}
-        onToggleLevel={toggleMaiaLevel}
-      />
+      <MaiaSetting settings={settings} set={set} />
     </SettingsGroup>
   );
 }
@@ -319,71 +265,54 @@ function aiCommentaryDescription(loading: boolean, hasApiKey: boolean): string |
 }
 
 /**
- * Use Maia models, with the rating levels installed to pick from (all of them when none was
- * picked); at least one runs while Maia is on. Without one installed, it says what's missing.
+ * Use Maia (its download offered while Maia 3 isn't installed), and the rating it reads the moves
+ * at: each side's own (the game's, else the user's; what that is for this game is said under it)
+ * or one rating from 600 to 2600 for both.
  */
-function MaiaSetting({
-  enabled,
-  installedLevels,
-  selectedLevels,
-  needsLc0,
-  onEnabledChange,
-  onToggleLevel
-}: {
-  enabled: boolean;
-  installedLevels: readonly ReviewMaiaLevel[];
-  selectedLevels: readonly ReviewMaiaLevel[];
-  needsLc0: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-  onToggleLevel: (level: ReviewMaiaLevel) => void;
-}) {
+function MaiaSetting({ settings, set }: { settings: AppSettings; set: SetSetting }) {
   const ids = useId();
+  const installed = useMaia3Installed();
+  const sides = useReviewSideRatings(settings);
+  const enabled = settings.reviewUseMaia;
   return (
     <SettingsGroupRow
-      label="Use Maia models"
+      label="Use Maia"
       htmlFor={`${ids}-maia`}
       description="Human move predictions by rating."
       control={
         <>
-          {installedLevels.length ? null : (
-            <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
-          )}
-          <Switch id={`${ids}-maia`} checked={enabled} onCheckedChange={onEnabledChange} />
+          {installed === false ? <MaiaDownloadPrompt variant="button" /> : null}
+          <Switch
+            id={`${ids}-maia`}
+            checked={enabled}
+            onCheckedChange={(value) => set("reviewUseMaia", value)}
+          />
         </>
       }
     >
-      {installedLevels.length ? (
-        <NestedSettingRow
-          label="Rating levels"
-          disabled={!enabled}
-          control={
-            <div role="group" aria-label="Maia rating levels" className="flex flex-wrap gap-1.5">
-              {installedLevels.map((level) => {
-                const selected = selectedLevels.includes(level);
-                const onlyOne = selected && selectedLevels.length === 1;
-                return (
-                  <ChipButton
-                    key={level}
-                    selected={enabled && selected}
-                    disabled={!enabled}
-                    aria-disabled={onlyOne || undefined}
-                    title={
-                      onlyOne ? "At least one level runs. Turn Maia off instead." : `Maia ${level}`
-                    }
-                    aria-label={`Maia ${level}`}
-                    onClick={() => {
-                      if (!onlyOne) onToggleLevel(level);
-                    }}
-                    className="h-6 tabular-nums"
-                  >
-                    {level}
-                  </ChipButton>
-                );
-              })}
-            </div>
-          }
-        />
-      ) : null}
+      <NestedSettingRow
+        label="Maia rating"
+        disabled={!enabled}
+        description={sideRatingsLabel(sides)}
+        control={
+          <Select
+            aria-label="Maia rating"
+            className={settingsRowSelect}
+            disabled={!enabled}
+            value={settings.reviewMaiaRating ?? ""}
+            onChange={(event) =>
+              set("reviewMaiaRating", event.target.value ? Number(event.target.value) : null)
+            }
+          >
+            <option value="">Each side&apos;s rating</option>
+            {MAIA3_RATINGS.map((rating) => (
+              <option key={rating} value={rating}>
+                {rating}
+              </option>
+            ))}
+          </Select>
+        }
+      />
     </SettingsGroupRow>
   );
 }

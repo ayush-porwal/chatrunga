@@ -2,7 +2,7 @@ import { z } from "zod";
 import { tacticalFactSchema } from "./tactical-fact";
 import { engineSignalSchema } from "./engine-signal";
 import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "./constants";
-import { ratingCurveSchema, maiaRatingBucketSchema } from "./rating-curve";
+import { ratingCurveSchema, maiaRatingSchema } from "./rating-curve";
 
 /**
  * Structured engine evidence supplied to the coach for one move. The renderer
@@ -114,27 +114,38 @@ const winChanceSchema = z.object({
 
 const humanLikelihoodSchema = z.enum(["most_likely", "common", "plausible", "unusual", "rare"]);
 
+const probabilitySchema = z.number().min(0).max(1);
+const policyRankSchema = z.number().int().min(1).max(300);
+
 /**
- * Real per-level Maia policy (reviews with schemaVersion >= 2 only): how
- * likely humans at each rating are to play the moved/best move.
+ * Maia's reading of the move at one rating (reviews with schemaVersion >= 2 only): how likely
+ * humans of that rating are to play the played / best move, and what they play most.
  */
 const maiaEvidenceSchema = z.object({
-  playerLevel: maiaRatingBucketSchema,
-  playedAtPlayerLevel: humanLikelihoodSchema.optional(),
-  bestAtPlayerLevel: humanLikelihoodSchema.optional(),
-  levels: z
-    .array(
-      z.object({
-        rating: maiaRatingBucketSchema,
-        playedProb: z.number().min(0).max(1).optional(),
-        playedRank: z.number().int().min(1).max(300).optional(),
-        bestProb: z.number().min(0).max(1).optional(),
-        bestRank: z.number().int().min(1).max(300).optional(),
-        top: z.array(z.object({ san: sanTokenSchema, prob: z.number().min(0).max(1) })).max(3)
-      })
-    )
+  /**
+   * maia3: one model read at a rating 600-2600 (the mover's, as both players' rating); maia1: the
+   * five networks (1100-1900) of reviews before Maia 3, read at the level nearest the player's.
+   */
+  model: z.enum(["maia3", "maia1"]),
+  rating: maiaRatingSchema,
+  playedProb: probabilitySchema.optional(),
+  playedRank: policyRankSchema.optional(),
+  playedLikelihood: humanLikelihoodSchema.optional(),
+  /** Only when the best move isn't the played one. */
+  bestProb: probabilitySchema.optional(),
+  bestRank: policyRankSchema.optional(),
+  bestLikelihood: humanLikelihoodSchema.optional(),
+  /** Maia's most likely moves at `rating` (absent when its distribution is flat). */
+  topMoves: z
+    .array(z.object({ san: sanTokenSchema, prob: probabilitySchema }))
     .min(1)
-    .max(5)
+    .max(3)
+    .optional(),
+  /**
+   * Maia 3: White's chances (win + half a draw, whole percent) in games between players of
+   * `rating` from the position before the move. A prediction of human results, not an evaluation.
+   */
+  whiteWinPct: z.number().int().min(0).max(100).optional()
 });
 
 const factTextSchema = z.string().min(1).max(240);
@@ -225,8 +236,7 @@ export const reviewInsightPayloadSchema = z.object({
   schemaVersion: z.literal(REVIEW_INSIGHT_PAYLOAD_VERSION),
   player: z.object({
     rating: z.number().int().min(100).max(3500),
-    color: sideSchema,
-    ratingBucket: maiaRatingBucketSchema
+    color: sideSchema
   }),
   game: z.object({
     ply: z.number().int().min(1),
@@ -271,18 +281,9 @@ export const reviewInsightPayloadSchema = z.object({
         .object({ before: winChanceSchema.optional(), after: winChanceSchema.optional() })
         .optional()
     }),
-    maiaCurve: ratingCurveSchema,
-    /** Maia's most-expected moves at the player's rating bucket. */
-    humanTopMoves: z
-      .object({
-        rating: maiaRatingBucketSchema,
-        moves: z
-          .array(z.object({ san: sanTokenSchema, prob: z.number().min(0).max(1) }))
-          .min(1)
-          .max(3)
-      })
-      .optional(),
-    maia: maiaEvidenceSchema.optional()
+    maia: maiaEvidenceSchema.optional(),
+    /** Maia's probabilities of the played and best moves by rating, when the move has a curve. */
+    maiaCurve: ratingCurveSchema.optional()
   }),
   /** The review's mark for the move; null for an ordinary, unmarked move. */
   annotation: moveAnnotationSchema.nullable(),

@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain, Notification } from "electron";
+import { ipcMain, Notification } from "electron";
+import { appWindows } from "../app-windows";
 import type { BroadcastAlert } from "@chaturanga/shared/types/broadcast";
 import { broadcast } from "../ipc/broadcast";
 import { getLichessService } from "../lichess";
@@ -52,7 +53,7 @@ function notify(alert: BroadcastAlert): void {
   notification.on("failed", forget);
   notification.on("click", () => {
     forget();
-    const window = BrowserWindow.getAllWindows().at(0);
+    const window = appWindows().at(0);
     if (!window) return;
     if (window.isMinimized()) window.restore();
     window.focus();

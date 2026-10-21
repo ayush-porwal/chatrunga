@@ -134,17 +134,7 @@ function EngineList({ setup, view }: { setup: EngineSetup; view: EnginesView }) 
         </StepBand>
       );
     case "list":
-      return (
-        <>
-          <EngineRows setup={setup} />
-          {setup.lc0Manual ? (
-            <StepBand tone="info" icon={<Info />}>
-              Lc0 (Maia runs in it too) has no download for this computer. Install Lc0, then add it
-              in Settings → Engines, where its network downloads too.
-            </StepBand>
-          ) : null}
-        </>
-      );
+      return <EngineRows setup={setup} />;
   }
 }
 

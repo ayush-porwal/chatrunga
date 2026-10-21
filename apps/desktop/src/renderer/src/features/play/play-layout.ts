@@ -1,4 +1,6 @@
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
+import { isMaiaEngine } from "./engine-game";
 
 /**
  * How many of the newest games the page reads: the Recent games table's rows (10) plus the one the
@@ -47,8 +49,11 @@ const BOARD_CARD_PADDING = 24;
 const BOARD_CARD_BORDER = 2;
 /** The Play column (the Play card, Recent games under it) is never narrower. */
 const PLAY_MIN = 340;
-/** From this width the Play card shows its preview board. */
-const PLAY_WIDE = 560;
+/** The Play card's border (1px each side, which doesn't scale). */
+const PLAY_CARD_BORDER = 2;
+/** The wide Play card body's padding: py-3 down, pl-3 + pr-4 across. */
+const WIDE_PADDING_Y = 24;
+const WIDE_PADDING_X = 28;
 
 /** The Play page's grid: two columns shared by both rows, and the top row's height. */
 export type PlayGrid = {
@@ -62,7 +67,10 @@ export type PlayGrid = {
   playWidth: number;
   /** The board cards' column (the filler's when there are none), the side cards' too. */
   sideWidth: number;
-  /** The Play card has room for its preview board. */
+  /**
+   * The Play card has room for its preview board at full height (as tall as the card's inside)
+   * beside the controls' minimum: the board is shown whole or not at all, never shrunk.
+   */
   wide: boolean;
   /**
    * Too narrow for the board cards beside the Play column's minimum (a window zoomed in): one
@@ -100,7 +108,9 @@ export function playGrid({
   );
   const across = (count: number) => count * cardWidth + (count - 1) * gap;
   const playMin = scaled(PLAY_MIN);
-  const playWide = scaled(PLAY_WIDE);
+  const fullBoard = rowHeight - PLAY_CARD_BORDER - scaled(WIDE_PADDING_Y);
+  const playWide =
+    fullBoard + WIDE_GAP + scaled(WIDE_CONTROLS_MIN) + scaled(WIDE_PADDING_X) + PLAY_CARD_BORDER;
   if (width - cardWidth - gap < playMin) {
     const fit = Math.max(1, Math.floor((width + gap) / (cardWidth + gap)));
     return {
@@ -157,8 +167,21 @@ export function resolvePlayMode({
   return connected ? "pool" : "engine";
 }
 
-/** Play settings' choice: the opponent, and the engine for engine games. */
-export type PlaySettingsChoice = { opponent: PlayOpponent; engineId: string | null };
+/**
+ * Play settings' choice: the opponent, the engine for engine games, and Maia's rating when it was
+ * changed there (null: left as it was, so it keeps following your rating for the clock).
+ */
+export type PlaySettingsChoice = {
+  opponent: PlayOpponent;
+  engineId: string | null;
+  maiaRating: number | null;
+};
+
+type PlaySettingsPatch = {
+  playOpponent: PlayOpponent;
+  playEngineId: string | null;
+  playMaiaRating?: number;
+};
 
 /**
  * Saves Play settings' choice, optimistically: the session's opponent (`session`, the Lichess
@@ -172,16 +195,19 @@ export function savePlaySettings(
     playOpponent: PlayOpponent | null;
     setPlayOpponent: (opponent: PlayOpponent | null) => void;
   },
-  write: (
-    variables: { patch: { playOpponent: PlayOpponent; playEngineId: string | null } },
-    options: { onError: () => void }
-  ) => void
+  write: (variables: { patch: PlaySettingsPatch }, options: { onError: () => void }) => void
 ): void {
-  const { opponent, engineId } = choice;
+  const { opponent, engineId, maiaRating } = choice;
   const before = session().playOpponent;
   session().setPlayOpponent(opponent);
   write(
-    { patch: { playOpponent: opponent, playEngineId: engineId } },
+    {
+      patch: {
+        playOpponent: opponent,
+        playEngineId: engineId,
+        ...(maiaRating === null ? {} : { playMaiaRating: maiaRating })
+      }
+    },
     {
       onError: () => {
         const current = session();
@@ -203,29 +229,28 @@ export function isFirstRun({
 }
 
 /**
- * Engines in the order Play settings lists them: Stockfish and other engines first (by name), then
- * the Maia levels from the weakest up — not the registry's creation order.
+ * Engines in the order Play settings lists them: by name (not the registry's creation order), Maia
+ * last.
  */
-export function playEngineOrder<T extends { name: string }>(engines: readonly T[]): T[] {
-  const maia = (engine: T) => /^maia\b/i.test(engine.name.trim());
+export function playEngineOrder<T extends Pick<EngineConfig, "name" | "runtime">>(
+  engines: readonly T[]
+): T[] {
   return [...engines].sort(
     (a, b) =>
-      Number(maia(a)) - Number(maia(b)) ||
+      Number(isMaiaEngine(a)) - Number(isMaiaEngine(b)) ||
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
   );
 }
 
 /** The wide Play card's gap between the preview board and the controls (px). */
 export const WIDE_GAP = 24;
-/** The controls column never gets wider than this: the board and the controls stay together. */
-export const WIDE_CONTROLS_MAX = 440;
 /** The controls column never gets narrower than this (the slider's labels must fit). */
 const WIDE_CONTROLS_MIN = 300;
 
 /**
- * The wide Play card's preview board edge: as tall as the card's inside, as long as the controls
- * keep their room; never under 120px. 300px at 1440×900 (the mock), more where the card has it.
+ * The wide Play card's preview board edge: as tall as the card's inside. `playGrid` only makes the
+ * card wide where that fits beside the controls; the width only trims a rounding pixel or two.
  */
 export function widePreviewBoardSize(width: number, height: number): number {
-  return Math.floor(Math.max(120, Math.min(height, width - WIDE_GAP - WIDE_CONTROLS_MIN)));
+  return Math.floor(Math.max(0, Math.min(height, width - WIDE_GAP - WIDE_CONTROLS_MIN)));
 }

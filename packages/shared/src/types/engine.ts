@@ -3,8 +3,11 @@ import type { Color } from "./chess";
 
 export type EngineProtocol = "uci";
 export type EngineStatus = "idle" | "starting" | "ready" | "thinking" | "error";
-/** Every engine runs as a native UCI process from the engines table (managed download or user-added). */
-export type EngineRuntime = "custom-uci";
+/**
+ * How an engine runs: `custom-uci`, a native UCI process from the engines table (managed download
+ * or user-added); `maia3`, Maia 3's ONNX model in a hidden host window (engine/maia3.ts).
+ */
+export type EngineRuntime = "custom-uci" | "maia3";
 
 export type EngineConfig = {
   id: string;
@@ -19,11 +22,6 @@ export type EngineConfig = {
   isAvailable: boolean;
   isDefault: boolean;
   isHumanPrediction?: boolean;
-  /**
-   * For Maia engines: the rating bucket this weight file represents. The
-   * rating curve needs one Maia engine per rating, each tagged with its bucket.
-   */
-  maiaRating?: MaiaRating;
   createdAt: number;
   updatedAt: number;
 };
@@ -37,7 +35,6 @@ export type CreateEngineInput = {
   args?: string[];
   isDefault?: boolean;
   isHumanPrediction?: boolean;
-  maiaRating?: MaiaRating;
 };
 
 export type UpdateEngineInput = Partial<CreateEngineInput>;
@@ -66,6 +63,13 @@ export type StartEngineGameInput = {
    * Standard UCI clock units are milliseconds.
    */
   clock?: EngineGoClock | null;
+  /**
+   * Maia's ratings, for a game against the Maia row: its move is drawn from Maia 3's policy at
+   * `rating` (eloSelf) against the user's `opponentRating` (eloOppo). The renderer sends them with
+   * every engine game (it needn't know the engine is Maia); a UCI engine ignores them. Null or
+   * omitted against Maia: its default rating against an equal opponent.
+   */
+  maia?: { rating: number; opponentRating: number } | null;
 };
 
 export type StartLiveAnalysisInput = {
@@ -285,20 +289,20 @@ export type MoveVerification = {
   playedLine?: AnalysisLine | null;
 };
 
-export type MaiaRating = 1100 | 1300 | 1500 | 1700 | 1900;
-
 /** One move of a Maia policy distribution. `prob` in [0, 1] is the real lc0 policy (VerboseMoveStats `P`). */
 export type MaiaMoveProb = { uci: string; prob: number };
 
 /**
  * Per-rating Maia output for a single position (the position BEFORE the move).
- * Derived from `go nodes 1` with `VerboseMoveStats` and `PolicyTemperature 1`,
- * i.e. the raw policy head over every legal move.
+ * Maia 1 (reviews before schema 4): one of five Lc0 networks, from `go nodes 1` with
+ * `VerboseMoveStats` and `PolicyTemperature 1`, i.e. the raw policy head over every legal move.
+ * Maia 3: the model's policy at `rating` (eloSelf = eloOppo; see engine/maia3.ts).
  * `topMoves[0]` is the highest-policy move at this rating; sorted descending.
  */
 export type RatingPrediction = {
-  rating: MaiaRating;
-  /** Top ~10 moves by policy, sorted descending. */
+  /** The rating Maia was read at: 1100–1900 in steps of 200 (Maia 1), 600–2600 (Maia 3). */
+  rating: number;
+  /** Top moves by policy, sorted descending (~10 for Maia 1, 5 for Maia 3). */
   topMoves: MaiaMoveProb[];
   /** Policy of the played move from the full distribution (0 if legal but negligible). */
   playedProb?: number;
@@ -308,12 +312,27 @@ export type RatingPrediction = {
   bestProb?: number;
   /** 1-based rank of the main engine's best move in the full policy. */
   bestRank?: number;
-  /** Maia value head (V), side to move, in [-1, 1]. */
+  /** Maia 1 value head (V), side to move, in [-1, 1]. */
   value?: number;
+  /** Maia 3: White's winning chances (W + D/2) in [0, 1], whichever side is to move. */
+  whiteWinProb?: number;
   /** Maia WDL, side to move, permille. */
   wdl?: Wdl;
   engineId?: string;
 };
+
+/**
+ * A move of a saved Maia 3 analysis whose rating curve `engines.maiaCurve` returns: the game, the
+ * analysis (`GameReview.reviewId`) and the move's node.
+ */
+export type MaiaCurveInput = { gameId: string; reviewId: string; nodeId: string };
+
+/**
+ * `engines.maiaCurve`'s refusal while the analysis isn't saved yet (a review that just finished is
+ * written by the autosave moments later): the renderer asks again shortly.
+ */
+export const MAIA_CURVE_NOT_SAVED =
+  "The rating curve is available once the review has finished and is saved.";
 
 /** Game-ending state of a position, as far as it can be read from the FEN. */
 export type TerminalState = "checkmate" | "stalemate" | "draw";
@@ -361,10 +380,16 @@ export type MoveReview = {
    */
   humanPrediction?: string | null;
   /**
-   * Multi-Maia rating distribution, one entry per Maia level that ran (real
-   * policy). Only trustworthy when the review's `schemaVersion >= 2`.
+   * Maia's prediction across ratings (real policy): Maia 1's levels that ran, or Maia 3's curve
+   * read on demand (see `engines.maiaCurve`). Only trustworthy when the review's
+   * `schemaVersion >= 2`.
    */
   humanPredictions?: RatingPrediction[];
+  /**
+   * Maia 3: the prediction at the mover's rating (`GameReview.maia`), which the move's difficulty
+   * and assessment read. Absent on Maia 1 reviews, which read `humanPredictions` by level.
+   */
+  moverPrediction?: RatingPrediction;
   /** Real tactical motifs of the engine's best move only (fork/pin/skewer/hanging/mate...). */
   motifs: string[];
   clockRemainingMs?: number;
@@ -480,9 +505,16 @@ export function savedReviewCommentary(
 
 /**
  * Current `GameReview.schemaVersion`. Reviews below 2 carry fake (uniform) Maia probabilities;
- * from 3 every move carries an assessment (and its verification searches).
+ * from 3 every move carries an assessment (and its verification searches); from 4 Maia is Maia 3
+ * (`GameReview.maia`). Older versions stay readable.
  */
-export const GAME_REVIEW_SCHEMA_VERSION = 3;
+export const GAME_REVIEW_SCHEMA_VERSION = 4;
+
+/**
+ * The rating Maia 3 reads one side at (eloSelf = eloOppo), snapped to its 100-point grid: the
+ * game's (PGN WhiteElo / BlackElo), Settings' for the game's mode, or the Review-settings override.
+ */
+export type ReviewSideRating = { rating: number; source: "game" | "settings" | "override" };
 
 /**
  * The game's opening from the bundled opening book (chess/opening-book.ts): the deepest named
@@ -529,7 +561,16 @@ export type GameReview = {
     hashMb?: number;
   };
   maiaEngines?: { rating: number; engineId: string; name: string }[];
-  predictionEngineIds?: string[];
+  /**
+   * Maia 3 reviews: the model and the rating each side's moves were read at. Absent on Maia 1
+   * reviews (`maiaEngines`) and reviews without Maia.
+   */
+  maia?: {
+    model: "maia3";
+    modelVersion: string;
+    white: ReviewSideRating;
+    black: ReviewSideRating;
+  };
   depth: number | null;
   moveTimeMs: number | null;
   multipv?: number;
@@ -544,8 +585,9 @@ export type GameReview = {
   /** AI commentary, keyed by ply; requested on demand as moves are viewed. */
   commentary?: ReviewCommentary[];
   /**
-   * The rating the review was made for (it picks the Maia level), where it came from (the game,
-   * or Settings for the game's mode) and the Maia model nearest it. Missing on older reviews.
+   * The rating the review was made for (it picks the rating Maia reads the moves at), where it came
+   * from (the game, or Settings for the game's mode) and the Maia rating nearest it. Missing on
+   * older reviews.
    */
   rating?: ReviewRating;
   /**
@@ -571,13 +613,8 @@ export type ReviewGameInput = {
   /** The library game being reviewed, if it has an id (usage analytics count distinct games). */
   gameId?: string | null;
   engineId: string;
-  /**
-   * Maia engine IDs (EngineConfig.maiaRating set). Main filters them to
-   * available engines, de-duplicates by rating and applies the
-   * `reviewMaiaLevels` setting. An empty array disables Maia; omitting the
-   * field lets main pick every installed Maia when `reviewUseMaia` is on.
-   */
-  predictionEngineIds?: string[];
+  /** Run Maia 3 for the review; omitted: the `reviewUseMaia` setting decides. */
+  useMaia?: boolean;
   /** PGN TimeControl tag (e.g. "600+5"); used for the increment in `timeSpentMs`. */
   timeControl?: string | null;
   /**
@@ -590,7 +627,6 @@ export type ReviewGameInput = {
   moves: ReviewMoveInputItem[];
   /**
    * If set (>0), sends `go nodes N`. Highest precedence — disables tree search.
-   * Required for Maia / Lc0 policy probabilities (use nodes=1).
    */
   nodes?: number | null;
   /** If `nodes` is unset and this is set (>0), sends `go movetime`. */

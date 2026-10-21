@@ -10,10 +10,11 @@ export type CachedMove = {
 
 /**
  * Finished review moves, kept per review configuration (engine, its settings, search budget,
- * MultiPV, Maia levels, rating, review version). Reviewing again with the same configuration — after
- * Cancel, or after changing a later move — reuses the moves already done; any change of
- * configuration is a different key, so its results are never mixed in. Bounded (least recently
- * used configurations and moves go first); lives as long as the app.
+ * MultiPV, Maia 3's model version and the ratings it reads each side at, review version).
+ * Reviewing again with the same configuration — after Cancel, or after changing a later move —
+ * reuses the moves already done; any change of configuration is a different key, so its results
+ * are never mixed in. Bounded (least recently used configurations and moves go first); lives as
+ * long as the app.
  */
 export class ReviewCache {
   private readonly jobs = new Map<string, Map<string, CachedMove>>();

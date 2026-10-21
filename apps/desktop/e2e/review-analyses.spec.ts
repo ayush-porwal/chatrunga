@@ -1,8 +1,10 @@
 // Game review's saved analyses through the built app: the titlebar's compact picker names the one
-// shown by its date (Latest when it's the newest, the engine settings in its tooltip and list), and
-// deleting one or all of them asks first, switches to the newest left, and ends on Analyze with the
-// game still in the library. Three analyses of the trap game are saved through the preload bridge
-// (set-up, not the journey). How to run them: playwright.config.ts.
+// shown by its date (Latest when it's the newest, the engine settings and the Maia it read the
+// moves with in its tooltip and list: Maia 3 at each side's rating, or an older analysis's Maia 1
+// levels, which offer to analyze again with Maia 3), and deleting one or all of them asks first,
+// switches to the newest left, and ends on Analyze with the game still in the library. Three
+// analyses of the trap game are saved through the preload bridge (set-up, not the journey). How to
+// run them: playwright.config.ts.
 import type { Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import type { GameReview } from "../../../packages/shared/src/types/engine";
@@ -17,11 +19,27 @@ const TRAP_PGN = `[Event "Saved analyses e2e"]
 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1
 `;
 
-/** The saved analyses, newest first: when (local time) and how each was made. */
+/**
+ * The saved analyses, newest first: when (local time) and how each was made. The newest read the
+ * moves with Maia 3 (White at 1500, Black at 1600), the middle one with Maia 1's 1100 and 1900
+ * networks (before Maia 3), the oldest without Maia.
+ */
 const ANALYSES = [
-  { reviewId: "e2e-newest", at: [2026, 9, 4, 16, 1], engine: "Stockfish 19", ms: 250 },
-  { reviewId: "e2e-middle", at: [2026, 9, 3, 9, 5], engine: "Stockfish 18", ms: 1000 },
-  { reviewId: "e2e-oldest", at: [2026, 9, 2, 20, 15], engine: "Stockfish 17", ms: 500 }
+  {
+    reviewId: "e2e-newest",
+    at: [2026, 9, 4, 16, 1],
+    engine: "Stockfish 19",
+    ms: 250,
+    maia: "maia3"
+  },
+  {
+    reviewId: "e2e-middle",
+    at: [2026, 9, 3, 9, 5],
+    engine: "Stockfish 18",
+    ms: 1000,
+    maia: "maia1"
+  },
+  { reviewId: "e2e-oldest", at: [2026, 9, 2, 20, 15], engine: "Stockfish 17", ms: 500, maia: null }
 ] as const;
 
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
@@ -56,10 +74,24 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
           moveTimeMs: analysis.ms,
           createdAt: new Date(year, month, day, hour, minute).getTime(),
           side: "white",
-          maiaEngines: [
-            { rating: 1100, engineId: "maia-1100", name: "Maia 1100" },
-            { rating: 1900, engineId: "maia-1900", name: "Maia 1900" }
-          ],
+          ...(analysis.maia === "maia3"
+            ? {
+                schemaVersion: 4,
+                maia: {
+                  model: "maia3" as const,
+                  modelVersion: "0013cc8e6ec52c88f5b3d694781d4cc8427cb91a",
+                  white: { rating: 1500, source: "game" as const },
+                  black: { rating: 1600, source: "game" as const }
+                }
+              }
+            : analysis.maia === "maia1"
+              ? {
+                  maiaEngines: [
+                    { rating: 1100, engineId: "maia-1100", name: "Maia 1100" },
+                    { rating: 1900, engineId: "maia-1900", name: "Maia 1900" }
+                  ]
+                }
+              : {}),
           summary: {
             totalMoves: 14,
             best: 14,
@@ -93,7 +125,7 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   // The details are in its tooltip.
   await trigger(page).hover();
   await expect(page.getByRole("tooltip")).toContainText(
-    /Latest · Oct 4, 4:01\sPM · Stockfish 19 · 250 ms\/move · Maia 1100–1900/
+    /Latest · Oct 4, 4:01\sPM · Stockfish 19 · 250 ms\/move · Maia 3 · 1500\/1600/
   );
 
   // The list: each analysis's date (Latest on the newest), how it was made, and a check on the one
@@ -105,9 +137,16 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   // Each row reads its engine and search; the rest of how it was made is in its tooltip.
   await expect(newest).toContainText("Stockfish 19 · 250 ms/move");
   await expect(newest).not.toContainText("Maia");
-  await expect(newest).toHaveAttribute("title", /Stockfish 19 · 250 ms\/move · Maia 1100–1900/);
+  await expect(newest).toHaveAttribute(
+    "title",
+    /Stockfish 19 · 250 ms\/move · Maia 3 · 1500\/1600/
+  );
   await expect(newest).toHaveAttribute("aria-current", "true");
   await expect(option(page, /Oct 3/)).toContainText("Stockfish 18 · 1 s/move");
+  // An analysis from before Maia 3 says so, its Maia 1 levels in its tooltip.
+  await expect(option(page, /Oct 3/)).toContainText("Maia 1 · analyze again for Maia 3");
+  await expect(option(page, /Oct 3/)).toHaveAttribute("title", /Maia 1100–1900/);
+  await expect(option(page, /Oct 2/)).not.toContainText("Maia");
   await expect(option(page, /Oct 3/)).not.toHaveAttribute("aria-current", "true");
   await expect(option(page, /Oct 3/)).not.toContainText("Latest");
   // The list paints above the review panel and board (it's portalled out of the titlebar), and
@@ -149,6 +188,10 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   await trigger(page).click();
   await expect(picker(page).locator("[data-analysis-option]")).toHaveCount(2);
   await expect(option(page, /Oct 3/)).toHaveAttribute("aria-current", "true");
+  // Shown, the Maia 1 analysis offers to analyze the game again with Maia 3.
+  await expect(
+    picker(page).getByRole("button", { name: "Analyze again with Maia 3", exact: true })
+  ).toBeVisible();
 
   // Delete all asks with the count, then the review is back to Analyze.
   await picker(page).getByRole("button", { name: "Delete all analyses", exact: true }).click();

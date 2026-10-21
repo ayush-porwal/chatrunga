@@ -6,6 +6,7 @@ import {
   type GameOpening,
   type GameReview,
   type MoveReview,
+  type RatingPrediction,
   type ReviewCommentary,
   type ReviewProgress
 } from "@chaturanga/shared/types/engine";
@@ -57,6 +58,11 @@ type ReviewStore = {
   /** Replaces the list of saved analyses (some were deleted); the review shown stays. */
   setAnalyses: (analyses: SavedReviewInfo[]) => void;
   addCommentary: (commentary: ReviewCommentary) => void;
+  /**
+   * A move's Maia 3 rating curve, read on demand (main saved it too): kept in the shown review's
+   * move (`humanPredictions`) when `reviewId` is still the one shown.
+   */
+  setMoveCurve: (reviewId: string, nodeId: string, curve: RatingPrediction[]) => void;
   /** The shown analysis is for `side` from now on (Review as; the autosave writes it). */
   setReviewSide: (side: "white" | "black") => void;
 };
@@ -122,6 +128,15 @@ export const useReviewStore = create<ReviewStore>((set) => ({
             : info
         )
       };
+    }),
+  setMoveCurve: (reviewId, nodeId, curve) =>
+    set((state) => {
+      if (!state.review || state.review.reviewId !== reviewId) return state;
+      if (!state.review.moves.some((move) => move.nodeId === nodeId)) return state;
+      const moves = state.review.moves.map((move) =>
+        move.nodeId === nodeId ? { ...move, humanPredictions: curve } : move
+      );
+      return { review: { ...state.review, moves } };
     }),
   setReviewSide: (side) =>
     set((state) =>

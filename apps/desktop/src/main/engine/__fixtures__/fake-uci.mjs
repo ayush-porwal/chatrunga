@@ -1,18 +1,12 @@
-// Minimal scripted UCI engine for review pipeline tests.
-// argv[2] = "sf" (MultiPV search output) or "maia" (replays captured lc0 VerboseMoveStats).
+// Minimal scripted UCI engine for review pipeline tests: MultiPV search output.
+// argv[2] = a name for the engine (`id name Fake <argv[2]>`).
 // argv[3] = "slow-start": answers `uci` only after 10 s (a large network loading).
 // argv[3] = "wait-for-stop": a search prints its lines at once but its bestmove only on `stop`;
 // every command received is appended to the file argv[4].
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const mode = process.argv[2] ?? "sf";
-const here = dirname(fileURLToPath(import.meta.url));
-const maiaLines = readFileSync(join(here, "maia-1100-italian.txt"), "utf8")
-  .split(/\r?\n/)
-  .filter(Boolean);
+const name = process.argv[2] ?? "sf";
 const out = (line) => process.stdout.write(`${line}\n`);
 let multipv = 1;
 
@@ -23,22 +17,14 @@ function answerUci() {
     setTimeout(() => out("uciok"), 10_000);
     return;
   }
-  out(`id name Fake ${mode}`);
-  for (const name of ["Threads", "Hash", "MultiPV"])
-    out(`option name ${name} type spin default 1 min 1 max 512`);
+  out(`id name Fake ${name}`);
+  for (const option of ["Threads", "Hash", "MultiPV"])
+    out(`option name ${option} type spin default 1 min 1 max 512`);
   out("option name UCI_ShowWDL type check default false");
-  if (mode === "maia") {
-    out("option name VerboseMoveStats type check default false");
-    out("option name PolicyTemperature type string default 1.359000");
-  }
   out("uciok");
 }
 
 function answerGo() {
-  if (mode === "maia") {
-    for (const item of maiaLines) out(item);
-    return;
-  }
   const moves = ["d1h5", "g2g4", "e2e4", "a2a3", "b2b3"];
   for (let pv = 1; pv <= multipv; pv += 1) {
     out(

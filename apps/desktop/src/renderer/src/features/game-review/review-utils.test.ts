@@ -2,17 +2,21 @@ import { describe, expect, it } from "vitest";
 import { applySan, statusForFen } from "@chaturanga/shared/chess/position";
 import { reviewInsightPayloadSchema } from "@chaturanga/shared/schemas";
 import { validateProse } from "@chaturanga/shared/llm/commentary";
+import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
 import type {
   AnalysisLine,
   EngineScore,
   ErrorSeverity,
   MoveAnnotation,
   MoveAssessment,
-  MoveReview
+  MoveReview,
+  RatingPrediction
 } from "@chaturanga/shared/types/engine";
 import {
   buildInsightPayload,
+  buildRatingCurveForMove,
   countBySeverity,
+  hasUsableMaiaData,
   mainlineReviewInput,
   numberedLine,
   uciLineSteps
@@ -250,7 +254,8 @@ describe("game review utilities", () => {
       userRating: 1500
     });
     expect(payload?.curatorReason).toBe("move_review");
-    expect(payload?.engines.maiaCurve.interpretation.label).toBe("neutral");
+    expect(payload?.engines.maia).toBeUndefined();
+    expect(payload?.engines.maiaCurve).toBeUndefined();
   });
 
   it("adds history, alternatives, the reply line and game context for a mid-game mistake", () => {
@@ -394,29 +399,32 @@ describe("game review utilities", () => {
       { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
       { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: trusted }
     );
-    expect(informative?.engines.humanTopMoves).toStrictEqual({
+    expect(informative?.engines.maia).toMatchObject({
+      model: "maia1",
       rating: 1500,
-      moves: [
+      topMoves: [
         { san: "Nxe5", prob: 0.6 },
         { san: "O-O", prob: 0.3 },
         { san: "Nxd4", prob: 0.1 }
       ]
     });
+    // Maia 1's five levels make a complete curve.
+    expect(informative?.engines.maiaCurve?.ratings).toStrictEqual([1100, 1300, 1500, 1700, 1900]);
     const flat = buildInsightPayload(
       { ...moves[6], humanPredictions: predictions([0.2, 0.2, 0.2]) },
       { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: trusted }
     );
-    expect(flat?.engines.humanTopMoves).toBeUndefined();
+    expect(flat?.engines.maia?.topMoves).toBeUndefined();
     // Reviews older than schemaVersion 2 stored fake policies: no Maia data at all.
     const legacy = buildInsightPayload(
       { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
       { userRating: 1500, commentaryDetail: "balanced", playerColor: "white", context: { moves } }
     );
-    expect(legacy?.engines.humanTopMoves).toBeUndefined();
     expect(legacy?.engines.maia).toBeUndefined();
+    expect(legacy?.engines.maiaCurve).toBeUndefined();
   });
 
-  it("sends real per-level Maia evidence, engine identity and win chances for schemaVersion 2 reviews", () => {
+  it("sends Maia 1's level nearest the player, engine identity and win chances for schemaVersion 2 reviews", () => {
     const moves = trapGame();
     const mistake: MoveReview = {
       ...moves[6],
@@ -478,27 +486,89 @@ describe("game review utilities", () => {
       moveTimeMs: 250,
       winChance: { before: { win: 45, draw: 40, loss: 15 }, after: { win: 10, draw: 20, loss: 70 } }
     });
-    expect(payload!.engines.maia).toMatchObject({
-      playerLevel: 1500,
-      playedAtPlayerLevel: "most_likely",
-      bestAtPlayerLevel: "common",
-      levels: [
-        {
-          rating: 1100,
-          playedProb: 0.65,
-          playedRank: 1,
-          bestProb: 0.05,
-          bestRank: 4,
-          top: [
-            { san: "Nxe5", prob: 0.65 },
-            { san: "O-O", prob: 0.2 }
-          ]
-        },
-        { rating: 1500, playedProb: 0.5 },
-        { rating: 1900, playedProb: 0.25, playedRank: 2 }
+    expect(payload!.engines.maia).toStrictEqual({
+      model: "maia1",
+      rating: 1500,
+      playedProb: 0.5,
+      playedRank: 1,
+      playedLikelihood: "most_likely",
+      bestProb: 0.3,
+      bestRank: 2,
+      bestLikelihood: "common",
+      topMoves: [
+        { san: "Nxe5", prob: 0.5 },
+        { san: "Nxd4", prob: 0.3 }
       ]
     });
-    expect(payload!.engines.humanTopMoves?.rating).toBe(1500);
+    // Three of Maia 1's five levels are no curve.
+    expect(payload!.engines.maiaCurve).toBeUndefined();
+  });
+
+  it("sends Maia 3's prediction at the mover's rating, and its curve once the move has one", () => {
+    const moves = trapGame();
+    /** Maia 3 at `rating`: the played move first, the best second. */
+    const prediction = (rating: number, played: number, best: number): RatingPrediction => ({
+      rating,
+      topMoves: [
+        { uci: "f3e5", prob: played },
+        { uci: "f3d4", prob: best },
+        { uci: "e1g1", prob: 0.05 },
+        { uci: "c2c3", prob: 0.03 },
+        { uci: "d2d3", prob: 0.02 }
+      ],
+      playedProb: played,
+      playedRank: 1,
+      bestProb: best,
+      bestRank: 2,
+      whiteWinProb: 0.5612
+    });
+    const mistake: MoveReview = {
+      ...moves[6],
+      moverPrediction: prediction(1800, 0.4123, 0.3311)
+    };
+    const options = {
+      userRating: 1400,
+      commentaryDetail: "balanced" as const,
+      playerColor: "white" as const,
+      context: { moves, review: { schemaVersion: 4 } }
+    };
+    const payload = buildInsightPayload(mistake, options)!;
+    expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
+    expect(payload.schemaVersion).toBe(3);
+    expect(payload.player).toStrictEqual({ rating: 1400, color: "white" });
+    expect(payload.engines.maia).toStrictEqual({
+      model: "maia3",
+      rating: 1800,
+      playedProb: 0.41,
+      playedRank: 1,
+      playedLikelihood: "most_likely",
+      bestProb: 0.33,
+      bestRank: 2,
+      bestLikelihood: "common",
+      topMoves: [
+        { san: "Nxe5", prob: 0.41 },
+        { san: "Nxd4", prob: 0.33 },
+        { san: "O-O", prob: 0.05 }
+      ],
+      whiteWinPct: 56
+    });
+    expect(payload.engines.maiaCurve).toBeUndefined();
+
+    // Opened in the Engine tab: the 21-point curve, eloSelf = eloOppo = each rating.
+    const curve = MAIA3_RATINGS.map((rating) =>
+      prediction(rating, 0.75 - (rating - 600) / 2500, 0.05 + (rating - 600) / 2500)
+    );
+    const opened = buildInsightPayload({ ...mistake, humanPredictions: curve }, options)!;
+    expect(() => reviewInsightPayloadSchema.parse(opened)).not.toThrow();
+    expect(opened.engines.maia?.rating).toBe(1800);
+    const maiaCurve = opened.engines.maiaCurve!;
+    expect(maiaCurve.ratings).toStrictEqual(MAIA3_RATINGS);
+    expect(maiaCurve.userRatingBucket).toBe(1800);
+    expect(maiaCurve.playedProb.slice(0, 3)).toStrictEqual([0.75, 0.71, 0.67]);
+    // Played by most players up to 700, by fewer than 30% from 1900.
+    expect(maiaCurve.interpretation).toStrictEqual({ label: "trap_at_low_rating" });
+    expect(maiaCurve.bestLikelyFrom).toBe(1300);
+    expect(JSON.stringify(opened).length).toBeLessThan(6 * 1024);
   });
 
   it("adds board-derived idea facts and keeps the payload compact", () => {
@@ -644,6 +714,53 @@ describe("game review utilities", () => {
       }
     ];
     expect(mainlineReviewInput(tree).map((move) => move.uci)).toStrictEqual(["e2e4", "e7e5"]);
+  });
+});
+
+describe("Maia data of a move", () => {
+  const level = (rating: number, played = 0.3): RatingPrediction => ({
+    rating,
+    topMoves: [{ uci: "e2e4", prob: played }],
+    playedProb: played
+  });
+
+  it("is usable with Maia 3's prediction, a complete curve, or Maia 1's five levels", () => {
+    const maia3Curve = MAIA3_RATINGS.map((rating) => level(rating));
+    expect(hasUsableMaiaData(move())).toBe(false);
+    expect(hasUsableMaiaData(move({ moverPrediction: level(1500) }))).toBe(true);
+    expect(hasUsableMaiaData(move({ humanPredictions: maia3Curve }))).toBe(true);
+    expect(hasUsableMaiaData(move({ humanPredictions: maia3Curve.slice(1) }))).toBe(false);
+    const levels = [1100, 1300, 1500, 1700, 1900].map((rating) => level(rating));
+    expect(hasUsableMaiaData(move({ humanPredictions: levels }))).toBe(true);
+    expect(hasUsableMaiaData(move({ humanPredictions: levels.slice(1) }))).toBe(false);
+  });
+
+  it("reads Maia 1's curve at the player's level and Maia 3's at the mover's rating", () => {
+    // Maia 1's levels, unsorted as saved: the same curve as before Maia 3.
+    const levels = [1900, 1100, 1500, 1300, 1700].map((rating) =>
+      level(rating, { 1100: 0.62, 1300: 0.55, 1500: 0.45, 1700: 0.18, 1900: 0.04 }[rating])
+    );
+    const legacy = buildRatingCurveForMove(
+      move({ playedMove: "e2e4", bestMove: "d2d4", humanPredictions: levels }),
+      1290
+    );
+    expect(legacy).toMatchObject({
+      ratings: [1100, 1300, 1500, 1700, 1900],
+      playedProb: [0.62, 0.55, 0.45, 0.18, 0.04],
+      bestProb: [0, 0, 0, 0, 0],
+      interpretation: { label: "rating_cliff", cliffRating: 1700 },
+      userRatingBucket: 1300
+    });
+    const maia3 = buildRatingCurveForMove(
+      move({
+        moverPrediction: level(2100),
+        humanPredictions: MAIA3_RATINGS.map((rating) => level(rating))
+      }),
+      1290
+    );
+    expect(maia3?.ratings).toHaveLength(21);
+    expect(maia3?.userRatingBucket).toBe(2100);
+    expect(buildRatingCurveForMove(move({ moverPrediction: level(2100) }), 1290)).toBeNull();
   });
 });
 

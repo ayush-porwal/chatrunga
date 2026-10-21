@@ -11,6 +11,7 @@ import type {
 } from "@chaturanga/shared/types/chess";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { EngineIdentity } from "@/lib/engine-identity";
+import { isMaiaEngine, isMaiaPlayer } from "../features/play/engine-game";
 import { mainlineEnd } from "../features/game/move-tree-model";
 import { sessionFromSavedGame } from "../features/game/saved-game";
 import { latestPlayedNode, timeForfeitOutcome, type GameOutcome } from "../stores/game-store";
@@ -18,7 +19,8 @@ import { latestPlayedNode, timeForfeitOutcome, type GameOutcome } from "../store
 /** An engine game without a clock: the engine thinks this long per move. */
 export const ENGINE_MOVE_TIME_MS = 1000;
 
-type EngineChoice = Pick<EngineConfig, "id" | "name" | "isAvailable">;
+type EngineChoice = Pick<EngineConfig, "id" | "name" | "isAvailable"> &
+  Partial<Pick<EngineConfig, "runtime">>;
 
 /**
  * Your side in a saved engine game: the one side named "You" (as Play writes it). Null when
@@ -40,9 +42,11 @@ function engineSideOf(headers: Pick<GameHeaders, "white" | "black">): Color | nu
 /**
  * The installed engine that played `engineSide` of a saved engine game: the one with the id the
  * game saved, else (older games, or that engine since removed) the first `nameMatches` accepts
- * with the name shown, so a game saved as "Stockfish (managed)" finds today's Stockfish.
+ * with the name shown, so a game saved as "Stockfish (managed)" finds today's Stockfish. A side
+ * named as Maia at a rating ("Maia 1500", a Maia 1 game's "Maia 1500 (managed)") that no engine
+ * is named for is Maia 3, which plays every rating.
  */
-function savedGameEngine<E extends Pick<EngineConfig, "id" | "name">>(
+function savedGameEngine<E extends Pick<EngineConfig, "id" | "name"> & EngineIdentity>(
   headers: Pick<GameHeaders, "white" | "black" | "engineId">,
   engineSide: Color,
   engines: readonly E[],
@@ -52,7 +56,9 @@ function savedGameEngine<E extends Pick<EngineConfig, "id" | "name">>(
   if (byId) return byId;
   const name = engineDisplayName(headers[engineSide]?.trim() ?? "");
   if (!name) return undefined;
-  return engines.find((item) => nameMatches(item) && engineDisplayName(item.name) === name);
+  const byName = engines.find((item) => nameMatches(item) && engineDisplayName(item.name) === name);
+  if (byName || !isMaiaPlayer(name)) return byName;
+  return engines.find((item) => nameMatches(item) && isMaiaEngine(item));
 }
 
 /**
@@ -89,19 +95,40 @@ export function savedEngineSide(
 }
 
 /**
+ * Why a saved engine game only opened (no match to play on), and whether to offer Maia 3's
+ * download with it.
+ */
+export type RejoinNotice = {
+  message: string;
+  /** Maia played the game and Maia 3 (which plays every rating) isn't installed. */
+  offerMaia3: boolean;
+};
+
+/**
  * Why a saved engine game only opened (no match to play on): its engine isn't installed or isn't
  * available. Null when it can be played on, or when the sides can't be told (nothing to say).
  */
 export function rejoinNotice(
   headers: Pick<GameHeaders, "white" | "black" | "engineId">,
   engines: readonly EngineChoice[]
-): string | null {
+): RejoinNotice | null {
   const engineSide = engineSideOf(headers);
   if (!engineSide || savedEngineMatch(headers, engines)) return null;
   const name = engineDisplayName(headers[engineSide]?.trim() ?? "") || "Its engine";
-  return savedGameEngine(headers, engineSide, engines)
-    ? `${name} isn't available, so the game opened on the board.`
-    : `${name} isn't installed, so the game opened on the board.`;
+  if (savedGameEngine(headers, engineSide, engines))
+    return {
+      message: `${name} isn't available, so the game opened on the board.`,
+      offerMaia3: false
+    };
+  if (isMaiaPlayer(name))
+    return {
+      message: `${name} plays on Maia 3, which isn't installed, so the game opened on the board.`,
+      offerMaia3: true
+    };
+  return {
+    message: `${name} isn't installed, so the game opened on the board.`,
+    offerMaia3: false
+  };
 }
 
 /** A saved timed engine game's clocks now: what to play on with, or the result if one flagged. */
@@ -170,7 +197,7 @@ type RejoinMatch = {
 /** What rejoining a saved engine game does once the game is open on the board. */
 export type RejoinPlan =
   /** Only opened: there's no match to play on; `notice` says why (null: nothing to say). */
-  | { kind: "open"; notice: string | null }
+  | { kind: "open"; notice: RejoinNotice | null }
   /** Already over at its latest move: shown there, not played on. */
   | { kind: "finished"; nodeId: string }
   /** Played on; without a clock (untimed, or saved before games kept them) at ENGINE_MOVE_TIME_MS. */

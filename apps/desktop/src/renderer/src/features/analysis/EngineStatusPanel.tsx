@@ -13,13 +13,14 @@ import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
-import { analysisLimitLabel, rowEngine } from "./analysis-engine";
+import { analysisLimitLabel, canAnalyse, rowEngine } from "./analysis-engine";
 import {
   engineHolder,
   onPausedPosition,
   pausedStatusLabel,
   type PausedAnalysis
 } from "./live-analysis";
+import { isMaiaEngine } from "../play/engine-game";
 import { EngineAvatar } from "./EngineAvatar";
 import {
   EngineLines,
@@ -140,10 +141,10 @@ function useAnalysisSettings(): AppSettings {
   return { ...defaultSettings, ...settings.data };
 }
 
-/** Whether no engine can analyse (Maia too can, when it's the only one installed). */
+/** Whether no engine can analyse (Maia can't). */
 function useNoEngines(): boolean {
   const engines = useEnginesQuery();
-  return engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
+  return engines.isSuccess && !engines.data.some(canAnalyse);
 }
 
 /** What the engine is doing, in Study's header: in full (its title), and the short form shown. */
@@ -357,7 +358,10 @@ export function EngineStatusPanel({
   onStopAnalysis?: () => void;
 }) {
   const onlineGame = useLichessStore(selectLiveGameInProgress);
-  const noEngines = useNoEngines();
+  const noAnalysisEngine = useNoEngines();
+  const engineGame = useGameStore((state) => state.mode === "engine");
+  // An engine game shows its opponent (Maia too, which can't analyse).
+  const noEngines = noAnalysisEngine && !engineGame;
   return (
     <section
       aria-label="Engine"
@@ -469,6 +473,7 @@ function BoardEngine({
   // An engine game still being played: its opponent's search is the answer, so none of it shows.
   const gameOn = useGameStore((state) => engineHolder(state, false) === "engine-game");
   const engine = useRowEngine(engineGame);
+  const maiaName = useMaiaGameName(engine, engineGame);
   const interactions = useLineInteractions(fen);
   const { primary, bestSan } = usePrincipalLine(fen, readout);
   const failed = status === "error";
@@ -479,7 +484,7 @@ function BoardEngine({
   return (
     <>
       <div className="flex min-w-0 items-center gap-3">
-        <EngineHeading engine={engine} failed={failed}>
+        <EngineHeading engine={engine} name={maiaName} failed={failed}>
           <BoardEngineStatus
             status={status}
             analysing={analysing}
@@ -498,7 +503,8 @@ function BoardEngine({
               onClick={restart}
             />
           ) : null}
-          <AnalysisSwitch onStart={onStartAnalysis} onStop={onStopAnalysis} />
+          {/* An engine game's engine is the opponent, not an analysis to switch on. */}
+          {engineGame ? null : <AnalysisSwitch onStart={onStartAnalysis} onStop={onStopAnalysis} />}
         </div>
       </div>
       {error ? (
@@ -552,12 +558,26 @@ function useRestart(
 }
 
 /** The engine row's image and name over its status (`children`), in red once it failed. */
+/**
+ * Maia's name in an engine game against it, with the rating it plays at ("Maia 1500", the game's
+ * player name); null otherwise.
+ */
+function useMaiaGameName(engine: EngineConfig | null, engineGame: boolean): string | null {
+  const name = useGameStore((state) =>
+    state.engineSide ? (state.headers[state.engineSide] ?? null) : null
+  );
+  return engineGame && isMaiaEngine(engine) && name ? engineDisplayName(name) : null;
+}
+
 function EngineHeading({
   engine,
+  name,
   failed,
   children
 }: {
   engine: EngineConfig | null;
+  /** The name to show instead of the engine's (Maia's with its rating, in a game). */
+  name?: string | null;
   failed: boolean;
   children: ReactNode;
 }) {
@@ -566,7 +586,7 @@ function EngineHeading({
       <EngineAvatar engine={engine} size="lg" />
       <div className="grid min-w-0 flex-1 gap-px">
         <h3 className="truncate text-[0.9375rem] font-semibold text-fg">
-          {engine ? engineDisplayName(engine.name) : "Engine"}
+          {name ?? (engine ? engineDisplayName(engine.name) : "Engine")}
         </h3>
         <p
           className={cn(
@@ -682,7 +702,7 @@ const FIGURINE_GRID_STYLE = { display: "grid", containerType: "normal" } as cons
 /**
  * The Analysis switch: on while live analysis runs (the game store's analysis mode, which the
  * engine driver searches), so it always says what the engine is doing. Disabled while the board
- * can't be analysed (a game being played, a finished position).
+ * can't be analysed (a finished position); not shown during an engine game.
  */
 function AnalysisSwitch({ onStart, onStop }: { onStart?: () => void; onStop?: () => void }) {
   const on = useGameStore((state) => state.mode === "analysis");

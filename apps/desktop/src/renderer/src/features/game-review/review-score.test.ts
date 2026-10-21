@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatMoveEval, formatScore, terminalEvalLabel, whiteChartScore } from "./review-score";
+import {
+  formatMoveEval,
+  formatScore,
+  moverWinChances,
+  terminalEvalLabel,
+  whiteChartScore
+} from "./review-score";
 
 const whiteToMove = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const blackToMove = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
@@ -26,6 +32,42 @@ describe("whiteChartScore", () => {
       -85
     );
     expect(whiteChartScore({ evalAfter: null, fenBefore: whiteToMove })).toBe(0);
+  });
+});
+
+describe("moverWinChances", () => {
+  it("reads the evaluations either side of the move, from the mover's side", () => {
+    // 15… Rfd8 (Black): +2.66 before, +3.71 after, whatever the assessment's own reading.
+    const rfd8 = {
+      fenBefore: blackToMove,
+      evalBefore: { type: "cp" as const, value: 266 },
+      evalAfter: { type: "cp" as const, value: 371 },
+      terminal: null
+    };
+    expect(moverWinChances(rfd8)).toStrictEqual({ before: 27, after: 20 });
+    expect(moverWinChances({ ...rfd8, fenBefore: whiteToMove })).toStrictEqual({
+      before: 73,
+      after: 80
+    });
+  });
+
+  it("decides a checkmate, and has nothing without the evaluations", () => {
+    const mate = {
+      fenBefore: blackToMove,
+      evalBefore: { type: "mate" as const, value: -1 },
+      evalAfter: { type: "mate" as const, value: 0 },
+      terminal: "checkmate" as const
+    };
+    expect(moverWinChances(mate)?.after).toBe(100);
+    expect(moverWinChances({ ...mate, evalBefore: null })).toBeNull();
+    expect(
+      moverWinChances({
+        ...mate,
+        evalAfter: null,
+        terminal: null,
+        evalBefore: { type: "cp", value: 0 }
+      })
+    ).toBeNull();
   });
 });
 

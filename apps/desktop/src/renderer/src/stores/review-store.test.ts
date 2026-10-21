@@ -149,6 +149,7 @@ describe("review store", () => {
     const listed = {
       reviewId: "old",
       createdAt: 1,
+      engineId: "sf",
       engineName: "Stockfish",
       moveTimeMs: 1000,
       depth: null,

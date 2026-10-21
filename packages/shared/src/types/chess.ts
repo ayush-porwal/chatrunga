@@ -162,12 +162,16 @@ export type GameLibraryFacets = {
 export type SavedReviewInfo = {
   reviewId: string;
   createdAt: number;
+  /** The engine row that ran it (`GameReview.engineId`), for its picture; null when not recorded. */
+  engineId: string | null;
   engineName: string | null;
   /** Search per move (ms), or the depth when the review searched to a depth. */
   moveTimeMs: number | null;
   depth: number | null;
   /** Maia ratings used (empty: no Maia). */
   maiaLevels: number[];
+  /** Which Maia read the moves: Maia 1's five networks, or Maia 3. Absent: no Maia, or not recorded. */
+  maiaModel?: "maia1" | "maia3";
   moveCount: number;
   commentaryCount: number;
 };

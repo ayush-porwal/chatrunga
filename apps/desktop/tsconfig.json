@@ -22,7 +22,10 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/renderer/src/*"],
-      "@chaturanga/shared/*": ["../../packages/shared/src/*"]
+      "@chaturanga/shared/*": ["../../packages/shared/src/*"],
+      // CSSLab's own types module, which their vendored maia.ts (vendor/csslab-maia, imported by
+      // the Maia host page) takes MaiaStatus from; the host build maps it the same way.
+      "src/types": ["./src/maia-host/upstream-types.ts"]
     },
     "types": ["node", "vitest/globals"]
   },

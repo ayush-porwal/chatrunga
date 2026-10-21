@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import sf19 from "./__fixtures__/github/stockfish-latest-sf_19.json";
 import sf171 from "./__fixtures__/github/stockfish-sf_17.1.json";
 import lc0Latest from "./__fixtures__/github/lc0-latest-v0.32.1.json";
-import { LC0_NETWORK_DOWNLOAD_HOSTS } from "./github-releases";
+import {
+  LC0_NETWORK_DOWNLOAD_HOSTS,
+  RAW_DOWNLOAD_HOSTS,
+  isAllowedDownloadUrl
+} from "./github-releases";
 import {
   ENGINE_MANIFEST,
   LC0_NETWORK_ID,
   LC0_SOURCE,
-  MAIA_ASSET_IDS,
+  MAIA3_ID,
   STOCKFISH_SOURCE,
   SUPPORTED_PLATFORMS,
   currentPlatformKey,
@@ -156,8 +160,7 @@ describe("bundled fallback manifest", () => {
     expect(ENGINE_MANIFEST.schemaVersion).toBe(2);
     expect(ENGINE_MANIFEST.stockfish.version).toBe("sf_19");
     expect(ENGINE_MANIFEST.lc0.version).toBe("v0.32.1");
-    expect(ENGINE_MANIFEST.maiaWeights.version).toBe("v1.0");
-    expect(Object.keys(ENGINE_MANIFEST.maiaWeights.files)).toStrictEqual([...MAIA_ASSET_IDS]);
+    expect(ENGINE_MANIFEST.maia3.version).toBe("maia3_simplified@0013cc8");
   });
 
   it("matches the recorded release: same asset URLs and sizes as the selection", () => {
@@ -178,11 +181,10 @@ describe("bundled fallback manifest", () => {
     expect(lc0.sizeBytes).toBe(lc0Selected.asset.size);
   });
 
-  it("carries no pinned hashes", () => {
+  it("pins no hash for files that follow upstream releases or names", () => {
     const entries = [
       ...Object.values(ENGINE_MANIFEST.stockfish.platforms),
       ...Object.values(ENGINE_MANIFEST.lc0.platforms),
-      ...Object.values(ENGINE_MANIFEST.maiaWeights.files),
       ENGINE_MANIFEST.lc0Network.file
     ] as ManifestPlatformEntry[];
     for (const entry of entries) expect(entry.sha256).toBeUndefined();
@@ -197,16 +199,26 @@ describe("bundled fallback manifest", () => {
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "darwin-arm64")).toBeNull();
   });
 
-  it("has a plain-file download with a realistic size for every Maia weight", () => {
-    for (const id of MAIA_ASSET_IDS) {
-      const entry = resolveManifestEntry(ENGINE_MANIFEST, id, "darwin-arm64");
-      expect(entry).not.toBeNull();
-      expectValidEntry(entry!, id);
-      expect(entry?.url).toMatch(new RegExp(`/${id}\\.pb\\.gz$`));
-      expect(entry?.extract).toBeUndefined();
-      expect(entry!.sizeBytes).toBeGreaterThan(1_000_000);
-      expect(entry!.sizeBytes).toBeLessThan(2_000_000);
+  it("has the Maia 3 model as a commit-pinned raw GitHub file with its exact size and hash, on every platform", () => {
+    const commit = "0013cc8e6ec52c88f5b3d694781d4cc8427cb91a";
+    for (const platform of [...SUPPORTED_PLATFORMS, null]) {
+      expect(
+        resolveManifestEntry(ENGINE_MANIFEST, MAIA3_ID, platform),
+        String(platform)
+      ).toStrictEqual({
+        url: `https://raw.githubusercontent.com/CSSLab/maia-platform-frontend/${commit}/public/maia3/maia3_simplified.onnx`,
+        sizeBytes: 45_683_686,
+        sha256: "405bf76c15727dad8728b352c06a8f3c1b80fb2760e8d666b32485c63d75b856"
+      });
     }
+    expectValidEntry(ENGINE_MANIFEST.maia3.file, "maia3");
+    expect(isAllowedDownloadUrl(ENGINE_MANIFEST.maia3.file.url, RAW_DOWNLOAD_HOSTS)).toBe(true);
+    expect(ENGINE_MANIFEST.licenses.maia3).toStrictEqual({
+      authors: "CSSLab (University of Toronto / McGill)",
+      sourceUrl: "https://github.com/CSSLab/maia-platform-frontend",
+      license: "GPL-3.0",
+      noticeUrl: `https://raw.githubusercontent.com/CSSLab/maia-platform-frontend/${commit}/LICENSE`
+    });
   });
 
   it("has Lc0's recommended small network as a plain file from LCZero's storage, on every platform", () => {
@@ -227,7 +239,7 @@ describe("bundled fallback manifest", () => {
   it("maps assets to their fallback version", () => {
     expect(manifestVersionFor(ENGINE_MANIFEST, "stockfish")).toBe("sf_19");
     expect(manifestVersionFor(ENGINE_MANIFEST, "lc0")).toBe("v0.32.1");
-    expect(manifestVersionFor(ENGINE_MANIFEST, "maia-1500")).toBe("v1.0");
+    expect(manifestVersionFor(ENGINE_MANIFEST, MAIA3_ID)).toBe("maia3_simplified@0013cc8");
     expect(manifestVersionFor(ENGINE_MANIFEST, LC0_NETWORK_ID)).toBe(
       "T1-256x10-distilled-swa-2432500"
     );

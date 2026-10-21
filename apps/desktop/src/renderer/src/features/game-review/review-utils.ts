@@ -4,17 +4,15 @@ import { parseUci } from "chessops/util";
 import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/chess/position";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
-import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
+import { buildRatingCurve, nearestRating } from "@chaturanga/shared/chess/rating-curve";
 import { formatEngineScore, scoreToCentipawns } from "@chaturanga/shared/chess/review";
-import {
-  MAIA_BUCKETS,
-  REVIEW_INSIGHT_PAYLOAD_VERSION,
-  type MaiaRatingBucket
-} from "@chaturanga/shared/schemas/constants";
+import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
+import { MAIA_BUCKETS, REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/constants";
 import type {
   CuratorReason,
   EngineSignal,
   EvalAssessment,
+  RatingCurve,
   ReviewInsightPayload,
   TacticalFact
 } from "@chaturanga/shared/schemas";
@@ -30,9 +28,18 @@ import type {
   Wdl
 } from "@chaturanga/shared/types/engine";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 type ReviewMoveInput = ReviewGameInput["moves"][number];
 export type ReviewTab = "summary" | "commentary" | "moves" | "engine";
+
+/**
+ * The display name of the engine a finished review's evaluations are from (null: none recorded, or
+ * no finished review: a running one may use another engine than the review still shown).
+ */
+export function reviewEngineName(review: Pick<GameReview, "engineName"> | null): string | null {
+  return review?.engineName?.trim() || null;
+}
 
 export function mainlineReviewInput(moveTree: MoveNode[]): ReviewMoveInput[] {
   const moves: ReviewMoveInput[] = [];
@@ -131,44 +138,43 @@ export function moveLabel(move: MoveReview): string {
   return move.ply % 2 === 1 ? `${number}. ${move.san}` : `${number}… ${move.san}`;
 }
 
-export function buildRatingCurveForMove(move: MoveReview, userRating: number) {
-  const predictions = move.humanPredictions ?? [];
-  const played = readPredictionProbabilities(
-    predictions,
-    move.playedMove,
-    (prediction) => prediction.playedProb
+/** A Maia 3 move: read at the mover's rating, or at a rating that isn't one of Maia 1's levels. */
+function isMaia3Move(move: MoveReview): boolean {
+  return (
+    Boolean(move.moverPrediction) ||
+    (move.humanPredictions ?? []).some((prediction) => !isOneOf(MAIA_BUCKETS, prediction.rating))
   );
-  const best = readPredictionProbabilities(
-    predictions,
-    move.bestMove ?? "",
-    (prediction) => prediction.bestProb
-  );
-  return buildRatingCurve({
-    playedProb: played,
-    bestProb: best,
-    playedIsBest: Boolean(move.bestMove && move.playedMove === move.bestMove),
-    userBucket: quantizeToBucket(userRating)
-  });
 }
 
 /**
- * `uci`'s probability at each Maia level: the full policy's (`fromFull`, stored for the played and
- * best moves), else its share among the level's top moves (older reviews), else 0.
+ * The move's complete Maia rating curve, ascending by rating: Maia 3's 21 ratings (computed when
+ * the move is first opened) or a Maia 1 review's five levels. Null while any rating is missing (a
+ * curve with holes would read zero-filled ratings as real probabilities).
  */
-function readPredictionProbabilities(
-  predictions: readonly RatingPrediction[],
-  uci: string,
-  fromFull: (prediction: RatingPrediction) => number | undefined
-): [number, number, number, number, number] {
-  const result: [number, number, number, number, number] = [0, 0, 0, 0, 0];
-  if (!uci) return result;
-  predictions.forEach((prediction) => {
-    const index = MAIA_BUCKETS.indexOf(prediction.rating);
-    if (index < 0) return;
-    result[index] =
-      fromFull(prediction) ?? prediction.topMoves.find((item) => item.uci === uci)?.prob ?? 0;
+function curvePredictions(move: MoveReview): RatingPrediction[] | null {
+  const byRating = new Map((move.humanPredictions ?? []).map((item) => [item.rating, item]));
+  const ratings: readonly number[] = isMaia3Move(move) ? MAIA3_RATINGS : MAIA_BUCKETS;
+  const points = ratings.flatMap((rating) => byRating.get(rating) ?? []);
+  return points.length === ratings.length ? points : null;
+}
+
+/**
+ * The move's Maia rating curve, read for the player at `userRating` — on a Maia 3 move at the
+ * mover's rating its assessment used. Null without a complete curve ({@link curvePredictions}).
+ */
+export function buildRatingCurveForMove(move: MoveReview, userRating: number) {
+  const points = curvePredictions(move);
+  if (!points) return null;
+  const bestMove = move.bestMove;
+  return buildRatingCurve({
+    ratings: points.map((point) => point.rating),
+    playedProb: points.map((point) => probOf(point, move.playedMove, point.playedProb) ?? 0),
+    bestProb: points.map((point) =>
+      bestMove ? (probOf(point, bestMove, point.bestProb) ?? 0) : 0
+    ),
+    playedIsBest: Boolean(bestMove && move.playedMove === bestMove),
+    userRating: move.moverPrediction?.rating ?? userRating
   });
-  return result;
 }
 
 export function buildTacticalFacts(move: MoveReview): TacticalFact[] {
@@ -368,21 +374,15 @@ function buildAlternatives(move: MoveReview) {
   };
 }
 
-function buildHumanTopMoves(move: MoveReview, bucket: MaiaRatingBucket) {
-  const prediction = move.humanPredictions?.find((item) => item.rating === bucket);
-  if (!prediction) return undefined;
+/** Maia's three likeliest moves in SAN; undefined when they are flat (no signal to read into). */
+function humanTopMoves(move: MoveReview, prediction: RatingPrediction) {
   const moves = prediction.topMoves
     .slice(0, 3)
-    .map((item) => ({
-      san: uciToSan(move.fenBefore, item.uci),
-      prob: Math.round(item.prob * 100) / 100
-    }))
+    .map((item) => ({ san: uciToSan(move.fenBefore, item.uci), prob: round2(item.prob) }))
     .filter((item): item is { san: string; prob: number } => isSanToken(item.san));
-  // A flat distribution (e.g. every candidate at 0.2) carries no signal; omit it
-  // rather than let the coach read meaning into it.
   const probs = moves.map((item) => item.prob);
   if (!moves.length || Math.max(...probs) - Math.min(...probs) < 0.02) return undefined;
-  return { rating: bucket, moves };
+  return moves;
 }
 
 function findPly(moves: readonly MoveReview[], ply: number): MoveReview | undefined {
@@ -625,48 +625,57 @@ function rankOf(
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
 /**
- * Real per-level Maia evidence. Only trusted for reviews with
- * `schemaVersion >= 2`; older reviews stored a fake uniform policy.
+ * Maia's reading of the move at one rating: Maia 3's prediction at the mover's rating, or on a
+ * Maia 1 review the level nearest the player's (`userRating`).
  */
-function buildMaiaEvidence(move: MoveReview, userRating: number, trusted: boolean) {
-  if (!trusted) return undefined;
-  const predictions = (move.humanPredictions ?? [])
-    .filter((prediction) => (MAIA_BUCKETS as readonly number[]).includes(prediction.rating))
-    .sort((a, b) => a.rating - b.rating);
-  if (!predictions.length) return undefined;
-  const levels = predictions.map((prediction) => {
-    const playedProb = probOf(prediction, move.playedMove, prediction.playedProb);
-    const bestProb = move.bestMove
-      ? probOf(prediction, move.bestMove, prediction.bestProb)
-      : undefined;
-    const top = prediction.topMoves
-      .slice(0, 3)
-      .map((item) => ({ san: uciToSan(move.fenBefore, item.uci), prob: round2(item.prob) }))
-      .filter((item): item is { san: string; prob: number } => isSanToken(item.san));
-    return defined({
-      rating: prediction.rating,
-      playedProb: playedProb === undefined ? undefined : round2(playedProb),
-      playedRank: rankOf(prediction, move.playedMove, prediction.playedRank),
-      bestProb: bestProb === undefined ? undefined : round2(bestProb),
-      bestRank: move.bestMove ? rankOf(prediction, move.bestMove, prediction.bestRank) : undefined,
-      top
-    });
-  });
-  const nearest = predictions.reduce((closest, prediction) =>
-    Math.abs(prediction.rating - userRating) < Math.abs(closest.rating - userRating)
-      ? prediction
-      : closest
-  );
-  const nearestLevel = levels.find((level) => level.rating === nearest.rating);
+function buildMaiaEvidence(
+  move: MoveReview,
+  userRating: number
+): ReviewInsightPayload["engines"]["maia"] {
+  const prediction = move.moverPrediction ?? nearestLevel(move, userRating);
+  if (!prediction) return undefined;
+  const playedProb = probOf(prediction, move.playedMove, prediction.playedProb);
+  const playedRank = rankOf(prediction, move.playedMove, prediction.playedRank);
+  const best = move.bestMove && move.bestMove !== move.playedMove ? move.bestMove : null;
+  const bestProb = best ? probOf(prediction, best, prediction.bestProb) : undefined;
+  const bestRank = best ? rankOf(prediction, best, prediction.bestRank) : undefined;
+  const whiteWin = move.moverPrediction?.whiteWinProb;
   return defined({
-    playerLevel: nearest.rating,
-    playedAtPlayerLevel: likelihood(nearestLevel?.playedProb, nearestLevel?.playedRank),
-    bestAtPlayerLevel:
-      move.bestMove && move.bestMove !== move.playedMove
-        ? likelihood(nearestLevel?.bestProb, nearestLevel?.bestRank)
-        : undefined,
-    levels
+    model: move.moverPrediction ? ("maia3" as const) : ("maia1" as const),
+    rating: prediction.rating,
+    playedProb: playedProb === undefined ? undefined : round2(playedProb),
+    playedRank,
+    playedLikelihood: likelihood(playedProb, playedRank),
+    bestProb: bestProb === undefined ? undefined : round2(bestProb),
+    bestRank,
+    bestLikelihood: best ? likelihood(bestProb, bestRank) : undefined,
+    topMoves: humanTopMoves(move, prediction),
+    whiteWinPct:
+      whiteWin !== undefined && Number.isFinite(whiteWin)
+        ? Math.round(Math.max(0, Math.min(1, whiteWin)) * 100)
+        : undefined
   });
+}
+
+/** A Maia 1 review's level nearest the player's rating (ties to the lower level). */
+function nearestLevel(move: MoveReview, userRating: number): RatingPrediction | undefined {
+  const levels = (move.humanPredictions ?? []).filter((prediction) =>
+    isOneOf(MAIA_BUCKETS, prediction.rating)
+  );
+  const rating = nearestRating(
+    levels.map((prediction) => prediction.rating).sort((a, b) => a - b),
+    userRating
+  );
+  return levels.find((prediction) => prediction.rating === rating);
+}
+
+/** The curve as the coach gets it: probabilities to two decimals. */
+function payloadCurve(curve: RatingCurve): RatingCurve {
+  return {
+    ...curve,
+    playedProb: curve.playedProb.map(round2),
+    bestProb: curve.bestProb.map(round2)
+  };
 }
 
 /**
@@ -780,25 +789,20 @@ function stockfishEvidence(
 }
 
 /**
- * Maia's evidence: the rating curve (read as neutral without trusted, usable Maia data), the moves
- * humans at the player's level play, and the per-level probabilities. Maia probabilities are only
- * trusted for reviews with `schemaVersion >= 2` (older reviews carry fake uniform policies).
+ * Maia's evidence: its reading of the move at one rating, and the rating curve when the move has a
+ * complete one. Maia probabilities are only trusted for reviews with `schemaVersion >= 2` (older
+ * reviews carry fake uniform policies).
  */
 function maiaEvidence(
   move: MoveReview,
   userRating: number,
   review: InsightReviewMeta | null | undefined
-) {
+): Pick<ReviewInsightPayload["engines"], "maia" | "maiaCurve"> {
+  if ((review?.schemaVersion ?? 0) < 2) return {};
   const curve = buildRatingCurveForMove(move, userRating);
-  const trusted = (review?.schemaVersion ?? 0) >= 2;
-  if (!trusted || !hasUsableMaiaData(move)) curve.interpretation = { label: "neutral" };
-  const maia = buildMaiaEvidence(move, userRating, trusted);
   return {
-    maiaCurve: curve,
-    humanTopMoves: trusted
-      ? buildHumanTopMoves(move, maia?.playerLevel ?? curve.userRatingBucket)
-      : undefined,
-    maia
+    maia: buildMaiaEvidence(move, userRating),
+    maiaCurve: curve ? payloadCurve(curve) : undefined
   };
 }
 
@@ -848,11 +852,7 @@ export function buildInsightPayload(
 
   return defined({
     schemaVersion: REVIEW_INSIGHT_PAYLOAD_VERSION,
-    player: {
-      rating: userRating,
-      color: playerColor,
-      ratingBucket: maia.maiaCurve.userRatingBucket
-    },
+    player: { rating: userRating, color: playerColor },
     game: insightGame(move, grounds, phase),
     engines: defined({
       stockfish: stockfishEvidence(move, grounds, replyLineSan, context?.review),
@@ -871,11 +871,12 @@ export function buildInsightPayload(
 
 export type CommentaryDetail = "concise" | "balanced" | "detailed";
 
+/**
+ * The move has Maia data to show: Maia 3's prediction at the mover's rating (every move of a Maia 3
+ * review), or a complete rating curve (Maia 3's 21 ratings, a Maia 1 review's five levels).
+ */
 export function hasUsableMaiaData(move: MoveReview): boolean {
-  const ratings = new Set((move.humanPredictions ?? []).map((prediction) => prediction.rating));
-  // A single bucket cannot support a rating curve; avoid presenting zero-filled
-  // unavailable buckets as real probabilities.
-  return ratings.size === MAIA_BUCKETS.length;
+  return Boolean(move.moverPrediction) || curvePredictions(move) !== null;
 }
 
 /** Errors by severity, marked or not (a shortened summary never changes these). */

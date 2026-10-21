@@ -37,10 +37,20 @@ export function formatClockForDisplay(raw: string): string {
 }
 
 /**
- * Live countdown for timed engine games (`M:SS` or `H:MM:SS`).
+ * Live countdown for timed engine games (`M:SS` or `H:MM:SS`). Rounds up: a clock with time left
+ * never reads 0:00.
  */
 export function formatMillisecondsClock(ms: number): string {
-  const secondsTotal = Math.max(0, Math.ceil(ms / 1000));
+  return formatWholeSeconds(Math.ceil(ms / 1000));
+}
+
+/** A length of time, such as the time a move took (`M:SS` or `H:MM:SS`), to the nearest second. */
+export function formatMillisecondsDuration(ms: number): string {
+  return formatWholeSeconds(Math.round(ms / 1000));
+}
+
+function formatWholeSeconds(seconds: number): string {
+  const secondsTotal = Math.max(0, seconds);
   const hours = Math.floor(secondsTotal / 3600);
   const minutes = Math.floor((secondsTotal % 3600) / 60);
   const sec = secondsTotal % 60;

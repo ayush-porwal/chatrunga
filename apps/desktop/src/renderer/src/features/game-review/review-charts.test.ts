@@ -7,10 +7,13 @@ import {
   chartMark,
   chartTooltip,
   chartTooltipText,
+  difficultyTitle,
   nearestPointIndex,
+  winningChancesTitle,
   type ChartPoint,
   type ReviewChartInput
 } from "./review-charts";
+import { moverWinChances } from "./review-score";
 
 /** The trap game's 14 plies with 3+2 clocks: White thinks 10 s a move, Black 4 s. */
 const CLOCKS = Array.from({ length: 14 }, (_, index) => {
@@ -94,7 +97,7 @@ describe("review chart data", () => {
       mover: "white"
     });
     expect(unreviewed).toMatchObject({ hasEvals: false, hasDifficulty: false, hasTimes: true });
-    expect(chartTooltip(unreviewed.points[7], "white", null)).toStrictEqual({
+    expect(chartTooltip(unreviewed.points[7], "white")).toStrictEqual({
       title: "4. Nxe5",
       rows: [{ label: "Time spent", value: "0:10" }]
     });
@@ -103,6 +106,19 @@ describe("review chart data", () => {
     expect(running.points[4].whiteWin).not.toBeNull();
     expect(running.points[5].whiteWin).toBeNull();
     expect(running.hasEvals).toBe(true);
+  });
+
+  it("puts each move's point where the Engine tab's chances end, not at the assessment's reading", () => {
+    // The assessment reads a move in the search before it (its mark and loss do); the points and
+    // the Engine tab's chances read the positions either side of it (as its Eval and the eval bar).
+    const nxe5: MoveReview = { ...trap[6], assessment: { ...trap[6].assessment, winAfter: 99 } };
+    const qg5 = trap[7];
+    const { points } = buildReviewChartData(input([...trap.slice(0, 6), nxe5, ...trap.slice(7)]));
+    const white = points.map((point) => Math.round(Number(point.whiteWin)));
+    // 4. Nxe5, White's: from the point before it to its own.
+    expect(moverWinChances(nxe5)).toStrictEqual({ before: white[6], after: white[7] });
+    // 4… Qg5, Black's: the same points from Black's side.
+    expect(moverWinChances(qg5)).toStrictEqual({ before: 100 - white[7], after: 100 - white[8] });
   });
 
   it("reads difficulty at the review's Maia model, and none from untrusted or missing data", () => {
@@ -117,6 +133,36 @@ describe("review chart data", () => {
     );
     expect(untrusted).toMatchObject({ model: null, hasDifficulty: false });
     expect(buildReviewChartData(input(trap)).hasDifficulty).toBe(false);
+    expect(difficultyTitle(data.points)).toBe("Difficulty at 1500 · Maia");
+  });
+
+  it("reads a Maia 3 move's difficulty at its mover's rating, titled per side", () => {
+    const at = (move: MoveReview, rating: number, bestProb: number): MoveReview => ({
+      ...move,
+      moverPrediction: { rating, topMoves: [], bestProb }
+    });
+    // Ply 7 is White's, ply 8 Black's.
+    const moves: MoveReview[] = [...trap];
+    moves[6] = at(trap[6], 1800, 0.3);
+    moves[7] = at(trap[7], 1200, 0.6);
+    const data = buildReviewChartData(
+      input(moves, { maia: { model: null, rating: 1500, trusted: true } })
+    );
+    expect(data.points[7]).toMatchObject({ bestChance: 0.3, maiaRating: 1800 });
+    expect(data.points[8]).toMatchObject({ bestChance: 0.6, maiaRating: 1200 });
+    expect(chartTooltip(data.points[8], "white").rows).toContainEqual({
+      label: "Best move at 1200 · Maia",
+      value: "60%"
+    });
+    expect(difficultyTitle(data.points)).toBe("Difficulty at White 1800 · Black 1200 · Maia");
+    const same: MoveReview[] = [...moves];
+    same[7] = at(trap[7], 1800, 0.6);
+    expect(
+      difficultyTitle(
+        buildReviewChartData(input(same, { maia: { model: null, rating: 1500, trusted: true } }))
+          .points
+      )
+    ).toBe("Difficulty at 1800 · Maia");
   });
 });
 
@@ -129,26 +175,33 @@ describe("chart helpers", () => {
     annotation: "blunder",
     key: true,
     bestChance: 0.12,
+    maiaRating: 1500,
     spentMs: 43_000,
     mover: "white"
   };
 
-  it("writes the tooltip from the reviewed side, leaving out what is unknown", () => {
-    const tooltip = chartTooltip(point, "white", 1500);
+  it("writes the tooltip from the reviewed side, naming each value's source, leaving out what is unknown", () => {
+    const tooltip = chartTooltip(point, "white", "Stockfish 19");
     expect(tooltip).toStrictEqual({
       title: "52. Ne4 · Blunder",
       rows: [
-        { label: "Your chances", value: "3%" },
+        { label: "Your chances · Stockfish 19", value: "3%" },
         { label: "Opponent's", value: "97%" },
-        { label: "Best move at 1500", value: "12%" },
+        { label: "Best move at 1500 · Maia", value: "12%" },
         { label: "Time spent", value: "0:43" }
       ]
     });
     expect(chartTooltipText(tooltip)).toBe(
-      "52. Ne4 · Blunder, Your chances 3%, Opponent's 97%, Best move at 1500 12%, Time spent 0:43"
+      "52. Ne4 · Blunder, Your chances · Stockfish 19 3%, Opponent's 97%, Best move at 1500 · Maia 12%, Time spent 0:43"
     );
+    expect(winningChancesTitle("Stockfish 19")).toBe("Winning chances · Stockfish 19");
+    // An engine the review didn't name: the chances unnamed.
+    expect(winningChancesTitle(null)).toBe("Winning chances");
     expect(
-      chartTooltip({ ...point, annotation: null, bestChance: null, spentMs: null }, "black", null)
+      chartTooltip(
+        { ...point, annotation: null, bestChance: null, maiaRating: null, spentMs: null },
+        "black"
+      )
     ).toStrictEqual({
       title: "52. Ne4",
       rows: [

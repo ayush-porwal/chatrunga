@@ -7,6 +7,12 @@ import type { EngineConfig } from "../types/engine";
  */
 export const MANAGED_ENGINE_SUFFIX = "(managed)";
 
+/**
+ * Maia 1's managed rows, one per rating ("Maia 1500 (managed)", Lc0 on a Maia network), which
+ * Maia 3 replaced; the rating is the first group.
+ */
+export const MAIA1_MANAGED_NAME = /^Maia (1100|1300|1500|1700|1900) \(managed\)$/;
+
 /** True for an engine row the app manages from a download, false for a user-added UCI engine. */
 export function isManagedEngine(engine: Pick<EngineConfig, "name">): boolean {
   return engine.name.includes(MANAGED_ENGINE_SUFFIX);

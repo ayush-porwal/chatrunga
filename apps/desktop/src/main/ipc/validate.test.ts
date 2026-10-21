@@ -94,8 +94,7 @@ describe("engine inputs", () => {
       weightsPath: "/nets/maia-1500.pb.gz",
       imagePath: "/Users/me/Pictures/lc0 logo.png",
       args: ["--threads=2"],
-      isHumanPrediction: true,
-      maiaRating: 1500
+      isHumanPrediction: true
     });
   });
 
@@ -103,7 +102,6 @@ describe("engine inputs", () => {
     expect(() => parseEngineInput({ name: "x" })).toThrow(/executable path is required/);
     expect(() => parseEngineInput({ executablePath: "relative/sf" })).toThrow(/absolute/);
     expect(() => parseEngineInput({ executablePath: "/sf", args: "--x" })).toThrow(/args/);
-    expect(() => parseEngineInput({ executablePath: "/sf", maiaRating: 1600 })).toThrow(/Maia/);
     expect(() => parseEngineInput(null)).toThrow(/object/);
   });
 
@@ -154,7 +152,8 @@ describe("engine session inputs", () => {
       moves: ["e2e4"],
       moveTimeMs: null,
       depth: null,
-      clock: { wtime: 1, btime: 2, winc: 0, binc: 0 }
+      clock: { wtime: 1, btime: 2, winc: 0, binc: 0 },
+      maia: null
     });
     expect(() =>
       parseStartGameInput({
@@ -195,6 +194,23 @@ describe("engine session inputs", () => {
     ).toThrow(/side/);
   });
 
+  it("snaps Maia's rating to its grid and keeps the user's within Maia's range", () => {
+    const maiaGame = (maia: unknown) =>
+      parseStartGameInput({ engineId: "maia", searchId: "s1", side: "white", fen: START, maia })
+        .maia;
+    expect(maiaGame({ rating: 1549, opponentRating: 1537.4 })).toStrictEqual({
+      rating: 1500,
+      opponentRating: 1537
+    });
+    expect(maiaGame({ rating: 3000, opponentRating: 100 })).toStrictEqual({
+      rating: 2600,
+      opponentRating: 600
+    });
+    expect(maiaGame(undefined)).toBeNull();
+    expect(() => maiaGame({ rating: "1500", opponentRating: 1500 })).toThrow(/maia.rating/);
+    expect(() => maiaGame({ rating: 1500 })).toThrow(/maia.opponentRating/);
+  });
+
   it("parses analysis and probe requests", () => {
     expect(
       parseStartAnalysisInput({ engineId: "sf", searchId: "s2", fen: START, moves: [], multipv: 3 })
@@ -228,10 +244,19 @@ describe("engine session inputs", () => {
           clockAfter: null
         }
       ],
-      predictionEngineIds: ["maia-1", ""],
+      predictionEngineIds: ["maia-1"],
+      useMaia: false,
       multipv: 3
     });
-    expect(review.predictionEngineIds).toStrictEqual(["maia-1"]);
+    expect(review.useMaia).toBe(false);
+    // Maia 1's engines aren't read any more.
+    expect(review).not.toHaveProperty("predictionEngineIds");
+    expect(
+      parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [] }).useMaia
+    ).toBeUndefined();
+    expect(() =>
+      parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [], useMaia: "yes" })
+    ).toThrow(/useMaia/);
     expect(review.moves[0]).toMatchObject({ uci: "e2e4", clockAfter: null });
     expect(review.nodes).toBeNull();
     expect(parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [] }).reviewId).toMatch(

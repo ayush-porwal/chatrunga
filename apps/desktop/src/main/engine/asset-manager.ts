@@ -22,6 +22,7 @@ import { cpuFeatures as detectCpuFeatures } from "./cpu-features";
 import {
   ENGINE_MANIFEST,
   LC0_NETWORK_ID,
+  MAIA3_ID,
   RELEASE_SOURCES,
   currentPlatformKey,
   isDifferentVersion,
@@ -57,7 +58,7 @@ import { errorCode } from "../system-error";
 const exec = promisify(execFile);
 
 /**
- * Asset manager — installs Stockfish, Lc0, Lc0's network and the Maia weights and tracks them
+ * Asset manager — installs Stockfish, Lc0, Lc0's network and the Maia 3 model and tracks them
  * across launches.
  *
  * Where downloads come from (see ./engine-manifest.ts):
@@ -66,15 +67,19 @@ const exec = promisify(execFile);
  *   its `size` drives progress, its `digest` (sha256) is verified, its tag is the installed
  *   version. When GitHub can't be reached and nothing is cached, the bundled fallback
  *   manifest (last known-good URLs) is used.
- * - Maia weights: fixed raw.githubusercontent.com URLs (they are not versioned releases).
+ * - Maia 3 (`maia3`): CSSLab's ONNX model, a fixed raw.githubusercontent.com URL pinned to a
+ *   commit, with a pinned sha256. Always the managed file: no custom path.
  * - Lc0's network (`lc0-network`): LCZero's recommended small net, a fixed storage.lczero.org
- *   URL. A weight file like Maia's, so it is its own asset with the same pipeline; the user can
- *   point it at their own `.pb` / `.pb.gz` instead (a "custom" path, as for the engines).
+ *   URL. A plain data file like Maia 3's, so it is its own asset with the same pipeline; the user
+ *   can point it at their own `.pb` / `.pb.gz` instead (a "custom" path, as for the engines).
+ *
+ * Maia 1 (five Lc0 weight files, `maia-1100` … `maia-1900`) is retired: init() deletes their files
+ * and forgets their records.
  *
  * Install pipeline: download (resumable, host allow-listed) → verify (sha256 digest when
- * published, and the server-reported length) → extract into a staging dir → chmod / clear
- * quarantine → atomic rename over the installed file. The install path never changes, so an
- * update keeps the engines table pointing at the same file. Nothing downloaded is executed
+ * published, and the server-reported length) → extract into a staging dir → chmod (engine
+ * binaries only) / clear quarantine → atomic rename over the installed file. The install path
+ * never changes, so an update keeps the engines table pointing at the same file. Nothing downloaded is executed
  * here. One retry on failure (a digest mismatch discards the partial first).
  *
  * Updates are never applied silently: status() reports `updateAvailable` and the user
@@ -88,15 +93,12 @@ const RELEASE_CACHE_FILE = "engine-releases-cache.json";
 /** An explicit "check for updates" reuses a lookup this recent instead of asking GitHub again. */
 const CHECK_MAX_AGE_MS = 60 * 1000;
 
-export type AssetId =
-  | "stockfish"
-  | "lc0"
-  | "lc0-network"
-  | "maia-1100"
-  | "maia-1300"
-  | "maia-1500"
-  | "maia-1700"
-  | "maia-1900";
+/** Maia 1's asset ids, retired: their weights were `<id>.pb.gz` in the engines folder (see init). */
+const RETIRED_MAIA_IDS: readonly string[] = [1100, 1300, 1500, 1700, 1900].map(
+  (rating) => `maia-${rating}`
+);
+
+export type AssetId = "stockfish" | "lc0" | "lc0-network" | "maia3";
 
 type AssetState = "missing" | "installed" | "custom";
 
@@ -113,8 +115,9 @@ export type AssetRecord = {
   /** sha256 of the installed file. */
   sha256: string | null;
   /**
-   * Installed version: the release tag for engines (`sf_19`), `v1.0` for Maia. Older state
-   * files recorded a bare version (`17.1`) here; compare with normalizeVersion().
+   * Installed version: the release tag for engines (`sf_19`), the pinned commit for Maia 3, the
+   * network's name for Lc0's. Older state files recorded a bare version (`17.1`) here; compare
+   * with normalizeVersion().
    */
   manifestVersion: string | null;
   /** Installed release tag (same as manifestVersion for new installs); absent in older state files. */
@@ -154,16 +157,7 @@ export type ProgressEvent =
   | { type: "ready"; assetId: AssetId }
   | { type: "error"; assetId: AssetId; message: string };
 
-export const ALL_ASSET_IDS: readonly AssetId[] = [
-  "stockfish",
-  "lc0",
-  "lc0-network",
-  "maia-1100",
-  "maia-1300",
-  "maia-1500",
-  "maia-1700",
-  "maia-1900"
-];
+export const ALL_ASSET_IDS: readonly AssetId[] = ["stockfish", "lc0", "lc0-network", "maia3"];
 
 export function isAssetId(value: unknown): value is AssetId {
   return isOneOf(ALL_ASSET_IDS, value);
@@ -175,11 +169,7 @@ function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
     stockfish: value("stockfish"),
     lc0: value("lc0"),
     "lc0-network": value("lc0-network"),
-    "maia-1100": value("maia-1100"),
-    "maia-1300": value("maia-1300"),
-    "maia-1500": value("maia-1500"),
-    "maia-1700": value("maia-1700"),
-    "maia-1900": value("maia-1900")
+    maia3: value("maia3")
   };
 }
 
@@ -187,34 +177,20 @@ function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
 async function forEveryAssetAsync<V>(
   value: (id: AssetId) => Promise<V>
 ): Promise<Record<AssetId, V>> {
-  const [stockfish, lc0, lc0Network, maia1100, maia1300, maia1500, maia1700, maia1900] =
-    await Promise.all([
-      value("stockfish"),
-      value("lc0"),
-      value("lc0-network"),
-      value("maia-1100"),
-      value("maia-1300"),
-      value("maia-1500"),
-      value("maia-1700"),
-      value("maia-1900")
-    ]);
-  return {
-    stockfish,
-    lc0,
-    "lc0-network": lc0Network,
-    "maia-1100": maia1100,
-    "maia-1300": maia1300,
-    "maia-1500": maia1500,
-    "maia-1700": maia1700,
-    "maia-1900": maia1900
-  };
+  const [stockfish, lc0, lc0Network, maia3] = await Promise.all([
+    value("stockfish"),
+    value("lc0"),
+    value("lc0-network"),
+    value("maia3")
+  ]);
+  return { stockfish, lc0, "lc0-network": lc0Network, maia3 };
 }
 
 function isReleaseAsset(id: AssetId): id is ReleaseAssetId {
   return id === "stockfish" || id === "lc0";
 }
 
-/** Hosts a download of `id` (and each redirect) may come from. */
+/** Hosts a download of `id` (and each redirect) may come from; Maia 3 is a raw repository file. */
 function downloadHostsFor(id: AssetId): readonly string[] {
   if (isReleaseAsset(id)) return RELEASE_DOWNLOAD_HOSTS;
   return id === LC0_NETWORK_ID ? LC0_NETWORK_DOWNLOAD_HOSTS : RAW_DOWNLOAD_HOSTS;
@@ -237,7 +213,7 @@ export type ResolvedDownload = {
   id: AssetId;
   url: string;
   sizeBytes: number;
-  /** Expected sha256 (hex); null when upstream publishes none (fallback / Maia). */
+  /** Expected sha256 (hex); null when upstream publishes none (fallback / Lc0's network). */
   sha256: string | null;
   extract: ArchiveKind | null;
   executablePattern: string | null;
@@ -371,6 +347,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     await mkdir(this.enginesDir, { recursive: true });
     await this.loadState();
     await this.cleanupLeftovers();
+    await this.removeRetiredMaia().catch((error: unknown) => {
+      logger.warn("asset-manager", "removing the retired Maia 1 weights failed:", errorText(error));
+    });
   }
 
   getInstalled(): Record<AssetId, AssetRecord> {
@@ -442,7 +421,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     return this.fallbackDownload(id, cached?.fetchedAt ?? null, checkError);
   }
 
-  /** A weight file (Maia, Lc0's network): the manifest's fixed file, not a release asset. */
+  /** A weight / model file (Maia 3, Lc0's network): the manifest's fixed file, not a release asset. */
   private weightDownload(id: WeightAssetId): ResolvedDownload {
     const entry = weightEntry(this.manifest, id);
     return {
@@ -501,14 +480,6 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     } catch (error) {
       this.emit("progress", { type: "error", assetId: id, message: errorText(error) });
       throw error;
-    }
-
-    // CC attribution: pull LICENSE alongside Maia weights so credit travels
-    // with the install. Cheap, best-effort, doesn't block.
-    if (id.startsWith("maia-")) {
-      await this.fetchMaiaLicense(this.manifest.licenses.maia.noticeUrl).catch((err: unknown) => {
-        logger.warn("asset-manager", "LICENSE_MAIA.txt fetch failed:", err);
-      });
     }
 
     const finalPath = path.join(this.enginesDir, this.fileNameFor(id));
@@ -603,7 +574,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         staged = path.join(stagingDir, path.basename(finalPath));
         await rename(partialPath, staged);
       }
-      await this.applyExecPermissions(staged);
+      if (isReleaseAsset(id)) await this.applyExecPermissions(staged);
       await this.stripQuarantine(staged);
       await swapIntoPlace(staged, finalPath);
     } finally {
@@ -671,6 +642,8 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 
   async setCustomPath(id: AssetId, customPath: string): Promise<void> {
+    if (id === MAIA3_ID)
+      throw new Error(`${id} is managed by the app and can't use your own file.`);
     if (!existsSync(customPath)) throw new Error(`Custom path does not exist: ${customPath}`);
     const problem = id === LC0_NETWORK_ID ? customNetworkProblem(customPath) : null;
     if (problem) throw new Error(problem);
@@ -705,6 +678,31 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     await unlink(file).catch(() => undefined);
   }
 
+  /**
+   * Maia 1 is replaced by Maia 3: deletes the weights, their partial downloads and the licence
+   * copy this manager put in the engines folder (loadState has forgotten their records; a custom
+   * file the user chose is never deleted). Idempotent; a file that can't go is logged.
+   */
+  private async removeRetiredMaia(): Promise<void> {
+    const downloadsDir = path.join(this.enginesDir, ".downloads");
+    const partials = (await readdir(downloadsDir).catch(() => [] as string[]))
+      .filter((name) => RETIRED_MAIA_IDS.some((id) => name.startsWith(`${id}--`)))
+      .map((name) => path.join(downloadsDir, name));
+    const files = [
+      ...RETIRED_MAIA_IDS.map((id) => path.join(this.enginesDir, `${id}.pb.gz`)),
+      ...partials,
+      path.join(this.enginesDir, "LICENSE_MAIA.txt")
+    ];
+    await Promise.all(
+      files.map((file) =>
+        unlink(file).catch((error: unknown) => {
+          if (errorCode(error) !== "ENOENT")
+            logger.warn("asset-manager", `could not delete ${file}:`, errorText(error));
+        })
+      )
+    );
+  }
+
   private releaseReposForPlatform(): string[] {
     const key = this.platformKey;
     if (!key) return [];
@@ -731,12 +729,13 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   private fileNameFor(id: AssetId): string {
     if (id === "stockfish") return process.platform === "win32" ? "stockfish.exe" : "stockfish";
     if (id === "lc0") return process.platform === "win32" ? "lc0.exe" : "lc0";
+    if (id === MAIA3_ID) return "maia3_simplified.onnx";
     return `${id}.pb.gz`;
   }
 
+  /** Engine binaries only: weight and model files are never made executable. */
   private async applyExecPermissions(filePath: string): Promise<void> {
     if (process.platform === "win32") return;
-    if (filePath.endsWith(".pb.gz")) return; // Weights aren't executables.
     await chmod(filePath, 0o755);
   }
 
@@ -782,7 +781,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       const parsed = parseStoredJson<{ records?: (AssetRecord | null)[] }>(raw);
       let changed = false;
       for (const record of parsed.records ?? []) {
-        if (!isAssetId(record?.id)) continue;
+        if (!isAssetId(record?.id)) {
+          // Maia 1's records (retired, see removeRetiredMaia) are forgotten.
+          changed ||= RETIRED_MAIA_IDS.includes(String(record?.id));
+          continue;
+        }
         const restored = this.withExistingFiles(record);
         changed ||= restored !== record;
         this.state.set(record.id, restored);
@@ -819,16 +822,6 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const next = this.stateWrites.then(write, write);
     this.stateWrites = next.catch(() => undefined);
     return next;
-  }
-
-  private async fetchMaiaLicense(url: string): Promise<void> {
-    const licensePath = path.join(this.enginesDir, "LICENSE_MAIA.txt");
-    if (existsSync(licensePath)) return;
-    if (!isAllowedDownloadUrl(url, RAW_DOWNLOAD_HOSTS)) throw new DisallowedDownloadError(url);
-    const res = await (this.fetchImpl ?? fetch)(url, { redirect: "error" });
-    if (!res.ok) throw new Error(`license fetch failed: ${res.status}`);
-    const text = await res.text();
-    await writeFile(licensePath, text, "utf-8");
   }
 
   private emptyRecord(id: AssetId): AssetRecord {

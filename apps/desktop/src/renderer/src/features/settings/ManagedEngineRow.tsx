@@ -11,6 +11,7 @@ import { listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 import {
+  EngineRowActions,
   EngineRowText,
   savedEngineMenuItems,
   testSavedEngine,
@@ -20,13 +21,13 @@ import {
 type AssetRow = Extract<EngineListRow, { kind: "asset" }>;
 
 /**
- * A managed download in Settings → Engines (Stockfish, Lc0, Lc0's network, a Maia network)
+ * A managed download in Settings → Engines (Stockfish, Lc0, Lc0's network, Maia 3)
  * together with the "(managed)" engine the app keeps for it. A missing download shows a Download
  * button; otherwise the ⋯ menu holds Set as default / Test (once the engine exists), Update, and
  * Remove download. Managed engines can't be edited, renamed or deleted: the registry sync would
  * undo it.
  *
- * Lc0 is an engine of its own (playing with its network, the row under it) and also runs Maia.
+ * Lc0 is an engine of its own, playing with its network (the row under it).
  * Where it has no download (macOS / Linux: upstream publishes no binaries) the user installs it
  * (e.g. Homebrew) and points the app at the binary; while missing, the install command is shown
  * under the row with a copy button. The network row downloads LCZero's recommended network, or
@@ -113,32 +114,35 @@ export function ManagedEngineRow({
   ];
 
   return (
-    <div className="grid gap-1.5">
+    // Lc0's network belongs to the Lc0 row above it: indented, its right edge still the list's.
+    <div className={cn("grid gap-1.5", network && "pl-6")}>
       <div
         className={cn(
           listRow,
           "relative transition-colors duration-standard",
-          // Lc0's network belongs to the Lc0 row above it.
-          network && "ml-6",
           // Clips the progress bar to the rounded corners; only while busy, so the ⋯ menu isn't cut off.
           busy && "overflow-hidden border-line-strong"
         )}
       >
         <ManagedEngineName row={row} />
-        {size ? <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{size}</span> : null}
-        <ManagedEngineBadge
-          status={status}
-          busy={busy}
-          downloading={downloading}
-          percent={percent}
-        />
+        {/* Fixed-width columns, so sizes, pills and actions line up from row to row. */}
+        <span className="w-16 shrink-0 text-right text-xs tabular-nums text-fg-subtle">{size}</span>
+        <span className="flex w-28 shrink-0">
+          <ManagedEngineBadge
+            status={status}
+            busy={busy}
+            downloading={downloading}
+            percent={percent}
+          />
+        </span>
         {busy ? (
-          <span
-            className="grid size-8 shrink-0 place-items-center text-fg-subtle"
-            aria-label="Working"
-          >
-            <Loader2 className="size-4 animate-spin" />
-          </span>
+          <EngineRowActions
+            primary={
+              <span className="text-fg-subtle" aria-label="Working">
+                <Loader2 className="size-4 animate-spin" />
+              </span>
+            }
+          />
         ) : (
           <RowActions row={row} menuItems={menuItems} onDownload={onDownload} />
         )}
@@ -167,41 +171,46 @@ function RowActions({
   const installed = isAssetInstalled(row.status);
   const manual = !row.status.autoDownload;
   return (
-    <>
-      {!installed && !manual ? (
-        <IconButton label={`Download ${row.label}`} icon={<Download />} onClick={onDownload} />
-      ) : null}
-      {installed || manual || row.id === "lc0-network" ? (
-        <OverflowMenu label={`${row.label} actions`} items={menuItems()} />
-      ) : null}
-    </>
+    <EngineRowActions
+      primary={
+        !installed && !manual ? (
+          <IconButton label={`Download ${row.label}`} icon={<Download />} onClick={onDownload} />
+        ) : null
+      }
+      menu={
+        installed || manual || row.id === "lc0-network" ? (
+          <OverflowMenu label={`${row.label} actions`} items={menuItems()} />
+        ) : null
+      }
+    />
   );
 }
 
-/** The download's picture, name, installed version and badges. */
+/** The download's picture, name, what is installed (version, or the user's own file) and badges. */
 function ManagedEngineName({ row }: { row: AssetRow }) {
   const { status, engine, label } = row;
+  const detail = assetDetail(row);
   return (
     <>
       <EngineAvatar engine={engine ?? { name: label }} size="md" label={`${label} engine image`} />
       <EngineRowText
         name={label}
-        detail={
-          row.id === "lc0-network"
-            ? networkName(status)
-            : isAssetInstalled(status)
-              ? status.installedVersion
-              : null
-        }
-        badges={
-          <>
-            {engine?.isDefault ? <Badge tone="accent">Default</Badge> : null}
-            {row.id === "lc0" ? <Badge>Also runs Maia</Badge> : null}
-          </>
-        }
+        detail={detail}
+        detailTitle={(status.state === "custom" && status.customPath) || detail}
+        badges={engine?.isDefault ? <Badge tone="accent">Default</Badge> : null}
       />
     </>
   );
+}
+
+/**
+ * The line under a download's name: Lc0's network's name (a custom file's name), a custom binary's
+ * path, or the installed version.
+ */
+function assetDetail({ id, status }: AssetRow): string | null {
+  if (id === "lc0-network") return networkName(status);
+  if (status.state === "custom" && status.customPath) return status.customPath;
+  return isAssetInstalled(status) ? status.installedVersion : null;
 }
 
 /** Work in progress (with the download's percentage), an available update, or the install state. */

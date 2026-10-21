@@ -1,10 +1,5 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  nativeTheme,
-  type BrowserWindowConstructorOptions
-} from "electron";
+import { app, ipcMain, nativeTheme, type BrowserWindowConstructorOptions } from "electron";
+import { appWindows } from "./app-windows";
 import type { WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
 import { resolveWindowGlassState, sameGlassState, windowGlassOptions } from "./window-glass-state";
 
@@ -53,7 +48,7 @@ function refreshWindowGlass(): void {
   if (lastState && sameGlassState(lastState, next)) return;
   lastState = next;
   const { vibrancy, backgroundColor } = windowGlassOptions(next);
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of appWindows()) {
     if (window.isDestroyed()) continue;
     if (next.supported) window.setVibrancy(vibrancy);
     window.setBackgroundColor(backgroundColor);

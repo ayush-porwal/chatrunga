@@ -1,11 +1,11 @@
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { GameOpening, MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
-import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
+import { formatMillisecondsDuration } from "@chaturanga/shared/chess/clock-display";
 import { gamePhases, type GamePhases } from "@chaturanga/shared/chess/game-phases";
 import { bestMoveChance, difficultyModel } from "@chaturanga/shared/chess/maia-difficulty";
-import { annotationLabel, winPercent } from "@chaturanga/shared/chess/move-assessment";
+import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { moveTimes } from "@chaturanga/shared/chess/move-times";
-import { CHART_SCORE_LIMIT, moverIsWhite, whiteChartScore } from "./review-score";
+import { moverIsWhite, whiteWinAfter, whiteWinBefore } from "./review-score";
 import { plyLabel } from "./review-summary";
 
 /** The start position's id in the move tree (game-store's root). */
@@ -23,8 +23,10 @@ export type ChartPoint = {
   annotation: MoveAnnotation | null;
   /** One of the review's key moments. */
   key: boolean;
-  /** Maia's chance, at the chart's model, of finding the engine's best move; null without it. */
+  /** Maia's chance, at `maiaRating`, of finding the engine's best move; null without it. */
   bestChance: number | null;
+  /** The rating Maia read the move at: the mover's (Maia 3), the chart's model (Maia 1). */
+  maiaRating: number | null;
   /** Time the mover spent on the move (ms); null without clocks. */
   spentMs: number | null;
   /** The side that played the move; null for the start. */
@@ -35,7 +37,10 @@ export type ReviewChartData = {
   /** In game order; the first is the start position. */
   points: ChartPoint[];
   phases: GamePhases;
-  /** The Maia model the difficulty is read at; null when the review has no Maia data. */
+  /**
+   * The Maia model the difficulty is read at (Maia 3 moves: each at its mover's rating, see
+   * `ChartPoint.maiaRating`); null when the review has no Maia data.
+   */
   model: number | null;
   /** Some move has an evaluation (the game was reviewed): the winning chances can be drawn. */
   hasEvals: boolean;
@@ -71,26 +76,6 @@ export type ReviewChartInput = {
   };
 };
 
-/** White's winning chances after a move: a checkmate is decided, a mate to come is the ceiling. */
-function whiteWinAfter(move: MoveReview): number {
-  if (
-    move.terminal === "checkmate" ||
-    (move.evalAfter?.type === "mate" && move.evalAfter.value === 0)
-  )
-    return moverIsWhite(move) ? 100 : 0;
-  return winPercent(whiteChartScore(move));
-}
-
-/** White's winning chances in the position before the first move (its `evalBefore`). */
-function whiteWinAtStart(first: MoveReview | undefined): number | null {
-  if (!first) return null;
-  const score = first.evalBefore;
-  if (!score) return 50;
-  if (score.type === "mate")
-    return winPercent(score.value >= 0 ? CHART_SCORE_LIMIT : -CHART_SCORE_LIMIT);
-  return winPercent(score.value);
-}
-
 /**
  * The points of the review's linked charts, one per main-line move: winning chances, Maia
  * difficulty and time spent, with the game's phases. A move the review hasn't reached (or a game
@@ -107,16 +92,19 @@ export function buildReviewChartData(input: ReviewChartInput): ReviewChartData {
       ply: 0,
       nodeId: ROOT_NODE_ID,
       label: "Start",
-      whiteWin: whiteWinAtStart(moves[0]),
+      // The position before the first move (even without its evaluation).
+      whiteWin: moves[0] ? (whiteWinBefore(moves[0]) ?? 50) : null,
       annotation: null,
       key: false,
       bestChance: null,
+      maiaRating: null,
       spentMs: null,
       mover: null
     }
   ];
   input.mainline.forEach((item, index) => {
     const move = reviewByNode.get(item.nodeId);
+    const bestChance = move && model !== null ? bestMoveChance(move, model) : null;
     points.push({
       ply: item.ply,
       nodeId: item.nodeId,
@@ -124,7 +112,8 @@ export function buildReviewChartData(input: ReviewChartInput): ReviewChartData {
       whiteWin: move ? whiteWinAfter(move) : null,
       annotation: move?.assessment?.annotation ?? null,
       key: keyMomentIds?.has(item.nodeId) ?? false,
-      bestChance: move && model !== null ? bestMoveChance(move, model) : null,
+      bestChance,
+      maiaRating: bestChance === null ? null : (move?.moverPrediction?.rating ?? model),
       spentMs: times[index] ?? null,
       mover: moverIsWhite(item) ? "white" : "black"
     });
@@ -163,14 +152,32 @@ export function nearestPointIndex(points: readonly Pick<ChartPoint, "ply">[], pl
 export type ChartTooltipRow = { label: string; value: string };
 
 /**
+ * The difficulty strip's title, from the ratings its moves were read at: "Difficulty at 1500 ·
+ * Maia" when there is one (a Maia 1 model, or both sides at one rating), "Difficulty at White 1500
+ * · Black 1700 · Maia" for Maia 3 sides at their own ratings. Null without difficulty.
+ */
+export function difficultyTitle(points: readonly ChartPoint[]): string | null {
+  const bySide = { white: new Set<number>(), black: new Set<number>() };
+  for (const point of points)
+    if (point.mover && point.maiaRating !== null) bySide[point.mover].add(point.maiaRating);
+  const all = new Set([...bySide.white, ...bySide.black]);
+  if (!all.size) return null;
+  const [only] = all;
+  if (all.size === 1) return `Difficulty at ${only} · Maia`;
+  const side = (ratings: Set<number>) => [...ratings].sort((a, b) => a - b).join("/");
+  return `Difficulty at White ${side(bySide.white)} · Black ${side(bySide.black)} · Maia`;
+}
+
+/**
  * The charts' tooltip for a point: its move and mark ("52. Ne4 · Blunder"), then a row each for
- * what the review knows of it: both sides' winning chances, how often players at the Maia model's
- * rating find the best move, and the time spent.
+ * what the review knows of it, each naming where it comes from: both sides' winning chances by the
+ * review's engine (`engine`, its display name; unnamed when unknown), how often players at the
+ * rating Maia read the move at find the best move, and the time spent.
  */
 export function chartTooltip(
   point: ChartPoint,
   reviewedSide: Color,
-  model: number | null
+  engine: string | null = null
 ): { title: string; rows: ChartTooltipRow[] } {
   const title = point.annotation
     ? `${point.label} · ${annotationLabel(point.annotation)}`
@@ -179,18 +186,23 @@ export function chartTooltip(
   if (point.whiteWin !== null) {
     const you = Math.round(reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin);
     rows.push(
-      { label: "Your chances", value: `${you}%` },
+      { label: engine ? `Your chances · ${engine}` : "Your chances", value: `${you}%` },
       { label: "Opponent's", value: `${100 - you}%` }
     );
   }
-  if (point.bestChance !== null && model !== null)
+  if (point.bestChance !== null && point.maiaRating !== null)
     rows.push({
-      label: `Best move at ${model}`,
+      label: `Best move at ${point.maiaRating} · Maia`,
       value: `${Math.round(point.bestChance * 100)}%`
     });
   if (point.spentMs !== null)
-    rows.push({ label: "Time spent", value: formatMillisecondsClock(point.spentMs) });
+    rows.push({ label: "Time spent", value: formatMillisecondsDuration(point.spentMs) });
   return { title, rows };
+}
+
+/** The Winning chances strip's title, naming the engine whose evaluations it plots (when known). */
+export function winningChancesTitle(engine: string | null): string {
+  return engine ? `Winning chances · ${engine}` : "Winning chances";
 }
 
 /** The tooltip as one sentence, for screen readers: "52. Ne4 · Blunder, Your chances 3%, …". */

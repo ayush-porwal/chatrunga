@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatClockForDisplay, formatMillisecondsClock } from "./clock-display";
+import {
+  formatClockForDisplay,
+  formatMillisecondsClock,
+  formatMillisecondsDuration
+} from "./clock-display";
 
 describe("formatClockForDisplay", () => {
   it("uses MM:SS when hours are zero", () => {
@@ -35,5 +39,15 @@ describe("formatMillisecondsClock", () => {
 
   it("formats with hours", () => {
     expect(formatMillisecondsClock(3_600_000)).toBe("1:00:00");
+  });
+});
+
+describe("formatMillisecondsDuration", () => {
+  it("rounds to the nearest second, unlike the countdown clock", () => {
+    expect(formatMillisecondsDuration(7_300)).toBe("0:07");
+    expect(formatMillisecondsClock(7_300)).toBe("0:08");
+    expect(formatMillisecondsDuration(7_500)).toBe("0:08");
+    expect(formatMillisecondsDuration(400)).toBe("0:00");
+    expect(formatMillisecondsDuration(3_599_600)).toBe("1:00:00");
   });
 });

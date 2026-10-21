@@ -4,13 +4,19 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type {
   EngineConfig,
-  MaiaRating,
   MoveReview,
-  ReviewMoveInputItem
+  ReviewMoveInputItem,
+  ReviewSideRating
 } from "@chaturanga/shared/types/engine";
 import { applySan, fenAfterUci } from "@chaturanga/shared/chess/position";
 import { MOVE_ASSESSMENT_POLICY } from "@chaturanga/shared/chess/move-assessment";
-import { analysePositionsWithEngine, reviewGameWithEngine } from "./review";
+import {
+  Maia3UnavailableError,
+  type Maia3Evaluator,
+  type Maia3Query
+} from "@chaturanga/shared/engine/maia3";
+import { fixtureMaia3Output } from "../maia/fixture-evaluator";
+import { analysePositionsWithEngine, reviewGameWithEngine, type ReviewMaia } from "./review";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-uci.mjs");
 /** The scripted engine with review lines for the Blackburne Shilling trap (see its "review" modes). */
@@ -27,11 +33,7 @@ const afterMove =
     if (moveIndex === index) then();
   };
 
-function fakeEngine(
-  id: string,
-  mode: "sf" | "maia",
-  extra: Partial<EngineConfig> = {}
-): EngineConfig {
+function fakeEngine(id: string, mode: "sf", extra: Partial<EngineConfig> = {}): EngineConfig {
   return {
     id,
     name: id,
@@ -111,30 +113,85 @@ function scriptedEngine(
   return fakeEngine(id, "sf", { args: [SCRIPTED, log, mode] });
 }
 
+type MaiaCall = {
+  queries: Maia3Query[];
+  priority?: "game" | "review";
+  signal?: AbortSignal;
+};
+
+/**
+ * Maia 3 without the model: the e2e fixture's policy, and White's winning chances = eloSelf / 10 000
+ * (so a prediction shows the rating it was read at). `answer(call)` may fail a call (throw) or hold
+ * it (a promise), as may `failOn`; every call is recorded, and `onCall` runs as it comes in.
+ */
+function fakeMaia(
+  options: {
+    installed?: boolean;
+    answer?: (call: number, signal?: AbortSignal) => Promise<void> | void;
+    /** The call (1-based) that fails as a crashed host's would. */
+    failOn?: number;
+    onCall?: () => void;
+  } = {}
+): { evaluator: Maia3Evaluator; calls: MaiaCall[] } {
+  const calls: MaiaCall[] = [];
+  const evaluator: Maia3Evaluator = {
+    isInstalled: () => options.installed ?? true,
+    dispose: () => {},
+    evaluate: async (queries, { priority, signal } = {}) => {
+      calls.push({ queries: [...queries], priority, signal });
+      options.onCall?.();
+      if (calls.length === options.failOn) throw new Error("Maia host crashed");
+      await options.answer?.(calls.length, signal);
+      return queries.map((query) => ({
+        ...fixtureMaia3Output(query),
+        value: query.eloSelf / 10_000
+      }));
+    }
+  };
+  return { evaluator, calls };
+}
+
+const rated = (rating: number, source: ReviewSideRating["source"] = "game"): ReviewSideRating => ({
+  rating,
+  source
+});
+
+function maiaOf(
+  evaluator: Maia3Evaluator,
+  white = rated(1200),
+  black = rated(1800),
+  modelVersion = "maia3-test"
+): ReviewMaia {
+  return { evaluator, modelVersion, ratings: { white, black } };
+}
+
+/** A Maia query for `fen` at `rating` (eloSelf = eloOppo). */
+const queryAt = (fen: string, rating: number): Maia3Query => ({
+  fen,
+  eloSelf: rating,
+  eloOppo: rating
+});
+
 describe("reviewGameWithEngine (scripted UCI engines)", () => {
-  it("degrades when one Maia cannot start, records engine data and synthesizes the terminal eval", async () => {
-    const maia1100 = { ...fakeEngine("maia-1100", "maia"), maiaRating: 1100 as MaiaRating };
-    const broken = {
-      ...fakeEngine("maia-1900", "maia"),
-      executablePath: "/nonexistent/lc0",
-      maiaRating: 1900 as MaiaRating
-    };
+  it("records engine data, reads every move with Maia 3 at its mover's rating and synthesizes the terminal eval", async () => {
+    const { evaluator, calls } = fakeMaia();
     const phases: string[] = [];
+    const moves = foolsMate();
     const review = await reviewGameWithEngine(
       fakeEngine("sf", "sf"),
       {
         reviewId: "t",
         engineId: "sf",
         rootFen: START,
-        moves: foolsMate(),
+        moves,
         multipv: 3,
         moveTimeMs: 50
       },
       { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
-      { maiaConfigs: [maia1100, broken], threads: 2, hashMb: 64, playerRating: 1200 }
+      { maia: maiaOf(evaluator), threads: 2, hashMb: 64 }
     );
 
-    expect(review.schemaVersion).toBe(3);
+    expect(review.schemaVersion).toBe(4);
     expect(review.assessmentPolicy).toBe(MOVE_ASSESSMENT_POLICY);
     expect(review.engineName).toBe("Fake sf");
     expect(review.engineSettings).toStrictEqual({
@@ -144,9 +201,22 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       threads: 2,
       hashMb: 64
     });
-    expect(review.maiaEngines).toStrictEqual([
-      { rating: 1100, engineId: "maia-1100", name: "maia-1100" }
-    ]);
+    // Maia 3 is recorded with the rating each side was read at.
+    expect(review.maia).toStrictEqual({
+      model: "maia3",
+      modelVersion: "maia3-test",
+      white: rated(1200),
+      black: rated(1800)
+    });
+    expect(review.maiaEngines).toBeUndefined();
+    // One query per move, the position before it, at the mover's rating, behind any game's.
+    const moverRatings = [1200, 1800, 1200, 1800];
+    expect(calls.map((call) => call.queries)).toStrictEqual(
+      moves.map((move, index) => [queryAt(move.fenBefore, moverRatings[index])])
+    );
+    expect(calls.map((call) => [call.priority, call.signal instanceof AbortSignal])).toStrictEqual(
+      moves.map(() => ["review", true])
+    );
     // One progress event per phase per move; no "after" phase for the mating move.
     expect(phases).toStrictEqual([
       "0:before",
@@ -163,9 +233,10 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(first.topLines[0].wdl).toStrictEqual({ win: 300, draw: 500, loss: 200 });
     expect(first.replyLines).toHaveLength(3);
     expect(first.wdlBefore).toStrictEqual({ win: 300, draw: 500, loss: 200 });
-    expect(first.humanPredictions).toHaveLength(1);
-    expect(first.humanPredictions![0].rating).toBe(1100);
-    expect(first.humanPredictions![0].topMoves[0].prob).toBeCloseTo(0.2375, 4);
+    expect(review.moves.map((move) => move.moverPrediction?.rating)).toStrictEqual(moverRatings);
+    expect(first.moverPrediction).toMatchObject({ whiteWinProb: 0.12, playedRank: 13 });
+    expect(first.moverPrediction?.topMoves).toHaveLength(5);
+    expect(first.humanPredictions).toBeUndefined();
     // g2g4 is the fake engine's 2nd line → same-search rank and score.
     const third = review.moves[2];
     expect(third.playedRank).toBe(2);
@@ -295,6 +366,149 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(qg5.assessment?.annotation).toBe("good");
     expect(qg5.assessment?.tags).toContain("unstable");
   }, 30_000);
+});
+
+describe("review with Maia 3", () => {
+  const input = (reviewId: string, engineId: string, moves = foolsMate()) => ({
+    reviewId,
+    engineId,
+    rootFen: START,
+    moves,
+    multipv: 2,
+    moveTimeMs: 40
+  });
+
+  it("asks Maia about each move while the engine searches it, and nothing else", async () => {
+    const order: string[] = [];
+    const { evaluator, calls } = fakeMaia({ onCall: () => order.push("maia") });
+    const moves = foolsMate().slice(0, 3);
+    const review = await reviewGameWithEngine(
+      fakeEngine("sf-maia-order", "sf"),
+      input("o", "sf-maia-order", moves),
+      { onPhaseProgress: (p) => order.push(`${p.moveIndex}:${p.phase}`) },
+      { maia: maiaOf(evaluator) }
+    );
+    // Asked as the move's first search starts, before the search of the position after it.
+    expect(order).toStrictEqual([
+      "0:before",
+      "maia",
+      "0:after",
+      "1:before",
+      "maia",
+      "1:after",
+      "2:before",
+      "maia",
+      "2:after"
+    ]);
+    expect(calls).toHaveLength(moves.length);
+    expect(review.maia).toMatchObject({ white: rated(1200), black: rated(1800) });
+  });
+
+  it("completes without Maia when Maia 3 isn't available, asking it once", async () => {
+    const { evaluator, calls } = fakeMaia({
+      answer: () => {
+        throw new Maia3UnavailableError("Maia 3 isn't installed");
+      }
+    });
+    const review = await reviewGameWithEngine(
+      fakeEngine("sf-maia-missing", "sf"),
+      input("u", "sf-maia-missing"),
+      {},
+      { maia: maiaOf(evaluator) }
+    );
+    expect(calls).toHaveLength(1);
+    expect(review.maia).toBeUndefined();
+    expect(review.moves.map((move) => move.moverPrediction)).toStrictEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    ]);
+    expect(review.moves.every((move) => move.assessment)).toBe(true);
+  });
+
+  it("a Maia failure mid-review drops only Maia; its moves are reviewed again next time", async () => {
+    const failSecond = fakeMaia({ failOn: 2 });
+    const run = async (evaluator: Maia3Evaluator) => {
+      const phases: string[] = [];
+      const review = await reviewGameWithEngine(
+        fakeEngine("sf-maia-fail", "sf"),
+        input("f", "sf-maia-fail"),
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
+        { maia: maiaOf(evaluator) }
+      );
+      return { review, phases };
+    };
+    const { review } = await run(failSecond.evaluator);
+    expect(failSecond.calls).toHaveLength(2);
+    expect(review.moves.map((move) => move.moverPrediction?.rating)).toStrictEqual([
+      1200,
+      undefined,
+      undefined,
+      undefined
+    ]);
+    // Recorded for the move it read.
+    expect(review.maia).toMatchObject({ white: rated(1200), black: rated(1800) });
+    expect(review.moves.every((move) => move.assessment)).toBe(true);
+
+    // The move Maia answered was kept; the rest are reviewed again (with Maia working).
+    const working = fakeMaia();
+    const again = await run(working.evaluator);
+    expect(again.phases).toStrictEqual(["1:before", "1:after", "2:before", "2:after", "3:before"]);
+    expect(again.review.moves.map((move) => move.moverPrediction?.rating)).toStrictEqual([
+      1200, 1800, 1200, 1800
+    ]);
+  });
+
+  it("cancelling aborts the Maia request in flight", async () => {
+    let cancelled = false;
+    const { evaluator, calls } = fakeMaia({
+      // Held until the review aborts it, as a request queued behind a game's would be.
+      answer: (_call, signal) =>
+        new Promise((_resolve, reject) => {
+          cancelled = true;
+          signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        })
+    });
+    await expect(
+      reviewGameWithEngine(
+        fakeEngine("sf-maia-cancel", "sf"),
+        input("c", "sf-maia-cancel"),
+        { shouldCancel: () => cancelled },
+        { maia: maiaOf(evaluator) }
+      )
+    ).rejects.toThrow("Review cancelled");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].signal?.aborted).toBe(true);
+  });
+
+  it("reuses a review's moves only at the same Maia ratings and model", async () => {
+    const run = async (maia: (evaluator: Maia3Evaluator) => ReviewMaia) => {
+      const { evaluator, calls } = fakeMaia();
+      const phases: string[] = [];
+      await reviewGameWithEngine(
+        fakeEngine("sf-maia-cache", "sf"),
+        input("k", "sf-maia-cache"),
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
+        { maia: maia(evaluator) }
+      );
+      return { phases: phases.length, calls: calls.length };
+    };
+    const first = await run((evaluator) => maiaOf(evaluator));
+    expect(first).toStrictEqual({ phases: 7, calls: 4 });
+    // The final position is a mate: nothing left to ask.
+    expect(await run((evaluator) => maiaOf(evaluator))).toStrictEqual({ phases: 0, calls: 0 });
+    // The same ratings from another source read the same moves.
+    expect(
+      await run((evaluator) => maiaOf(evaluator, rated(1200, "override"), rated(1800, "override")))
+    ).toStrictEqual({ phases: 0, calls: 0 });
+    expect(await run((evaluator) => maiaOf(evaluator, rated(1200), rated(1900)))).toStrictEqual(
+      first
+    );
+    expect(
+      await run((evaluator) => maiaOf(evaluator, rated(1200), rated(1800), "maia3-next"))
+    ).toStrictEqual(first);
+  });
 });
 
 describe("review checks", () => {

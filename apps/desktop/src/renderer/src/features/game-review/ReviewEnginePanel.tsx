@@ -1,21 +1,33 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Cpu } from "lucide-react";
+import type { Color } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import type { TacticalFact } from "@chaturanga/shared/schemas";
-import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
-import { quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
+import { formatMillisecondsDuration } from "@chaturanga/shared/chess/clock-display";
+import { nearestRating } from "@chaturanga/shared/chess/rating-curve";
+import { MAIA_BUCKETS } from "@chaturanga/shared/schemas/constants";
 import {
   buildEngineSignals,
-  buildRatingCurveForMove,
   buildTacticalFacts,
   hasUsableMaiaData,
   uciLineToSan,
   uciToSan
 } from "./review-utils";
-import { formatMoveEval } from "./review-score";
-import { RatingCurve } from "./RatingCurve";
+import { formatMoveEval, moverWinChances } from "./review-score";
+import { RatingCurve, RatingCurveFrame } from "./RatingCurve";
 import { CandidateMoves } from "./CandidateMoves";
-import { engineMoveRows, humanMoveRows, predictionLines } from "./rating-curve-chart";
+import { MaiaDownloadPrompt } from "./MaiaDownloadPrompt";
+import {
+  engineMoveRows,
+  humanMoveRows,
+  predictionCurve,
+  tablePrediction,
+  type PredictionCurve
+} from "./rating-curve-chart";
+import { moverOf } from "./review-summary";
+import { useMaia3Installed, useMaiaCurveQuery } from "../../queries/maia";
+import { useReviewStore } from "../../stores/review-store";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -42,6 +54,9 @@ export function ReviewEnginePanel({
   running,
   showTopLines,
   userRating,
+  reviewedSide,
+  evalEngine,
+  maiaCurveSource,
   onAnalyze,
   moves,
   parentNodeId,
@@ -55,6 +70,12 @@ export function ReviewEnginePanel({
   /** List the engine's other candidate moves (Review settings → Show engine alternatives). */
   showTopLines: boolean;
   userRating: number;
+  /** The side the game is reviewed as ("You" on the curve when it moved). */
+  reviewedSide: Color;
+  /** The display name of the engine the review's evaluations are from (null: unknown). */
+  evalEngine: string | null;
+  /** The saved review a Maia 3 move's curve is read for (null: none, or not saved yet). */
+  maiaCurveSource: MaiaCurveSource | null;
   /** Offered as the "No review yet" action. */
   onAnalyze?: () => void;
   /** All reviewed moves (older reviews derive the reply line from the next ply). */
@@ -79,7 +100,7 @@ export function ReviewEnginePanel({
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />
       ) : null}
-      <MoveFacts move={move} />
+      <MoveFacts move={move} reviewedSide={reviewedSide} />
       <EngineLinesSection
         move={move}
         moves={moves}
@@ -90,6 +111,9 @@ export function ReviewEnginePanel({
         move={move}
         showTopLines={showTopLines}
         userRating={userRating}
+        reviewedSide={reviewedSide}
+        evalEngine={evalEngine}
+        curveSource={maiaCurveSource}
         parentNodeId={parentNodeId}
         onGoToLine={onGoToLine}
         running={running}
@@ -129,10 +153,11 @@ function NoEngineMove({
 }
 
 /**
- * The move's facts, as Analyze's engine strip: Played / Best / Eval / Loss, then Win chance /
+ * The move's facts, as Analyze's engine strip: Played / Best / Eval / Loss, then the mover's
+ * winning chances ("Your chances" for the reviewed side's move, "Opponent's chances" otherwise) /
  * Engine rank / Time (when the game recorded it).
  */
-function MoveFacts({ move }: { move: MoveReview }) {
+function MoveFacts({ move, reviewedSide }: { move: MoveReview; reviewedSide: Color }) {
   const played = uciToSan(move.fenBefore, move.playedMove) ?? move.san;
   const best = uciToSan(move.fenBefore, move.bestMove);
   const annotation = move.assessment?.annotation ?? null;
@@ -164,7 +189,10 @@ function MoveFacts({ move }: { move: MoveReview }) {
         </StatCell>
       </StatStrip>
       <StatStrip className={FACT_COLUMNS}>
-        <StatCell label="Win chance" size="sm">
+        <StatCell
+          label={moverOf(move) === reviewedSide ? "Your chances" : "Opponent's chances"}
+          size="sm"
+        >
           {formatChances(move)}
         </StatCell>
         <StatCell label="Engine rank" size="sm">
@@ -172,7 +200,7 @@ function MoveFacts({ move }: { move: MoveReview }) {
         </StatCell>
         {move.timeSpentMs === undefined ? null : (
           <StatCell label="Time" size="sm">
-            {formatMillisecondsClock(move.timeSpentMs)}
+            {formatMillisecondsDuration(move.timeSpentMs)}
           </StatCell>
         )}
       </StatStrip>
@@ -246,13 +274,19 @@ function EngineLinesSection({
 }
 
 /**
- * The candidate moves (Maia's at the user's level beside the engine's: its best only unless
- * alternatives are shown) and Maia's prediction across ratings (all five levels ran).
+ * The candidate moves (Maia's beside the engine's: its best only unless alternatives are shown)
+ * and Maia's prediction across ratings. Maia 3: its moves at the mover's rating, and the curve over
+ * its 21 ratings, saved with the move or read once when the move is first shown (`curveSource`).
+ * Maia 1: its moves at the level nearest the user's rating, and the curve over its five levels.
+ * Without any Maia data and without Maia 3 installed, the download is offered in their place.
  */
 function HumanAndEngine({
   move,
   showTopLines,
   userRating,
+  reviewedSide,
+  evalEngine,
+  curveSource,
   parentNodeId,
   onGoToLine,
   running
@@ -260,23 +294,24 @@ function HumanAndEngine({
   move: MoveReview;
   showTopLines: boolean;
   userRating: number;
+  reviewedSide: Color;
+  evalEngine: string | null;
+  curveSource: MaiaCurveSource | null;
   parentNodeId: string | null;
   onGoToLine?: GoToLine;
   running: boolean;
 }) {
-  const userBucket = quantizeToBucket(userRating);
   const annotation = move.assessment?.annotation ?? null;
-  const usable = hasUsableMaiaData(move);
-  const human = useMemo(() => humanMoveRows(move, userBucket), [move, userBucket]);
+  const mover = move.moverPrediction;
+  // Maia 3 reads the mover at their rating; Maia 1 the user at the nearest of its levels.
+  const marked = mover?.rating ?? nearestRating(MAIA_BUCKETS, userRating);
+  const markLabel = !mover || moverOf(move) === reviewedSide ? "You" : "Opponent";
+  const tableSource = tablePrediction(move, marked);
+  const human = useMemo(() => humanMoveRows(move, tableSource), [move, tableSource]);
   const engine = useMemo(
     () => engineMoveRows(move, showTopLines ? move.topLines.length : 1),
     [move, showTopLines]
   );
-  const lines = useMemo(
-    () => (usable ? predictionLines(move, buildRatingCurveForMove(move, userRating)) : []),
-    [move, usable, userRating]
-  );
-  const maiaHint = useOnboardingHint("maia-curve", usable && !running);
   // The best move alone, with no human moves beside it, is already in the facts above.
   const tables = human.length > 0 || engine.length > 1;
   return (
@@ -285,31 +320,143 @@ function HumanAndEngine({
         <CandidateMoves
           human={human}
           engine={engine}
-          userBucket={userBucket}
+          humanRating={tableSource?.rating ?? marked}
+          engineName={evalEngine}
           annotation={annotation}
           parentNodeId={parentNodeId}
           onGoToLine={onGoToLine}
         />
       ) : null}
-      {lines.length ? (
-        <>
-          {maiaHint.visible ? (
-            <Coachmark onDismiss={maiaHint.dismiss}>
-              Maia is trained on human games. These lines show how often players at each rating
-              would play the move played, the best move and Maia&apos;s own pick; yours is shaded.
-            </Coachmark>
-          ) : null}
-          <RatingCurve
-            lines={lines}
-            userBucket={userBucket}
-            annotation={annotation}
-            parentNodeId={parentNodeId}
-            onGoToLine={onGoToLine}
-          />
-        </>
-      ) : null}
+      <HumanCurve
+        move={move}
+        marked={marked}
+        markLabel={markLabel}
+        source={running ? null : curveSource}
+        running={running}
+        parentNodeId={parentNodeId}
+        onGoToLine={onGoToLine}
+      />
     </>
   );
+}
+
+/**
+ * Maia's prediction across ratings (with its first-time hint), a placeholder of its height while
+ * Maia 3 reads it or when it couldn't (Maia 3's download when it isn't installed), or that download
+ * alone in its place for a move without any Maia data.
+ */
+function HumanCurve({
+  move,
+  marked,
+  markLabel,
+  source,
+  running,
+  parentNodeId,
+  onGoToLine
+}: {
+  move: MoveReview;
+  marked: number;
+  markLabel: string;
+  source: MaiaCurveSource | null;
+  running: boolean;
+  parentNodeId: string | null;
+  onGoToLine?: GoToLine;
+}) {
+  const curve = useMoveCurve(move, marked, source);
+  const installed = useMaia3Installed();
+  const maiaHint = useOnboardingHint("maia-curve", curve.status === "ready" && !running);
+  if (curve.status === "loading")
+    return <RatingCurveFrame placeholder="Maia is reading the move at every rating…" />;
+  if (curve.status === "error")
+    return (
+      <RatingCurveFrame
+        placeholder={
+          installed === false ? (
+            <MaiaDownloadPrompt variant="panel" />
+          ) : (
+            <span className="grid max-w-72 justify-items-center gap-2">
+              {curve.message || "Maia couldn't read this move."}
+              <Button variant="outline" size="sm" onClick={curve.retry}>
+                Try again
+              </Button>
+            </span>
+          )
+        }
+      />
+    );
+  if (curve.status === "none") {
+    const noMaia = !move.moverPrediction && !move.humanPredictions?.length;
+    return noMaia && installed === false && !running ? (
+      <section className="rounded-[10px] border border-line bg-surface-sunken py-3">
+        <MaiaDownloadPrompt variant="panel" />
+      </section>
+    ) : null;
+  }
+  return (
+    <>
+      {maiaHint.visible ? (
+        <Coachmark onDismiss={maiaHint.dismiss}>
+          Maia is trained on human games. These lines show how often players at each rating would
+          play the move played, the best move and Maia&apos;s own pick; the rating the move was read
+          at is shaded.
+        </Coachmark>
+      ) : null}
+      <RatingCurve
+        curve={curve.curve}
+        marked={marked}
+        markLabel={markLabel}
+        annotation={move.assessment?.annotation ?? null}
+        parentNodeId={parentNodeId}
+        onGoToLine={onGoToLine}
+      />
+    </>
+  );
+}
+
+/** Where a Maia 3 move's curve is read from: the saved review it belongs to. */
+type MaiaCurveSource = { gameId: string; reviewId: string };
+
+type MoveCurve =
+  | { status: "ready"; curve: PredictionCurve }
+  | { status: "loading" }
+  | { status: "error"; message: string; retry: () => void }
+  | { status: "none" };
+
+/**
+ * The move's rating curve: the predictions it carries (Maia 1's levels, or a Maia 3 curve saved
+ * with it), else for a Maia 3 move of a saved review (`source`) Maia 3's, read on demand once.
+ */
+function useMoveCurve(move: MoveReview, marked: number, source: MaiaCurveSource | null): MoveCurve {
+  const maia3 = Boolean(move.moverPrediction);
+  // Maia 1's five levels, or a Maia 3 curve saved with the move (none during the run).
+  const storedCurve = useMemo(
+    () =>
+      hasUsableMaiaData(move) && move.humanPredictions?.length
+        ? predictionCurve(move, move.humanPredictions, marked)
+        : null,
+    [marked, move]
+  );
+  const input = maia3 && !storedCurve && source ? { ...source, nodeId: move.nodeId } : null;
+  const query = useMaiaCurveQuery(input);
+  // Into the shown review too, so the coach and the next visit read it without asking again.
+  const read = query.data;
+  const reviewId = input?.reviewId;
+  const nodeId = move.nodeId;
+  useEffect(() => {
+    if (read && reviewId) useReviewStore.getState().setMoveCurve(reviewId, nodeId, read);
+  }, [nodeId, read, reviewId]);
+  const fetchedCurve = useMemo(
+    () => (query.data ? predictionCurve(move, query.data, marked) : null),
+    [marked, move, query.data]
+  );
+  const { refetch } = query;
+  const retry = useCallback(() => void refetch(), [refetch]);
+  const curve = storedCurve ?? fetchedCurve;
+  if (curve) return { status: "ready", curve };
+  // Pending: the move is resting before its curve is asked for, or Maia is reading it.
+  if (query.isFetching || (input && query.isPending)) return { status: "loading" };
+  if (query.isError) return { status: "error", message: ipcErrorMessage(query.error), retry };
+  return { status: "none" };
 }
 
 /** The tactical facts and engine signals the review found for the move, as chips. */
@@ -343,12 +490,13 @@ function formatRank(move: MoveReview): string {
   return rank === null ? "—" : `${rank} of ${move.topLines.length}`;
 }
 
-/** The mover's winning chances before (best play) and after the move: "62% → 41%". */
+/**
+ * The mover's winning chances before and after the move, "62% → 41%": the evaluations of the
+ * positions either side of it, as the Winning chances chart plots them.
+ */
 function formatChances(move: MoveReview): string {
-  const before = move.assessment?.winBefore;
-  const after = move.assessment?.winAfter;
-  if (before === null || before === undefined || after === null || after === undefined) return "—";
-  return `${Math.round(before)}% → ${Math.round(after)}%`;
+  const chances = moverWinChances(move);
+  return chances ? `${chances.before}% → ${chances.after}%` : "—";
 }
 
 /** The square a tactical fact is about (the hanging/pinned piece, or the attacker). */

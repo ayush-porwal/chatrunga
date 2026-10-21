@@ -37,8 +37,14 @@ It is used to identify the Lc0 engine; the lczero.org repository does not state 
 
 ## The engines
 
-The engines are not bundled: Stockfish, Lc0 (on Windows; elsewhere you install it yourself), Lc0's
-network and the Maia networks are downloaded at runtime from their projects' own releases, and come
-with those projects' licences (see `apps/desktop/src/main/engine/engine-manifest.ts`). Lc0's default
-network, T1-256x10-distilled-swa-2432500, is by the Leela Chess Zero project
-(https://lczero.org/play/networks/bestnets/), which states no licence for it.
+The engines are not bundled: Stockfish, Lc0 (on Windows; elsewhere you install it yourself) and
+Lc0's network are downloaded at runtime from their projects' own releases, and come with those
+projects' licences (see `apps/desktop/src/main/engine/engine-manifest.ts`). Lc0's default network,
+T1-256x10-distilled-swa-2432500, is by the Leela Chess Zero project
+(https://lczero.org/play/networks/bestnets/), which states no licence for it; Lc0 keeps playing on
+it.
+
+Maia 3 replaces the Maia 1 networks (1100–1900) that Chaturanga used to run in Lc0: it is one model
+for every rating from 600 to 2600, downloaded at runtime when you choose to, and it no longer runs
+in Lc0 but in CSSLab's own engine code, bundled unmodified. Its model, that code, the libraries it
+runs on and the papers behind it are credited in [MAIA.md](MAIA.md).

@@ -1,13 +1,19 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Bot, Globe, SquareDashed, UserPlus } from "lucide-react";
+import { Bot, Download, Globe, RefreshCw, SquareDashed, UserPlus } from "lucide-react";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 import { EnginePicker, engineOption } from "../analysis/EnginePicker";
-import { playEngineOrder } from "./play-layout";
+import { downloadFailureReason } from "../onboarding/onboarding-state";
+import { useMaia3Download } from "../settings/use-maia3-download";
+import { isMaiaEngine, maiaPlayerName } from "./engine-game";
+import { playEngineOrder, type PlaySettingsChoice } from "./play-layout";
 import { cn } from "@/lib/utils";
 
 const OPTIONS: readonly PlayOpponent[] = ["engine", "pool", "friend", "ai", "board"];
@@ -22,12 +28,15 @@ const NAMES: Record<Exclude<PlayOpponent, "engine">, string> = {
 /**
  * Play settings (the Play card's cog): which opponent the Play card opens with, and which engine.
  * One radio group across Engines / Lichess / Other; the engine row's dropdown lists the installed
- * engines (choosing in it selects that row). Save writes the choice and switches the card to it.
+ * engines (choosing in it selects that row), Maia once, with its rating beside it while chosen.
+ * Without Maia 3, the Engines group offers its download. Save writes the choice and switches the
+ * card to it.
  */
 export function PlaySettingsDialog({
   mode,
   engines,
   engineId,
+  maiaRating,
   lichess,
   onConnectLichess,
   onSave,
@@ -38,16 +47,21 @@ export function PlaySettingsDialog({
   engines: readonly EngineConfig[];
   /** The engine the card plays now (null: none installed). */
   engineId: string | null;
+  /** The rating Maia plays at now (the rating select starts there). */
+  maiaRating: number;
   /** The Lichess account (null when not connected) and your quick-pairing rating. */
   lichess: { username: string; rating: number | null } | null;
   onConnectLichess: (() => void) | null;
-  onSave: (choice: { opponent: PlayOpponent; engineId: string | null }) => void;
+  onSave: (choice: PlaySettingsChoice) => void;
   onOpenEngineSettings: () => void;
   onClose: () => void;
 }) {
   const orderedEngines = useMemo(() => playEngineOrder(engines), [engines]);
   const [pick, setPick] = useState<PlayOpponent>(mode);
   const [pickedEngine, setPickedEngine] = useState<string | null>(engineId);
+  // Maia's rating once changed here (null: as it was, so it keeps following your rating).
+  const [pickedRating, setPickedRating] = useState<number | null>(null);
+  const maiaInstalled = engines.some(isMaiaEngine);
   const rows = useRef(new Map<PlayOpponent, HTMLElement>());
   const usable = (option: PlayOpponent) =>
     option === "engine" ? engines.length > 0 : option === "board" || Boolean(lichess);
@@ -100,7 +114,9 @@ export function PlaySettingsDialog({
             variant="primary"
             size="sm"
             disabled={!usable(pick)}
-            onClick={() => onSave({ opponent: pick, engineId: pickedEngine })}
+            onClick={() =>
+              onSave({ opponent: pick, engineId: pickedEngine, maiaRating: pickedRating })
+            }
           >
             Save
           </Button>
@@ -127,13 +143,19 @@ export function PlaySettingsDialog({
               ref={register("engine")}
               engines={orderedEngines}
               engineId={pickedEngine}
+              maiaRating={pickedRating ?? maiaRating}
               checked={pick === "engine"}
               onPick={() => setPick("engine")}
               onEngine={(id) => {
                 setPickedEngine(id);
                 setPick("engine");
               }}
+              onMaiaRating={(rating) => {
+                setPickedRating(rating);
+                setPick("engine");
+              }}
             />
+            {maiaInstalled ? null : <Maia3Offer />}
           </Group>
           <Group
             title={lichess ? `Lichess · ${lichess.username}` : "Lichess"}
@@ -273,22 +295,27 @@ function OptionRow({
 
 /**
  * The engine row: the dropdown of installed engines (display names; unavailable ones can't be
- * chosen) and the radio. Opening or choosing in the dropdown selects the row.
+ * chosen), Maia's rating while Maia is chosen, and the radio. Opening or choosing in the dropdown
+ * (or the rating) selects the row.
  */
 function EngineRow({
   ref,
   engines,
   engineId,
+  maiaRating,
   checked,
   onPick,
-  onEngine
+  onEngine,
+  onMaiaRating
 }: {
   ref: (element: HTMLElement | null) => void;
   engines: readonly EngineConfig[];
   engineId: string | null;
+  maiaRating: number;
   checked: boolean;
   onPick: () => void;
   onEngine: (id: string) => void;
+  onMaiaRating: (rating: number) => void;
 }) {
   const options = useMemo(() => engines.map((engine) => engineOption(engine)), [engines]);
 
@@ -317,18 +344,69 @@ function EngineRow({
         onChange={onEngine}
         onOpen={onPick}
       />
+      {isMaiaEngine(selected) ? (
+        <Select
+          aria-label="Maia's rating"
+          className="h-10 w-[5.75rem] rounded-[9px] text-[0.84375rem] tabular-nums"
+          value={maiaRating}
+          onChange={(event) => onMaiaRating(Number(event.target.value))}
+        >
+          {MAIA3_RATINGS.map((rating) => (
+            <option key={rating} value={rating}>
+              {rating}
+            </option>
+          ))}
+        </Select>
+      ) : null}
       <button
         ref={ref}
         type="button"
         role="radio"
         aria-checked={checked}
-        aria-label={`Engine: ${engineDisplayName(selected.name)}`}
+        aria-label={`Engine: ${isMaiaEngine(selected) ? maiaPlayerName(maiaRating) : engineDisplayName(selected.name)}`}
         tabIndex={checked ? 0 : -1}
         className="-m-1 grid place-items-center rounded-full p-1 outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         onClick={onPick}
       >
         <RadioMark checked={checked} />
       </button>
+    </div>
+  );
+}
+
+/**
+ * Maia 3 isn't installed: that it is available, and its download (the user's to start), with its
+ * progress, or Retry when it failed. Once installed it joins the engines above.
+ */
+function Maia3Offer() {
+  const download = useMaia3Download();
+  if (download.state === "unknown" || download.state === "installed") return null;
+  const downloading = download.state === "downloading";
+  return (
+    <div className={cn(optionRow, "py-2 hover:border-line")}>
+      <EngineAvatar engine={{ name: "Maia", runtime: "maia3" }} size="sm" />
+      <span className="grid min-w-0 flex-1">
+        <b className="truncate text-[0.84375rem] font-medium text-fg">Maia 3 is available</b>
+        {download.state === "failed" ? (
+          <small className="truncate text-xs text-danger">
+            {downloadFailureReason(download.error ?? undefined)}
+          </small>
+        ) : null}
+      </span>
+      {downloading ? (
+        <span className="w-28 shrink-0" role="status">
+          <Progress value={download.percent || null} aria-label="Maia 3 download" />
+        </span>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={download.start}>
+          {download.state === "failed" ? <RefreshCw /> : <Download />}
+          {download.state === "failed"
+            ? "Retry"
+            : download.size
+              ? `Download (${download.size})`
+              : "Download"}
+        </Button>
+      )}
     </div>
   );
 }

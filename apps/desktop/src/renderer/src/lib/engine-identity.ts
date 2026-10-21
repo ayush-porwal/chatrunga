@@ -1,4 +1,5 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import type { SavedReviewInfo } from "@chaturanga/shared/types/chess";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import lc0Logo from "../assets/engines/lc0.webp";
 import maiaLogo from "../assets/engines/maia.webp";
@@ -10,7 +11,7 @@ import { localImageSrc } from "./local-image";
  * there is (saved reviews, recent games, download rows, onboarding).
  */
 export type EngineIdentity = Pick<EngineConfig, "name"> &
-  Partial<Pick<EngineConfig, "imagePath" | "weightsPath" | "isHumanPrediction" | "maiaRating">>;
+  Partial<Pick<EngineConfig, "imagePath" | "weightsPath" | "isHumanPrediction" | "runtime">>;
 
 type EngineFamily = "stockfish" | "maia" | "lc0";
 
@@ -22,14 +23,15 @@ const LOGOS: Record<EngineFamily, string> = {
 };
 
 /**
- * The engine family with a bundled logo, if any. Maia first (it runs inside Lc0): the human
- * prediction flag, a Maia rating, or "maia" in the name or the weights file's name.
+ * The engine family with a bundled logo, if any. Maia first (Maia 1 runs inside Lc0): Maia 3's
+ * runtime, the human prediction flag, or "maia" in the name (a saved game's "Maia 1500" too) or
+ * the weights file's name.
  */
 function engineFamily(engine: EngineIdentity): EngineFamily | null {
   const weightsFile = engine.weightsPath?.split(/[\\/]/).pop() ?? "";
   if (
+    engine.runtime === "maia3" ||
     engine.isHumanPrediction ||
-    engine.maiaRating != null ||
     /maia/i.test(engine.name) ||
     /maia/i.test(weightsFile)
   ) {
@@ -88,4 +90,18 @@ export function fallbackPicture(engine: EngineIdentity): Exclude<EnginePicture, 
     text: engineMonogram(engine.name),
     hue: engineMonogramHue(engine.name)
   };
+}
+
+/**
+ * The engine a saved analysis ran on, for its picture: the engine row it records (the user's own
+ * picture, or the family logo from its runtime), else just the name it recorded (that engine was
+ * removed, or the analysis predates the id); null when it records neither.
+ */
+export function reviewEngineIdentity(
+  info: Pick<SavedReviewInfo, "engineId" | "engineName">,
+  engines: readonly EngineConfig[] | undefined
+): EngineIdentity | null {
+  const engine = info.engineId ? engines?.find((item) => item.id === info.engineId) : undefined;
+  if (engine) return engine;
+  return info.engineName ? { name: info.engineName } : null;
 }

@@ -50,7 +50,7 @@ export function EngineAvatar({
     <span
       aria-hidden={label ? undefined : "true"}
       className={cn(
-        "@container relative inline-grid shrink-0 place-items-center overflow-hidden bg-control shadow-[inset_0_0_0_1px_rgb(0_0_0/0.25),0_4px_10px_-6px_rgb(0_0_0/0.7)]",
+        "@container relative inline-grid shrink-0 place-items-center overflow-hidden bg-control shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08),0_4px_10px_-6px_rgb(0_0_0/0.7)]",
         SIZES[size],
         className
       )}

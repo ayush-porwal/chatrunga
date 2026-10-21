@@ -155,12 +155,20 @@ export type AssessableMove = Pick<
   MoveReview,
   "ply" | "fenBefore" | "fenAfter" | "playedMove" | "bestMove" | "topLines" | "evalAfter" | "motifs"
 > &
-  Partial<Pick<MoveReview, "replyLines" | "terminal" | "humanPredictions" | "verification">>;
+  Partial<
+    Pick<
+      MoveReview,
+      "replyLines" | "terminal" | "humanPredictions" | "moverPrediction" | "verification"
+    >
+  >;
 
 export type AssessmentContext = {
   /** The ply before, when it is the opponent's move into this position, with its assessment. */
   previous?: { move: AssessableMove; assessment: MoveAssessment } | null;
-  /** The player's rating: picks the Maia level whose difficulty counts. */
+  /**
+   * The player's rating: picks the Maia 1 level whose difficulty counts. A Maia 3 move's own
+   * `moverPrediction` (at the mover's rating) wins over it.
+   */
   playerRating?: number | null;
   /** Maia probabilities are real (reviews with schemaVersion 2+). */
   trustMaia?: boolean;
@@ -360,11 +368,16 @@ function candidateFrom(lines: readonly AnalysisLine[], move: AssessableMove): Ca
   return { kind: null, gap, savesMaterial };
 }
 
-/** The Maia level nearest the player's rating (1500 when unknown), among those that ran. */
+/**
+ * The prediction a move's assessment reads: Maia 3's at the mover's rating when the move carries
+ * it, else the Maia 1 level nearest the player's rating (1500 when unknown), among those that ran.
+ */
 function predictionAtLevel(
-  predictions: readonly RatingPrediction[] | undefined,
+  move: AssessableMove,
   rating: number | null | undefined
 ): RatingPrediction | null {
+  if (move.moverPrediction) return move.moverPrediction;
+  const predictions = move.humanPredictions;
   if (!predictions?.length) return null;
   const target = typeof rating === "number" && Number.isFinite(rating) ? rating : 1500;
   return (
@@ -436,9 +449,7 @@ function praiseGate(
   const previous =
     context.previous && context.previous.move.fenAfter === move.fenBefore ? context.previous : null;
   const prediction =
-    context.trustMaia === false
-      ? null
-      : predictionAtLevel(move.humanPredictions, context.playerRating);
+    context.trustMaia === false ? null : predictionAtLevel(move, context.playerRating);
   const humanTop = prediction?.topMoves[0] ?? null;
   const naturalMove = Boolean(humanTop && humanTop.uci === move.playedMove);
   const engineTop = evidence.lines[0]?.pv[0] === move.playedMove;

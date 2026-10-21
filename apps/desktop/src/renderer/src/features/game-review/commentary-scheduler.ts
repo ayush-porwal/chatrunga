@@ -1,5 +1,5 @@
 import type { ReviewCommentary } from "@chaturanga/shared/types/engine";
-import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/constants";
+import { MARKED_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/constants";
 
 /**
  * On-demand AI commentary policy. Nothing is requested while the engine pass runs or when it
@@ -47,7 +47,7 @@ export function isCurrentCommentary(
  * only written again when the user asks (explanations are paid for).
  */
 export function writtenForEarlierMarks(item: ReviewCommentary | undefined): boolean {
-  return Boolean(item) && (item?.payloadVersion ?? 1) < REVIEW_INSIGHT_PAYLOAD_VERSION;
+  return Boolean(item) && (item?.payloadVersion ?? 1) < MARKED_PAYLOAD_VERSION;
 }
 
 /**

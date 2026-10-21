@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { MaiaRating, RatingPrediction } from "../types/engine";
+import type { RatingPrediction } from "../types/engine";
 import { bestMoveChance, difficultyModel, maiaDifficulty } from "./maia-difficulty";
 
-function prediction(rating: MaiaRating, extra: Partial<RatingPrediction> = {}): RatingPrediction {
+function prediction(rating: number, extra: Partial<RatingPrediction> = {}): RatingPrediction {
   return {
     rating,
     topMoves: [
@@ -43,6 +43,18 @@ describe("Maia difficulty", () => {
     expect(maiaDifficulty({ bestMove: "e2e4" }, 1500)).toBeNull();
   });
 
+  it("reads a Maia 3 move at the mover's own rating, whatever the model", () => {
+    const move = {
+      bestMove: "d2d4",
+      humanPredictions: [prediction(1100, { bestProb: 0.12 }), prediction(1500, { bestProb: 0.4 })],
+      moverPrediction: prediction(1700, { bestProb: 0.25 })
+    };
+    expect(bestMoveChance(move, 1100)).toBe(0.25);
+    expect(maiaDifficulty(move, 1500)).toBeCloseTo(0.75);
+    // Without a stored best-move chance, the mover's top moves price it.
+    expect(bestMoveChance({ bestMove: "d2d4", moverPrediction: prediction(800) }, 1500)).toBe(0.3);
+  });
+
   it("reads the review's own model, else the one nearest the rating that the moves carry", () => {
     const moves = [{ humanPredictions: [prediction(1100), prediction(1500)] }, {}];
     expect(difficultyModel(moves, 1500, 1100)).toBe(1500);
@@ -50,5 +62,7 @@ describe("Maia difficulty", () => {
     expect(difficultyModel(moves, null, 1300)).toBe(1100);
     expect(difficultyModel(moves, null, 1000)).toBe(1100);
     expect(difficultyModel([{}, { humanPredictions: [] }], 1500, 1500)).toBeNull();
+    // A Maia 3 move's own rating counts as one the moves carry.
+    expect(difficultyModel([{ moverPrediction: prediction(1200) }], null, 1500)).toBe(1200);
   });
 });

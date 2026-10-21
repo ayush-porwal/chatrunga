@@ -1,14 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AnalysisLine, EngineConfig, EngineInfo } from "@chaturanga/shared/types/engine";
-import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
+import type { AnalysisLine, EngineInfo } from "@chaturanga/shared/types/engine";
+import { parseInfoLine } from "@chaturanga/shared/engine/uci";
 import {
-  buildRatingPrediction,
   computeEvalLoss,
   linesFromInfoStream,
-  maiaRatingFromText,
-  selectMaiaEnginesForReview,
   tacticalMotifsForBestMove,
   terminalScore
 } from "./review-analysis";
@@ -21,117 +18,10 @@ function fixture(name: string): string[] {
     .filter(Boolean);
 }
 
-/** Replays captured lc0 output through the same parsing path as UciReviewSession.analyzePolicy. */
-function policyFromFixture(name: string): {
-  stats: Lc0MoveStat[];
-  wdl?: { win: number; draw: number; loss: number };
-} {
-  const stats: Lc0MoveStat[] = [];
-  let wdl: { win: number; draw: number; loss: number } | undefined;
-  for (const line of fixture(name)) {
-    if (line.startsWith("bestmove")) break;
-    const stat = parseLc0MoveStat(line);
-    if (stat) stats.push(stat);
-    else {
-      const info = parseInfoLine("maia", line);
-      if (info?.wdl) wdl = info.wdl;
-    }
-  }
-  return { stats, wdl };
-}
-
-function engine(partial: Partial<EngineConfig> & { id: string }): EngineConfig {
-  return {
-    name: partial.id,
-    executablePath: "/bin/lc0",
-    workingDirectory: null,
-    weightsPath: null,
-    imagePath: null,
-    args: [],
-    protocol: "uci",
-    runtime: "custom-uci",
-    isAvailable: true,
-    isDefault: false,
-    createdAt: 0,
-    updatedAt: 0,
-    ...partial
-  };
-}
-
 function line(multipv: number, cp: number, pv: string[], mate = false): AnalysisLine {
   const score = { type: mate ? ("mate" as const) : ("cp" as const), value: cp };
   return { multipv, depth: 12, score, scoreWhite: score, pv };
 }
-
-describe("Maia policy from real lc0 VerboseMoveStats output", () => {
-  it("parses every legal move with real, rating-dependent probabilities", () => {
-    const low = policyFromFixture("maia-1100-italian.txt");
-    const high = policyFromFixture("maia-1900-italian.txt");
-    // 27 legal moves + the root "node" line.
-    expect(low.stats).toHaveLength(28);
-    const sum = low.stats.filter((s) => s.move !== "node").reduce((acc, s) => acc + s.p, 0);
-    expect(sum).toBeGreaterThan(0.98);
-    expect(sum).toBeLessThan(1.02);
-    expect(low.wdl).toStrictEqual({ win: 496, draw: 39, loss: 465 });
-
-    const p1100 = buildRatingPrediction({
-      rating: 1100,
-      fen: ITALIAN,
-      ...low,
-      playedUci: "f1b5",
-      bestUci: "f1b5"
-    })!;
-    const p1900 = buildRatingPrediction({
-      rating: 1900,
-      fen: ITALIAN,
-      ...high,
-      playedUci: "f1b5",
-      bestUci: "f1b5"
-    })!;
-    expect(p1100.topMoves[0]).toStrictEqual({ uci: "f1c4", prob: 0.2375 });
-    expect(p1900.topMoves[0]).toStrictEqual({ uci: "f1c4", prob: 0.3123 });
-    expect(p1100.topMoves).toHaveLength(10);
-    // Not the old uniform 0.20 softmax artefact: the played move's probability differs by level.
-    expect(p1100.playedProb).not.toBeCloseTo(p1900.playedProb!, 2);
-    expect(p1900.playedProb).toBeCloseTo(0.2318, 4);
-    expect(p1900.playedRank).toBe(2);
-    expect(p1900.bestRank).toBe(2);
-    expect(p1100.value).toBeCloseTo(0.0331, 4);
-    expect(p1100.wdl).toStrictEqual({ win: 496, draw: 39, loss: 465 });
-  });
-
-  it("reports a legal-but-unlisted played move as probability 0 with no rank", () => {
-    const low = policyFromFixture("maia-1100-italian.txt");
-    const prediction = buildRatingPrediction({
-      rating: 1100,
-      fen: ITALIAN,
-      ...low,
-      playedUci: "a1a8",
-      bestUci: null
-    })!;
-    expect(prediction.playedProb).toBe(0);
-    expect(prediction.playedRank).toBeUndefined();
-    expect(prediction.bestRank).toBeUndefined();
-  });
-
-  it("normalizes lc0 king-takes-rook castling to standard UCI", () => {
-    const fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
-    const stats = [
-      parseLc0MoveStat(
-        "info string e1h1  (103 ) N:       0 (+ 0) (P: 23.04%) (WL:  -.-----) (D: -.---) (M:  -.-) (Q: -0.00973) (U: 0.40209) (S:  0.39235) (V:  -.----)"
-      )!
-    ];
-    const prediction = buildRatingPrediction({
-      rating: 1500,
-      fen,
-      stats,
-      playedUci: "e1g1",
-      bestUci: "e1g1"
-    })!;
-    expect(prediction.topMoves[0].uci).toBe("e1g1");
-    expect(prediction.playedRank).toBe(1);
-  });
-});
 
 describe("linesFromInfoStream", () => {
   it("keeps the final line per multipv with depth, WDL and nodes (real Stockfish output)", () => {
@@ -255,31 +145,5 @@ describe("tacticalMotifsForBestMove", () => {
     expect(tacticalMotifsForBestMove(backRank, "d1d8", { type: "mate", value: 1 })).toContain(
       "checkmate"
     );
-  });
-});
-
-describe("Maia engine selection", () => {
-  it("keeps one available engine per rating, prefers managed over custom, honours levels", () => {
-    const selected = selectMaiaEnginesForReview(
-      [
-        engine({ id: "custom1500", name: "Maia 1500", maiaRating: 1500 }),
-        engine({ id: "m1500", name: "Maia 1500 (managed)", maiaRating: 1500 }),
-        engine({ id: "custom1500b", name: "My Maia", maiaRating: 1500 }),
-        engine({ id: "m1100", weightsPath: "/w/maia-1100.pb.gz" }),
-        engine({ id: "broken", maiaRating: 1900, isAvailable: false }),
-        engine({ id: "lc0", weightsPath: "/w/BT4-1100k.pb.gz" }),
-        engine({ id: "m1700", maiaRating: 1700 })
-      ],
-      [1100, 1500, 1900]
-    );
-    expect(selected.map((e) => [e.id, e.maiaRating])).toStrictEqual([
-      ["m1100", 1100],
-      ["m1500", 1500]
-    ]);
-  });
-
-  it("only infers ratings from Maia-named text", () => {
-    expect(maiaRatingFromText("maia-1900.pb.gz")).toBe(1900);
-    expect(maiaRatingFromText("t1-256x10-1500k.pb.gz")).toBeUndefined();
   });
 });

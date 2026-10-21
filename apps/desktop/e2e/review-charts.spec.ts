@@ -2,17 +2,19 @@
 // share one move axis, one hover tooltip and one current-move line, and a click jumps the board;
 // each strip folds (remembered) and so does the whole Charts section, under its header row right
 // under the line above it; a splitter over the line above them sets their height (double-click
-// resets it); without Maia the difficulty strip is a one-line
-// install prompt, and without [%clk] there is no move-times strip. Reviewed on the fake UCI
-// engine's "review" mode (the Blackburne Shilling trap, as move-types.spec.ts), with a fake Maia
-// (fake-uci.mjs replaying captured lc0 policy output). How to run them: playwright.config.ts.
+// resets it); without Maia 3 the difficulty strip offers its download, and without [%clk] there is
+// no move-times strip. Maia 3 reads each side at its game rating (Human moves, the rating curve read
+// when a move is opened), or both at Review settings' Maia rating. Reviewed on the fake
+// UCI engine's "review" mode (the Blackburne Shilling trap, as move-types.spec.ts), with Maia 3's
+// e2e stand-in (`maia3Fixture`: every position the same 50% for White, its moves weighted by
+// rating). How to run them: playwright.config.ts.
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import {
-  desktopDir,
   expect,
   importPgnFile,
+  mainRecord,
   registerFakeEngine,
   sidebar,
   skipWelcome,
@@ -25,7 +27,10 @@ const SANS = "e4 e5 Nf3 Nc6 Bc4 Nd4 Nxe5 Qg5 Nxf7 Qxg2 Rf1 Qxe4+ Be2 Nf3#".split
 /** Seconds each ply took; 3 + 2 clocks follow from them. */
 const SPENT = [2, 3, 9, 4, 14, 31, 6, 22, 41, 3, 17, 8, 26, 2];
 
-function trapPgn(withClocks: boolean): string {
+/** The players' ratings: Maia 3 reads White at 1400 and Black at 1700 (its 100-point grid). */
+const ELO = { white: 1412, black: 1689 } as const;
+
+function trapPgn(withClocks: boolean, elo?: { white: number; black: number }): string {
   const left = { white: 180, black: 180 };
   const moves = SANS.map((san, index) => {
     const side = index % 2 === 0 ? "white" : "black";
@@ -37,15 +42,14 @@ function trapPgn(withClocks: boolean): string {
   return `[Event "Charts e2e"]
 [White "Alpha"]
 [Black "Beta"]
-${withClocks ? '[TimeControl "180+2"]\n' : ""}[Result "0-1"]
+${elo ? `[WhiteElo "${elo.white}"]\n[BlackElo "${elo.black}"]\n` : ""}${withClocks ? '[TimeControl "180+2"]\n' : ""}[Result "0-1"]
 
 ${moves.join(" ")} 0-1
 `;
 }
 
-const FAKE_MAIA = join(desktopDir, "src/main/engine/__fixtures__/fake-uci.mjs");
-
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
+const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
 const charts = (page: Page) => page.getByRole("region", { name: "Game charts" });
 const view = (page: Page, name: "winning-chances" | "difficulty" | "times") =>
   charts(page).locator(`svg[data-chart="${name}"]`);
@@ -99,9 +103,17 @@ async function expectChartsHeader(page: Page) {
   return chartsHeader.splitter;
 }
 
-/** Imports the trap game, reviews it as White and ends on the review page with the charts. */
-async function reviewTrap({ app, page }: LaunchedApp, profile: string, withClocks: boolean) {
-  await importPgnFile(app, page, writePgn(profile, "trap.pgn", trapPgn(withClocks)));
+/**
+ * Imports the trap game (rated `elo` when given), reviews it as White and ends on the review page
+ * with the charts.
+ */
+async function reviewTrap(
+  { app, page }: LaunchedApp,
+  profile: string,
+  withClocks: boolean,
+  elo?: { white: number; black: number }
+) {
+  await importPgnFile(app, page, writePgn(profile, "trap.pgn", trapPgn(withClocks, elo)));
   await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a game" })
@@ -126,24 +138,11 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   profile
 }) => {
   test.setTimeout(150_000);
-  const launched = await launch();
+  const launched = await launch(undefined, { maia3Fixture: true });
   const { page } = launched;
   await skipWelcome(page);
   await registerFakeEngine(page, join(profile, "uci.log"), "review");
-  await page.evaluate(
-    ([executablePath, script]) => {
-      const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-      return api.engines.create({
-        name: "Maia 1500",
-        executablePath,
-        args: [script, "maia"],
-        maiaRating: 1500,
-        isHumanPrediction: true
-      });
-    },
-    [process.execPath, FAKE_MAIA] as const
-  );
-  await reviewTrap(launched, profile, true);
+  await reviewTrap(launched, profile, true, ELO);
 
   // Three views on one axis, each under its own folding label.
   await expect(view(page, "winning-chances")).toBeVisible();
@@ -153,8 +152,9 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
     "aria-expanded",
     "true"
   );
+  // Difficulty names the rating each side's moves were read at: their game ratings.
   await expect(
-    charts(page).getByRole("button", { name: "Difficulty at 1500 · Maia" })
+    charts(page).getByRole("button", { name: "Difficulty at White 1400 · Black 1700 · Maia" })
   ).toBeVisible();
   await expect(charts(page).getByRole("button", { name: "Time per move" })).toBeVisible();
   // The header holds no key-insight navigation (the review button above the move navigation
@@ -170,7 +170,9 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await nxe5.hover();
   const tooltip = charts(page).locator("[data-chart-tooltip]");
   await expect(tooltip).toContainText("4. Nxe5 · Blunder");
-  await expect(tooltip).toContainText(/Your chances\s*\d+%\s*Opponent's\s*\d+%/);
+  // The chances name the review's engine; the difficulty Maia, at the rating it read the move at.
+  await expect(tooltip).toContainText(/Your chances · .+?\d+%\s*Opponent's\s*\d+%/);
+  await expect(tooltip).toContainText(/Best move at 1400 · Maia\s*\d+%/);
   await expect(tooltip).toContainText(/Time spent\s*0:06/);
   // The same move's bar on the time strip shows the same tooltip.
   await view(page, "times").locator('rect[data-ply="7"]').hover();
@@ -210,15 +212,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await expect.poll(openHeight).toBeGreaterThan(before);
   await splitter(page).dblclick();
   // Reloaded (once its review is saved), the review page opens the same game with its review.
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-        const { items } = await api.games.listPage({});
-        return items.map((item) => [item.white, item.reviewCount]);
-      })
-    )
-    .toEqual([["Alpha", 1]]);
+  await expect.poll(() => savedReviews(page)).toEqual([["Alpha", 1]]);
   const reviewUrl = page.url();
   expect(reviewUrl).toMatch(/#\/games\/(?!current\/)[^/]+\/review$/);
   await page.reload();
@@ -277,7 +271,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await splitter(page).dblclick();
 });
 
-test("without Maia the difficulty strip is an install prompt, and without clocks there are no move times", async ({
+test("without Maia 3 the difficulty strip offers its download, and without clocks there are no move times", async ({
   launch,
   profile
 }) => {
@@ -290,14 +284,83 @@ test("without Maia the difficulty strip is an install prompt, and without clocks
 
   await expect(view(page, "winning-chances")).toBeVisible();
   await expect(view(page, "difficulty")).toHaveCount(0);
-  await expect(charts(page).getByText("Difficulty needs a Maia model.")).toBeVisible();
+  // Maia 3 isn't installed: the strip's place says it is available, with its download and size
+  // (the download is the user's to start).
+  await expect(charts(page).getByText(/^Maia 3 is available/)).toBeVisible();
+  await expect(
+    charts(page).getByRole("button", { name: /^Download \(\d+\.\d MB\)$/ })
+  ).toBeVisible();
   await expect(view(page, "times")).toHaveCount(0);
   await expect(charts(page).getByRole("button", { name: "Time per move" })).toHaveCount(0);
 
-  // The prompt's link opens Settings at the Engines card, whose Maia rows install the networks.
-  await charts(page).getByRole("button", { name: "Install Maia" }).click();
-  await expect(page.getByRole("heading", { name: "Engines", exact: true })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "Download Maia 1500" })).toBeVisible();
+  // Settings → Engines offers the same download on its Maia 3 row; nothing fetched the model.
+  await sidebar(page).getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Download Maia 3", exact: true })).toBeVisible();
+  const { fetches } = await mainRecord(launched.app);
+  expect(fetches.filter((url) => url.includes("maia3"))).toEqual([]);
+});
+
+test("Maia 3 reads each side at its game rating: human moves and the curve across ratings; Review settings' rating reads both sides at one", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(180_000);
+  const launched = await launch(undefined, { maia3Fixture: true });
+  const { page } = launched;
+  await skipWelcome(page);
+  await registerFakeEngine(page, join(profile, "uci.log"), "review");
+  await reviewTrap(launched, profile, false, ELO);
+  // The rating curve is read for a saved analysis.
+  await expect.poll(() => savedReviews(page)).toEqual([["Alpha", 1]]);
+  await expect(
+    charts(page).getByRole("button", { name: "Difficulty at White 1400 · Black 1700 · Maia" })
+  ).toBeVisible();
+
+  // 4. Nxe5, White's move: Maia's moves at White's rating, and (read when the move is opened) its
+  // curve over the 21 ratings from 600 to 2600, White's marked as the reviewed side's (You).
+  await view(page, "winning-chances").locator('circle[data-ply="7"]').click();
+  await expect(counter(page)).toHaveText("4 / 7");
+  await reviewTabs(page).getByRole("tab", { name: "Engine", exact: true }).click();
+  await expect(page.getByRole("table", { name: /Human moves at 1400$/ })).toBeVisible();
+  const curve = page.getByRole("table", {
+    name: "Share of players expected to play each move, by rating"
+  });
+  await expect(curve.getByRole("rowheader")).toHaveCount(21);
+  await expect(curve.getByRole("rowheader").first()).toHaveText("600");
+  await expect(curve.getByRole("rowheader").last()).toHaveText("2600");
+  await expect(curve.getByRole("rowheader", { name: "1400 (You)", exact: true })).toHaveCount(1);
+  const slider = page.getByRole("slider", { name: "Human prediction by rating" });
+  await expect(slider).toHaveAttribute("aria-valuemax", "20");
+  await expect(slider).toHaveAttribute("aria-valuenow", "8");
+  // Read once: the curve is saved into the move, so the next visit has it at once.
+  await expect.poll(() => savedCurveLength(page, "f3e5")).toBe(21);
+
+  // 4… Qg5, Black's move: at Black's rating, marked as the opponent's.
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "Next move", exact: true })
+    .click();
+  await expect(page.getByRole("table", { name: /Human moves at 1700$/ })).toBeVisible();
+  await expect(curve.getByRole("rowheader", { name: "1700 (Opponent)", exact: true })).toHaveCount(
+    1
+  );
+
+  // Review settings' Maia rating reads both sides at one rating, from the next analysis on.
+  await page
+    .getByRole("complementary", { name: "Review" })
+    .getByRole("button", { name: "Review settings", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Review settings" });
+  await expect(dialog.getByText("White 1400 · Black 1700 · from the game")).toBeVisible();
+  await dialog.getByRole("combobox", { name: "Maia rating" }).selectOption("1800");
+  await expect(dialog.getByText("Both sides 1800", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await titlebar(page).getByRole("button", { name: "Analyze again", exact: true }).click();
+  await expect.poll(() => savedReviews(page), { timeout: 60_000 }).toEqual([["Alpha", 2]]);
+  await expect(
+    charts(page).getByRole("button", { name: "Difficulty at 1800 · Maia" })
+  ).toBeVisible();
+  await expect(page.getByRole("table", { name: /Human moves at 1800$/ })).toBeVisible();
 });
 
 test("the Analyze page shows the Charts for an unreviewed game: its clocks, no evaluations, no Difficulty", async ({
@@ -358,6 +421,28 @@ test("dragged up, the charts stop where the move list keeps its room under the e
     expect(await keepsMoveListRoom(page, moves.height)).toBe(true);
   }).toPass();
 });
+
+/** The library's games, as [White, saved analyses]. */
+function savedReviews(page: Page) {
+  return page.evaluate(async () => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+    const { items } = await api.games.listPage({});
+    return items.map((item) => [item.white, item.reviewCount]);
+  });
+}
+
+/** How many ratings the newest analysis keeps for the move played as `uci` (0: none). */
+function savedCurveLength(page: Page, uci: string) {
+  return page.evaluate(async (uci) => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+    const game = (await api.games.listPage({ limit: 1 })).items.at(0);
+    if (!game) return 0;
+    const move = (await api.games.get(game.id)).review?.moves.find(
+      (item) => item.playedMove === uci
+    );
+    return move?.humanPredictions?.length ?? 0;
+  }, uci);
+}
 
 async function box(locator: Locator) {
   const found = await locator.boundingBox();

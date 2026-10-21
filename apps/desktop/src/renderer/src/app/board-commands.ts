@@ -287,7 +287,10 @@ export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
     const game = currentGame();
     const plan = planRejoin(game, deps.engines ?? [], Date.now());
     if (plan.kind === "open") {
-      if (plan.notice) useAppNoticeStore.getState().show(plan.notice, { tone: "info" });
+      if (plan.notice)
+        useAppNoticeStore
+          .getState()
+          .show(plan.notice.message, { tone: "info", maia3Download: plan.notice.offerMaia3 });
       return;
     }
     game.goToNode(plan.nodeId);

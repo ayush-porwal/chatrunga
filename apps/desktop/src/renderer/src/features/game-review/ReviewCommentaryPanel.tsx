@@ -9,12 +9,7 @@ import {
   Users
 } from "lucide-react";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
-import {
-  buildRatingCurveForMove,
-  hasUsableMaiaData,
-  moveLabel,
-  type CommentaryDetail
-} from "./review-utils";
+import { buildRatingCurveForMove, moveLabel, type CommentaryDetail } from "./review-utils";
 import { formatScore, terminalEvalLabel } from "./review-score";
 import { renderHeadline } from "@chaturanga/shared/chess/headline";
 import { Button } from "@/components/ui/button";
@@ -242,10 +237,13 @@ function BestLine({ move }: { move: MoveReview }) {
   );
 }
 
-/** What Maia says about the move at the player's rating (nothing without usable Maia data). */
+/**
+ * What Maia's rating curve says about the move (at the mover's rating on a Maia 3 review, else the
+ * player's); nothing until the move has a complete curve.
+ */
 function MaiaNote({ move, userRating }: { move: MoveReview; userRating: number }) {
-  if (!hasUsableMaiaData(move)) return null;
-  const note = renderHeadline(buildRatingCurveForMove(move, userRating));
+  const curve = buildRatingCurveForMove(move, userRating);
+  const note = curve ? renderHeadline(curve) : null;
   if (!note) return null;
   return (
     <p className="flex gap-2 text-xs leading-5 text-fg-muted">

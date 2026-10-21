@@ -26,7 +26,6 @@ import type {
   CreateEngineInput,
   EngineGoClock,
   GameReview,
-  MaiaRating,
   ProbeEvalInput,
   ReviewGameInput,
   ReviewMoveInputItem,
@@ -44,6 +43,7 @@ import type {
 } from "@chaturanga/shared/types/lichess";
 import type { ReviewRatingContext } from "@chaturanga/shared/chess/review-rating";
 import { isOneOf } from "@chaturanga/shared/types/guards";
+import { clampMaia3Rating, nearestMaia3Rating } from "@chaturanga/shared/engine/maia3";
 import {
   MAX_ID,
   MAX_PATH,
@@ -71,7 +71,6 @@ import {
 } from "./fields";
 
 const MAX_ARGS = 64;
-const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
 
 /**
  * A search bound (depth, movetime, nodes, MultiPV): null when absent, else a number from 0 up to
@@ -128,11 +127,6 @@ function asEngineArgs(value: unknown): string[] {
   return args;
 }
 
-function asMaiaRating(value: unknown): MaiaRating {
-  if (!isOneOf(MAIA_RATINGS, value)) fail("Maia rating", "unsupported rating");
-  return value;
-}
-
 /** Fields shared by engine create / update, all optional. */
 function parseEngineFields(input: Fields): UpdateEngineInput {
   const fields: UpdateEngineInput = {};
@@ -151,8 +145,6 @@ function parseEngineFields(input: Fields): UpdateEngineInput {
   if (input.isHumanPrediction !== undefined) {
     fields.isHumanPrediction = asBoolean(input.isHumanPrediction, "isHumanPrediction");
   }
-  if (input.maiaRating !== undefined && input.maiaRating !== null)
-    fields.maiaRating = asMaiaRating(input.maiaRating);
   return fields;
 }
 
@@ -186,6 +178,20 @@ function parseClock(value: unknown): EngineGoClock | null {
   };
 }
 
+/**
+ * A game against Maia: Maia's rating snapped to its 600–2600 grid (what Play offers), the user's
+ * clamped into that range but kept to the point (Maia reads any rating). Null when absent: a game
+ * against the Maia row without ratings plays Maia at the default rating (maia/game-move.ts).
+ */
+function parseMaiaOpponent(value: unknown): StartEngineGameInput["maia"] {
+  if (value === undefined || value === null) return null;
+  const maia = asObject(value, "maia");
+  return {
+    rating: nearestMaia3Rating(asFiniteNumber(maia.rating, "maia.rating")),
+    opponentRating: clampMaia3Rating(asFiniteNumber(maia.opponentRating, "maia.opponentRating"))
+  };
+}
+
 export function parseStartGameInput(value: unknown): StartEngineGameInput {
   const input = asObject(value, "engine game");
   if (input.side !== "white" && input.side !== "black")
@@ -200,7 +206,8 @@ export function parseStartGameInput(value: unknown): StartEngineGameInput {
     moves: asUciMoves(input.moves ?? []),
     moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs"),
     depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
-    clock: parseClock(input.clock)
+    clock: parseClock(input.clock),
+    maia: parseMaiaOpponent(input.maia)
   };
 }
 
@@ -292,9 +299,8 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
       input.reviewId === undefined ? `review-${Date.now()}` : asId(input.reviewId, "review id"),
     gameId: nullable(input.gameId, (id) => asId(id, "game id")),
     engineId: asId(input.engineId, "engine id"),
-    predictionEngineIds: optional(input.predictionEngineIds, (ids) =>
-      asStringArray(ids, "prediction engine ids", 32, MAX_ID).filter(Boolean)
-    ),
+    // Omitted: the `reviewUseMaia` setting decides.
+    useMaia: optional(input.useMaia, (use) => asBoolean(use, "useMaia")),
     timeControl: nullable(input.timeControl, (tc) => asString(tc, "time control", 64)),
     rating: nullable(input.rating, parseReviewRatingContext),
     rootFen: asFen(input.rootFen, "root FEN"),

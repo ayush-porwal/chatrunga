@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineBestMove, EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
+import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import { pausedAnalysisAt, type AnalysisTarget } from "../features/analysis/live-analysis";
 
 // The hook runs outside React: each render (see render) walks its hooks in order, keeping each
@@ -30,7 +31,12 @@ const engines = {
   startAnalysis: vi.fn<
     (request: { searchId: string; fen: string; moves: string[]; fresh?: boolean }) => Promise<void>
   >(async () => {}),
-  startGame: vi.fn<(request: { searchId: string }) => Promise<void>>(async () => {}),
+  startGame: vi.fn<
+    (request: {
+      searchId: string;
+      maia?: { rating: number; opponentRating: number } | null;
+    }) => Promise<void>
+  >(async () => {}),
   stop: vi.fn(async () => {})
 };
 /** What main sends: the driver's own handlers, called as an engine event arrives. */
@@ -259,6 +265,36 @@ describe("useEngineDriver", () => {
       expect(state.engineClockLive?.sideToMove).toBe("white");
       // Nothing is searched in the position looked at: the game goes on at its latest move.
       expect(engines.startGame).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("useEngineDriver against Maia", () => {
+    /** An untimed engine game against `engineId` as White (the engine list isn't needed). */
+    async function engineGame(engineId: string, headers: { white: string; blackElo?: string }) {
+      render(() => useEngineDriver(analysisOptions, { ratings: uniformRatings(1640) }));
+      useAnalysisStore.getState().setActiveEngine(engineId);
+      const game = useGameStore.getState();
+      game.patchHeaders({ ...headers, black: "You", timeControl: "-" });
+      game.setEngineSide("white");
+      game.setMode("engine");
+      await settle();
+      return engines.startGame.mock.calls.at(-1)?.[0];
+    }
+
+    it("asks Maia at the rating the game names it with, against your Elo tag", async () => {
+      const request = await engineGame("maia", { white: "Maia 1900", blackElo: "1712" });
+      expect(request?.maia).toStrictEqual({ rating: 1900, opponentRating: 1700 });
+    });
+
+    it("plays a Maia 1 game on at its level, against your rating for its clock", async () => {
+      const request = await engineGame("maia", { white: "Maia 1100 (managed)" });
+      expect(request?.maia).toStrictEqual({ rating: 1100, opponentRating: 1600 });
+    });
+
+    it("sends Maia's ratings with any engine's game, so they never wait for the engine list", async () => {
+      // Main reads them only for the Maia row: a UCI engine ignores them.
+      const request = await engineGame("sf", { white: "Stockfish" });
+      expect(request?.maia).toStrictEqual({ rating: 1500, opponentRating: 1600 });
     });
   });
 

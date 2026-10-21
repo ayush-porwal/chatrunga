@@ -1,3 +1,4 @@
+import { winPercent } from "@chaturanga/shared/chess/move-assessment";
 import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 
 /*
@@ -5,11 +6,14 @@ import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
  * - `formatScore`     an engine score: "+0.4", "-1.2", "M+3", "M-2"; "—" when missing.
  * - `formatMoveEval`  a reviewed move's evaluation after it: the game result for a finished game
  *                     ("1-0 #", "½-½"), otherwise `formatScore(evalAfter)`.
+ * - `whiteWinBefore` / `whiteWinAfter` / `moverWinChances`  winning chances (Lichess WinPercent) of
+ *                     a reviewed move's evaluations: what the charts plot and the Engine tab's
+ *                     chances tile shows, so the two always agree.
  * (Coach payloads use `formatEngineScore` from shared, a separate wire format.)
  */
 
 /** Chart clamp: ±10 pawns; forced mates sit on the rail. */
-export const CHART_SCORE_LIMIT = 1000;
+const CHART_SCORE_LIMIT = 1000;
 
 type MoveEvalAfter = Pick<MoveReview, "evalAfter" | "fenBefore" | "terminal">;
 
@@ -31,6 +35,40 @@ export function whiteChartScore(move: MoveEvalAfter): number {
   }
   if (score.type === "mate") return score.value > 0 ? CHART_SCORE_LIMIT : -CHART_SCORE_LIMIT;
   return Math.max(-CHART_SCORE_LIMIT, Math.min(CHART_SCORE_LIMIT, score.value));
+}
+
+/** White's winning chances (0–100) after a move: a checkmate is decided, a mate to come the ceiling. */
+export function whiteWinAfter(move: MoveEvalAfter): number {
+  if (
+    move.terminal === "checkmate" ||
+    (move.evalAfter?.type === "mate" && move.evalAfter.value === 0)
+  )
+    return moverIsWhite(move) ? 100 : 0;
+  return winPercent(whiteChartScore(move));
+}
+
+/** White's winning chances (0–100) before a move, from its `evalBefore`; null without one. */
+export function whiteWinBefore(move: Pick<MoveReview, "evalBefore">): number | null {
+  const score = move.evalBefore;
+  if (!score) return null;
+  if (score.type === "mate")
+    return winPercent(score.value >= 0 ? CHART_SCORE_LIMIT : -CHART_SCORE_LIMIT);
+  return winPercent(score.value);
+}
+
+/**
+ * The mover's winning chances before and after a move, in whole percents, from the evaluations of
+ * the positions either side of it (as the charts plot them); null without them.
+ */
+export function moverWinChances(
+  move: MoveEvalAfter & Pick<MoveReview, "evalBefore">
+): { before: number; after: number } | null {
+  const before = whiteWinBefore(move);
+  // A finished game is decided by its result, evaluated or not.
+  if (before === null || (!move.evalAfter && !move.terminal)) return null;
+  const after = whiteWinAfter(move);
+  const mover = (white: number) => Math.round(moverIsWhite(move) ? white : 100 - white);
+  return { before: mover(before), after: mover(after) };
 }
 
 export function formatScore(score: EngineScore | null | undefined, digits = 1): string {

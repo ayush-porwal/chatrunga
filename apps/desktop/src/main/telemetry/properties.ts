@@ -16,6 +16,14 @@ export function engineFamily(config: Pick<EngineConfig, "name" | "executablePath
   return "other";
 }
 
+/**
+ * Whether a review read human moves with Maia, and with which model (Maia 3, one model for every
+ * rating); no model when it didn't.
+ */
+export function maiaProperties(used: boolean): { maia_used: boolean; maia_model?: "maia3" } {
+  return used ? { maia_used: true, maia_model: "maia3" } : { maia_used: false };
+}
+
 /** OpenRouter vendors reported as such; a model from any other vendor reads as "custom". */
 const KNOWN_MODEL_VENDORS = new Set([
   "anthropic",

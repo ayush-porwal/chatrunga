@@ -36,7 +36,7 @@ import { SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { hasDesktopApi } from "@/lib/environment";
-import { engineListRows, maiaNeedsLc0, progressPercent } from "@/lib/engine-assets";
+import { engineListRows, progressPercent } from "@/lib/engine-assets";
 import { cardPadded, divider, fieldHint, listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { ENGINE_PERFORMANCE_DESCRIPTION, EnginePerformanceRows } from "./engine-performance";
@@ -44,6 +44,7 @@ import { splitEngineArgs } from "@/lib/engine-args";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 import {
+  EngineRowActions,
   EngineRowText,
   formatTestResult,
   savedEngineMenuItems,
@@ -192,14 +193,6 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
           onTest={() => void testDraft()}
           onAdd={() => void addEngine()}
         />
-      ) : null}
-
-      {maiaNeedsLc0(assets.status) ? (
-        <Notice tone="warn" title="Maia needs Lc0">
-          The Maia networks are installed, but Maia runs inside Lc0, which isn't set up yet. Install
-          Lc0 (the command is below), then choose its binary from the Lc0 row's menu. Until then
-          Maia isn't used in reviews and can't be played against.
-        </Notice>
       ) : null}
 
       {view === "loading" ? (
@@ -404,16 +397,16 @@ function EngineSourcesNote({ status }: { status: EngineAssets["status"] }) {
         ? `Couldn't reach GitHub (${checkError}); showing the last known releases. `
         : null}
       {lastChecked ? `Releases checked ${lastChecked}. ` : null}
-      Maia networks by{" "}
+      Stockfish, Lc0 and Maia 3 (by{" "}
       <a
-        href="https://github.com/CSSLab/maia-chess"
+        href="https://github.com/CSSLab/maia-platform-frontend"
         target="_blank"
         rel="noopener noreferrer"
         className="text-info hover:underline"
       >
         CSSLab
-      </a>{" "}
-      (CC BY). Stockfish is GPL-3.0.
+      </a>
+      ) are GPL-3.0.
     </p>
   );
 }
@@ -497,29 +490,33 @@ function SavedEngineRow({
             </>
           }
         />
-        <OverflowMenu
-          label={`${shownName} actions`}
-          items={[
-            ...savedEngineMenuItems({
-              engine,
-              disabled: !desktopApiAvailable,
-              onSetDefault: () =>
-                updateEngine.mutate({ id: engine.id, patch: { isDefault: true } }),
-              onTest: () => void test()
-            }),
-            {
-              label: editing ? "Close editor" : "Edit",
-              icon: <Pencil />,
-              onSelect: () => (editing ? cancel() : onEditingChange(true))
-            },
-            {
-              label: "Delete",
-              icon: <Trash2 />,
-              onSelect: onDelete,
-              disabled: !desktopApiAvailable,
-              destructive: true
-            }
-          ]}
+        <EngineRowActions
+          menu={
+            <OverflowMenu
+              label={`${shownName} actions`}
+              items={[
+                ...savedEngineMenuItems({
+                  engine,
+                  disabled: !desktopApiAvailable,
+                  onSetDefault: () =>
+                    updateEngine.mutate({ id: engine.id, patch: { isDefault: true } }),
+                  onTest: () => void test()
+                }),
+                {
+                  label: editing ? "Close editor" : "Edit",
+                  icon: <Pencil />,
+                  onSelect: () => (editing ? cancel() : onEditingChange(true))
+                },
+                {
+                  label: "Delete",
+                  icon: <Trash2 />,
+                  onSelect: onDelete,
+                  disabled: !desktopApiAvailable,
+                  destructive: true
+                }
+              ]}
+            />
+          }
         />
       </div>
       {editing ? (

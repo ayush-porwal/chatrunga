@@ -125,7 +125,7 @@ describe("digest + host checks", () => {
       "https://evil.example/github.com",
       "https://user:pw@github.com/a",
       "https://github.com:8443/a",
-      "https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz",
+      "https://raw.githubusercontent.com/CSSLab/maia-platform-frontend/0013cc8e6ec52c88f5b3d694781d4cc8427cb91a/public/maia3/maia3_simplified.onnx",
       "not a url"
     ];
     for (const url of bad)

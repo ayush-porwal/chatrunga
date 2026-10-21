@@ -181,6 +181,16 @@ describe("resolveCommentaryMoves", () => {
     expect(c3.target).toMatchObject({ kind: "alternative", moves: ["c3"] });
   });
 
+  it("resolves Maia's moves at the mover's rating and along its curve", () => {
+    const { ctx } = setup({
+      moverPrediction: { rating: 1500, topMoves: [{ uci: "b2b4", prob: 0.4 }] },
+      humanPredictions: [{ rating: 600, topMoves: [{ uci: "d1e2", prob: 0.3 }] }]
+    });
+    const [b4, qe2] = resolveProse("Players often try b4 here, or even Qe2.", ctx);
+    expect(b4.target).toMatchObject({ kind: "human", moves: ["b4"] });
+    expect(qe2.target).toMatchObject({ kind: "human", moves: ["Qe2"] });
+  });
+
   it("uses move-number prefixes to pick the right occurrence", () => {
     const { ctx } = setup();
     const [plain, numbered] = resolveProse("Nf3 early, and 7...Nf3# at the end.", ctx);

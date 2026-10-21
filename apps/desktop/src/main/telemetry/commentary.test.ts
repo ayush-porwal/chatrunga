@@ -21,8 +21,8 @@ const INVALID_ANSWER = "The move loses time after Qh5.";
 function payload(ply: number, extra: Record<string, unknown> = {}): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
     ...extra,
-    schemaVersion: 2,
-    player: { rating: 1500, color: "white", ratingBucket: 1500 },
+    schemaVersion: 3,
+    player: { rating: 1500, color: "white" },
     game: {
       ply,
       moveNumberSan: "1.",

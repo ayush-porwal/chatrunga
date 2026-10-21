@@ -55,6 +55,7 @@ import {
 } from "./board-motion";
 import "./board.css";
 import { uciSquares } from "@chaturanga/shared/chess/square";
+import { isMaiaEngine } from "../play/engine-game";
 
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
 const FLASH_MS = 900;
@@ -482,7 +483,11 @@ export function BoardView() {
   // Player rows always render (fixed height) so the board never jumps between modes.
   const nameFor = (color: Color, name: string) => {
     if (mode !== "engine" || !engineSide) return name;
-    if (engineSide === color) return activeEngine ? engineDisplayName(activeEngine.name) : name;
+    // Maia goes by the game's name for it, with its rating ("Maia 1500").
+    if (engineSide === color)
+      return activeEngine && !isMaiaEngine(activeEngine)
+        ? engineDisplayName(activeEngine.name)
+        : name;
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
   // The engine's picture on its side: the match's engine while one is played, else a saved engine

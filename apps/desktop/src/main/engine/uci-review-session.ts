@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import type { AnalysisLine, EngineConfig, EngineInfo, Wdl } from "@chaturanga/shared/types/engine";
-import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
+import type { AnalysisLine, EngineConfig, EngineInfo } from "@chaturanga/shared/types/engine";
+import { parseInfoLine } from "@chaturanga/shared/engine/uci";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { logger } from "../logger";
 import { reviewAnalysisTimeoutMs, type ResolvedReviewSearch } from "./review-search";
@@ -27,12 +27,8 @@ type LineEvents = {
   failure: [Error];
 };
 
-/** Maia's policy prior for each legal move, and its root value head (WDL). */
-export type PolicyResult = { stats: Lc0MoveStat[]; wdl?: Wdl };
-
 /**
- * One UCI engine process for a review: the handshake, MultiPV searches and Maia policy reads,
- * with timeouts that leave diagnostics in the log and stop a search cleanly.
+ * One UCI engine process for a review: the handshake and MultiPV searches, with timeouts that leave diagnostics in the log and stop a search cleanly.
  */
 export class UciReviewSession {
   private process: ChildProcessWithoutNullStreams | null = null;
@@ -55,12 +51,7 @@ export class UciReviewSession {
     private shouldCancel?: () => boolean
   ) {}
 
-  async start(options: {
-    multipv?: number;
-    threads?: number;
-    hashMb?: number;
-    policyOnly?: boolean;
-  }): Promise<void> {
+  async start(options: { multipv?: number; threads?: number; hashMb?: number }): Promise<void> {
     const tag = `uci:${this.config.name}`;
     if (LOG_UCI) logger.trace(tag, "spawn", this.config.executablePath, this.config.args);
     this.process = spawnUciProcess(this.config);
@@ -98,25 +89,13 @@ export class UciReviewSession {
     await uciReady;
     this.engineName = identity.name ?? null;
 
-    if (options.policyOnly) {
-      // Maia: `go nodes 1` + VerboseMoveStats prints the raw policy prior of
-      // every legal move and the root value head. PolicyTemperature 1 gives the
-      // network's true distribution (lc0 defaults to 1.359, which flattens it).
-      this.setOption("VerboseMoveStats", "true");
-      this.setOption("PolicyTemperature", "1.0");
-      this.setOption("MinibatchSize", "1");
-      this.setOption("MaxPrefetch", "0");
-      this.setOption("UCI_ShowWDL", "true");
-      this.setOption("MultiPV", "1");
-    } else {
-      if (options.threads && this.setOption("Threads", String(options.threads)))
-        this.appliedThreads = options.threads;
-      if (options.hashMb && this.setOption("Hash", String(options.hashMb)))
-        this.appliedHashMb = options.hashMb;
-      this.setOption("UCI_ShowWDL", "true");
-      this.currentMultipv = options.multipv ?? 1;
-      this.setOption("MultiPV", String(this.currentMultipv));
-    }
+    if (options.threads && this.setOption("Threads", String(options.threads)))
+      this.appliedThreads = options.threads;
+    if (options.hashMb && this.setOption("Hash", String(options.hashMb)))
+      this.appliedHashMb = options.hashMb;
+    this.setOption("UCI_ShowWDL", "true");
+    this.currentMultipv = options.multipv ?? 1;
+    this.setOption("MultiPV", String(this.currentMultipv));
     await this.ready();
     this.write("ucinewgame");
   }
@@ -164,28 +143,6 @@ export class UciReviewSession {
       }
     });
     return linesFromInfoStream(input.fen, infos);
-  }
-
-  /** Maia policy for `fen` (requires `start({ policyOnly: true })`). */
-  async analyzePolicy(fen: string, shouldCancel?: () => boolean): Promise<PolicyResult> {
-    const stats: Lc0MoveStat[] = [];
-    let wdl: Wdl | undefined;
-    await this.search({
-      fen,
-      go: "go nodes 1",
-      timeoutMs: reviewAnalysisTimeoutMs({ moveTimeMs: null, depth: 1, multipv: 1, nodes: 1 }),
-      shouldCancel,
-      onLine: (line) => {
-        const stat = parseLc0MoveStat(line);
-        if (stat) {
-          stats.push(stat);
-          return;
-        }
-        const info = parseInfoLine(this.config.id, line);
-        if (info?.wdl && (info.multipv ?? 1) === 1) wdl = info.wdl;
-      }
-    });
-    return { stats, wdl };
   }
 
   stop(): void {

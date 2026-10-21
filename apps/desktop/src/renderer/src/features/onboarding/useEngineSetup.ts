@@ -5,7 +5,6 @@ import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
   fetchAssetStatus,
   isAssetInstalled,
-  lc0NeedsManualInstall,
   recommendedDownloads,
   setupRowPercent,
   setupRows,
@@ -20,7 +19,7 @@ export type EngineSetup = {
   statusLoaded: boolean;
   /** The download status couldn't be read (the check failed, or no desktop bridge). */
   statusFailed: boolean;
-  /** Stockfish, Lc0 + Maia as the setup list shows them (sizes before, progress during, done after). */
+  /** Stockfish, Lc0 + Maia 3 as the setup list shows them (sizes before, progress during, done after). */
   rows: SetupRow[];
   /** Nothing downloaded or queued yet, and something to offer. */
   offer: boolean;
@@ -33,8 +32,6 @@ export type EngineSetup = {
   engine: EngineConfig | null;
   /** Stockfish's download percentage while it is being fetched, else null. */
   stockfishPercent: number | null;
-  /** Maia needs Lc0, which has no download for this computer (lc0NeedsManualInstall). */
-  lc0Manual: boolean;
   start: () => void;
   retry: (row: SetupRow) => void;
   /** Reads the download status again (after a failed check). */
@@ -91,16 +88,9 @@ export function useEngineSetup(): EngineSetup {
     if (recommended.length) return setupRows(recommended, {});
     // Everything recommended is installed: show it as done.
     const installed = status
-      ? [
-          status.stockfish,
-          status.lc0,
-          status["lc0-network"],
-          status["maia-1100"],
-          status["maia-1300"],
-          status["maia-1500"],
-          status["maia-1700"],
-          status["maia-1900"]
-        ].filter((asset) => isAssetInstalled(asset))
+      ? [status.stockfish, status.lc0, status["lc0-network"], status.maia3].filter((asset) =>
+          isAssetInstalled(asset)
+        )
       : [];
     const done: AssetProgressMap = Object.fromEntries(
       installed.map((asset) => [
@@ -133,7 +123,6 @@ export function useEngineSetup(): EngineSetup {
     engineReady,
     engine,
     stockfishPercent: stockfishBusy ? setupRowPercent(stockfishRow) : null,
-    lc0Manual: lc0NeedsManualInstall(status),
     start: () => void startDownloads(recommended),
     retry: (row) => void retryDownloads(row.ids.filter((id) => progress[id]?.status === "error")),
     recheck: () => {

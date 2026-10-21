@@ -20,6 +20,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
+import { MAIA1_MANAGED_NAME } from "@chaturanga/shared/engine/managed";
 import { closeDb, getDb } from "./db";
 import { externalDatabaseRepository } from "./db/external-database-repository";
 import { engineRepository, gameRepository, settingsRepository } from "./db/repositories";
@@ -50,6 +51,13 @@ import { rescueLegacyDatasets } from "./databases/dataset-location";
 import { adoptStoredEngineImages } from "./engine/engine-images";
 import { engineImages } from "./ipc/engine-handler";
 import { broadcast } from "./ipc/broadcast";
+import { appWindows, isServiceContents } from "./app-windows";
+import {
+  configureMaia3Host,
+  disposeMaia3Evaluator,
+  getMaia3Evaluator,
+  MAIA_HOST_SCHEME_PRIVILEGES
+} from "./maia";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -78,10 +86,15 @@ app.setPath(
 );
 if (userDataOverride) app.setAppLogsPath(join(userDataOverride, "logs"));
 protocol.registerSchemesAsPrivileged([
-  { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  MAIA_HOST_SCHEME_PRIVILEGES
 ]);
 
-const engineManager = new EngineManager();
+configureMaia3Host({
+  hostDir: join(currentDir, "../maia-host"),
+  preload: join(currentDir, "../preload/maia-host.cjs")
+});
+const engineManager = new EngineManager({ maia3: getMaia3Evaluator });
 let mainWindow: BrowserWindow | null = null;
 /** A quit is under way: once a window's pending save is written, the quit continues. */
 let quitRequested = false;
@@ -114,7 +127,7 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit();
   });
   app.on("activate", () => {
-    if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (app.isReady() && appWindows().length === 0) createWindow();
   });
   app.on("before-quit", () => {
     if (!quitRequested) logger.info("main", "quit requested");
@@ -161,6 +174,26 @@ async function startup(): Promise<void> {
   } catch (error) {
     logger.error("settings", "ratings migration failed:", error);
   }
+  // Before registerIpc: it reads Maia 1's engine rows, which the registry sync then removes. Only
+  // loaded while there is something of Maia 1's to migrate (its rows, or its review levels).
+  try {
+    const engines = engineRepository.list();
+    if (
+      settingsRepository.getStored("reviewMaiaLevels") !== undefined ||
+      engines.some((engine) => MAIA1_MANAGED_NAME.test(engine.name))
+    ) {
+      const { migrateMaiaSettings } = await import("./maia-settings-migration");
+      const changed = migrateMaiaSettings({
+        getStored: (key) => settingsRepository.getStored(key),
+        set: (key, value) => settingsRepository.set(key, value),
+        removeStored: (key) => settingsRepository.removeStored(key),
+        engines: () => engines
+      });
+      if (changed.length) logger.info("settings", `Maia 3: moved ${changed.join(", ")}`);
+    }
+  } catch (error) {
+    logger.error("settings", "Maia settings migration failed:", error);
+  }
   startTelemetry();
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(isPermissionAllowed(permission))
@@ -189,7 +222,7 @@ async function startup(): Promise<void> {
       // The installer quits without the usual close path: write pending saves first, and if one
       // failed (or the renderer didn't answer), ask before losing it (Cancel keeps the app open to
       // retry; no install then). Only this part can fail: shutdown() doesn't throw.
-      for (const window of BrowserWindow.getAllWindows()) {
+      for (const window of appWindows()) {
         const saved = (await flushLogged(window, "install")) === "saved";
         if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
       }
@@ -250,6 +283,7 @@ function shutdown(): Promise<void> {
       ["reviews", () => engineManager.cancelAllReviews()],
       ["engines", () => void engineManager.dispose()],
       ["engine processes", killAllEngineProcesses],
+      ["maia", disposeMaia3Evaluator],
       // Before the database closes: a download finishing now couldn't register its dataset.
       ["downloads", () => cancelAllDownloads()],
       // Also before it closes, and time-bounded: what isn't sent stays queued for the next launch.
@@ -290,6 +324,8 @@ function hardenWebContents(contents: WebContents): void {
   contents.on("will-attach-webview", (event) => event.preventDefault());
   contents.on("render-process-gone", (_event, details) => {
     logger.error("main", "renderer process gone:", details.reason);
+    // A service window (the Maia host) is restarted by its owner, not reloaded.
+    if (isServiceContents(contents)) return;
     if (details.reason !== "clean-exit" && details.reason !== "killed" && !contents.isDestroyed())
       contents.reload();
   });
@@ -336,6 +372,7 @@ function createWindow(): void {
     // shuts down and running reviews are cancelled.
     void engineManager.dispose();
     engineManager.cancelAllReviews();
+    disposeMaia3Evaluator();
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

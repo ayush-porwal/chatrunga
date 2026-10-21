@@ -1,16 +1,13 @@
 import type { ReviewGameInput } from "@chaturanga/shared/types/engine";
 
-/** Used when no search bound is set — time-bounded search works for Stockfish, lc0, Maia, etc. */
+/** Used when no search bound is set — time-bounded search works for Stockfish, lc0, etc. */
 export const DEFAULT_REVIEW_MOVETIME_MS = 250;
 
 /** Legacy default when callers request depth-only mode. */
 const DEFAULT_REVIEW_DEPTH = 14;
 
 /**
- * Precedence: nodes > moveTimeMs > depth > default movetime.
- *
- * This drives the evaluation engine. Maia sessions always run `go nodes 1`
- * with VerboseMoveStats (see `UciReviewSession.analyzePolicy`).
+ * Precedence: nodes > moveTimeMs > depth > default movetime. This drives the evaluation engine.
  */
 export type ResolvedReviewSearch = {
   /** When non-null, sent as `go nodes N`. Wins over moveTimeMs and depth. */
@@ -105,8 +102,7 @@ function uncappedTimeoutMs(params: {
   nodes?: number | null;
 }): number {
   const mp = Math.max(1, Math.min(params.multipv, 5));
-  // `nodes` mode (typically nodes=1 for Maia policy) returns near-instantly per move;
-  // even multi-Maia parallelism finishes well under a second per position.
+  // A `nodes` bound (meant for a few nodes): a second per node per line, at least 10 s.
   if (typeof params.nodes === "number" && params.nodes > 0) {
     return Math.max(10_000, params.nodes * 1_000 * mp + 5_000);
   }

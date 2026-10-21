@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBestMove, parseInfoLine, parseLc0MoveStat } from "./uci";
+import { parseBestMove, parseInfoLine } from "./uci";
 
 describe("shared UCI parser", () => {
   it("parses engine info lines", () => {
@@ -39,20 +39,5 @@ describe("shared UCI parser", () => {
     expect(parseInfoLine("sf", "info depth 0 score mate 0")).toMatchObject({
       score: { type: "mate", value: 0 }
     });
-  });
-
-  it("parses lc0 VerboseMoveStats lines (real lc0 0.32 / Maia output)", () => {
-    expect(
-      parseLc0MoveStat(
-        "info string f1c4  (139 ) N:       0 (+ 0) (P: 23.75%) (WL:  -.-----) (D: -.---) (M:  -.-) (Q:  0.03315) (U: 0.41444) (S:  0.44759) (V:  -.----) "
-      )
-    ).toStrictEqual({ move: "f1c4", n: 0, p: 0.2375, v: null, q: 0.03315, wl: null, d: null });
-    expect(
-      parseLc0MoveStat(
-        "info string node  (  27) N:       1 (+ 0) (P:  0.00%) (WL:  0.03162) (D: 0.039) (M:  0.0) (Q:  0.03162) (V:  0.0331) "
-      )
-    ).toStrictEqual({ move: "node", n: 1, p: 0, v: 0.0331, q: 0.03162, wl: 0.03162, d: 0.039 });
-    expect(parseLc0MoveStat("info string Using backend metal")).toBeNull();
-    expect(parseLc0MoveStat("info depth 1 seldepth 1 score cp 80 pv f1c4")).toBeNull();
   });
 });

@@ -1,7 +1,9 @@
-import { copyFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { copyFileSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "electron-vite";
+import { build as viteBuild } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -29,12 +31,69 @@ function minifyIndexHtml() {
   };
 }
 
+const maiaVendorDir = resolve(rootDir, "vendor/csslab-maia");
+const onnxRuntimeWeb = resolve(rootDir, "node_modules/onnxruntime-web");
+const onnxRuntimeDist = resolve(onnxRuntimeWeb, "dist");
+/** The onnxruntime-common onnxruntime-web itself depends on (the same release, pinned exactly). */
+const onnxRuntimeCommon = resolve(
+  dirname(createRequire(resolve(onnxRuntimeWeb, "package.json")).resolve("onnxruntime-common")),
+  "../esm/index.js"
+);
+/** The ONNX Runtime files CSSLab's worker loads from `/ort/` (byte-identical to their public/ort). */
+const ORT_FILES = ["ort.wasm.min.js", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"];
+
+/**
+ * The hidden Maia host page (src/maia-host, see main/maia/maia-host.ts) as its own Vite build
+ * into out/maia-host, beside main's: the page script, CSSLab's worker and the ONNX Runtime files,
+ * at the paths CSSLab's code asks for them by (`/maia-worker.js`, `/ort/`).
+ */
+function buildMaiaHost() {
+  const outDir = resolve(rootDir, "out/maia-host");
+  return {
+    name: "build-maia-host",
+    apply: "build" as const,
+    async closeBundle() {
+      await viteBuild({
+        configFile: false,
+        root: resolve(rootDir, "src/maia-host"),
+        base: "/",
+        logLevel: "warn",
+        resolve: {
+          alias: {
+            // CSSLab's maia.ts takes MaiaStatus from their types module (a type, so nothing of
+            // it is bundled) and only `Tensor` from onnxruntime-web, which re-exports it from
+            // onnxruntime-common. Resolving the page's import there keeps a second runtime (and
+            // a second copy of its wasm) out of the page: the worker runs ONNX Runtime itself.
+            "src/types": resolve(rootDir, "src/maia-host/upstream-types.ts"),
+            "onnxruntime-web": onnxRuntimeCommon
+          }
+        },
+        build: {
+          outDir,
+          emptyOutDir: true,
+          minify: true,
+          modulePreload: false,
+          // One script at a fixed name: main serves only a fixed list of files.
+          rollupOptions: { output: { entryFileNames: "main.js", codeSplitting: false } }
+        }
+      });
+      copyFileSync(
+        resolve(maiaVendorDir, "public/maia-worker.js"),
+        resolve(outDir, "maia-worker.js")
+      );
+      mkdirSync(resolve(outDir, "ort"), { recursive: true });
+      for (const file of ORT_FILES)
+        copyFileSync(resolve(onnxRuntimeDist, file), resolve(outDir, "ort", file));
+    }
+  };
+}
+
 // Main and preload are fully self-contained bundles (only Node built-ins and
 // `electron` stay external), so the packaged app ships no node_modules and
 // every package lives in devDependencies.
 export default defineConfig({
   main: {
-    plugins: [copyOpeningBook()],
+    plugins: [copyOpeningBook(), buildMaiaHost()],
     // keepNames survives function/class names through minification, so production stack
     // traces in logs stay attributable (error.name comparisons are explicit strings either way).
     esbuild: { keepNames: true },
@@ -73,7 +132,11 @@ export default defineConfig({
       externalizeDeps: false,
       rollupOptions: {
         external: ["electron"],
-        input: { index: resolve(rootDir, "src/preload/index.ts") },
+        input: {
+          index: resolve(rootDir, "src/preload/index.ts"),
+          // The hidden Maia host window's (main/maia/maia-host.ts).
+          "maia-host": resolve(rootDir, "src/preload/maia-host.ts")
+        },
         // The window is sandboxed, and sandboxed preloads must be CommonJS.
         output: { format: "cjs", entryFileNames: "[name].cjs" }
       }

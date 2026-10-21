@@ -12,24 +12,21 @@ import { EngineAvatar } from "./EngineAvatar";
 
 /** One choice in an {@link EnginePicker}. */
 export type EnginePickerOption = {
-  /** What `onChange` reports ("" for a choice that is no one engine, e.g. Automatic). */
+  /** What `onChange` reports: the engine's id. */
   value: string;
   /** Whose picture the option shows (null: an empty tile). */
   engine: EngineIdentity | null;
   label: string;
-  /** A note after the name ("human-like"). */
-  hint?: string;
   /** Listed but can't be chosen (an engine that can't run now). */
   disabled?: boolean;
 };
 
 /** An installed engine as a choice: its id, picture and name; listed but not choosable when it can't run. */
-export function engineOption(engine: EngineConfig, hint?: string): EnginePickerOption {
+export function engineOption(engine: EngineConfig): EnginePickerOption {
   return {
     value: engine.id,
     engine,
     label: engineDisplayName(engine.name),
-    hint,
     disabled: !engine.isAvailable
   };
 }
@@ -182,12 +179,11 @@ export function EnginePicker({
   );
 }
 
-/** An option's name and its hint, truncated together; with no options, that none is installed. */
+/** An option's name, truncated; with no options, that none is installed. */
 function OptionText({ option }: { option: EnginePickerOption | undefined }) {
   return (
     <span className="min-w-0 flex-1 truncate">
       <b className="font-medium text-fg">{option?.label ?? "No engine installed"}</b>
-      {option?.hint ? <span className="text-fg-subtle"> · {option.hint}</span> : null}
     </span>
   );
 }

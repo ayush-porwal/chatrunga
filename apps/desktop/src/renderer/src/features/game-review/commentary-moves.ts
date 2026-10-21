@@ -314,14 +314,22 @@ function otherReplyCandidates(
     }));
 }
 
-/** Maia's human moves from before the move (its parent): the top five at each rating. */
+/**
+ * Maia's human moves from before the move (its parent): the top five at the mover's rating (Maia
+ * 3), then at each rating of the curve, each move once.
+ */
 function humanCandidates(move: MoveReview, parentId: string): Candidate[] {
-  return (move.humanPredictions ?? []).flatMap((prediction) =>
-    prediction.topMoves.slice(0, 5).map((candidate) => ({
-      kind: "human",
-      line: lineFromUcis(parentId, move.ply - 1, move.fenBefore, [candidate.uci])
-    }))
+  const predictions = [
+    ...(move.moverPrediction ? [move.moverPrediction] : []),
+    ...(move.humanPredictions ?? [])
+  ];
+  const ucis = new Set(
+    predictions.flatMap((prediction) => prediction.topMoves.slice(0, 5).map((item) => item.uci))
   );
+  return Array.from(ucis, (uci) => ({
+    kind: "human",
+    line: lineFromUcis(parentId, move.ply - 1, move.fenBefore, [uci])
+  }));
 }
 
 /** The rest of the main line (what no pass covers yet), nearest the played move first. */

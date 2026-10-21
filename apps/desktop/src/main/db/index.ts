@@ -434,7 +434,18 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
   },
   // 10: whether a game was left on the Analyze page's board (it reopens there). Kept apart from
   // its source, which says where the game came from. Null for games saved before.
-  (database) => addColumn(database, "games", "analysis_board", "INTEGER")
+  (database) => addColumn(database, "games", "analysis_board", "INTEGER"),
+  // 11: how an engine runs (EngineRuntime): every engine so far is a UCI process; the managed
+  // Maia row (Maia 3 in its host window, engine-registry-sync.ts) is "maia3".
+  (database) => addColumn(database, "engines", "runtime", "TEXT NOT NULL DEFAULT 'custom-uci'"),
+  // 12: the engine row each analysis ran on (GameReview.engineId), so the analysis list shows that
+  // engine's picture. Read from the stored reviews; a review without a readable id has none.
+  (database) => {
+    addColumn(database, "game_reviews", "engine_id", "TEXT");
+    database.exec(`UPDATE game_reviews
+      SET engine_id = NULLIF(trim(json_extract(review_json, '$.engineId')), '')
+      WHERE json_valid(review_json) AND json_type(review_json, '$.engineId') = 'text'`);
+  }
 ];
 
 /** A stored game's fingerprint (null when its tree can't be read; the next save sets it). */
