@@ -133,6 +133,49 @@ test("the Analysis switch off pauses: the lines stay, on another move too, and o
   ).toBe(false);
 });
 
+test("another engine picked in Analysis settings while paused names the engine row at once", async ({
+  launch,
+  profile
+}) => {
+  const log = join(profile, "fake-engine.log");
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "stockfish");
+  await registerFakeEngine(page, join(profile, "second-engine.log"), "stockfish", {
+    name: "Second UCI"
+  });
+  await importPgnFile(app, page, writePgn(profile, "castled.pgn", CASTLED_PGN));
+  await expect(
+    page
+      .getByRole("tree", { name: "Game moves" })
+      .getByRole("button", { name: "O-O-O", exact: true })
+  ).toBeVisible();
+
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  const panel = page.getByRole("region", { name: "Engine" });
+  const rb1 = panel.getByRole("button", { name: "Go to Rb1 position" });
+  await analysis.click();
+  await expect(panel.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
+  await expect(rb1).toBeVisible({ timeout: 15_000 });
+  // Off: paused, the first engine's lines stay.
+  await analysis.click();
+  await expect(panel).toContainText(/Paused at depth \d+/);
+
+  // The second engine, picked from Analysis settings' engine dropdown.
+  await page.getByRole("button", { name: "Analysis settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Analysis settings" });
+  await settings.getByRole("combobox", { name: "Engine" }).click();
+  await settings.getByRole("option", { name: "Second UCI" }).click();
+  await expect(settings.getByRole("combobox", { name: "Engine" })).toContainText("Second UCI");
+  await settings.getByRole("button", { name: "Done" }).click();
+
+  // The row names it without the switch touched; the first engine's paused lines are gone.
+  await expect(panel.getByRole("heading", { name: "Second UCI" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Fake UCI" })).toHaveCount(0);
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
+  await expect(rb1).toHaveCount(0);
+});
+
 test("an engine that dies during live analysis ends the search, and Restart searches again", async ({
   launch,
   profile

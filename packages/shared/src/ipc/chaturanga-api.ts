@@ -530,13 +530,14 @@ export type ChaturangaApi = {
     openDownload(): Promise<boolean>;
   };
 
-  /** Asset manager bridge — engine + Maia weight downloads (main/engine/asset-manager.ts). */
+  /** Asset manager bridge — engine, Lc0 network + Maia weight downloads (main/engine/asset-manager.ts). */
   assets: {
     /** Installs the latest release of one asset. */
     download(assetId: EngineAssetId): Promise<EngineAssetActionResult>;
     /** Installs every asset that is missing and downloadable on this platform. */
     downloadAll(): Promise<EngineAssetDownloadSummary>;
     remove(assetId: EngineAssetId): Promise<void>;
+    /** The user's own file for an asset (`lc0-network` must be a `.pb` / `.pb.gz` network). */
     setCustomPath(assetId: EngineAssetId, customPath: string): Promise<void>;
     /**
      * Installed state plus the latest upstream version and download size per asset. Makes no
@@ -567,6 +568,8 @@ export type ChaturangaApi = {
 export type EngineAssetId =
   | "stockfish"
   | "lc0"
+  /** The network the "Lc0 (managed)" engine plays with (downloaded, or the user's own file). */
+  | "lc0-network"
   | "maia-1100"
   | "maia-1300"
   | "maia-1500"
@@ -590,7 +593,10 @@ export type EngineAssetStatus = {
   /** Bytes on disk (0 when missing). */
   sizeBytes: number;
   installedAt: string | null;
-  /** Installed version: release tag (`sf_19`, `v0.32.1`) or `v1.0` for Maia; older installs may show a bare version (`17.1`). */
+  /**
+   * Installed version: release tag (`sf_19`, `v0.32.1`), `v1.0` for Maia, the network's name for
+   * Lc0's network; older installs may show a bare version (`17.1`).
+   */
   installedVersion: string | null;
   /** Newest known version (release tag); null when this platform needs a manual install. */
   latestVersion: string | null;
@@ -598,7 +604,7 @@ export type EngineAssetStatus = {
   updateAvailable: boolean;
   /** Size of what a download/update would fetch, from the GitHub release (or fallback list). */
   downloadSizeBytes: number | null;
-  /** "github": live/cached release lookup; "fallback": bundled last known-good; "fixed": Maia weights. */
+  /** "github": live/cached release lookup; "fallback": bundled last known-good; "fixed": Maia weights and Lc0's network. */
   latestSource: "github" | "fallback" | "fixed" | null;
   /** False when the platform has no download (Lc0 on macOS / Linux): show `installInstructions`. */
   autoDownload: boolean;

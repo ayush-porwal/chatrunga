@@ -7,8 +7,11 @@ import {
   type AssetProgressMap
 } from "@/lib/engine-assets";
 
+/** The open dialog's filter for Lc0 networks (`.pb.gz` matches `gz`: dialogs take one extension). */
+const NETWORK_FILE_FILTERS = [{ name: "Lc0 networks", extensions: ["pb", "gz"] }];
+
 /**
- * Settings → Engines' downloads: which engines + Maia networks are installed (and at which
+ * Settings → Engines' downloads: which engines, Lc0's network + Maia networks are installed (and at which
  * version), live progress, and the download / update / remove / custom-binary actions. `status`
  * stays null outside the desktop app. The first-run welcome (features/onboarding) handles the
  * initial download.
@@ -69,9 +72,13 @@ export function useEngineAssets() {
       await api?.remove(id);
       return null;
     });
+  const files = window.chaturanga?.files;
   const pickCustomFile = (id: EngineAssetId) =>
     runForAsset(id, async () => {
-      const file = await window.chaturanga?.files.selectExecutable();
+      // Lc0's network is a .pb / .pb.gz file (main checks it again); engines are any binary.
+      const file = await (id === "lc0-network"
+        ? files?.selectOpenFile(NETWORK_FILE_FILTERS)
+        : files?.selectExecutable());
       if (file) await api?.setCustomPath(id, file);
       return null;
     });

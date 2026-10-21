@@ -10,12 +10,10 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type {
   AnalysePositionInput,
   AnalysisLine,
-  EngineConfig,
   EngineScore
 } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { PuzzleOutcome, PuzzleWrongMove } from "../../stores/puzzle-store";
-import { pickDefaultEngine } from "../game-review/review-engine-picker";
 import { assessScore, uciLineToSan, uciToSan } from "../game-review/review-utils";
 import { formatPuzzleTag } from "./puzzle-set";
 
@@ -60,17 +58,6 @@ export function explanationKey(
   return kind === "failed_wrong_move" && wrong
     ? `${identity}:${kind}:${wrong.solutionIndex}:${wrong.uci}`
     : `${identity}:${kind}`;
-}
-
-/** The Game review evaluation engine: the chosen one, else the automatic pick; null when unusable. */
-export function explainEngine(
-  engines: readonly EngineConfig[],
-  defaultEngineId: string | null
-): EngineConfig | null {
-  const engine = defaultEngineId
-    ? engines.find((item) => item.id === defaultEngineId)
-    : pickDefaultEngine(engines);
-  return engine?.isAvailable && !engine.isHumanPrediction ? engine : null;
 }
 
 /** Where each searched position's lines are in the analysis result. */

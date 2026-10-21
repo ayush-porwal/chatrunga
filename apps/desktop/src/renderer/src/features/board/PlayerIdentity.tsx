@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react";
 import { SideDot } from "@/components/ui/side-dot";
+import type { EngineIdentity } from "@/lib/engine-identity";
 import { cn } from "@/lib/utils";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 
@@ -20,14 +21,14 @@ function PlayerIdentity({
   name: string;
   elo?: string | null;
   /** When the side is played by an engine: its image slot (EngineAvatar) instead of the side dot. */
-  engine?: { imagePath: string | null } | null;
+  engine?: EngineIdentity | null;
   hint?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("flex min-w-0 items-center gap-2.5 text-sm", className)}>
       {engine ? (
-        <EngineAvatar imagePath={engine.imagePath} size="sm" />
+        <EngineAvatar engine={engine} size="sm" />
       ) : (
         <span
           aria-hidden="true"
@@ -99,7 +100,7 @@ export const PlayerRow = memo(function PlayerRow({
   color: "white" | "black";
   name: string;
   elo?: string | null;
-  engine?: { imagePath: string | null } | null;
+  engine?: EngineIdentity | null;
   hint?: ReactNode;
   clock?: ReactNode;
   clockActive?: boolean;

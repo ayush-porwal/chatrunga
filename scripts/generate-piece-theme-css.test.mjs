@@ -132,9 +132,12 @@ test("every set the app lists is packed", () => {
   assert.deepEqual(new Set(THEMES), new Set(["cburnett", ...listed]));
 });
 
-test("CREDITS.md credits every packed set", () => {
-  const credits = readFileSync(new URL("./piece-svg-sources/CREDITS.md", import.meta.url), "utf8");
-  const listed = [...credits.matchAll(/^\| ([a-z][a-z0-9-]*) \| [^|]+ \| .+ \|$/gm)].map(
+test("PIECES.md credits every packed set", () => {
+  const credits = readFileSync(
+    new URL("../apps/desktop/resources/credits/PIECES.md", import.meta.url),
+    "utf8"
+  );
+  const listed = [...credits.matchAll(/^\| ([a-z][a-z0-9-]*) +\| [^|]+\| .+\|$/gm)].map(
     ([, set]) => set
   );
   assert.deepEqual(new Set(listed), new Set(THEMES));

@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
-import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { gamesOfPages } from "@/lib/game-pages";
 import { ipcErrorMessage } from "@/lib/ipc-error";
@@ -24,7 +23,9 @@ import { cn } from "@/lib/utils";
 import { useGameFacetsQuery, useRecentGamePagesQuery } from "../../queries/api";
 import { useChesscomStore } from "../../stores/chesscom-store";
 import { useLichessStore } from "../../stores/lichess-store";
+import { PlayerMark } from "../game/library-rows";
 import { useSavedGameActions } from "../game/saved-game-actions";
+import { useSavedEngineSide } from "../game/use-saved-engine-side";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { CardTitleBar } from "./card-title";
 import { PiecePair } from "./piece-art";
@@ -353,10 +354,16 @@ function GameRow({
   const white = playerName(game, "white");
   const black = playerName(game, "black");
   const reviewed = game.reviewCount > 0;
+  // An engine game's engine (by the id its headers saved, once read) shows its picture.
+  const engineSide = useSavedEngineSide({
+    white: game.white,
+    black: game.black,
+    engineId: saved?.headers?.engineId
+  });
 
   const player = (color: Color, name: string) => (
-    <span className="flex min-w-0 items-center gap-2">
-      <SideDot color={color} />
+    <span className="flex min-w-0 items-center gap-1.5">
+      <PlayerMark color={color} engine={engineSide?.side === color ? engineSide.engine : null} />
       <span
         className={cn(
           "truncate font-medium",

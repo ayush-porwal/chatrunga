@@ -6,6 +6,7 @@ import {
   rejoinNotice,
   savedEngineClock,
   savedEngineMatch,
+  savedEngineSide,
   timeForfeitSave,
   yourSide
 } from "./rejoin-saved-game";
@@ -61,6 +62,30 @@ describe("rejoining a saved engine game", () => {
     );
     expect(rejoinNotice({ white: "You", black: "Stockfish" }, [stockfish])).toBeNull();
     expect(rejoinNotice({ white: "Alpha", black: "Beta" }, [stockfish])).toBeNull();
+  });
+
+  it("names the engine side's picture: the engine that played it, installed or not, else its name", () => {
+    const off = { ...customStockfish, isAvailable: false };
+    // By the id the game saved, even when unavailable or another shares its name.
+    expect(
+      savedEngineSide({ white: "You", black: "Stockfish", engineId: "sf-custom" }, [stockfish, off])
+    ).toStrictEqual({ side: "black", engine: off });
+    // By the name shown (an older save's "(managed)" too), unavailable included.
+    expect(savedEngineSide({ white: "Maia 1500 (managed)", black: "You" }, [maia])).toStrictEqual({
+      side: "white",
+      engine: maia
+    });
+    // Not installed: just its name, for its logo or initials.
+    expect(savedEngineSide({ white: "You", black: "Komodo" }, [stockfish])).toStrictEqual({
+      side: "black",
+      engine: { name: "Komodo" }
+    });
+  });
+
+  it("names no engine side in a game that isn't against an engine, or an unnamed one", () => {
+    expect(savedEngineSide({ white: "Alpha", black: "Stockfish" }, [stockfish])).toBeNull();
+    expect(savedEngineSide({ white: "You", black: "You" }, [stockfish])).toBeNull();
+    expect(savedEngineSide({ white: "You", black: " " }, [stockfish])).toBeNull();
   });
 
   it("knows your side only when exactly one side is You", () => {

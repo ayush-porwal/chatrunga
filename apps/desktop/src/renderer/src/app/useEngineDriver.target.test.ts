@@ -2,17 +2,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineBestMove, EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
 import { pausedAnalysisAt, type AnalysisTarget } from "../features/analysis/live-analysis";
 
-// The hook's effects run once, outside React (as in useGameAutosave's tests); the engine calls
-// go to the fakes below.
-const cleanups: Array<() => void> = [];
+// The hook runs outside React: each render (see render) walks its hooks in order, keeping each
+// ref and re-running an effect only when its dependencies change, as React would. The engine
+// calls go to the fakes below.
+type EffectSlot = { deps: readonly unknown[] | undefined; cleanup: (() => void) | void };
+const hooks = { slots: [] as unknown[], index: 0 };
 vi.mock("react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react")>()),
-  useEffect: (effect: () => (() => void) | void) => {
-    const cleanup = effect();
-    if (cleanup) cleanups.push(cleanup);
+  useEffect: (effect: () => (() => void) | void, deps?: readonly unknown[]) => {
+    const index = hooks.index++;
+    const previous = hooks.slots[index] as EffectSlot | undefined;
+    const same =
+      previous?.deps && deps?.every((value, at) => Object.is(value, previous.deps?.[at]));
+    if (same) return;
+    previous?.cleanup?.();
+    hooks.slots[index] = { deps, cleanup: effect() } satisfies EffectSlot;
   },
-  useRef: <T>(current: T) => ({ current })
+  useRef: (current: unknown) => (hooks.slots[hooks.index++] ??= { current })
 }));
+/** Unmounts the hook: every effect's cleanup runs. */
+function unmountDriver() {
+  for (const slot of hooks.slots.splice(0)) {
+    if (slot && typeof slot === "object" && "deps" in slot) (slot as EffectSlot).cleanup?.();
+  }
+}
 const engines = {
   startAnalysis: vi.fn<
     (request: { searchId: string; fen: string; moves: string[]; fresh?: boolean }) => Promise<void>
@@ -47,6 +60,18 @@ vi.stubGlobal("chaturanga", {
 });
 
 const { useEngineDriver } = await import("./useEngineDriver");
+const analysisOptions: Parameters<typeof useEngineDriver>[0] = {
+  engineId: "sf",
+  multipv: 3,
+  depth: null,
+  moveTimeMs: null,
+  resources: ""
+};
+/** One render of `hook` (again: a re-render), its hooks walked from the first. */
+function render(hook: () => void) {
+  hooks.index = 0;
+  hook();
+}
 const { useAnalysisStore } = await import("../stores/analysis-store");
 const { useGameStore } = await import("../stores/game-store");
 
@@ -94,11 +119,11 @@ describe("useEngineDriver", () => {
     vi.clearAllMocks();
     // The driver, mounted on an Analyze board: it searches the board's position.
     useGameStore.getState().setMode("analysis");
-    useEngineDriver({ engineId: "sf", multipv: 3, depth: null, moveTimeMs: null, resources: "" });
+    render(() => useEngineDriver(analysisOptions));
   });
 
   afterEach(() => {
-    cleanups.splice(0).forEach((cleanup) => cleanup());
+    unmountDriver();
     useAnalysisStore.setState({ target: null });
   });
 
@@ -332,6 +357,21 @@ describe("useEngineDriver", () => {
       expect(resumed.paused).toBeNull();
       expect(resumed.status).toBe("thinking");
       expect(resumed.topLines.map((info) => info.depth)).toStrictEqual([12]);
+    });
+
+    it("another engine chosen while paused ends the pause: the new one searches once on again", async () => {
+      await pausedAtDepth12();
+      engines.startAnalysis.mockClear();
+      render(() => useEngineDriver({ ...analysisOptions, engineId: "lc0" }));
+      await settle();
+      // The old engine's lines go (they'd show under the new engine's name); nothing searches.
+      expect(useAnalysisStore.getState().paused).toBeNull();
+      expect(engines.startAnalysis).not.toHaveBeenCalled();
+
+      await switchOn();
+      expect(engines.startAnalysis).toHaveBeenCalledTimes(1);
+      expect(engines.startAnalysis.mock.calls[0][0]).toMatchObject({ engineId: "lc0" });
+      expect(useAnalysisStore.getState().activeEngineId).toBe("lc0");
     });
 
     it("Restart while paused searches the position again from scratch, the engine's hash cleared", async () => {

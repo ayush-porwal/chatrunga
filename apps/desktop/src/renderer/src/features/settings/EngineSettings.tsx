@@ -1,5 +1,5 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import { useState, type ComponentProps, type ComponentType } from "react";
+import { useState } from "react";
 import {
   Download,
   File,
@@ -17,11 +17,7 @@ import type {
   EngineConfig,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
-import {
-  defaultEngineThreads,
-  defaultSettings,
-  type AppSettings
-} from "@chaturanga/shared/types/settings";
+import type { AppSettings } from "@chaturanga/shared/types/settings";
 import {
   useCreateEngineMutation,
   useDeleteEngineMutation,
@@ -33,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, SettingRow } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { SectionHeader } from "@/components/ui/page";
@@ -43,12 +39,11 @@ import { hasDesktopApi } from "@/lib/environment";
 import { engineListRows, maiaNeedsLc0, progressPercent } from "@/lib/engine-assets";
 import { cardPadded, divider, fieldHint, listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { useSetSetting } from "./use-set-setting";
+import { ENGINE_PERFORMANCE_DESCRIPTION, EnginePerformanceRows } from "./engine-performance";
 import { splitEngineArgs } from "@/lib/engine-args";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { isOneOf } from "@chaturanga/shared/types/guards";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import {
-  EngineImagePreview,
   EngineRowText,
   formatTestResult,
   savedEngineMenuItems,
@@ -99,18 +94,6 @@ function draftToInput(draft: EngineDraft): CreateEngineInput {
   };
 }
 
-const HASH_SIZE_OPTIONS_MB = [64, 128, 256, 512, 1024] as const;
-
-/** Logical cores the renderer can see; main clamps `engineThreads` to its own `os.cpus()` count. */
-function logicalCores(): number {
-  const cores = typeof navigator === "undefined" ? 0 : navigator.hardwareConcurrency;
-  return Number.isFinite(cores) && cores > 0 ? cores : 4;
-}
-
-function formatHashSize(mb: number): string {
-  return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`;
-}
-
 function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) {
   return (
     <div className="grid gap-1">
@@ -119,84 +102,6 @@ function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) 
         <EnginePerformanceRows appearance={appearance} />
       </div>
     </div>
-  );
-}
-
-/** What the Performance settings are for (Settings → Engines and Analysis settings). */
-export const ENGINE_PERFORMANCE_DESCRIPTION =
-  "For the evaluation engine in Game review and live analysis.";
-
-/**
- * The evaluation engine's Threads and Hash, as two rows: Settings' own rows by default, or the
- * `Row` (same props as SettingRow) and select look of the dialog they sit in.
- */
-export function EnginePerformanceRows({
-  appearance,
-  Row = SettingRow,
-  selectClassName = "w-36"
-}: {
-  appearance: AppSettings;
-  Row?: ComponentType<ComponentProps<typeof SettingRow>>;
-  selectClassName?: string;
-}) {
-  const setSetting = useSetSetting();
-  const cores = logicalCores();
-  const autoThreads = defaultEngineThreads(cores);
-  const threadOptions = Array.from({ length: cores }, (_, index) => index + 1);
-  const hashOptions: number[] = isOneOf(HASH_SIZE_OPTIONS_MB, appearance.engineHashMb)
-    ? [...HASH_SIZE_OPTIONS_MB]
-    : [...HASH_SIZE_OPTIONS_MB, appearance.engineHashMb].sort((a, b) => a - b);
-  return (
-    <>
-      <Row
-        label="Threads"
-        htmlFor="setting-engine-threads"
-        description={`CPU cores the evaluation engine may use. Auto keeps one of your ${cores} free for the app.`}
-        control={
-          <Select
-            id="setting-engine-threads"
-            className={selectClassName}
-            value={
-              appearance.engineThreads === null
-                ? "auto"
-                : String(Math.min(appearance.engineThreads, cores))
-            }
-            onChange={(event) =>
-              setSetting(
-                "engineThreads",
-                event.target.value === "auto" ? null : Number(event.target.value)
-              )
-            }
-          >
-            <option value="auto">Auto · {autoThreads}</option>
-            {threadOptions.map((count) => (
-              <option key={count} value={count}>
-                {count} {count === 1 ? "thread" : "threads"}
-              </option>
-            ))}
-          </Select>
-        }
-      />
-      <Row
-        label="Hash"
-        htmlFor="setting-engine-hash"
-        description={`Memory for the engine's position cache. More helps long searches. Default ${formatHashSize(defaultSettings.engineHashMb)}.`}
-        control={
-          <Select
-            id="setting-engine-hash"
-            className={selectClassName}
-            value={appearance.engineHashMb}
-            onChange={(event) => setSetting("engineHashMb", Number(event.target.value))}
-          >
-            {hashOptions.map((mb) => (
-              <option key={mb} value={mb}>
-                {formatHashSize(mb)}
-              </option>
-            ))}
-          </Select>
-        }
-      />
-    </>
   );
 }
 
@@ -549,7 +454,18 @@ function SavedEngineRow({
       args: splitEngineArgs(draft.args),
       isHumanPrediction: draft.isHumanPrediction
     };
-    updateEngine.mutate({ id: engine.id, patch }, { onSuccess: () => onEditingChange(false) });
+    updateEngine.mutate(
+      { id: engine.id, patch },
+      {
+        onSuccess: () => onEditingChange(false),
+        // e.g. a picture that can't be copied: the editor stays open to fix it.
+        onError: (error) =>
+          onResult({
+            ok: false,
+            message: `Couldn't save the engine: ${ipcErrorMessage(error) || "unknown error"}`
+          })
+      }
+    );
   }
 
   async function test() {
@@ -570,7 +486,7 @@ function SavedEngineRow({
   return (
     <div className="grid gap-1.5">
       <div className={cn(listRow, editing && "border-line-strong")}>
-        <EngineImagePreview imagePath={engine.imagePath} name={shownName} />
+        <EngineAvatar engine={engine} size="md" label={`${shownName} engine image`} />
         <EngineRowText
           name={shownName}
           detail={engine.executablePath}
@@ -722,14 +638,18 @@ function EngineForm({
             />
           </div>
         </Field>
-        <Field label="Engine image" hint="optional" htmlFor={`${idPrefix}-image`}>
+        <Field
+          label="Engine image"
+          hint="optional · copied into the app"
+          htmlFor={`${idPrefix}-image`}
+        >
           <div className="flex gap-2">
-            <EngineImagePreview imagePath={draft.imagePath} name={draft.name} size="md" />
+            <EngineAvatar engine={draft} size="md" label={`${draft.name} engine image`} />
             <Input
               id={`${idPrefix}-image`}
               value={draft.imagePath}
               onChange={(event) => onChange({ imagePath: event.target.value })}
-              placeholder="PNG, JPG, WebP, GIF or SVG"
+              placeholder="PNG, JPG, WebP, GIF or SVG file (no web links)"
             />
             <IconButton
               label="Choose image"

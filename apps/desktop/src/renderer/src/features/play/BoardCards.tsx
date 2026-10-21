@@ -6,6 +6,7 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import {
   resumePracticeTarget,
   type ResumePracticeTarget,
@@ -29,8 +30,9 @@ import { PiecePair } from "./piece-art";
 const cardShell = "min-w-0 rounded-xl border border-line bg-surface leading-[1.43]";
 
 /**
- * One board card: the position, a tag, a title and a detail, and its action pinned to the bottom.
- * The whole card is its button (the button's area covers it); it lifts a little on hover.
+ * One board card: the position, a tag, a title (after its icon, if any) and a detail, and its
+ * action pinned to the bottom. The whole card is its button (the button's area covers it); it
+ * lifts a little on hover.
  */
 function BoardCard({
   fen,
@@ -38,6 +40,7 @@ function BoardCard({
   lastMove,
   tag,
   title,
+  titleIcon,
   children,
   action
 }: {
@@ -46,6 +49,8 @@ function BoardCard({
   lastMove?: string | null;
   tag: ReactNode;
   title: string;
+  /** Before the title: an engine game's engine picture. */
+  titleIcon?: ReactNode;
   /** The detail lines under the title. */
   children: ReactNode;
   action: {
@@ -66,7 +71,10 @@ function BoardCard({
       />
       <div className="grid min-w-0 gap-0.5 px-0.5">
         {tag}
-        <b className="truncate text-sm font-semibold text-fg">{title}</b>
+        <b className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-fg">
+          {titleIcon}
+          <span className="truncate">{title}</span>
+        </b>
         {children}
       </div>
       <Button
@@ -141,6 +149,7 @@ export function InProgressBoardCard({
       lastMove={card.lastMove}
       tag={<Tag dot={card.live ? "info" : "accent"}>{card.tag}</Tag>}
       title={card.title}
+      titleIcon={card.engine ? <EngineAvatar engine={card.engine} size="xs" /> : null}
       action={{
         label: "Rejoin",
         icon: <LogIn />,

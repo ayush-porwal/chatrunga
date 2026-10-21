@@ -1,4 +1,4 @@
-import { MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
+import { isManagedEngine, MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { SetupRow } from "@/lib/engine-assets";
 import { pickDefaultEngine } from "../game-review/review-engine-picker";
@@ -131,28 +131,35 @@ export function downloadPercent(rows: readonly SetupRow[]): number {
 }
 
 /**
- * An engine that already runs Game review, as the setup list shows it: the app's own Stockfish
- * by name and purpose, an engine the user added by name and path.
+ * An engine that already runs Game review, as the setup list shows it: the app's own Stockfish or
+ * Lc0 by name and purpose, an engine the user added by name and path.
  */
 export function readyEngineRow(engine: Pick<EngineConfig, "name" | "executablePath">): {
   name: string;
   detail: string;
 } {
   const managed = ` ${MANAGED_ENGINE_SUFFIX}`;
-  return engine.name.endsWith(managed)
-    ? { name: engine.name.slice(0, -managed.length), detail: ENGINE_ROW_NAMES.stockfish.purpose }
-    : { name: engine.name, detail: engine.executablePath };
+  if (!engine.name.endsWith(managed)) return { name: engine.name, detail: engine.executablePath };
+  const name = engine.name.slice(0, -managed.length);
+  const row = Object.values(ENGINE_ROW_NAMES).find((entry) => entry.name === name);
+  return { name, detail: (row ?? ENGINE_ROW_NAMES.stockfish).purpose };
 }
 
 /**
  * The evaluation engine to list above the setup rows: one that already works (the user's own,
- * or an installed Stockfish) when the list has no Stockfish row of its own.
+ * or an installed Stockfish or Lc0) when the list has no Stockfish row, nor a row of its own.
  */
 export function listedReadyEngine<T extends EngineConfig>(
   rows: readonly SetupRow[],
   engine: T | null
 ): T | null {
-  return engine && !rows.some((row) => row.key === "stockfish") ? engine : null;
+  if (!engine) return null;
+  // Only the app's own engine has a row of its own; the user's "Lc0" is theirs to list.
+  const name = isManagedEngine(engine) ? readyEngineRow(engine).name : null;
+  const listed = rows.some(
+    (row) => row.key === "stockfish" || ENGINE_ROW_NAMES[row.key].name === name
+  );
+  return listed ? null : engine;
 }
 
 /**

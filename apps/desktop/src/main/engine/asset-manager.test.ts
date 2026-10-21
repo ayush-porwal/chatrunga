@@ -32,7 +32,9 @@ const SF_URL = `https://github.com/official-stockfish/Stockfish/releases/downloa
 const SF_CDN =
   "https://release-assets.githubusercontent.com/github-production-release-asset/20976138/abc?sig=x";
 
+const NETWORK_URL = "https://storage.lczero.org/files/test/t1-test.pb.gz";
 const weightBytes = Buffer.from("fake maia weights");
+const networkBytes = Buffer.from("fake lc0 network");
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
 function manifestWithWeight(
@@ -44,7 +46,17 @@ function manifestWithWeight(
       ...ENGINE_MANIFEST.maiaWeights,
       files: { ...ENGINE_MANIFEST.maiaWeights.files, "maia-1100": entry }
     },
-    licenses: { maia: { ...ENGINE_MANIFEST.licenses.maia, noticeUrl: LICENSE_URL } }
+    licenses: {
+      ...ENGINE_MANIFEST.licenses,
+      maia: { ...ENGINE_MANIFEST.licenses.maia, noticeUrl: LICENSE_URL }
+    }
+  };
+}
+
+function manifestWithNetwork(url: string): EngineManifest {
+  return {
+    ...ENGINE_MANIFEST,
+    lc0Network: { version: "T1-test", file: { url, sizeBytes: networkBytes.length } }
   };
 }
 
@@ -144,7 +156,7 @@ describe("AssetManager", () => {
     const manager = makeManager();
     await manager.init();
     expect(Object.values(manager.getInstalled()).map((record) => record.state)).toStrictEqual(
-      Array(7).fill("missing")
+      Array(8).fill("missing")
     );
     const status = await manager.getStatus();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -165,6 +177,72 @@ describe("AssetManager", () => {
       latestVersion: null,
       installInstructions: "brew install lc0"
     });
+    // Lc0's network downloads even where Lc0 itself has to be installed by hand.
+    expect(status["lc0-network"]).toMatchObject({
+      latestSource: "fixed",
+      latestVersion: "T1-256x10-distilled-swa-2432500",
+      downloadSizeBytes: 37_118_673,
+      autoDownload: true
+    });
+  });
+
+  it("downloads Lc0's network from LCZero's storage, takes the user's own, and goes back to it", async () => {
+    routes[NETWORK_URL] = () => new Response(networkBytes);
+    const manager = makeManager(manifestWithNetwork(NETWORK_URL));
+    await manager.init();
+
+    await manager.downloadAsset("lc0-network");
+    expect(calledUrls()).toStrictEqual([NETWORK_URL]);
+    const downloaded = manager.getInstalled()["lc0-network"];
+    expect(downloaded).toMatchObject({ state: "installed", version: "T1-test", source: "fixed" });
+    expect(readFileSync(downloaded.installedPath!)).toStrictEqual(networkBytes);
+
+    const own = path.join(workDir, "BT4-1024x15.pb");
+    writeFileSync(own, "user's network");
+    await manager.setCustomPath("lc0-network", own);
+    expect(manager.getInstalled()["lc0-network"]).toMatchObject({
+      state: "custom",
+      customPath: own
+    });
+    // The download it replaces is deleted: forgetting a custom file never deletes anything.
+    expect(existsSync(downloaded.installedPath!)).toBe(false);
+
+    // "Use default network" is a download again; the user's file stays where it was.
+    await manager.downloadAsset("lc0-network");
+    expect(manager.getInstalled()["lc0-network"]).toMatchObject({
+      state: "installed",
+      customPath: null,
+      installedPath: downloaded.installedPath
+    });
+    expect(existsSync(own)).toBe(true);
+  });
+
+  it("accepts only a .pb / .pb.gz file that isn't a Maia network as Lc0's network", async () => {
+    const manager = makeManager();
+    await manager.init();
+    const file = (name: string) => {
+      const full = path.join(workDir, name);
+      writeFileSync(full, "data");
+      return full;
+    };
+    await expect(manager.setCustomPath("lc0-network", file("notes.txt"))).rejects.toThrow(
+      /\.pb or \.pb\.gz/
+    );
+    for (const maia of ["maia-1500.pb.gz", "maia.pb.gz", "Maia_weights.pb"]) {
+      await expect(manager.setCustomPath("lc0-network", file(maia)), maia).rejects.toThrow(
+        /Maia network/
+      );
+    }
+    expect(manager.getInstalled()["lc0-network"].state).toBe("missing");
+    await manager.setCustomPath("lc0-network", file("t3-512x15.PB.GZ"));
+    expect(manager.getInstalled()["lc0-network"].state).toBe("custom");
+  });
+
+  it("refuses Lc0's network from any host but LCZero's storage", async () => {
+    const manager = makeManager(manifestWithNetwork(WEIGHT_URL));
+    await manager.init();
+    await expect(manager.downloadAsset("lc0-network")).rejects.toThrow(/Refusing to download/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("downloads, verifies and records a Maia weight, fetching only the asset and its license", async () => {
@@ -409,6 +487,22 @@ describe("AssetManager", () => {
     await manager.removeAsset("lc0");
     expect(existsSync(own)).toBe(true);
     expect(manager.getInstalled().lc0.state).toBe("missing");
+  });
+
+  it("never deletes a replaced file outside the engines folder", async () => {
+    const elsewhere = path.join(workDir, "stockfish-old");
+    const own = path.join(workDir, "stockfish-own");
+    writeFileSync(elsewhere, "binary");
+    writeFileSync(own, "user's stockfish");
+    writeFileSync(
+      path.join(userDataDir, "engine-assets.json"),
+      JSON.stringify({ records: [storedRecord("stockfish", "installed", elsewhere)] })
+    );
+    const manager = makeManager();
+    await manager.init();
+    await manager.setCustomPath("stockfish", own);
+    expect(existsSync(elsewhere)).toBe(true);
+    expect(manager.getInstalled().stockfish).toMatchObject({ state: "custom", customPath: own });
   });
 
   it("restores records whose files were deleted or moved as missing", async () => {

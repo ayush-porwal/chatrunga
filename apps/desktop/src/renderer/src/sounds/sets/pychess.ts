@@ -10,7 +10,7 @@ import start from "../../assets/sounds/pychess/start1.mp3";
 import error from "../../assets/sounds/pychess/invalid.mp3";
 
 /**
- * PyChess's sounds (GPLv3, see SOUND_CREDITS.md). Its alarm and success sounds are recordings
+ * PyChess's sounds (GPLv3, see credits/SOUNDS.md). Its alarm and success sounds are recordings
  * from elsewhere whose licences PyChess doesn't state, so it has no low-time or solved sound here.
  */
 export const files: SoundFiles = {

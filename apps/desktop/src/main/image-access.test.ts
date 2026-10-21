@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { allowChosenFile, canonicalImagePath, isServableImage } from "./image-access";
+import {
+  allowChosenFile,
+  allowImageFolder,
+  canonicalImagePath,
+  isServableImage
+} from "./image-access";
 
 describe("isServableImage", () => {
   it("serves engine pictures and files picked this session, nothing else", () => {
@@ -8,6 +13,24 @@ describe("isServableImage", () => {
     expect(isServableImage("/Users/me/Pictures/private.png", registered)).toBe(false);
     allowChosenFile("/Users/me/Pictures/maia.png");
     expect(isServableImage("/Users/me/Pictures/maia.png", registered)).toBe(true);
+  });
+
+  it("serves the app's own picture folder, but nothing beside or below it", () => {
+    allowImageFolder("/data/engine-images");
+    const none = () => [];
+    expect(isServableImage("/data/engine-images/sf-0123456789abcdef.png", none)).toBe(true);
+    expect(isServableImage("/data/engine-images/sub/x.png", none)).toBe(false);
+    expect(isServableImage("/data/engine-images/../secret.png", none)).toBe(false);
+    expect(isServableImage("/data/engine-images-x/x.png", none)).toBe(false);
+    expect(isServableImage("/data/x.png", none)).toBe(false);
+    const windows = true;
+    allowImageFolder("C:\\Users\\me\\AppData\\chaturanga\\engine-images");
+    expect(
+      isServableImage("/C:/Users/me/AppData/chaturanga/engine-images/sf-1.png", none, windows)
+    ).toBe(true);
+    expect(
+      isServableImage("C:/Users/me/AppData/chaturanga/engine-images/../x.png", none, windows)
+    ).toBe(false);
   });
 
   it("matches pictures stored as file URLs", () => {

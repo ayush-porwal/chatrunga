@@ -151,6 +151,8 @@ export const RAW_DOWNLOAD_HOSTS: readonly string[] = [
   ...RELEASE_DOWNLOAD_HOSTS,
   "raw.githubusercontent.com"
 ];
+/** Lc0's network comes from LCZero's own file storage (served directly, no redirect). */
+export const LC0_NETWORK_DOWNLOAD_HOSTS: readonly string[] = ["storage.lczero.org"];
 
 /** HTTPS on the default port, no credentials, host exactly on the list. */
 export function isAllowedDownloadUrl(url: string, hosts: readonly string[]): boolean {

@@ -47,8 +47,11 @@ Usage analytics (PostHog) is configured at build time with `MAIN_VITE_POSTHOG_PR
 ## License
 
 Chaturanga is free software under the [GNU General Public License v3.0 or later](LICENSE). The
-piece sets are their authors' work under their own licences, listed in
-[scripts/piece-svg-sources/CREDITS.md](scripts/piece-svg-sources/CREDITS.md), and the board's
-sound sets likewise, in
-[apps/desktop/src/renderer/src/assets/sounds/SOUND_CREDITS.md](apps/desktop/src/renderer/src/assets/sounds/SOUND_CREDITS.md);
-all of them ship inside every packaged build.
+piece sets and the board's sound sets are their authors' work under their own licences, and the
+engine logos are the marks of their projects; all are credited in
+[apps/desktop/resources/credits/](apps/desktop/resources/credits/) —
+[PIECES.md](apps/desktop/resources/credits/PIECES.md),
+[SOUNDS.md](apps/desktop/resources/credits/SOUNDS.md) and
+[ENGINES.md](apps/desktop/resources/credits/ENGINES.md), with the licence texts they need in
+[licenses/](apps/desktop/resources/credits/licenses/). That folder and the `LICENSE` ship inside
+every packaged build.

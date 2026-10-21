@@ -12,12 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { EngineIdentity } from "@/lib/engine-identity";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { PiecePair } from "../play/piece-art";
 import { SourceBadge } from "../play/recent-games-controls";
 import { playerName, scoresFor } from "../play/recent-games";
 import type { LibraryFilter } from "./library-tab";
+import { useSavedEngineSide } from "./use-saved-engine-side";
 
 /** What a row shows of a game: a saved one, or the game on the board. */
 export type LibraryRowGame = Pick<
@@ -26,8 +29,8 @@ export type LibraryRowGame = Pick<
 >;
 
 /**
- * One game: its board (turned to `orientation`) with its source badge, the players (the loser
- * muted), `marker` (the Library's reviewed mark, the picker's badge), the score, then `children`
+ * One game: its board (turned to `orientation`) with its source badge, the players (an engine
+ * with its picture, the loser muted), `marker` (the Library's reviewed mark, the picker's badge), the score, then `children`
  * (the row's own controls, which sit above its whole-row button). `onRaised` rows sit on a
  * dialog's raised surface, so the badge's ring takes that colour.
  */
@@ -49,10 +52,15 @@ export function LibraryGameRow({
   const scores = scoresFor(game.result);
   const white = playerName(game, "white");
   const black = playerName(game, "black");
+  const engineSide = useSavedEngineSide(game);
 
   const player = (color: Color, name: string) => (
-    <span className="flex min-w-0 items-center gap-1.75">
-      <SideDot color={color} className="size-2" />
+    <span className="flex min-w-0 items-center gap-1">
+      <PlayerMark
+        color={color}
+        engine={engineSide?.side === color ? engineSide.engine : null}
+        dotClassName="size-2"
+      />
       <span
         className={cn(
           "truncate font-medium",
@@ -112,6 +120,31 @@ export function LibraryGameRow({
       </span>
       {children}
     </li>
+  );
+}
+
+/**
+ * A player line's mark in a list of games: the engine's picture on the side an engine played (as
+ * the board's player rows show it), else the side's dot; one slot either way, so the names line
+ * up from row to row.
+ */
+export function PlayerMark({
+  color,
+  engine,
+  dotClassName
+}: {
+  color: Color;
+  engine: EngineIdentity | null;
+  dotClassName?: string;
+}) {
+  return (
+    <span className="grid size-4.5 shrink-0 place-items-center">
+      {engine ? (
+        <EngineAvatar engine={engine} size="xs" />
+      ) : (
+        <SideDot color={color} className={dotClassName} />
+      )}
+    </span>
   );
 }
 

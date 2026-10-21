@@ -9,7 +9,7 @@ import notify from "../../assets/sounds/futuristic/GenericNotify.mp3";
 import lowTime from "../../assets/sounds/futuristic/LowTime.mp3";
 
 /**
- * Lichess's Futuristic set, by Enigmahack (AGPLv3+, see SOUND_CREDITS.md). No castling or error sound;
+ * Lichess's Futuristic set, by Enigmahack (AGPLv3+, see credits/SOUNDS.md). No castling or error sound;
  * Lichess plays its notification for a game start and a confirmation, so this does too.
  */
 export const files: SoundFiles = {

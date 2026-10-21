@@ -29,6 +29,7 @@ import { useDismiss } from "@/lib/use-dismiss";
 import { cn } from "@/lib/utils";
 import { useDeleteAnalysesMutation } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { useReviewStore } from "../../stores/review-store";
 import { shownAnalysisId, showAfterAnalysesDeleted, showSavedAnalysis } from "../game/saved-game";
 
@@ -360,8 +361,9 @@ function DeleteAnalysesDialog({
 }
 
 /**
- * One saved analysis in the list: when (and Latest), its engine and search, and its delete button.
- * Everything else about how it was made (Maia levels, AI comments) is in its tooltip.
+ * One saved analysis in the list: when (and Latest), its engine (picture and name) and search, and
+ * its delete button. Everything else about how it was made (Maia levels, AI comments) is in its
+ * tooltip.
  */
 function AnalysisRow({
   info,
@@ -393,20 +395,25 @@ function AnalysisRow({
         title={label}
         onClick={onChoose}
         onKeyDown={onKeyDown}
-        className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+        // Two lines; the check's column holds the engine's picture on the second, so the picture
+        // costs no width.
+        className="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
       >
         <Check
           aria-hidden="true"
-          className={cn("mt-0.5 size-4 shrink-0 text-accent-fg", !selected && "invisible")}
+          className={cn("size-4 text-accent-fg", !selected && "invisible")}
         />
-        <span className="grid min-w-0 flex-1 gap-0.5">
-          {/* Latest at the right end, as on the button. */}
-          <span className="flex min-w-0 items-center justify-between gap-1.5 text-sm text-fg tabular-nums">
-            <span className="truncate">{when}</span>
-            {latest ? <LatestTag /> : null}
-          </span>
-          <span className="truncate text-xs text-fg-muted">{reviewInfoBrief(info)}</span>
+        {/* Latest at the right end, as on the button. */}
+        <span className="flex min-w-0 items-center justify-between gap-1.5 text-sm text-fg tabular-nums">
+          <span className="truncate">{when}</span>
+          {latest ? <LatestTag /> : null}
         </span>
+        {info.engineName ? (
+          <EngineAvatar engine={{ name: info.engineName }} size="xs" className="size-4" />
+        ) : (
+          <span aria-hidden="true" />
+        )}
+        <span className="truncate text-xs text-fg-muted">{reviewInfoBrief(info)}</span>
       </button>
       <IconButton
         label={`Delete the analysis of ${when}`}

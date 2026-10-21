@@ -1,16 +1,28 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+const userData = vi.hoisted(() => ({ dir: "/nonexistent" }));
 vi.mock("electron", () => ({
-  app: { getPath: () => "/nonexistent" },
+  app: { getPath: () => userData.dir },
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) =>
       handlers.set(channel, handler)
   }
 }));
 
-/** Each repository write, in order; `failing` throws, `busyOnce` finds the database busy first. */
-const writes = vi.hoisted(() => ({ calls: [] as unknown[][], failing: false, busyOnce: false }));
+/**
+ * Each repository write, in order; `failing` throws, `busyOnce` finds the database busy first.
+ * `imagePath` is the stored engine's picture.
+ */
+const writes = vi.hoisted(() => ({
+  calls: [] as unknown[][],
+  failing: false,
+  busyOnce: false,
+  imagePath: null as string | null
+}));
 function write(...call: unknown[]) {
   writes.calls.push(call);
   if (writes.busyOnce) {
@@ -18,13 +30,23 @@ function write(...call: unknown[]) {
     throw Object.assign(new Error("database is locked"), { errcode: 5 });
   }
   if (writes.failing) throw new Error("disk I/O error");
-  return { id: "engine-1" };
+  return { id: "engine-1", imagePath: writes.imagePath };
 }
+type Picture = { imagePath?: string | null };
 vi.mock("../db/repositories", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../db/repositories")>()),
   engineRepository: {
-    create: (input: unknown) => write("create", input),
-    update: (id: unknown, patch: unknown) => write("update", id, patch),
+    get: () => ({ id: "engine-1", imagePath: writes.imagePath }),
+    create: (input: Picture, id?: string) => {
+      const created = write("create", input);
+      writes.imagePath = input.imagePath ?? null;
+      return { ...created, id, imagePath: writes.imagePath };
+    },
+    update: (id: unknown, patch: Picture) => {
+      const updated = write("update", id, patch);
+      if (patch.imagePath !== undefined) writes.imagePath = patch.imagePath;
+      return { ...updated, imagePath: writes.imagePath };
+    },
     remove: (id: unknown) => void write("remove", id)
   }
 }));
@@ -52,6 +74,8 @@ describe("engine create/update/remove", () => {
     writes.calls.length = 0;
     writes.failing = false;
     writes.busyOnce = false;
+    writes.imagePath = null;
+    userData.dir = "/nonexistent";
     sent.length = 0;
     readiness.mockClear();
     vi.useRealTimers();
@@ -77,7 +101,7 @@ describe("engine create/update/remove", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(sent).toStrictEqual([]);
     await vi.advanceTimersByTimeAsync(1_000);
-    await expect(created).resolves.toStrictEqual({ id: "engine-1" });
+    await expect(created).resolves.toMatchObject({ id: expect.any(String), imagePath: null });
     expect(writes.calls).toHaveLength(2);
     expect(sent).toStrictEqual(["engines:changed"]);
   });
@@ -110,5 +134,76 @@ describe("engine create/update/remove", () => {
     await expect(call(channel, ...args)).rejects.toThrow(message);
     expect(writes.calls).toStrictEqual([]);
     expect(sent).toStrictEqual([]);
+  });
+
+  describe("pictures", () => {
+    let pictures: string;
+    const copies = () => readdirSync(join(userData.dir, "engine-images")).sort();
+    const picture = (name: string, contents: string) => {
+      writeFileSync(join(pictures, name), contents);
+      return join(pictures, name);
+    };
+
+    beforeEach(() => {
+      userData.dir = mkdtempSync(join(tmpdir(), "chaturanga-engine-handler-"));
+      pictures = join(userData.dir, "Pictures");
+      mkdirSync(pictures);
+    });
+    afterEach(() => rmSync(userData.dir, { recursive: true, force: true }));
+
+    it("stores a copy of a new engine's picture, named for the engine", async () => {
+      const engine1 = await call("engines:create", { ...engine, imagePath: picture("a.png", "a") });
+      const { id, imagePath } = engine1 as { id: string; imagePath: string };
+      expect(imagePath.startsWith(join(userData.dir, "engine-images", `${id}-`))).toBe(true);
+      expect(copies()).toHaveLength(1);
+    });
+
+    it("deletes the copy when the new engine isn't saved, and refuses a missing picture", async () => {
+      writes.failing = true;
+      await expect(
+        call("engines:create", { ...engine, imagePath: picture("a.png", "a") })
+      ).rejects.toThrow(/disk I\/O error/);
+      expect(copies()).toStrictEqual([]);
+      writes.failing = false;
+      await expect(
+        call("engines:create", { ...engine, imagePath: join(pictures, "gone.png") })
+      ).rejects.toThrow(/wasn't found/);
+      expect(writes.calls).toHaveLength(1);
+    });
+
+    it("deletes the old copy when the picture is replaced or cleared, and all on remove", async () => {
+      await call("engines:update", "engine-1", { imagePath: picture("a.png", "a") });
+      const [first] = copies();
+      // Saving the editor again sends the stored copy back: kept as it is.
+      await call("engines:update", "engine-1", { imagePath: writes.imagePath, name: "Renamed" });
+      expect(copies()).toStrictEqual([first]);
+      await call("engines:update", "engine-1", { imagePath: picture("b.png", "b") });
+      expect(copies()).toHaveLength(1);
+      expect(copies()).not.toContain(first);
+      await call("engines:update", "engine-1", { imagePath: null });
+      expect(copies()).toStrictEqual([]);
+      await call("engines:update", "engine-1", { imagePath: picture("c.png", "c") });
+      await call("engines:remove", "engine-1");
+      expect(copies()).toStrictEqual([]);
+    });
+
+    it("keeps the copy the last of two overlapping saves stored", async () => {
+      await Promise.all([
+        call("engines:update", "engine-1", { imagePath: picture("a.png", "a") }),
+        call("engines:update", "engine-1", { imagePath: picture("b.png", "b") })
+      ]);
+      expect(copies()).toHaveLength(1);
+      expect(join(userData.dir, "engine-images", copies()[0])).toBe(writes.imagePath);
+    });
+
+    it("keeps the stored copy when the update isn't saved", async () => {
+      await call("engines:update", "engine-1", { imagePath: picture("a.png", "a") });
+      const kept = copies();
+      writes.failing = true;
+      await expect(
+        call("engines:update", "engine-1", { imagePath: picture("b.png", "b") })
+      ).rejects.toThrow(/disk I\/O error/);
+      expect(copies()).toStrictEqual(kept);
+    });
   });
 });

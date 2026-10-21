@@ -1,9 +1,10 @@
 # Sound credits
 
 The board's sounds in Chaturanga are the work of the authors below, under the licences listed.
-Chaturanga itself is GPL-3.0-or-later. The full texts of the GPL and AGPL are in
-`piece-set-licenses` beside this file in the app (`scripts/piece-svg-sources/licenses/` in the
-repository).
+Chaturanga itself is GPL-3.0-or-later. The full text of the AGPL is in [licenses/](licenses/)
+beside this file; the GPL-3.0 text is Chaturanga's own `LICENSE` (next to this `credits` folder in
+the app, at the root of the repository). The sounds themselves are in
+`apps/desktop/src/renderer/src/assets/sounds/` in the repository, one folder per set.
 
 | Set (Settings → Sound) | Folder        | Author                                                                        | Licence                                               | Source                                     |
 | ---------------------- | ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
@@ -15,10 +16,12 @@ repository).
 
 ## Lichess sets (Enigmahack)
 
-Taken unchanged (mp3) from [lichess-org/lila](https://github.com/lichess-org/lila) at commit
+From [lichess-org/lila](https://github.com/lichess-org/lila) at commit
 `b93a19b019dc28b279050097243931eef53c343c`, whose `COPYING.md` lists `public/sound/futuristic`,
 `nes`, `piano` and `sfx` by Enigmahack under AGPLv3+. Each set ships `Move`, `Capture`, `Check`,
 `Victory`, `Defeat`, `Draw`, `GenericNotify` (a game's start, a solved puzzle) and `LowTime`.
+The published stereo mp3s were re-encoded to mono 44.1 kHz mp3 (ffmpeg, libmp3lame 96 kb/s CBR,
+metadata removed) to match the PyChess set; the sounds are otherwise unchanged.
 
 These sounds are free software: you can redistribute them and/or modify them under the terms of
 the GNU Affero General Public License as published by the Free Software Foundation, either version

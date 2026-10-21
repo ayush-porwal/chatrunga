@@ -9,8 +9,8 @@ import { formatSize, isAssetInstalled, type EngineListRow } from "@/lib/engine-a
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import {
-  EngineImagePreview,
   EngineRowText,
   savedEngineMenuItems,
   testSavedEngine,
@@ -20,14 +20,17 @@ import {
 type AssetRow = Extract<EngineListRow, { kind: "asset" }>;
 
 /**
- * A managed download in Settings → Engines (Stockfish, a Maia network, Lc0) together with the
- * "(managed)" engine the app keeps for it. A missing download shows a Download button; otherwise
- * the ⋯ menu holds Set as default / Test (once the engine exists), Update, and Remove download.
- * Managed engines can't be edited, renamed or deleted: the registry sync would undo it.
+ * A managed download in Settings → Engines (Stockfish, Lc0, Lc0's network, a Maia network)
+ * together with the "(managed)" engine the app keeps for it. A missing download shows a Download
+ * button; otherwise the ⋯ menu holds Set as default / Test (once the engine exists), Update, and
+ * Remove download. Managed engines can't be edited, renamed or deleted: the registry sync would
+ * undo it.
  *
- * Lc0 only runs Maia (no engine of its own). Where it has no download (macOS / Linux: upstream
- * publishes no binaries) the user installs it (e.g. Homebrew) and points the app at the binary;
- * while missing, the install command is shown under the row with a copy button.
+ * Lc0 is an engine of its own (playing with its network, the row under it) and also runs Maia.
+ * Where it has no download (macOS / Linux: upstream publishes no binaries) the user installs it
+ * (e.g. Homebrew) and points the app at the binary; while missing, the install command is shown
+ * under the row with a copy button. The network row downloads LCZero's recommended network, or
+ * takes the user's own `.pb` / `.pb.gz` file instead.
  */
 export function ManagedEngineRow({
   row,
@@ -52,6 +55,7 @@ export function ManagedEngineRow({
   const updateEngine = useUpdateEngineMutation();
   const installed = isAssetInstalled(status);
   const manual = !status.autoDownload;
+  const network = row.id === "lc0-network";
   const size = formatSize(installed ? status.sizeBytes : manual ? null : status.downloadSizeBytes);
   const downloading = busy && percent > 0 && percent < 100;
   const instruction =
@@ -87,6 +91,26 @@ export function ManagedEngineRow({
       }
     );
   };
+  const menuItems = (): (MenuItem | false)[] => [
+    ...(engine
+      ? savedEngineMenuItems({
+          engine,
+          disabled: false,
+          onSetDefault: setDefault,
+          onTest: () => void test()
+        })
+      : []),
+    ...(network
+      ? networkMenuItems({ status, onDownload, onRemove, onPickFile })
+      : assetMenuItems({
+          status,
+          label,
+          onUpdate,
+          onRemove,
+          onPickFile,
+          onCopy: () => void copy()
+        }))
+  ];
 
   return (
     <div className="grid gap-1.5">
@@ -94,6 +118,8 @@ export function ManagedEngineRow({
         className={cn(
           listRow,
           "relative transition-colors duration-standard",
+          // Lc0's network belongs to the Lc0 row above it.
+          network && "ml-6",
           // Clips the progress bar to the rounded corners; only while busy, so the ⋯ menu isn't cut off.
           busy && "overflow-hidden border-line-strong"
         )}
@@ -113,30 +139,8 @@ export function ManagedEngineRow({
           >
             <Loader2 className="size-4 animate-spin" />
           </span>
-        ) : !installed && !manual ? (
-          <IconButton label={`Download ${label}`} icon={<Download />} onClick={onDownload} />
         ) : (
-          <OverflowMenu
-            label={`${label} actions`}
-            items={[
-              ...(engine
-                ? savedEngineMenuItems({
-                    engine,
-                    disabled: false,
-                    onSetDefault: setDefault,
-                    onTest: () => void test()
-                  })
-                : []),
-              ...assetMenuItems({
-                status,
-                label,
-                onUpdate,
-                onRemove,
-                onPickFile,
-                onCopy: () => void copy()
-              })
-            ]}
-          />
+          <RowActions row={row} menuItems={menuItems} onDownload={onDownload} />
         )}
         {busy ? <BusyProgress downloading={downloading} percent={percent} /> : null}
       </div>
@@ -147,19 +151,52 @@ export function ManagedEngineRow({
   );
 }
 
+/**
+ * A missing download's Download button, then the ⋯ menu once there is something in it. A missing
+ * network keeps its menu too: it can be the user's own file instead.
+ */
+function RowActions({
+  row,
+  menuItems,
+  onDownload
+}: {
+  row: AssetRow;
+  menuItems: () => (MenuItem | false)[];
+  onDownload: () => void;
+}) {
+  const installed = isAssetInstalled(row.status);
+  const manual = !row.status.autoDownload;
+  return (
+    <>
+      {!installed && !manual ? (
+        <IconButton label={`Download ${row.label}`} icon={<Download />} onClick={onDownload} />
+      ) : null}
+      {installed || manual || row.id === "lc0-network" ? (
+        <OverflowMenu label={`${row.label} actions`} items={menuItems()} />
+      ) : null}
+    </>
+  );
+}
+
 /** The download's picture, name, installed version and badges. */
 function ManagedEngineName({ row }: { row: AssetRow }) {
   const { status, engine, label } = row;
   return (
     <>
-      <EngineImagePreview imagePath={engine?.imagePath ?? null} name={label} />
+      <EngineAvatar engine={engine ?? { name: label }} size="md" label={`${label} engine image`} />
       <EngineRowText
         name={label}
-        detail={isAssetInstalled(status) ? status.installedVersion : null}
+        detail={
+          row.id === "lc0-network"
+            ? networkName(status)
+            : isAssetInstalled(status)
+              ? status.installedVersion
+              : null
+        }
         badges={
           <>
             {engine?.isDefault ? <Badge tone="accent">Default</Badge> : null}
-            {row.id === "lc0" ? <Badge>Runs Maia</Badge> : null}
+            {row.id === "lc0" ? <Badge>Also runs Maia</Badge> : null}
           </>
         }
       />
@@ -244,6 +281,51 @@ function assetMenuItems({
     },
     { label: "Copy install command", icon: <Copy />, onSelect: onCopy },
     installed && { label: "Forget path", icon: <Trash2 />, onSelect: onRemove, destructive: true }
+  ];
+}
+
+/** The network Lc0 plays with: the user's own file's name, else the default network's. */
+function networkName(status: EngineAssetStatus): string | null {
+  if (status.state === "custom" && status.customPath)
+    return status.customPath.split(/[\\/]/).pop() ?? status.customPath;
+  return status.installedVersion ?? status.latestVersion;
+}
+
+/**
+ * Lc0's network's ⋯ menu: choose the user's own network file, go back to the default network
+ * (downloading it) from a custom one, and Remove download / Forget network file.
+ */
+function networkMenuItems({
+  status,
+  onDownload,
+  onRemove,
+  onPickFile
+}: {
+  status: EngineAssetStatus;
+  onDownload: () => void;
+  onRemove: () => void;
+  onPickFile: () => void;
+}): (MenuItem | false)[] {
+  const custom = status.state === "custom";
+  return [
+    {
+      label: custom ? "Choose another network file…" : "Choose network file…",
+      icon: <FolderOpen />,
+      onSelect: onPickFile
+    },
+    custom && { label: "Use default network", icon: <Download />, onSelect: onDownload },
+    status.state === "installed" && {
+      label: "Remove download",
+      icon: <Trash2 />,
+      onSelect: onRemove,
+      destructive: true
+    },
+    custom && {
+      label: "Forget network file",
+      icon: <Trash2 />,
+      onSelect: onRemove,
+      destructive: true
+    }
   ];
 }
 

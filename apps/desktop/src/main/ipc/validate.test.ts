@@ -81,7 +81,7 @@ describe("engine inputs", () => {
         executablePath: "/opt/lc0",
         workingDirectory: "",
         weightsPath: " /nets/maia-1500.pb.gz ",
-        imagePath: "https://example.com/lc0.png",
+        imagePath: "file:///Users/me/Pictures/lc0%20logo.png",
         args: ["--threads=2"],
         isHumanPrediction: true,
         maiaRating: 1500,
@@ -92,7 +92,7 @@ describe("engine inputs", () => {
       executablePath: "/opt/lc0",
       workingDirectory: null,
       weightsPath: "/nets/maia-1500.pb.gz",
-      imagePath: "https://example.com/lc0.png",
+      imagePath: "/Users/me/Pictures/lc0 logo.png",
       args: ["--threads=2"],
       isHumanPrediction: true,
       maiaRating: 1500
@@ -105,6 +105,23 @@ describe("engine inputs", () => {
     expect(() => parseEngineInput({ executablePath: "/sf", args: "--x" })).toThrow(/args/);
     expect(() => parseEngineInput({ executablePath: "/sf", maiaRating: 1600 })).toThrow(/Maia/);
     expect(() => parseEngineInput(null)).toThrow(/object/);
+  });
+
+  it("takes engine pictures only from this computer", () => {
+    const withImage = (imagePath: unknown) =>
+      parseEngineInput({ executablePath: "/sf", imagePath });
+    for (const address of [
+      "https://example.com/lc0.png",
+      "http://example.com/lc0.png",
+      "data:image/png;base64,aGVsbG8=",
+      "blob:https://example.com/1"
+    ]) {
+      expect(() => withImage(address)).toThrow(/web addresses aren't supported/);
+    }
+    expect(() => withImage("pictures/lc0.png")).toThrow(/absolute path/);
+    expect(() => withImage(42)).toThrow(/engine image/);
+    expect(withImage(" /Users/me/lc0.png ").imagePath).toBe("/Users/me/lc0.png");
+    expect(withImage("chaturanga-image://local/%2Ftmp%2Flc0.png").imagePath).toBe("/tmp/lc0.png");
   });
 
   it("keeps only the fields a patch sets", () => {

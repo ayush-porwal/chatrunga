@@ -7,6 +7,17 @@ import {
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { MAIA_RATINGS, maiaRatingForEngine } from "./review-analysis";
 
+const LC0_ENGINE_NAME = `Lc0 ${MANAGED_SUFFIX}`;
+
+/**
+ * The managed Lc0 this run made the default by itself (nothing else was default), not the user.
+ * Onboarding installs assets separately and syncs after each, so Lc0 + its network can land
+ * before Stockfish; Stockfish then takes the default over. The engines table records only the
+ * flag, so a default the user set ("Set as default") is never in here and always stays. Not
+ * persisted: after a restart an Lc0 default counts as the user's.
+ */
+let automaticLc0DefaultId: string | null = null;
+
 /**
  * Sync the asset manager's installed-state snapshot into the desktop's
  * engines table. The asset manager and the engines table are two separate
@@ -22,7 +33,13 @@ import { MAIA_RATINGS, maiaRatingForEngine } from "./review-analysis";
  * Sync rules:
  *   stockfish installed →
  *     upsert engine "Stockfish (managed)" with executablePath = stockfish path.
- *     isDefault = true only if no existing engine is default.
+ *     isDefault = true only if no existing engine is default, or the default is the managed Lc0
+ *     this run made the default by itself.
+ *
+ *   lc0 + lc0-network both installed (downloaded or the user's own files) →
+ *     upsert engine "Lc0 (managed)" with executablePath = lc0 path, weightsPath = network path.
+ *     Not human-prediction; isDefault = true only if no existing engine is default, and then
+ *     only until a managed Stockfish is installed (see automaticLc0DefaultId).
  *
  *   lc0 + maia-NNNN both installed →
  *     upsert engine "Maia NNNN (managed)" per Maia weight, with
@@ -48,10 +65,17 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
     removeManagedByName(managedEngines, `Stockfish ${MANAGED_SUFFIX}`);
   }
 
-  // 2. Maia engines — need lc0 AND a Maia weight to be installed.
+  // 2. Lc0 on its own network — needs lc0 AND the network.
   const lc0Record = assets["lc0"];
   const lc0Path = isUsable(lc0Record) ? pathFor(lc0Record) : null;
+  const networkRecord = assets["lc0-network"];
+  if (lc0Path && isUsable(networkRecord)) {
+    upsertManagedLc0(lc0Path, pathFor(networkRecord), existingEngines);
+  } else {
+    removeManagedByName(managedEngines, LC0_ENGINE_NAME);
+  }
 
+  // 3. Maia engines — need lc0 AND a Maia weight to be installed.
   for (const rating of MAIA_RATINGS) {
     const maiaRecord = assets[`maia-${rating}` as const];
     const name = `Maia ${rating} ${MANAGED_SUFFIX}`;
@@ -64,7 +88,7 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
     }
   }
 
-  // 3. Self-heal flags on existing user-configured engines. Common drift:
+  // 4. Self-heal flags on existing user-configured engines. Common drift:
   //    - User added Maia via the legacy config form but didn't tick "Human
   //      prediction engine (Maia)". The renderer then says "no Maia configured".
   //    - User deleted whichever engine had isDefault — no engine is default,
@@ -107,6 +131,7 @@ function autoFixEngineFlags(): void {
       refreshed.find((e) => !e.isHumanPrediction);
     if (candidate) {
       engineRepository.update(candidate.id, { isDefault: true });
+      if (candidate.name === LC0_ENGINE_NAME) automaticLc0DefaultId = candidate.id;
     }
   }
 }
@@ -130,8 +155,9 @@ function upsertManagedStockfish(record: AssetRecord, all: EngineConfig[]): void 
     }
     return;
   }
-  // First install — make it default if nothing else is.
-  const isDefault = !all.some((e) => e.isDefault);
+  // First install — make it default if nothing else is, or only an Lc0 the app picked by itself.
+  const current = all.find((e) => e.isDefault);
+  const isDefault = !current || current.id === automaticLc0DefaultId;
   engineRepository.create({
     name,
     executablePath: path,
@@ -139,6 +165,28 @@ function upsertManagedStockfish(record: AssetRecord, all: EngineConfig[]): void 
     isDefault,
     isHumanPrediction: false
   });
+}
+
+function upsertManagedLc0(lc0Path: string, weightsPath: string, all: EngineConfig[]): void {
+  const existing = all.find((e) => e.name === LC0_ENGINE_NAME);
+  if (existing) {
+    const patch: Partial<Pick<EngineConfig, "executablePath" | "weightsPath">> = {};
+    if (existing.executablePath !== lc0Path) patch.executablePath = lc0Path;
+    if (existing.weightsPath !== weightsPath) patch.weightsPath = weightsPath;
+    if (Object.keys(patch).length > 0) engineRepository.update(existing.id, patch);
+    return;
+  }
+  // Read again: a Stockfish created by this same sync is the default, and stays it.
+  const isDefault = !engineRepository.list().some((e) => e.isDefault);
+  const created = engineRepository.create({
+    name: LC0_ENGINE_NAME,
+    executablePath: lc0Path,
+    weightsPath,
+    args: [],
+    isDefault,
+    isHumanPrediction: false
+  });
+  if (isDefault) automaticLc0DefaultId = created.id;
 }
 
 function upsertManagedMaia(

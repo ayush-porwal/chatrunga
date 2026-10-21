@@ -4,6 +4,7 @@
  * process is checked here and rebuilt from known fields only.
  */
 import { parseSettingWrite } from "./settings-values";
+import { canonicalImagePath } from "../image-access";
 import type {
   Color,
   GameHeaders,
@@ -106,6 +107,21 @@ function asOptionalPath(value: unknown, label: string): string | null | undefine
   return asAbsolutePath(value, label);
 }
 
+/**
+ * An engine picture: a file on this computer (copied into the app's data when the engine is saved,
+ * see engine-images.ts), given as a path or a `file:` URL. Web and `data:` addresses are refused:
+ * the packaged app's CSP never loads remote pictures, and nothing in the app writes `data:` ones.
+ */
+function asOptionalImagePath(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || (typeof value === "string" && !value.trim())) return null;
+  const path = canonicalImagePath(asString(value, "engine image"));
+  // A URL scheme (two letters or more: `C:` is a Windows drive).
+  if (/^[a-z][a-z\d+.-]+:/i.test(path))
+    fail("engine image", "choose a picture file on this computer (web addresses aren't supported)");
+  return asAbsolutePath(path, "engine image");
+}
+
 function asEngineArgs(value: unknown): string[] {
   const args = asStringArray(value, "engine args", MAX_ARGS, MAX_PATH);
   if (args.some((arg) => arg.includes("\0"))) fail("engine args", "contains a NUL byte");
@@ -128,11 +144,7 @@ function parseEngineFields(input: Fields): UpdateEngineInput {
   if (workingDirectory !== undefined) fields.workingDirectory = workingDirectory;
   const weightsPath = asOptionalPath(input.weightsPath, "weights path");
   if (weightsPath !== undefined) fields.weightsPath = weightsPath;
-  // Display-only: a local file or an http(s)/data URL (see renderer `localImageSrc`).
-  const imagePath = nullable(
-    input.imagePath,
-    (path) => asString(path, "image path").trim() || null
-  );
+  const imagePath = asOptionalImagePath(input.imagePath);
   if (imagePath !== undefined) fields.imagePath = imagePath;
   if (input.args !== undefined) fields.args = asEngineArgs(input.args);
   if (input.isDefault !== undefined) fields.isDefault = asBoolean(input.isDefault, "isDefault");

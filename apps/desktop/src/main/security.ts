@@ -70,6 +70,12 @@ const IMAGE_EXTENSIONS = new Set([
   ".avif"
 ]);
 
+/** The path names a picture by its extension (the only files the image protocol serves). */
+export function hasImageExtension(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  return dot >= 0 && IMAGE_EXTENSIONS.has(path.slice(dot).toLowerCase());
+}
+
 /**
  * Resolves a `chaturanga-image://local/<encoded absolute path>` URL to the
  * image file it names, or null. Only absolute paths with an image extension
@@ -82,8 +88,7 @@ export function localImagePathFromUrl(url: string): string | null {
     const path = decodeURIComponent(parsed.pathname.slice(1));
     const isAbsolute = path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
     if (!isAbsolute || path.includes("\0")) return null;
-    const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
-    return IMAGE_EXTENSIONS.has(extension) ? path : null;
+    return hasImageExtension(path) ? path : null;
   } catch {
     return null;
   }

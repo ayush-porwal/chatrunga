@@ -21,20 +21,24 @@ import { logger } from "../logger";
 import { cpuFeatures as detectCpuFeatures } from "./cpu-features";
 import {
   ENGINE_MANIFEST,
+  LC0_NETWORK_ID,
   RELEASE_SOURCES,
   currentPlatformKey,
   isDifferentVersion,
   manifestVersionFor,
   resolveManifestEntry,
   selectReleaseAsset,
+  weightEntry,
   type ArchiveKind,
   type CpuFeature,
   type EngineManifest,
   type PlatformKey,
   type ReleaseAssetId,
-  type SelectedAsset
+  type SelectedAsset,
+  type WeightAssetId
 } from "./engine-manifest";
 import {
+  LC0_NETWORK_DOWNLOAD_HOSTS,
   RAW_DOWNLOAD_HOSTS,
   RELEASE_CACHE_TTL_MS,
   RELEASE_DOWNLOAD_HOSTS,
@@ -53,7 +57,8 @@ import { errorCode } from "../system-error";
 const exec = promisify(execFile);
 
 /**
- * Asset manager — installs Stockfish, Lc0 and the Maia weights and tracks them across launches.
+ * Asset manager — installs Stockfish, Lc0, Lc0's network and the Maia weights and tracks them
+ * across launches.
  *
  * Where downloads come from (see ./engine-manifest.ts):
  * - Stockfish / Lc0: the upstream GitHub "latest release", resolved via the REST API and
@@ -62,6 +67,9 @@ const exec = promisify(execFile);
  *   version. When GitHub can't be reached and nothing is cached, the bundled fallback
  *   manifest (last known-good URLs) is used.
  * - Maia weights: fixed raw.githubusercontent.com URLs (they are not versioned releases).
+ * - Lc0's network (`lc0-network`): LCZero's recommended small net, a fixed storage.lczero.org
+ *   URL. A weight file like Maia's, so it is its own asset with the same pipeline; the user can
+ *   point it at their own `.pb` / `.pb.gz` instead (a "custom" path, as for the engines).
  *
  * Install pipeline: download (resumable, host allow-listed) → verify (sha256 digest when
  * published, and the server-reported length) → extract into a staging dir → chmod / clear
@@ -83,6 +91,7 @@ const CHECK_MAX_AGE_MS = 60 * 1000;
 export type AssetId =
   | "stockfish"
   | "lc0"
+  | "lc0-network"
   | "maia-1100"
   | "maia-1300"
   | "maia-1500"
@@ -148,6 +157,7 @@ export type ProgressEvent =
 export const ALL_ASSET_IDS: readonly AssetId[] = [
   "stockfish",
   "lc0",
+  "lc0-network",
   "maia-1100",
   "maia-1300",
   "maia-1500",
@@ -164,6 +174,7 @@ function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
   return {
     stockfish: value("stockfish"),
     lc0: value("lc0"),
+    "lc0-network": value("lc0-network"),
     "maia-1100": value("maia-1100"),
     "maia-1300": value("maia-1300"),
     "maia-1500": value("maia-1500"),
@@ -176,18 +187,21 @@ function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
 async function forEveryAssetAsync<V>(
   value: (id: AssetId) => Promise<V>
 ): Promise<Record<AssetId, V>> {
-  const [stockfish, lc0, maia1100, maia1300, maia1500, maia1700, maia1900] = await Promise.all([
-    value("stockfish"),
-    value("lc0"),
-    value("maia-1100"),
-    value("maia-1300"),
-    value("maia-1500"),
-    value("maia-1700"),
-    value("maia-1900")
-  ]);
+  const [stockfish, lc0, lc0Network, maia1100, maia1300, maia1500, maia1700, maia1900] =
+    await Promise.all([
+      value("stockfish"),
+      value("lc0"),
+      value("lc0-network"),
+      value("maia-1100"),
+      value("maia-1300"),
+      value("maia-1500"),
+      value("maia-1700"),
+      value("maia-1900")
+    ]);
   return {
     stockfish,
     lc0,
+    "lc0-network": lc0Network,
     "maia-1100": maia1100,
     "maia-1300": maia1300,
     "maia-1500": maia1500,
@@ -198,6 +212,24 @@ async function forEveryAssetAsync<V>(
 
 function isReleaseAsset(id: AssetId): id is ReleaseAssetId {
   return id === "stockfish" || id === "lc0";
+}
+
+/** Hosts a download of `id` (and each redirect) may come from. */
+function downloadHostsFor(id: AssetId): readonly string[] {
+  if (isReleaseAsset(id)) return RELEASE_DOWNLOAD_HOSTS;
+  return id === LC0_NETWORK_ID ? LC0_NETWORK_DOWNLOAD_HOSTS : RAW_DOWNLOAD_HOSTS;
+}
+
+/**
+ * Why `file` can't be Lc0's network, or null: it must be a `.pb` / `.pb.gz` network, and not a
+ * Maia one (Maia is set up from its own rows; as Lc0's network it would make Lc0 look and count
+ * as a Maia engine, which is told apart by "maia" in the weights file's name).
+ */
+function customNetworkProblem(file: string): string | null {
+  const name = path.basename(file);
+  if (!/\.pb(\.gz)?$/i.test(name)) return "Choose an Lc0 network file (.pb or .pb.gz).";
+  if (/maia/i.test(name)) return "That's a Maia network. Maia is set up from its own rows.";
+  return null;
 }
 
 /** A concrete download: what to fetch, how to check it, and how to install it. */
@@ -410,9 +442,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     return this.fallbackDownload(id, cached?.fetchedAt ?? null, checkError);
   }
 
-  /** A Maia weight: the manifest's fixed file (they aren't GitHub release assets). */
-  private weightDownload(id: Exclude<AssetId, ReleaseAssetId>): ResolvedDownload {
-    const entry = this.manifest.maiaWeights.files[id];
+  /** A weight file (Maia, Lc0's network): the manifest's fixed file, not a release asset. */
+  private weightDownload(id: WeightAssetId): ResolvedDownload {
+    const entry = weightEntry(this.manifest, id);
     return {
       id,
       url: entry.url,
@@ -420,7 +452,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       sha256: entry.sha256 ?? null,
       extract: null,
       executablePattern: null,
-      version: this.manifest.maiaWeights.version,
+      version: manifestVersionFor(this.manifest, id),
       source: "fixed",
       assetName: path.posix.basename(new URL(entry.url).pathname),
       checkedAt: null,
@@ -512,7 +544,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   /** download → verify → extract/stage → atomic swap into `finalPath`. */
   private async install(resolved: ResolvedDownload, finalPath: string): Promise<void> {
     const { id } = resolved;
-    const hosts = isReleaseAsset(id) ? RELEASE_DOWNLOAD_HOSTS : RAW_DOWNLOAD_HOSTS;
+    const hosts = downloadHostsFor(id);
     if (!isAllowedDownloadUrl(resolved.url, hosts)) throw new DisallowedDownloadError(resolved.url);
 
     // Partials are keyed by upstream version + file name, so a resumed download can never
@@ -640,8 +672,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
 
   async setCustomPath(id: AssetId, customPath: string): Promise<void> {
     if (!existsSync(customPath)) throw new Error(`Custom path does not exist: ${customPath}`);
+    const problem = id === LC0_NETWORK_ID ? customNetworkProblem(customPath) : null;
+    if (problem) throw new Error(problem);
     const sha256 = await sha256File(customPath);
     const sizeBytes = statSync(customPath).size;
+    const previous = this.state.get(id);
     this.state.set(id, {
       id,
       state: "custom",
@@ -655,7 +690,19 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       installedAt: new Date().toISOString()
     });
     await this.saveState();
+    // The download it replaces would otherwise stay on disk for good: removing a custom asset
+    // never deletes (the file is the user's). Best effort: a running engine may hold it (Windows).
+    if (previous?.state === "installed" && previous.installedPath)
+      await this.deleteOwnFile(previous.installedPath, customPath);
     this.emit("statusChanged");
+  }
+
+  /** Deletes a file this manager installed (inside the engines folder), never `keep`. */
+  private async deleteOwnFile(file: string, keep: string): Promise<void> {
+    const relative = path.relative(this.enginesDir, path.resolve(file));
+    const inside = relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+    if (!inside || path.resolve(file) === path.resolve(keep)) return;
+    await unlink(file).catch(() => undefined);
   }
 
   private releaseReposForPlatform(): string[] {
@@ -806,7 +853,7 @@ class DisallowedDownloadError extends Error {
     } catch {
       // keep the placeholder
     }
-    super(`Refusing to download from ${host}: only GitHub download hosts are allowed`);
+    super(`Refusing to download from ${host}: only the known download hosts are allowed`);
     this.name = "DisallowedDownloadError";
   }
 }

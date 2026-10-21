@@ -350,22 +350,28 @@ function stubOpenFile(app: ElectronApplication, file: string) {
 const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
 
 /**
- * Registers the fake engine as the default, through the preload bridge (the Settings form needs a
- * native file picker; this is set-up, not the journey). Its log of UCI commands goes to `logFile`;
- * `mode` is the script's own (e.g. "lines": lines that fit the position, see the script).
+ * Registers the fake engine, through the preload bridge (the Settings form needs a native file
+ * picker; this is set-up, not the journey): by default as "Fake UCI", the default engine. Its log
+ * of UCI commands goes to `logFile`; `mode` is the script's own (e.g. "lines": lines that fit the
+ * position, see the script). `name` registers another one beside it (not the default).
  */
-export function registerFakeEngine(page: Page, logFile: string, mode?: string) {
+export function registerFakeEngine(
+  page: Page,
+  logFile: string,
+  mode?: string,
+  { name = "Fake UCI" }: { name?: string } = {}
+) {
   return page.evaluate(
-    ([executablePath, script, log, mode]) => {
+    ([executablePath, script, log, mode, name]) => {
       const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
       return api.engines.create({
-        name: "Fake UCI",
+        name,
         executablePath,
         args: mode ? [script, log, mode] : [script, log],
-        isDefault: true
+        isDefault: name === "Fake UCI"
       });
     },
-    [process.execPath, FAKE_ENGINE, logFile, mode ?? ""] as const
+    [process.execPath, FAKE_ENGINE, logFile, mode ?? "", name] as const
   );
 }
 

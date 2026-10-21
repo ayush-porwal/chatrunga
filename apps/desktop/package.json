@@ -27,8 +27,7 @@
     },
     "productName": "Chaturanga",
     "directories": {
-      "output": "dist",
-      "buildResources": "src/main/assets"
+      "output": "dist"
     },
     "afterPack": "build/after-pack.cjs",
     "electronLanguages": [
@@ -45,20 +44,12 @@
         "to": "LICENSE"
       },
       {
-        "from": "../../scripts/piece-svg-sources/CREDITS.md",
-        "to": "piece-set-credits.md"
-      },
-      {
-        "from": "../../scripts/piece-svg-sources/licenses",
-        "to": "piece-set-licenses"
-      },
-      {
-        "from": "src/renderer/src/assets/sounds/SOUND_CREDITS.md",
-        "to": "sound-credits.md"
+        "from": "resources/credits",
+        "to": "credits"
       }
     ],
     "mac": {
-      "icon": "src/main/assets/app-icon.icns",
+      "icon": "build/app-icon.icns",
       "category": "public.app-category.board-games",
       "target": [
         {
@@ -93,14 +84,14 @@
     "win": {
       "extraResources": [
         {
-          "from": "src/main/assets",
+          "from": "build",
           "to": ".",
           "filter": [
             "app-icon.png"
           ]
         }
       ],
-      "icon": "src/main/assets/app-icon.png",
+      "icon": "build/app-icon.png",
       "target": [
         {
           "target": "nsis",
@@ -121,14 +112,14 @@
     "linux": {
       "extraResources": [
         {
-          "from": "src/main/assets",
+          "from": "build",
           "to": ".",
           "filter": [
             "app-icon.png"
           ]
         }
       ],
-      "icon": "src/main/assets/app-icon.png",
+      "icon": "build/app-icon.png",
       "category": "Game",
       "synopsis": "Chess game review with engine analysis and an AI coach",
       "target": [

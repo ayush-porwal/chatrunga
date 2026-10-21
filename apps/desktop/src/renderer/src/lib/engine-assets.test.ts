@@ -79,6 +79,7 @@ describe("engine assets", () => {
   it("lists only missing assets that can be downloaded on this platform", () => {
     const map = statusMap({ stockfish: { state: "installed" }, lc0: { autoDownload: false } });
     expect(missingDownloads(map).map((entry) => entry.id)).toStrictEqual([
+      "lc0-network",
       "maia-1100",
       "maia-1300",
       "maia-1500",
@@ -164,25 +165,28 @@ function assetEngine(rows: readonly EngineListRow[], id: EngineAssetId) {
 }
 
 describe("Settings engines list", () => {
-  it("lists Stockfish, the Maia networks, Lc0, then the user's engines, joining managed engines to their downloads", () => {
+  it("lists Stockfish, Lc0 and its network, the Maia networks, then the user's engines, joining managed engines to their downloads", () => {
     const stockfish = engine("sf", "Stockfish (managed)");
+    const lc0 = engine("lc0", "Lc0 (managed)");
     const maia = engine("m15", "Maia 1500 (managed)");
     const own = engine("own", "Komodo");
-    const rows = engineListRows(statusMap({}), [own, maia, stockfish]);
+    const rows = engineListRows(statusMap({}), [own, maia, lc0, stockfish]);
     expect(rows.map(rowId)).toStrictEqual([
       "stockfish",
+      "lc0",
+      "lc0-network",
       "maia-1100",
       "maia-1300",
       "maia-1500",
       "maia-1700",
       "maia-1900",
-      "lc0",
       "own"
     ]);
     expect(assetEngine(rows, "stockfish")).toBe(stockfish);
+    expect(assetEngine(rows, "lc0")).toBe(lc0);
+    expect(assetEngine(rows, "lc0-network")).toBeNull();
     expect(assetEngine(rows, "maia-1500")).toBe(maia);
     expect(assetEngine(rows, "maia-1100")).toBeNull();
-    expect(assetEngine(rows, "lc0")).toBeNull();
   });
 
   it("lists a managed engine with no matching download as a plain engine", () => {
@@ -200,11 +204,12 @@ describe("Settings engines list", () => {
 });
 
 describe("first-run setup", () => {
-  it("recommends missing Stockfish and Maia, with the Lc0 that Maia runs in", () => {
+  it("recommends missing Stockfish, Lc0 with its network, and Maia", () => {
     const map = statusMap({ "maia-1900": { state: "installed" }, lc0: { autoDownload: true } });
     expect(recommendedDownloads(map).map((asset) => asset.id)).toStrictEqual([
       "stockfish",
       "lc0",
+      "lc0-network",
       "maia-1100",
       "maia-1300",
       "maia-1500",
@@ -213,31 +218,25 @@ describe("first-run setup", () => {
     expect(recommendedDownloads(null)).toStrictEqual([]);
   });
 
-  it("leaves Lc0 out when it is installed or nothing needs it", () => {
-    const installed = statusMap({ lc0: { state: "installed" } });
+  it("brings Lc0's network and Maia along for an Lc0 that is already set up", () => {
+    const installed = statusMap({ lc0: { state: "custom", autoDownload: false } });
     expect(recommendedDownloads(installed).map((asset) => asset.id)).toStrictEqual([
       "stockfish",
+      "lc0-network",
       "maia-1100",
       "maia-1300",
       "maia-1500",
       "maia-1700",
       "maia-1900"
     ]);
-    const noMaia = statusMap({
-      "maia-1100": { autoDownload: false },
-      "maia-1300": { autoDownload: false },
-      "maia-1500": { autoDownload: false },
-      "maia-1700": { autoDownload: false },
-      "maia-1900": { autoDownload: false }
-    });
-    expect(recommendedDownloads(noMaia).map((asset) => asset.id)).toStrictEqual(["stockfish"]);
   });
 
-  it("skips Maia where Lc0 has no download, and fetches Lc0 alone for installed networks", () => {
+  it("skips Lc0's network and Maia where Lc0 has no download, and fetches Lc0 alone for installed networks", () => {
     const noLc0 = statusMap({ lc0: { autoDownload: false } });
     expect(recommendedDownloads(noLc0).map((asset) => asset.id)).toStrictEqual(["stockfish"]);
     const networksOnly = statusMap({
       stockfish: { state: "installed" },
+      "lc0-network": { state: "installed" },
       "maia-1100": { state: "installed" },
       "maia-1300": { state: "installed" },
       "maia-1500": { state: "installed" },
@@ -247,21 +246,27 @@ describe("first-run setup", () => {
     expect(recommendedDownloads(networksOnly).map((asset) => asset.id)).toStrictEqual(["lc0"]);
   });
 
-  it("counts Lc0 in the Maia row it is downloaded for", () => {
+  it("lists Lc0 with its network in a row of their own, apart from Maia", () => {
     const rows = setupRows(
       [
-        status("lc0", { downloadSizeBytes: 30_000_000 }),
+        status("lc0", { downloadSizeBytes: 24_000_000 }),
+        status("lc0-network", { downloadSizeBytes: 37_000_000 }),
         status("maia-1100", { downloadSizeBytes: 1_000_000 }),
         status("maia-1900", { downloadSizeBytes: 1_000_000 })
       ],
       {}
     );
-    expect(rows.map((row) => [row.key, row.label, row.ids])).toStrictEqual([
-      ["maia", "Maia 1100–1900 + Lc0", ["lc0", "maia-1100", "maia-1900"]]
+    expect(rows.map((row) => [row.key, row.label, row.ids, row.bytesTotal])).toStrictEqual([
+      ["lc0", "Lc0", ["lc0", "lc0-network"], 61_000_000],
+      ["maia", "Maia 1100–1900", ["maia-1100", "maia-1900"], 2_000_000]
     ]);
-    expect(rows[0].bytesTotal).toBe(32_000_000);
-    expect(setupRows([status("lc0")], {}).map((row) => [row.key, row.label])).toStrictEqual([
-      ["lc0", "Lc0"]
+    // A failed binary marks the Lc0 row, not Maia's.
+    const failed = setupRows([status("lc0"), status("lc0-network"), status("maia-1500")], {
+      lc0: { bytesReceived: 0, bytesTotal: 5, status: "error", errorMessage: "offline" }
+    });
+    expect(failed.map((row) => [row.key, row.status])).toStrictEqual([
+      ["lc0", "error"],
+      ["maia", "pending"]
     ]);
   });
 

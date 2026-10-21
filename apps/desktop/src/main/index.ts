@@ -13,7 +13,7 @@ import {
   type MenuItemConstructorOptions,
   type WebContents
 } from "electron";
-import { canonicalImagePath, isServableImage } from "./image-access";
+import { allowImageFolder, canonicalImagePath, isServableImage } from "./image-access";
 import { guardIpcSenders } from "./ipc-guard";
 import { cancelAllDownloads } from "./databases/external-databases";
 import { existsSync } from "node:fs";
@@ -47,6 +47,9 @@ import { getTelemetry, initTelemetry } from "./telemetry";
 import { resolveTelemetryConfig, usageAnalyticsConsent } from "./telemetry/config";
 import { noteEngineReadiness } from "./telemetry/engine-readiness";
 import { rescueLegacyDatasets } from "./databases/dataset-location";
+import { adoptStoredEngineImages } from "./engine/engine-images";
+import { engineImages } from "./ipc/engine-handler";
+import { broadcast } from "./ipc/broadcast";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -163,6 +166,7 @@ async function startup(): Promise<void> {
     callback(isPermissionAllowed(permission))
   );
   installLocalImageProtocol();
+  adoptEngineImages();
   // The UI is dark-only: native surfaces (window vibrancy material, menus, dialogs) follow it.
   nativeTheme.themeSource = "dark";
   installWindowGlass();
@@ -430,6 +434,7 @@ function installWindowReveal(): void {
 
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */
 function installLocalImageProtocol(): void {
+  allowImageFolder(engineImages().dir);
   protocol.handle(IMAGE_SCHEME, (request) => {
     const requested = localImagePathFromUrl(request.url);
     // Fetch the canonical spelling: on Windows the request can arrive as `/C:/x.png`.
@@ -472,9 +477,7 @@ function installApplicationMenu(): void {
 }
 
 function createAppIcon() {
-  const assetsDir = app.isPackaged
-    ? process.resourcesPath
-    : join(app.getAppPath(), "src/main/assets");
+  const assetsDir = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "build");
   // macOS already ships the bundle icon as Resources/icon.icns. Don't copy a second icns.
   const iconFiles =
     process.platform === "darwin" ? ["icon.icns", "app-icon.png"] : ["app-icon.png"];
@@ -483,6 +486,23 @@ function createAppIcon() {
     if (!icon.isEmpty()) return icon;
   }
   return undefined;
+}
+
+/**
+ * Engine pictures saved before they were copied into the app's data move there (in the
+ * background; a picture that can't be copied stays as it is). See engine/engine-images.ts.
+ */
+function adoptEngineImages(): void {
+  adoptStoredEngineImages(engineImages(), engineRepository, (message, error) =>
+    logger.warn("engine-images", `${message}:`, errorMessage(error))
+  ).then(
+    (changed) => {
+      if (!changed) return;
+      logger.info("engine-images", `copied ${changed} engine picture(s) into the app's data`);
+      broadcast("engines:changed", undefined);
+    },
+    (error: unknown) => logger.error("engine-images", "moving engine pictures failed:", error)
+  );
 }
 
 /**

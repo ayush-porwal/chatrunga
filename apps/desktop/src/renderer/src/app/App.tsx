@@ -272,7 +272,6 @@ export function App() {
   });
   const board = useBoardCommands(nav, {
     engines: engines.data,
-    defaultEngineId,
     setReviewTab,
     setImportOpen,
     setGameReviewPickerOpen,
@@ -337,7 +336,6 @@ export function App() {
     releasePuzzleSession: () => puzzleSession.release(currentGame().board),
     resumePuzzleSet: (set) => puzzleSession.resumeOnBoard(set, currentGame().board),
     endBoardActivity: () => nav.endBoardActivity(),
-    defaultEngineId,
     exitFocus: () => setFocusMode(false)
   });
 
