@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import type { Color, GameSummary, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
+import type {
+  Color,
+  GameSource,
+  GameSummary,
+  MoveNode,
+  SavedGame
+} from "@chaturanga/shared/types/chess";
 import {
   LIBRARY_TAB_LABELS,
   LIBRARY_TABS,
@@ -100,6 +106,19 @@ export function yourSideOf(
     if (side) return side;
   }
   return null;
+}
+
+/**
+ * The connected accounts' usernames a game can name you by (for yourSideOf): a Lichess or Chess.com
+ * game's own site's only (its opponent may share your name on the other site), else both.
+ */
+export function accountUsernames(
+  source: GameSource | null | undefined,
+  accounts: { lichess: string | null; chesscom: string | null }
+): (string | null)[] {
+  if (source === "lichess") return [accounts.lichess];
+  if (source === "chesscom") return [accounts.chesscom];
+  return [accounts.lichess, accounts.chesscom];
 }
 
 /** The side the thumbnail shows at the bottom: the side the user played, else White. */

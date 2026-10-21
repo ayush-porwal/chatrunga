@@ -8,6 +8,7 @@ import {
   recentGamesFilterTab,
   recentRows,
   reviewSummary,
+  accountUsernames,
   savedGameFacts,
   scoresFor,
   userSide,
@@ -74,6 +75,28 @@ describe("Recent games rows", () => {
     expect(yourSideOf(summary("g"), [null, "someone_else"])).toBeNull();
     expect(yourSideOf(summary("g", { white: "You", black: "You" }), [])).toBeNull();
     expect(yourSideOf(summary("g", { white: null, black: null }), ["ayush"])).toBeNull();
+  });
+
+  it("names you in a Lichess or Chess.com game by that site's account only", () => {
+    const accounts = { lichess: "ayush", chesscom: "kakashi" };
+    // A Chess.com game whose opponent shares your Lichess name: only the Chess.com name is yours.
+    const chesscomGame = summary("g", { source: "chesscom", white: "ayush", black: "kakashi" });
+    expect(yourSideOf(chesscomGame, accountUsernames("chesscom", accounts))).toBe("black");
+    const lichessGame = summary("g", { source: "lichess", white: "kakashi", black: "ayush" });
+    expect(yourSideOf(lichessGame, accountUsernames("lichess", accounts))).toBe("black");
+    // Its site's account not connected: the other site's name doesn't count.
+    expect(
+      yourSideOf(chesscomGame, accountUsernames("chesscom", { ...accounts, chesscom: null }))
+    ).toBeNull();
+    // Any other game: either account's name, Lichess first; a "You" side still wins.
+    expect(accountUsernames("pgn-import", accounts)).toStrictEqual(["ayush", "kakashi"]);
+    expect(accountUsernames(null, accounts)).toStrictEqual(["ayush", "kakashi"]);
+    expect(
+      yourSideOf(
+        summary("g", { source: "chesscom", white: "You", black: "kakashi" }),
+        accountUsernames("chesscom", accounts)
+      )
+    ).toBe("white");
   });
 
   it("counts the main line in full moves and tints the move on the board", () => {

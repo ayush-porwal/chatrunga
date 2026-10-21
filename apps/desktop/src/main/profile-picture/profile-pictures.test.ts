@@ -4,12 +4,19 @@ import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pngBytes } from "../__fixtures__/picture-bytes";
 import { pictureStore } from "../picture-store";
+import { writePrivateJsonFile } from "../secure-json-file";
 import { pictureSrc, ProfilePictures } from "./profile-pictures";
 import type { RemotePicture } from "./remote-picture";
 import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
 
+// The state file's writes, so a test can make one fail.
+vi.mock("../secure-json-file", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../secure-json-file")>();
+  return { ...actual, writePrivateJsonFile: vi.fn(actual.writePrivateJsonFile) };
+});
+
 const AVATAR = "https://images.chesscomfiles.com/uploads/v1/user/1.png";
-const FLAIR = "https://lichess1.org/assets/______5/flair/img/objects.crown.webp";
+const FLAIR = "https://lichess1.org/assets/flair/img/objects.crown.webp";
 
 describe("ProfilePictures", () => {
   let root: string;
@@ -82,6 +89,49 @@ describe("ProfilePictures", () => {
     await expect(pictures.remove()).resolves.toStrictEqual({ src: null, source: null });
     expect(copies()).toStrictEqual([]);
     expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the photo it had, and its copy, when the change can't be stored", async () => {
+    const kept = await pictures.choose(photo("me.png", "first"));
+    const state = readFileSync(stateFile, "utf8");
+    vi.mocked(writePrivateJsonFile).mockRejectedValueOnce(new Error("disk full"));
+    await expect(pictures.choose(photo("new.png", "second"))).rejects.toThrow("disk full");
+    // The new copy is gone; the old one, which the state still names, is there.
+    expect(copies()).toStrictEqual([basename(pathOf(kept))]);
+    expect(readFileSync(stateFile, "utf8")).toBe(state);
+    await expect(pictures.picture()).resolves.toStrictEqual(kept);
+    vi.mocked(writePrivateJsonFile).mockRejectedValueOnce(new Error("disk full"));
+    await expect(pictures.remove()).rejects.toThrow("disk full");
+    await expect(pictures.picture()).resolves.toStrictEqual(kept);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the account's copy it had when a refresh can't be stored", async () => {
+    accounts.chesscom = AVATAR;
+    await pictures.refresh();
+    const old = await pictures.picture();
+    accounts.chesscom = AVATAR.replace("1.png", "2.png");
+    vi.mocked(writePrivateJsonFile).mockRejectedValueOnce(new Error("disk full"));
+    await pictures.refresh();
+    expect(log).toHaveBeenCalledWith("refreshing your picture failed", expect.any(Error));
+    expect(copies()).toStrictEqual([basename(pathOf(old))]);
+    await expect(pictures.picture()).resolves.toStrictEqual(old);
+  });
+
+  it("answers a read made while a refresh runs with the refreshed picture", async () => {
+    accounts.chesscom = AVATAR;
+    let finish = () => {};
+    const downloaded = new Promise<void>((resolve) => (finish = resolve));
+    download.mockImplementationOnce(async (url) => {
+      await downloaded;
+      return { contents: Buffer.from(`picture at ${url}`), extension: ".png" };
+    });
+    const refreshing = pictures.refresh();
+    const read = pictures.picture();
+    await vi.waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    finish();
+    await expect(read).resolves.toMatchObject({ source: "chesscom" });
+    await refreshing;
   });
 
   it("refuses a file that isn't a picture, and keeps the photo it had", async () => {

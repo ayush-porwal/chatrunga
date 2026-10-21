@@ -23,11 +23,12 @@ const PICTURE_EXTENSIONS: Partial<Record<string, string>> & Record<RasterType, s
 };
 
 /**
- * A Lichess flair's image (lila's `flairSrc`: the asset host, its flair version path, the flair's
- * name). `flair` is checked where it is read (lichess/normalize.ts `flairName`).
+ * A Lichess flair's image: the asset host's unversioned flair path (lila's `flairSrc` adds an asset
+ * version, which changes with each Lichess deploy), then the flair's name. `flair` is checked where
+ * it is read (lichess/normalize.ts `flairName`).
  */
 export function lichessFlairUrl(flair: string): string {
-  return `https://lichess1.org/assets/______5/flair/img/${flair}.webp`;
+  return `https://lichess1.org/assets/flair/img/${flair}.webp`;
 }
 
 /** `address` as a URL when it is an https address on one of the picture hosts, else throws. */

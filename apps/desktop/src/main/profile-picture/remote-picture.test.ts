@@ -13,7 +13,7 @@ describe("pictureUrl", () => {
   it("takes plain https addresses on Chess.com's and Lichess's image hosts only", () => {
     expect(pictureUrl(AVATAR).host).toBe("images.chesscomfiles.com");
     expect(pictureUrl(lichessFlairUrl("objects.crown")).href).toBe(
-      "https://lichess1.org/assets/______5/flair/img/objects.crown.webp"
+      "https://lichess1.org/assets/flair/img/objects.crown.webp"
     );
     for (const address of [
       "http://images.chesscomfiles.com/x.png",

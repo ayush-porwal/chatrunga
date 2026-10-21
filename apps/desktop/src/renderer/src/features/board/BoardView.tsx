@@ -69,6 +69,7 @@ export function BoardView() {
   const orientation = useGameStore((state) => state.orientation);
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const headers = useGameStore((state) => state.headers);
+  const source = useGameStore((state) => state.source);
   const mode = useGameStore((state) => state.mode);
   const engineSide = useGameStore((state) => state.engineSide);
   const hasLiveClock = useGameStore((state) => Boolean(state.engineClock && state.engineClockLive));
@@ -496,7 +497,7 @@ export function BoardView() {
   // game's (opened on the board).
   const savedEngine = useSavedEngineSide(headers);
   // Your side shows your picture: the side you play in a match, else the side the game names you.
-  const namedSide = useYourSide(headers.white, headers.black);
+  const namedSide = useYourSide(headers.white, headers.black, source);
   const yourSide = userSide(mode, engineSide) ?? namedSide;
   const engineFor = (color: Color) => {
     if (mode === "engine" && engineSide) return engineSide === color ? activeEngine : null;

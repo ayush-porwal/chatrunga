@@ -55,7 +55,7 @@ export function LibraryGameRow({
   const white = playerName(game, "white");
   const black = playerName(game, "black");
   const engineSide = useSavedEngineSide(game);
-  const yourSide = useYourSide(game.white, game.black);
+  const yourSide = useYourSide(game.white, game.black, game.source);
 
   const player = (color: Color, name: string) => (
     <span className="flex min-w-0 items-center gap-1">

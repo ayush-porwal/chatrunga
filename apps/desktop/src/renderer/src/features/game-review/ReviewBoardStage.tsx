@@ -50,6 +50,7 @@ export function ReviewBoardStage({
   const boardFen = useGameStore((state) => state.currentFen);
   const orientation = useGameStore((state) => state.orientation);
   const headers = useGameStore((state) => state.headers);
+  const source = useGameStore((state) => state.source);
   // A BEST line on the board: the panels stay on its error, the board shows the line's position
   // (its move highlighted, none of the error's arrows or mark).
   const bestLine = useGameStore(activeBestLine);
@@ -87,7 +88,7 @@ export function ReviewBoardStage({
   const toMove = sideToMove(boardFen);
   // An engine game's engine side shows the engine's picture.
   const engineSide = useSavedEngineSide(headers);
-  const yourSide = useYourSide(headers.white, headers.black);
+  const yourSide = useYourSide(headers.white, headers.black, source);
   const playerRow = (player: typeof top) => (
     <PlayerRow
       name={player.name}

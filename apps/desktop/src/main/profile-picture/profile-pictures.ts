@@ -50,23 +50,24 @@ export class ProfilePictures {
 
   constructor(private readonly options: ProfilePicturesOptions) {}
 
-  async picture(): Promise<YourPicture> {
-    return this.resolve(await this.read());
+  /**
+   * Your picture once the changes under way are done: a refresh in flight (the one the app starts
+   * with) is waited for, so the first read is already current, not the state before it.
+   */
+  picture(): Promise<YourPicture> {
+    return this.serialize(async () => this.resolve(await this.read()));
   }
 
   /** `path` (a file the user picked) becomes your picture; rejects when it can't be used. */
   choose(path: string): Promise<YourPicture> {
     return this.change(async (state) => {
-      const copy = await this.options.store.adopt("upload", path);
-      await this.options.store.prune("upload", copy);
-      state.upload = { path: copy, url: null };
+      state.upload = { path: await this.options.store.adopt("upload", path), url: null };
     });
   }
 
   /** Forgets the chosen photo. */
   remove(): Promise<YourPicture> {
-    return this.change(async (state) => {
-      await this.options.store.prune("upload", null);
+    return this.change((state) => {
       state.upload = null;
     });
   }
@@ -82,11 +83,12 @@ export class ProfilePictures {
       this.queuedRefresh = null;
       const urls = await this.options.accountPictures();
       const state = await this.read();
+      const saved = { ...state };
       const before = await this.resolve(state);
       let changed = false;
       for (const source of REMOTE_SOURCES)
         changed = (await this.follow(state, source, urls[source])) || changed;
-      if (changed) await this.write(state);
+      if (changed) await this.save(state, saved, REMOTE_SOURCES);
       if ((await this.resolve(state)).src !== before.src) this.options.onChange();
     }).catch((error: unknown) => this.options.log("refreshing your picture failed", error));
     return this.queuedRefresh;
@@ -94,7 +96,7 @@ export class ProfilePictures {
 
   /**
    * Brings `state`'s copy for an account in step with its picture's address (null: none, or no
-   * account). Whether the state changed.
+   * account). Whether the state changed (the copies it no longer names go once it is saved).
    */
   private async follow(state: State, source: RemoteSource, url: string | null): Promise<boolean> {
     const cached = state[source];
@@ -102,7 +104,6 @@ export class ProfilePictures {
     if (kept && kept.url === url) return false;
     const next = url ? ((await this.downloaded(source, url)) ?? kept) : null;
     state[source] = next;
-    await this.options.store.prune(source, next?.path ?? null);
     // The same picture at a new address is the same file: the address is still news.
     return cached?.path !== next?.path || cached?.url !== next?.url;
   }
@@ -121,14 +122,35 @@ export class ProfilePictures {
     }
   }
 
-  private change(apply: (state: State) => Promise<void>): Promise<YourPicture> {
+  private change(apply: (state: State) => Promise<void> | void): Promise<YourPicture> {
     return this.serialize(async () => {
       const state = await this.read();
+      const saved = { ...state };
       await apply(state);
-      await this.write(state);
+      await this.save(state, saved, ["upload"]);
       this.options.onChange();
       return this.resolve(state);
     });
+  }
+
+  /**
+   * Stores `state` (changed from `saved` for `sources`), then deletes those sources' copies it no
+   * longer names. The file goes first: were a copy deleted before, a failed write would leave the
+   * state naming a file that's gone. When it can't be stored, the new copies go instead, and the
+   * state and copies there were stay.
+   */
+  private async save(state: State, saved: State, sources: readonly Source[]): Promise<void> {
+    const prune = (from: State) =>
+      Promise.all(
+        sources.map((source) => this.options.store.prune(source, from[source]?.path ?? null))
+      );
+    try {
+      await this.write(state);
+    } catch (error) {
+      await prune(saved);
+      throw error;
+    }
+    await prune(state);
   }
 
   /** The first source whose copy is there. */

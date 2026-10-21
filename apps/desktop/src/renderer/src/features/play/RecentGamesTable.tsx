@@ -361,7 +361,7 @@ function GameRow({
     black: game.black,
     engineId: saved?.headers?.engineId
   });
-  const yourSide = useYourSide(game.white, game.black);
+  const yourSide = useYourSide(game.white, game.black, game.source);
 
   const player = (color: Color, name: string) => (
     <span className="flex min-w-0 items-center gap-1.5">
