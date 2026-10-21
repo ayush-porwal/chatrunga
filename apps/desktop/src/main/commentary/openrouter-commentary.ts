@@ -20,8 +20,15 @@ import {
 import type { PuzzleExplanation, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { isRecord } from "@chaturanga/shared/types/guards";
+import {
+  OPENROUTER_ENDPOINT,
+  completionText,
+  openRouterHeaders,
+  openRouterHttpFailure,
+  parseUsage,
+  type OpenRouterUsage
+} from "./openrouter-http";
 
-const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -53,11 +60,7 @@ export type CommentaryFailureCode =
   | "validation_failed";
 
 /** Token counts and cost as OpenRouter reported them; a field it didn't report stays unknown. */
-export type CommentaryUsage = {
-  promptTokens?: number;
-  completionTokens?: number;
-  costUsd?: number;
-};
+export type CommentaryUsage = OpenRouterUsage;
 
 /**
  * One logical request per move (`request`), each HTTP attempt it took (`attempt`: the first, and
@@ -130,38 +133,8 @@ class CommentaryFailure extends Error {
 class CommentaryCancelled extends Error {}
 
 function httpFailure(status: number): CommentaryFailure {
-  if (status === 401 || status === 403) {
-    return new CommentaryFailure(
-      "OpenRouter rejected the API key. Check it in Settings → Commentary.",
-      "invalid_key",
-      status
-    );
-  }
-  if (status === 402)
-    return new CommentaryFailure(
-      "Your OpenRouter account is out of credits.",
-      "insufficient_credits",
-      status
-    );
-  if (status === 404) {
-    return new CommentaryFailure(
-      "OpenRouter doesn't know this model. Check the model name in Settings → Commentary.",
-      "invalid_model",
-      status
-    );
-  }
-  if (status === 429) {
-    return new CommentaryFailure(
-      "OpenRouter is rate limiting requests. Try again in a moment.",
-      "rate_limited",
-      status
-    );
-  }
-  return new CommentaryFailure(
-    `OpenRouter returned an error (${status}). Try again in a moment.`,
-    "provider_error",
-    status
-  );
+  const { message, code } = openRouterHttpFailure(status);
+  return new CommentaryFailure(message, code, status);
 }
 
 /**
@@ -436,12 +409,7 @@ async function requestCompletion(
   try {
     const response = await fetchImpl(OPENROUTER_ENDPOINT, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://chaturanga.ayushporwal.com",
-        "X-Title": "Chaturanga"
-      },
+      headers: openRouterHeaders(apiKey),
       body: JSON.stringify({
         model,
         temperature: request.temperature,
@@ -467,34 +435,6 @@ async function requestCompletion(
     clearTimeout(timeout);
     signal?.removeEventListener("abort", cancel);
   }
-}
-
-/** The first choice's answer, trimmed; null when the response has none or it is blank. */
-function completionText(body: unknown): string | null {
-  const choices: unknown = isRecord(body) ? body.choices : undefined;
-  const choice: unknown = Array.isArray(choices) ? choices[0] : undefined;
-  const message = isRecord(choice) ? choice.message : undefined;
-  const content = isRecord(message) ? message.content : undefined;
-  return typeof content === "string" ? content.trim() || null : null;
-}
-
-/**
- * OpenRouter's usage block (`prompt_tokens`, `completion_tokens`, `cost` in USD), kept only as
- * numbers; anything missing or malformed stays unknown — never zero.
- */
-export function parseUsage(value: unknown): CommentaryUsage | null {
-  if (!isRecord(value)) return null;
-  const usage = value;
-  const count = (field: unknown) =>
-    typeof field === "number" && Number.isFinite(field) && field >= 0 ? field : undefined;
-  const parsed: CommentaryUsage = {
-    promptTokens: count(usage.prompt_tokens),
-    completionTokens: count(usage.completion_tokens),
-    costUsd: count(usage.cost)
-  };
-  // Object.values types the optional fields as present; any of them may be unset.
-  const fields: (number | undefined)[] = Object.values(parsed);
-  return fields.some((field) => field !== undefined) ? parsed : null;
 }
 
 async function mapWithConcurrency<T, R>(

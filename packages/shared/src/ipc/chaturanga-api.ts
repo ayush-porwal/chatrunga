@@ -142,12 +142,16 @@ export type DialogFileFilter = { name: string; extensions: string[] };
 
 export type OpenRouterConfigSummary = {
   model: string;
+  /** The model that reads book pages (book import); the default when none was chosen. */
+  bookOcrModel: string;
   /** The renderer can display configuration state, but never receives the key. */
   hasApiKey: boolean;
 };
 
 export type SetOpenRouterConfigInput = {
   model?: string;
+  /** Blank or the default: follow the default. */
+  bookOcrModel?: string;
   /** `undefined` keeps the current key; `null` removes it. */
   apiKey?: string | null;
 };

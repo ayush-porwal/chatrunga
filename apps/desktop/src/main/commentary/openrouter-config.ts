@@ -4,7 +4,10 @@ import type {
   OpenRouterConfigSummary,
   SetOpenRouterConfigInput
 } from "@chaturanga/shared/ipc/chaturanga-api";
-import { DEFAULT_COMMENTARY_MODEL as DEFAULT_OPENROUTER_MODEL } from "@chaturanga/shared/llm/models";
+import {
+  DEFAULT_BOOK_OCR_MODEL,
+  DEFAULT_COMMENTARY_MODEL as DEFAULT_OPENROUTER_MODEL
+} from "@chaturanga/shared/llm/models";
 import {
   createSerialQueue,
   decryptSecret,
@@ -26,15 +29,17 @@ const EARLIER_DEFAULT_MODELS: ReadonlySet<string> = new Set(["anthropic/claude-s
 type StoredConfig = {
   /** The user's own model; null follows the default (DEFAULT_COMMENTARY_MODEL). */
   model: string | null;
+  /** The model reading book pages (book import); null follows DEFAULT_BOOK_OCR_MODEL. */
+  bookOcrModel: string | null;
   encryptedApiKey: string | null;
 };
 
-/** The model to store: null when it is blank, invalid or the current default. */
-function storedModel(value: unknown): string | null {
+/** The model to store: null when it is blank, invalid or `defaultModel`. */
+function storedModel(value: unknown, defaultModel = DEFAULT_OPENROUTER_MODEL): string | null {
   if (typeof value !== "string") return null;
   const model = value.trim();
   if (!model || model.length > MAX_MODEL_LENGTH || /[\r\n\0]/.test(model)) return null;
-  return model === DEFAULT_OPENROUTER_MODEL ? null : model;
+  return model === defaultModel ? null : model;
 }
 
 /**
@@ -61,10 +66,7 @@ export class OpenRouterConfigStore {
    */
   async get(): Promise<OpenRouterConfigSummary> {
     const config = await this.read();
-    return {
-      model: config.model ?? DEFAULT_OPENROUTER_MODEL,
-      hasApiKey: Boolean(config.encryptedApiKey)
-    };
+    return summary(config);
   }
 
   /** Read the secret for a provider call. Never expose this through IPC. */
@@ -86,6 +88,10 @@ export class OpenRouterConfigStore {
   private async apply(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
     const current = await this.read();
     const model = input.model === undefined ? current.model : storedModel(input.model);
+    const bookOcrModel =
+      input.bookOcrModel === undefined
+        ? current.bookOcrModel
+        : storedModel(input.bookOcrModel, DEFAULT_BOOK_OCR_MODEL);
     let encryptedApiKey = current.encryptedApiKey;
 
     if (input.apiKey === null) {
@@ -94,8 +100,9 @@ export class OpenRouterConfigStore {
       encryptedApiKey = encryptSecret(this.secureStorage, input.apiKey.trim());
     }
 
-    await this.write({ model, encryptedApiKey });
-    return { model: model ?? DEFAULT_OPENROUTER_MODEL, hasApiKey: Boolean(encryptedApiKey) };
+    const config = { model, bookOcrModel, encryptedApiKey };
+    await this.write(config);
+    return summary(config);
   }
 
   private async read(): Promise<StoredConfig> {
@@ -104,6 +111,7 @@ export class OpenRouterConfigStore {
     return {
       model:
         model && parsed?.modelChosen !== true && EARLIER_DEFAULT_MODELS.has(model) ? null : model,
+      bookOcrModel: storedModel(parsed?.bookOcrModel, DEFAULT_BOOK_OCR_MODEL),
       encryptedApiKey:
         typeof parsed?.encryptedApiKey === "string" && parsed.encryptedApiKey.length > 0
           ? parsed.encryptedApiKey
@@ -115,6 +123,15 @@ export class OpenRouterConfigStore {
     // `modelChosen` marks a model this build saved as the user's (see EARLIER_DEFAULT_MODELS).
     return writePrivateJsonFile(this.filePath, { ...config, modelChosen: config.model !== null });
   }
+}
+
+/** What the renderer may see: the models (defaults filled in) and whether a key is saved. */
+function summary(config: StoredConfig): OpenRouterConfigSummary {
+  return {
+    model: config.model ?? DEFAULT_OPENROUTER_MODEL,
+    bookOcrModel: config.bookOcrModel ?? DEFAULT_BOOK_OCR_MODEL,
+    hasApiKey: Boolean(config.encryptedApiKey)
+  };
 }
 
 let store: OpenRouterConfigStore | null = null;

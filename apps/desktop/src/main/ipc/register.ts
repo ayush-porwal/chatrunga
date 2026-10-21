@@ -517,10 +517,14 @@ function registerCommentaryIpc(): void {
     if (input.apiKey !== undefined && input.apiKey !== null && typeof input.apiKey !== "string") {
       throw new Error("Invalid OpenRouter API key");
     }
-    if (input.model !== undefined && typeof input.model !== "string")
-      throw new Error("Invalid OpenRouter model");
+    const model = (value: unknown) => {
+      if (value !== undefined && typeof value !== "string")
+        throw new Error("Invalid OpenRouter model");
+      return value;
+    };
     return getOpenRouterConfigStore().set({
-      model: input.model,
+      model: model(input.model),
+      bookOcrModel: model(input.bookOcrModel),
       apiKey: input.apiKey
     });
   });

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
+import { DEFAULT_BOOK_OCR_MODEL, DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { OpenRouterConfigStore } from "./openrouter-config";
 
 vi.mock("electron", () => ({
@@ -40,7 +40,11 @@ describe("OpenRouterConfigStore", () => {
     });
 
     const summary = await store.set({ model: "openai/test-model", apiKey: "unit-test-secret" });
-    expect(summary).toStrictEqual({ model: "openai/test-model", hasApiKey: true });
+    expect(summary).toStrictEqual({
+      model: "openai/test-model",
+      bookOcrModel: DEFAULT_BOOK_OCR_MODEL,
+      hasApiKey: true
+    });
     expect(await store.get()).toStrictEqual(summary);
     expect(await store.getApiKey()).toBe("unit-test-secret");
 
@@ -79,6 +83,22 @@ describe("OpenRouterConfigStore", () => {
     expect((await store.get()).model).toBe(DEFAULT_COMMENTARY_MODEL);
   });
 
+  it("keeps a chosen book OCR model apart from the commentary model, the default as none", async () => {
+    const path = await storePath();
+    const store = new OpenRouterConfigStore(path);
+
+    expect(await store.set({ bookOcrModel: " google/test-vision " })).toMatchObject({
+      model: DEFAULT_COMMENTARY_MODEL,
+      bookOcrModel: "google/test-vision"
+    });
+    await store.set({ model: "openai/test-model" });
+    expect((await store.get()).bookOcrModel).toBe("google/test-vision");
+
+    await store.set({ bookOcrModel: DEFAULT_BOOK_OCR_MODEL });
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ bookOcrModel: null });
+    expect((await store.get()).bookOcrModel).toBe(DEFAULT_BOOK_OCR_MODEL);
+  });
+
   it("reads an earlier default saved by older builds as the current default", async () => {
     const path = await storePath();
     await writeFile(path, JSON.stringify({ model: "anthropic/claude-sonnet-4.6" }));
@@ -105,7 +125,11 @@ describe("OpenRouterConfigStore", () => {
       store.set({ model: "anthropic/test-model" }),
       store.set({ apiKey: "overlapping-secret" })
     ]);
-    expect(await store.get()).toStrictEqual({ model: "anthropic/test-model", hasApiKey: true });
+    expect(await store.get()).toStrictEqual({
+      model: "anthropic/test-model",
+      bookOcrModel: DEFAULT_BOOK_OCR_MODEL,
+      hasApiKey: true
+    });
     expect(await store.getApiKey()).toBe("overlapping-secret");
   });
 
@@ -122,6 +146,7 @@ describe("OpenRouterConfigStore", () => {
     );
     expect(await store.get()).toStrictEqual({
       model: "anthropic/claude-haiku-5.5",
+      bookOcrModel: DEFAULT_BOOK_OCR_MODEL,
       hasApiKey: false
     });
   });
