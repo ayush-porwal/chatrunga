@@ -85,7 +85,7 @@ import { asAbsolutePath, asId, asObject, asString } from "./fields";
 import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
-import { registerEngineCrudIpc } from "./engine-handler";
+import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
@@ -246,11 +246,14 @@ function registerAssetIpc(): void {
   // review / play can spawn it. Failures are logged; the asset state stands.
   // After every sync the renderer re-fetches its cached engine list (e.g. engines installed
   // from the welcome dialog become usable for review/analysis right away).
+  // Managed engines the sync removed lose their picture copies, as `engines:remove` does.
   const syncEngines = () =>
     syncAssetsToEngineRegistry()
-      .then(() => {
+      .then(async (removed) => {
         broadcast("engines:changed", undefined);
         noteEngineReadiness(false);
+        const images = engineImages();
+        await Promise.all(removed.map((id) => images.exclusive(id, () => images.prune(id, null))));
       })
       .catch((error) => logger.error("asset-manager", "engine registry sync failed:", error));
 

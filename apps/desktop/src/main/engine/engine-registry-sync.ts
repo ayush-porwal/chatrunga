@@ -46,23 +46,31 @@ let automaticLc0DefaultId: string | null = null;
  *     executablePath = lc0 path, weightsPath = maia-NNNN.pb.gz path,
  *     isHumanPrediction = true. One row per rating.
  *
- *   Asset removed → remove the corresponding managed engine row.
+ *   Asset removed → remove the corresponding managed engine row. Resolves to the removed rows'
+ *   ids, so the caller can delete their picture copies (see engine-images.ts).
  *
  * Idempotent. Safe to call repeatedly. Identifies managed rows by name
  * suffix `(managed)` — never touches user-configured engines.
  */
 
-export async function syncAssetsToEngineRegistry(): Promise<void> {
+export async function syncAssetsToEngineRegistry(): Promise<string[]> {
   const assets = getAssetManager().getInstalled();
   const existingEngines = engineRepository.list();
   const managedEngines = existingEngines.filter(isManagedEngine);
+  const removed: string[] = [];
+  const removeManagedByName = (name: string): void => {
+    const target = managedEngines.find((e) => e.name === name);
+    if (!target) return;
+    engineRepository.remove(target.id);
+    removed.push(target.id);
+  };
 
   // 1. Stockfish
   const stockfishRecord = assets["stockfish"];
   if (isUsable(stockfishRecord)) {
     upsertManagedStockfish(stockfishRecord, existingEngines);
   } else {
-    removeManagedByName(managedEngines, `Stockfish ${MANAGED_SUFFIX}`);
+    removeManagedByName(`Stockfish ${MANAGED_SUFFIX}`);
   }
 
   // 2. Lc0 on its own network — needs lc0 AND the network.
@@ -72,7 +80,7 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
   if (lc0Path && isUsable(networkRecord)) {
     upsertManagedLc0(lc0Path, pathFor(networkRecord), existingEngines);
   } else {
-    removeManagedByName(managedEngines, LC0_ENGINE_NAME);
+    removeManagedByName(LC0_ENGINE_NAME);
   }
 
   // 3. Maia engines — need lc0 AND a Maia weight to be installed.
@@ -84,7 +92,7 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
     } else {
       // Either lc0 missing or this weight missing → remove the corresponding
       // engine row so the user doesn't see a Maia entry that can't actually run.
-      removeManagedByName(managedEngines, name);
+      removeManagedByName(name);
     }
   }
 
@@ -97,6 +105,7 @@ export async function syncAssetsToEngineRegistry(): Promise<void> {
   // We fix these in place, idempotently. Only writes when a value actually
   // needs to change, so subsequent runs are no-ops.
   autoFixEngineFlags();
+  return removed;
 }
 
 /**
@@ -220,10 +229,4 @@ function upsertManagedMaia(
     isHumanPrediction: true,
     maiaRating: rating
   });
-}
-
-function removeManagedByName(managed: EngineConfig[], name: string): void {
-  const target = managed.find((e) => e.name === name);
-  if (!target) return;
-  engineRepository.remove(target.id);
 }

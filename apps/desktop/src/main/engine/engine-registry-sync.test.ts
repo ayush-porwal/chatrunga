@@ -54,7 +54,7 @@ vi.mock("./asset-manager", () => ({
 }));
 
 /** A fresh module per test: what the sync remembers within a run starts empty (a new launch). */
-let syncAssetsToEngineRegistry: () => Promise<void>;
+let syncAssetsToEngineRegistry: () => Promise<string[]>;
 
 const byName = (name: string) => db.engines.find((engine) => engine.name === name);
 const defaults = () => db.engines.filter((engine) => engine.isDefault).map((engine) => engine.name);
@@ -164,19 +164,22 @@ describe("syncAssetsToEngineRegistry", () => {
       isAvailable: true
     } as EngineConfig);
     await syncAssetsToEngineRegistry();
-    expect(byName("Lc0 (managed)")).toBeDefined();
+    const lc0Id = byName("Lc0 (managed)")?.id;
+    expect(lc0Id).toBeDefined();
 
     delete installed.records["lc0-network"];
-    await syncAssetsToEngineRegistry();
+    // The removed rows' ids come back, for their picture copies to be deleted.
+    await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual([lc0Id]);
     expect(db.engines.map((engine) => engine.name).sort()).toStrictEqual([
       "Lc0",
       "Maia 1100 (managed)",
       "Stockfish (managed)"
     ]);
 
+    const maiaId = byName("Maia 1100 (managed)")?.id;
     installed.records["lc0-network"] = "/engines/lc0-network.pb.gz";
     delete installed.records.lc0;
-    await syncAssetsToEngineRegistry();
+    await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual([maiaId]);
     expect(byName("Lc0 (managed)")).toBeUndefined();
     expect(byName("Maia 1100 (managed)")).toBeUndefined();
     expect(byName("Stockfish (managed)")).toBeDefined();
