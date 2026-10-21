@@ -184,28 +184,18 @@ export function useAppCommands({
         "refresh-decision",
         () =>
           void repertoire.openRepertoirePractice(repertoireId, {
-            preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
+            preset: { mode: "review-due", positionKeys: [positionKey] }
           })
       )
     ),
     repertoireStageApplied: useEventCallback(() =>
       setRepertoireExtras((extras) => ({ ...extras, stage: null }))
     ),
+    // Practice (the hub, Home's "Review now"): a session starts at once with the practice settings.
     openRepertoirePractice: useEventCallback((repertoireId: string) =>
       unlessRepertoireBlocked(
         "open-practice",
         () => void repertoire.openRepertoirePractice(repertoireId)
-      )
-    ),
-    // "Review now" / "Review due": the setup in Review due over every chapter, whatever the last
-    // session's draft was (a Learn new draft would otherwise hide the due decisions).
-    reviewRepertoire: useEventCallback((repertoireId: string) =>
-      unlessRepertoireBlocked(
-        "open-practice",
-        () =>
-          void repertoire.openRepertoirePractice(repertoireId, {
-            preset: { mode: "review-due", chapterIds: [] }
-          })
       )
     ),
     resumeRepertoirePractice: useEventCallback(
@@ -215,14 +205,15 @@ export function useAppCommands({
           () => void repertoire.openRepertoirePractice(repertoireId, { sessionId })
         )
     ),
-    practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
+    // Study's Practice: the practice settings, a rehearsal of lines playing the open chapter.
+    practiceFromStudy: useEventCallback((repertoireId: string, chapterId: string) =>
       unlessRepertoireBlocked(
         "open-practice",
-        () => void repertoire.openRepertoirePractice(repertoireId, { preset: { chapterIds } })
+        () => void repertoire.openRepertoirePractice(repertoireId, { preset: { chapterId } })
       )
     ),
-    // "Rehearse this chapter / from here" (Study) and "Rehearse again" (a summary): the rehearsal
-    // starts at once, as a new step (Back returns to where it was asked for).
+    // "Rehearse again", "Retry missed" (a summary) and another line's chapter: the session starts
+    // at once, as a new step (Back returns to where it was asked for).
     rehearseRepertoire: useEventCallback((repertoireId: string, preset: PracticePreset) =>
       unlessRepertoireBlocked("open-practice", () => {
         useRepertoirePracticeStore.getState().reset();
@@ -265,8 +256,8 @@ export function useAppCommands({
         });
     }),
     repertoirePracticeStarted: useEventCallback(repertoire.practiceSessionStarted),
-    repertoirePracticeSetup: useEventCallback(() =>
-      unlessRepertoireBlocked("open-practice", repertoire.practiceSetup)
+    repertoirePracticeAgain: useEventCallback(() =>
+      unlessRepertoireBlocked("open-practice", repertoire.practiceAgain)
     ),
     playFromStudy: useEventCallback(() =>
       unlessRepertoireBlocked(

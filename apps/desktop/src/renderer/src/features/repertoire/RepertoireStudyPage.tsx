@@ -1,32 +1,41 @@
-import { useEffect, useId, useMemo, useState } from "react";
-import { ArrowUpToLine, CircleAlert, GraduationCap, Loader2, Redo2, Undo2 } from "lucide-react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { CircleAlert, GraduationCap, Loader2, Redo2, Settings, Undo2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { statusForFen } from "@chaturanga/shared/chess/position";
-import type { Color } from "@chaturanga/shared/types/chess";
-import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
+import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type RepertoireChapter,
+  type RepertoireChapterSummary,
+  type RepertoireDecision,
+  type RepertoireDetail
+} from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  SegmentedControl,
-  tabPanelProps,
-  type SegmentedOption
-} from "@/components/ui/segmented-control";
-import { SideDot } from "@/components/ui/side-dot";
-import { Stat, StatGroup } from "@/components/ui/stat";
+import { IconButton } from "@/components/ui/icon-button";
+import { tabPanelProps } from "@/components/ui/segmented-control";
 import { isElectronMac } from "@/lib/environment";
-import { useRepertoireChapterQuery, useRepertoireQuery } from "../../queries/repertoire";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import {
+  useExportRepertoireMutation,
+  useRepertoireChapterQuery,
+  useRepertoireQuery
+} from "../../queries/repertoire";
+import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
-import { BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
-import { nextSortOrder, sortedChapters, type StudyStage } from "./repertoire-chapters";
-import type { RehearseTarget } from "./practice-setup";
+import { useStudyEngineStore } from "../../stores/study-engine-store";
+import { DESTINATION_ICONS } from "../../app/destination-icons";
+import { BoardWorkspace } from "../board/BoardWorkspace";
+import { WorkspaceTabBar, type WorkspaceTab } from "../board/WorkspaceTabBar";
+import { nextSortOrder, plural, sortedChapters, type StudyStage } from "./repertoire-chapters";
+import { moveKinds, type MoveKind } from "./repertoire-model";
 import { RepertoireMoveNavigation } from "./RepertoireMoveNavigation";
-import { LIVE_GAME_NOTICE, NO_MOVES_TO_PLAY } from "./handoffs";
+import { RepertoireSettingsDialog } from "./RepertoireSettingsDialog";
 import { StudyBoardStage } from "./StudyBoardStage";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
-import { StudyChoicesPanel } from "./StudyChoicesPanel";
-import { StudyDecisionPractice } from "./StudyDecisionPractice";
 import { StudyEnginePanel } from "./StudyEnginePanel";
+import { StudyMoveMenu, usePausedAt } from "./StudyMoveMenu";
+import { StudyCommentDialog, StudyDecisionDialog } from "./StudyNoteDialogs";
 import {
   ChapterSaveNotice,
   DeletedLineNotice,
@@ -34,11 +43,8 @@ import {
   LoadErrorNotice,
   StudyErrorNotice
 } from "./StudyNotices";
-import { StudyNotesPanel } from "./StudyNotesPanel";
-import { StudyPositionActions } from "./StudyPositionActions";
-import { StudyPracticeBar } from "./StudyPracticeBar";
+import { StudyPracticeFooter } from "./StudyPracticeFooter";
 import { StudySourcesSection } from "./StudySourcesSection";
-import { StudyTrainingNotice } from "./StudyTrainingNotice";
 import { StudyTree } from "./StudyTree";
 import { useChapterAutosave } from "./useChapterAutosave";
 import { useChapterDraftLoad } from "./useChapterDraftLoad";
@@ -49,25 +55,30 @@ import { useMissingChapterHandoff } from "./useMissingChapterHandoff";
 import { useMoveTreeEditing } from "./useMoveTreeEditing";
 import { useStudyCommands } from "./useStudyCommands";
 import { useStudyPosition } from "./useStudyPosition";
-import { useStudyPracticeHandoffs } from "./useStudyPracticeHandoffs";
 import { useStudyTraining } from "./useStudyTraining";
 
-export type StudyTab = "chapters" | "moves" | "notes";
+export type StudyTab = "moves" | "chapters";
 
-const tabOptions: readonly SegmentedOption<StudyTab>[] = [
-  { value: "chapters", label: "Chapters" },
-  { value: "moves", label: "Moves" },
-  { value: "notes", label: "Notes" }
-];
+/** The panel's tabs, in order (a list, so another panel can join it). */
+function studyTabs(chapterCount: number): WorkspaceTab<StudyTab>[] {
+  return [
+    { value: "moves", label: "Moves" },
+    { value: "chapters", label: "Chapters", count: chapterCount }
+  ];
+}
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
+const ExportIcon = DESTINATION_ICONS.exportPgn;
 
 /**
- * Repertoire study (design §5.2): the chapter on a store-free board (both sides playable while
- * authoring; drawing on), its tree, choices and boundaries, chapters and notes. Edits go to the
- * workspace draft and autosave against the repertoire revision; nothing passes through the game
- * store. A chapter or repertoire that no longer exists hands back to the hub (`onMissing`); any
- * other failure to read them keeps the page (and the draft) with the cause and Retry.
+ * Repertoire study (design §5.2), laid out as Analysis: the chapter on a store-free board (both
+ * sides playable while authoring; drawing on) and the panel's title-bar tabs, Moves (the engine
+ * when Analyze is on, then the tree with its comments; the selected move's actions in one menu)
+ * and Chapters (with the open chapter's linked games). Edits go to the workspace draft and
+ * autosave against the repertoire revision; nothing passes through the game store. A chapter or
+ * repertoire that no longer exists hands back to the hub (`onMissing`); any other failure to read
+ * them keeps the page (and the draft) with the cause and Retry. The footer steps through the
+ * moves and starts Practice.
  */
 export function RepertoireStudyPage({
   repertoireId,
@@ -80,13 +91,11 @@ export function RepertoireStudyPage({
   onTabChange,
   onOpenChapter,
   onPractice,
-  onRehearse,
   onMissing,
   onHub,
   onPositionChanged,
   onOpenGame,
-  onOpenEngineSettings,
-  onPlayFromHere
+  onOpenEngineSettings
 }: {
   repertoireId: string;
   chapterId: string;
@@ -100,9 +109,8 @@ export function RepertoireStudyPage({
   onTabChange: (tab: StudyTab) => void;
   /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
   onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
-  onPractice: (chapterIds: string[]) => void;
-  /** Rehearse lines of this chapter, from its start or from a node (the draft is saved first). */
-  onRehearse?: (target: RehearseTarget) => void;
+  /** Practice with the repertoire's settings (a rehearsal of lines plays this chapter). */
+  onPractice: () => void;
   onMissing: (message: string) => void;
   /** Back to the repertoire hub (offered when the chapter couldn't be read). */
   onHub?: () => void;
@@ -112,15 +120,12 @@ export function RepertoireStudyPage({
   onOpenGame?: (gameId: string, nodeId: string | null) => void;
   /** Settings' engines, offered by the engine panel (Analyze) when no engine is installed. */
   onOpenEngineSettings?: () => void;
-  /** "Play from here": an engine game from the selected position, as the repertoire's colour. */
-  onPlayFromHere?: () => void;
 }) {
   const panelId = useId();
-  const enginePanelId = useId();
   const desktop = Boolean(window.chaturanga?.repertoires);
   const detail = useRepertoireQuery(repertoireId);
   const chapterQuery = useRepertoireChapterQuery(repertoireId, chapterId);
-  const { flush } = useChapterAutosave();
+  useChapterAutosave();
   const commands = useStudyCommands(repertoireId);
   const { draft, selectedNodeId, orientation, color, loadedId } = useRepertoireWorkspaceStore(
     useShallow((state) => {
@@ -135,12 +140,13 @@ export function RepertoireStudyPage({
     })
   );
   const [localError, setLocalError] = useState<string | null>(null);
-  /**
-   * The chapter the engine panel (Analyze) is open for: another chapter closes it, which stops
-   * its search (as closing it or leaving Study does).
-   */
-  const [engineChapterId, setEngineChapterId] = useState<string | null>(null);
-  const engineOpen = engineChapterId === chapterId;
+  /** The dialog open: the selected move's comment or practice texts, or the settings. */
+  const [dialog, setDialog] = useState<StudyDialog | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The engine panel (the titlebar's Analyze) is open for this chapter only: another chapter, or
+  // leaving Study, closes it, which stops its search.
+  const engineOpen = useStudyEngineStore((state) => state.chapterId === chapterId);
+  useEffect(() => () => useStudyEngineStore.getState().close(), []);
 
   useChapterDraftLoad({
     repertoireId,
@@ -167,31 +173,20 @@ export function RepertoireStudyPage({
     if (draft) onPositionChanged();
   }, [draft, selectedNodeId, tab, orientation, onPositionChanged]);
 
-  const { lookup, node, positionKey, decision, otherOccurrences, playerToMove, canEditDecision } =
+  const { lookup, node, positionKey, decision, otherOccurrences, canEditDecision } =
     useStudyPosition({ repertoireId, chapterId, chapter: draft, selectedNodeId, color });
-  const { blocker, decisionCount, rehearsal, availability } = useStudyTraining({
-    repertoireId,
-    chapter: draft,
-    lookup,
-    color
-  });
-  const practiceReasonId = useId();
-  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
+  const blocker = useStudyTraining({ chapter: draft, lookup, color });
   const include = useIncludeInPractice({ repertoireId, chapterId, color, setError: setLocalError });
   const { selectNode, deletion, promoteVariation, canPromote } = useMoveTreeEditing({
     chapter: draft,
     lookup,
     selectedNodeId
   });
-  const handoffs = useStudyPracticeHandoffs({
-    chapterId,
-    node,
-    rehearsal,
-    flush,
-    setError: setLocalError,
-    onPractice,
-    onRehearse
-  });
+  const kinds = useMemo(
+    () => (draft && lookup ? moveKinds(draft, lookup, color) : new Map<string, MoveKind>()),
+    [draft, lookup, color]
+  );
+  const paused = usePausedAt(repertoireId, positionKey, decision?.paused ?? false);
 
   const chapters: RepertoireChapterSummary[] = useMemo(() => {
     const list = detail.data?.chapters ?? [];
@@ -227,7 +222,35 @@ export function RepertoireStudyPage({
     return <ChapterNotOpen loadError={loadError} onRetry={retryLoad} onHub={onHub} />;
   }
 
-  const unavailable = positionActionsUnavailable(node.fenAfter, onlineGameLive);
+  const menu = (
+    <StudyMoveMenu
+      repertoireId={repertoireId}
+      chapter={draft}
+      lookup={lookup}
+      color={color}
+      node={node}
+      kind={kinds.get(node.id)}
+      positionKey={positionKey}
+      paused={paused}
+      canEditDecision={canEditDecision}
+      otherOccurrences={otherOccurrences}
+      canPromote={canPromote}
+      busy={commands.busy}
+      open={menuOpen}
+      onOpenChange={setMenuOpen}
+      onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
+      onPrefer={(key, uci) => {
+        workspace().setNodeMeta(node.id, { edge: "included" });
+        void commands.writeDecision(key, { preferredUci: uci });
+      }}
+      onSetPaused={decisionDrafts.setPaused}
+      onEditComment={() => setDialog("comment")}
+      onEditDecision={() => setDialog("decision")}
+      onOpenOccurrence={(occurrence) => onOpenChapter(occurrence.chapterId, occurrence.nodeId)}
+      onPromote={() => promoteVariation(node.id)}
+      onDelete={() => deletion.deleteLine(node.id)}
+    />
+  );
 
   return (
     <BoardWorkspace
@@ -243,39 +266,19 @@ export function RepertoireStudyPage({
           engineOpen={engineOpen}
         />
       }
-      tabs={
-        <SegmentedControl
-          ariaLabel="Study panels"
-          role="tablist"
+      tabBar={
+        <StudyTabBar
           panelId={panelId}
-          fullWidth
-          className={workspaceTabsClass}
-          value={tab}
+          repertoireId={repertoireId}
+          tab={tab}
+          chapterCount={chapters.length}
           onChange={onTabChange}
-          options={tabOptions}
+          onSettings={() => setDialog("settings")}
         />
       }
-      summary={
-        // The position's facts, then what can be done with it: Analyze (the engine panel, which
-        // opens just below) and Play from here.
-        <div className="flex w-full min-w-0 items-center gap-3">
-          <PositionStats
-            fen={node.fenAfter}
-            playerToMove={playerToMove}
-            decisionCount={decisionCount}
-          />
-          <StudyPositionActions
-            engineOpen={engineOpen}
-            enginePanelId={enginePanelId}
-            analyzeUnavailable={unavailable.analyze}
-            onToggleEngine={() => setEngineChapterId(engineOpen ? null : chapterId)}
-            playUnavailable={unavailable.play}
-            onPlayFromHere={onPlayFromHere}
-          />
-        </div>
-      }
+      flushBody
       notices={
-        <>
+        <div className="grid gap-2 px-3 pt-3 empty:hidden">
           <ChapterSaveNotice detail={detail} chapterQuery={chapterQuery} />
           <FailedDecisionNotices repertoireId={repertoireId} lookup={lookup} />
           <LoadErrorNotice loadError={loadError} onRetry={retryLoad} />
@@ -288,18 +291,7 @@ export function RepertoireStudyPage({
             }}
           />
           <DeletedLineNotice deletion={deletion} />
-          {/* Under the notices and above the tab, so the moves stay in view while the engine runs. */}
-          {engineOpen ? (
-            <StudyEnginePanel
-              id={enginePanelId}
-              chapter={draft}
-              node={node}
-              orientation={orientation}
-              onClose={() => setEngineChapterId(null)}
-              onOpenSettings={onOpenEngineSettings}
-            />
-          ) : null}
-        </>
+        </div>
       }
       footer={
         <>
@@ -308,127 +300,340 @@ export function RepertoireStudyPage({
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
-          <StudyPracticeBar
-            reasonId={practiceReasonId}
-            availability={availability}
-            onPractice={handoffs.practiceChapter}
-            onRehearse={handoffs.rehearseChapter}
+          <StudyPracticeFooter
+            blocker={blocker}
+            chapterTitle={draft.title}
+            lookup={lookup}
+            color={color}
+            busy={commands.busy || include.including}
+            widening={include.widening}
+            onMakeTrainable={include.includeInPractice}
+            onConfirmWidening={include.confirmWidening}
+            onCancelWidening={include.cancelWidening}
+            onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
+            onPractice={onPractice}
           />
         </>
       }
     >
       {tab === "chapters" ? (
-        <StudyChaptersPanel
-          chapters={chapters}
-          currentChapterId={chapterId}
-          busy={commands.busy}
-          onOpen={(id) => id !== chapterId && onOpenChapter(id)}
-          onRename={(id, title) => void commands.editChapter(id, { title })}
-          onSetEnabled={(id, enabled) => void commands.editChapter(id, { enabled })}
-          onSetKind={(id, kind) => void commands.editChapter(id, { kind })}
-          onSetMany={(ids, patch) => void commands.editChapters(ids, patch)}
-          onMove={(id, direction) => void commands.moveChapter(chapters, id, direction)}
-          onAdd={(title) =>
-            void commands
-              .addChapter(title, draft.rootFen, nextSortOrder(chapters))
-              .then((id) => id && onOpenChapter(id))
-          }
-          onRemove={(id) => void removeChapter(id)}
-        />
-      ) : null}
-      {tab === "moves" ? (
-        <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-3">
-          {blocker ? (
-            <StudyTrainingNotice
-              blocker={blocker}
-              chapterTitle={draft.title}
-              lookup={lookup}
-              color={color}
-              selectedNodeId={node.id}
-              busy={commands.busy || include.including}
-              widening={include.widening}
-              onMakeTrainable={include.includeInPractice}
-              onConfirmWidening={include.confirmWidening}
-              onCancelWidening={include.cancelWidening}
-              onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
-              onSelectNode={selectNode}
-            />
-          ) : null}
-          {/* About three rows of moves at least, also under the engine panel (the tab scrolls on to the choices). */}
-          <section className="flex max-h-[45%] min-h-40 shrink-0 flex-col" aria-label="Moves">
-            <MoveTreeEditBar canPromote={canPromote} onPromote={() => promoteVariation(node.id)} />
-            <StudyTree
-              key={chapterId}
-              lookup={lookup}
-              selectedNodeId={node.id}
-              onSelectNode={selectNode}
-              onDeleteLine={deletion.deleteLine}
-              onPromoteVariation={promoteVariation}
-              emptyLabel="No moves yet — play the first move on the board."
-              ariaLabel="Chapter moves"
-            />
-          </section>
-          <StudyChoicesPanel
-            chapter={draft}
-            lookup={lookup}
-            color={color}
-            selectedNodeId={node.id}
-            decision={decision}
+        <div className="h-full p-3">
+          <StudyChaptersPanel
+            chapters={chapters}
+            currentChapterId={chapterId}
             busy={commands.busy}
-            onSetEdge={(nodeId, edge) => workspace().setNodeMeta(nodeId, { edge })}
-            onPrefer={(row) => {
-              workspace().setNodeMeta(row.nodeId, { edge: "included" });
-              if (positionKey) void commands.writeDecision(positionKey, { preferredUci: row.uci });
-            }}
-            onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
-            onSelectNode={selectNode}
-            otherOccurrences={otherOccurrences}
-            onOpenOccurrence={(occurrence) =>
-              onOpenChapter(occurrence.chapterId, occurrence.nodeId)
+            onOpen={(id) => id !== chapterId && onOpenChapter(id)}
+            onRename={(id, title) => void commands.editChapter(id, { title })}
+            onSetEnabled={(id, enabled) => void commands.editChapter(id, { enabled })}
+            onSetKind={(id, kind) => void commands.editChapter(id, { kind })}
+            onSetMany={(ids, patch) => void commands.editChapters(ids, patch)}
+            onMove={(id, direction) => void commands.moveChapter(chapters, id, direction)}
+            onAdd={(title) =>
+              void commands
+                .addChapter(title, draft.rootFen, nextSortOrder(chapters))
+                .then((id) => id && onOpenChapter(id))
             }
-            onRehearseFromHere={handoffs.rehearseFromHere}
+            onRemove={(id) => void removeChapter(id)}
+            footer={
+              <StudySourcesSection
+                repertoireId={repertoireId}
+                chapterId={chapterId}
+                onOpenGame={onOpenGame}
+              />
+            }
           />
         </div>
-      ) : null}
-      {tab === "notes" ? (
-        <StudyNotesPanel
-          key={node.id}
+      ) : (
+        <StudyMovesTab
+          chapter={draft}
+          lookup={lookup}
           node={node}
-          decisionText={decision}
+          orientation={orientation}
+          kinds={kinds}
+          engineOpen={engineOpen}
+          menu={menu}
+          onSelectNode={selectNode}
+          onOpenMenu={() => setMenuOpen(true)}
+          onOpenEngineSettings={onOpenEngineSettings}
+        />
+      )}
+      {dialog ? (
+        <StudyDialogs
+          dialog={dialog}
           repertoireId={repertoireId}
-          positionKey={positionKey}
-          canEditDecision={canEditDecision}
+          detail={detail.data}
+          node={node}
+          positionKey={canEditDecision ? positionKey : null}
+          decision={decision}
           busy={commands.busy}
-          onComment={(text) => workspace().setComment(node.id, text)}
-          onDecisionTextChange={decisionDrafts.changeDecisionText}
-          onCommitDecisionText={decisionDrafts.commitDecisionText}
-          decisionControls={
-            playerToMove ? (
-              <StudyDecisionPractice
-                // A move and text picked for "Add feedback" belong to this position only.
-                key={positionKey ?? ""}
-                repertoireId={repertoireId}
-                positionKey={positionKey}
-                fen={node.fenAfter}
-                decision={decision}
-                canEditDecision={canEditDecision}
-                busy={commands.busy}
-                onFeedbackChange={decisionDrafts.changeFeedback}
-                onCommitFeedback={decisionDrafts.commitFeedback}
-                onSetPaused={decisionDrafts.setPaused}
-              />
-            ) : null
-          }
-          footer={
-            <StudySourcesSection
-              repertoireId={repertoireId}
-              chapterId={chapterId}
-              onOpenGame={onOpenGame}
-            />
-          }
+          drafts={decisionDrafts}
+          onClose={() => setDialog(null)}
         />
       ) : null}
     </BoardWorkspace>
+  );
+}
+
+type StudyDialog = "comment" | "decision" | "settings";
+
+/**
+ * The dialog open over Study: the selected move's comment, its practice texts (where it has a
+ * decision: `positionKey`), or the repertoire settings.
+ */
+function StudyDialogs({
+  dialog,
+  repertoireId,
+  detail,
+  node,
+  positionKey,
+  decision,
+  busy,
+  drafts,
+  onClose
+}: {
+  dialog: StudyDialog;
+  repertoireId: string;
+  detail: RepertoireDetail | undefined;
+  node: MoveNode;
+  positionKey: string | null;
+  decision: RepertoireDecision | null;
+  busy: boolean;
+  drafts: ReturnType<typeof useDecisionDraftCommands>;
+  onClose: () => void;
+}) {
+  if (dialog === "comment") {
+    return (
+      <StudyCommentDialog
+        node={node}
+        onComment={(text) => workspace().setComment(node.id, text)}
+        onClose={onClose}
+      />
+    );
+  }
+  if (dialog === "settings") {
+    return detail ? <RepertoireSettingsDialog detail={detail} onClose={onClose} /> : null;
+  }
+  return positionKey ? (
+    <StudyDecisionDialog
+      node={node}
+      repertoireId={repertoireId}
+      positionKey={positionKey}
+      decision={decision}
+      busy={busy}
+      onDecisionTextChange={drafts.changeDecisionText}
+      onCommitDecisionText={drafts.commitDecisionText}
+      onFeedbackChange={drafts.changeFeedback}
+      onCommitFeedback={drafts.commitFeedback}
+      onClose={onClose}
+    />
+  ) : null;
+}
+
+/**
+ * The Moves tab: the engine (while Analyze is on) at the top, as Analysis's, then the starting
+ * position's row and the tree with its comments, the selected move carrying its menu (`menu`;
+ * a right-click on a move opens it too).
+ */
+function StudyMovesTab({
+  chapter,
+  lookup,
+  node,
+  orientation,
+  kinds,
+  engineOpen,
+  menu,
+  onSelectNode,
+  onOpenMenu,
+  onOpenEngineSettings
+}: {
+  chapter: RepertoireChapter;
+  lookup: ChapterLookup;
+  node: MoveNode;
+  orientation: Color;
+  kinds: ReadonlyMap<string, MoveKind>;
+  engineOpen: boolean;
+  menu: ReactNode;
+  onSelectNode: (nodeId: string) => void;
+  onOpenMenu: () => void;
+  onOpenEngineSettings?: () => void;
+}) {
+  const atRoot = node.id === REPERTOIRE_ROOT_NODE_ID;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {engineOpen ? (
+        <StudyEnginePanel
+          chapter={chapter}
+          node={node}
+          orientation={orientation}
+          onClose={() => useStudyEngineStore.getState().close()}
+          onOpenSettings={onOpenEngineSettings}
+        />
+      ) : null}
+      <StartRow
+        selected={atRoot}
+        comment={lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.comment ?? null}
+        menu={atRoot ? menu : null}
+        onSelect={() => onSelectNode(REPERTOIRE_ROOT_NODE_ID)}
+        onContextMenu={() => {
+          onSelectNode(REPERTOIRE_ROOT_NODE_ID);
+          onOpenMenu();
+        }}
+      />
+      <StudyTree
+        key={chapter.id}
+        className="flex-1 px-3 pb-3"
+        lookup={lookup}
+        kinds={kinds}
+        selectedNodeId={node.id}
+        onSelectNode={onSelectNode}
+        showComments
+        selectedActions={atRoot ? undefined : menu}
+        onMoveContextMenu={onOpenMenu}
+        emptyLabel="No moves yet — play the first move on the board."
+        ariaLabel="Chapter moves"
+      />
+    </div>
+  );
+}
+
+/**
+ * The tree's first row: the chapter's starting position (selectable, with its menu while selected
+ * and its comment under it), as the moves after it are.
+ */
+function StartRow({
+  selected,
+  comment,
+  menu,
+  onSelect,
+  onContextMenu
+}: {
+  selected: boolean;
+  comment: string | null;
+  menu: ReactNode;
+  onSelect: () => void;
+  onContextMenu: () => void;
+}) {
+  return (
+    <div className="shrink-0 px-3 pt-2">
+      <div
+        className={
+          selected
+            ? "relative flex h-8 items-center rounded-[0.3125rem] bg-accent-soft"
+            : "relative flex h-8 items-center rounded-[0.3125rem] hover:bg-control"
+        }
+      >
+        <button
+          type="button"
+          aria-current={selected ? "step" : undefined}
+          className={
+            selected
+              ? "flex h-8 flex-1 items-center rounded-[0.3125rem] px-2 text-left text-xs font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              : "flex h-8 flex-1 items-center rounded-[0.3125rem] px-2 text-left text-xs text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+          }
+          onClick={onSelect}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            onContextMenu();
+          }}
+        >
+          Starting position
+        </button>
+        {menu ? <span className="absolute right-0.5 flex">{menu}</span> : null}
+      </div>
+      {comment?.trim() ? (
+        <p className="px-2 pt-1 text-xs leading-relaxed whitespace-pre-line text-fg-muted">
+          {comment.trim()}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The panel's title bar: Moves · Chapters (their count), then Undo and Redo on Moves, Export PGN
+ * (the whole repertoire) and the repertoire settings, last.
+ */
+function StudyTabBar({
+  panelId,
+  repertoireId,
+  tab,
+  chapterCount,
+  onChange,
+  onSettings
+}: {
+  panelId: string;
+  repertoireId: string;
+  tab: StudyTab;
+  chapterCount: number;
+  onChange: (tab: StudyTab) => void;
+  onSettings: () => void;
+}) {
+  const canUndo = useRepertoireWorkspaceStore((state) => state.undoStack.length > 0);
+  const canRedo = useRepertoireWorkspaceStore((state) => state.redoStack.length > 0);
+  const editLabels = studyEditShortcutLabels(isElectronMac());
+  const exportPgn = useExportRepertoireMutation();
+  const notice = () => useAppNoticeStore.getState();
+  return (
+    <WorkspaceTabBar
+      panelId={panelId}
+      ariaLabel="Study panels"
+      tabs={studyTabs(chapterCount)}
+      value={tab}
+      onChange={onChange}
+      actions={
+        <>
+          {tab === "moves" ? (
+            <>
+              <IconButton
+                label="Undo"
+                icon={<Undo2 />}
+                size="icon-xs"
+                disabled={!canUndo}
+                aria-keyshortcuts={editLabels.undo.aria}
+                onClick={() => workspace().undo()}
+              />
+              <IconButton
+                label="Redo"
+                icon={<Redo2 />}
+                size="icon-xs"
+                disabled={!canRedo}
+                aria-keyshortcuts={editLabels.redo.aria}
+                onClick={() => workspace().redo()}
+              />
+            </>
+          ) : null}
+          <IconButton
+            label="Export PGN"
+            icon={<ExportIcon />}
+            size="icon-xs"
+            disabled={exportPgn.isPending}
+            onClick={() =>
+              exportPgn.mutate(
+                { repertoireId },
+                {
+                  onSuccess: (result) => {
+                    if (result.savedPath) {
+                      notice().show(
+                        `Exported ${plural(result.chapterCount, "chapter")} to ${result.savedPath}.`,
+                        { tone: "success" }
+                      );
+                    }
+                  },
+                  onError: (error) =>
+                    notice().show(ipcErrorMessage(error) || "Couldn't export the PGN.")
+                }
+              )
+            }
+          />
+          <IconButton
+            label="Repertoire settings"
+            icon={<Settings />}
+            size="icon-xs"
+            onClick={onSettings}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -468,107 +673,5 @@ function ChapterNotOpen({
         </div>
       }
     />
-  );
-}
-
-/**
- * Why Play from here can't start (it also waits for the chapter to load). A study action: a
- * chapter left out of practice is still played from. The engine panel too, while closed (open, it
- * says so itself and can always be closed). Null: it can.
- */
-function positionActionsUnavailable(
-  fen: string,
-  onlineGameLive: boolean
-): { play: string | null; analyze: string | null } {
-  if (statusForFen(fen).isEnd) return { play: NO_MOVES_TO_PLAY, analyze: NO_MOVES_TO_PLAY };
-  if (onlineGameLive) {
-    return { play: LIVE_GAME_NOTICE, analyze: "The engine is off during your Lichess game." };
-  }
-  return { play: null, analyze: null };
-}
-
-/** The position's facts: who is to move, and the chapter's decision count. */
-function PositionStats({
-  fen,
-  playerToMove,
-  decisionCount
-}: {
-  fen: string;
-  playerToMove: boolean;
-  decisionCount: number;
-}) {
-  const turn: Color = fen.split(" ")[1] === "b" ? "black" : "white";
-  return (
-    <StatGroup className="min-w-0 flex-1 auto-cols-[minmax(0,max-content)] gap-5">
-      <Stat
-        label="To move"
-        value={
-          <span className="inline-flex items-center gap-2">
-            <SideDot color={turn} />
-            {playerToMove ? "You" : "Opponent"}
-          </span>
-        }
-      />
-      <Stat label="Decisions" value={`${decisionCount} in this chapter`} />
-    </StatGroup>
-  );
-}
-
-/** Undo, Redo and Promote variation above the move tree (with their keyboard shortcuts). */
-function MoveTreeEditBar({
-  canPromote,
-  onPromote
-}: {
-  canPromote: boolean;
-  onPromote: () => void;
-}) {
-  const canUndo = useRepertoireWorkspaceStore((state) => state.undoStack.length > 0);
-  const canRedo = useRepertoireWorkspaceStore((state) => state.redoStack.length > 0);
-  const editLabels = studyEditShortcutLabels(isElectronMac());
-  return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-1 pb-1"
-      role="group"
-      aria-label="Edit the move tree"
-    >
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          disabled={!canUndo}
-          title={`Undo the last change to the moves or their training marks (${editLabels.undo.label})`}
-          aria-keyshortcuts={editLabels.undo.aria}
-          onClick={() => workspace().undo()}
-        >
-          <Undo2 />
-          Undo
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          disabled={!canRedo}
-          title={`Redo (${editLabels.redo.label})`}
-          aria-keyshortcuts={editLabels.redo.aria}
-          onClick={() => workspace().redo()}
-        >
-          <Redo2 />
-          Redo
-        </Button>
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        disabled={!canPromote}
-        title={`Move the selected variation up in this chapter's order, which PGN export writes as its main line (${editLabels.promote.label}). What practice expects stays as set under Choices.`}
-        aria-keyshortcuts={editLabels.promote.aria}
-        onClick={onPromote}
-      >
-        <ArrowUpToLine />
-        Promote variation
-      </Button>
-    </div>
   );
 }

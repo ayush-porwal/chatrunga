@@ -5,12 +5,9 @@ import {
   answerView,
   autoAdvanceDelay,
   autosaveStep,
-  choiceActions,
   hasAnswerNotes,
   isPracticeNextKey,
   leadUpLabel,
-  decisionCountWithMeta,
-  decisionDeltaLabel,
   defaultEdgeForNewMove,
   deriveChoices,
   hintMarks,
@@ -22,8 +19,6 @@ import {
   revealArrows,
   saveStatusLabel,
   totalsOf,
-  trainableDecisionCount,
-  transpositionsOf,
   hintStageText,
   isMissingTargetError,
   isNotFoundError,
@@ -44,7 +39,7 @@ import {
   resumedHintText,
   revealText,
   sanOf,
-  type ChoiceRow
+  moveKinds
 } from "./repertoire-model";
 
 /** 1. e4 e5 2. Nf3, with 1. d4 and 1... c5 as alternatives. */
@@ -55,6 +50,29 @@ function sampleChapter() {
   ({ tree } = addLine(tree, "w0", ["c7c5"], "s"));
   return tree;
 }
+
+describe("moveKinds", () => {
+  it("tells the player's moves, covered replies and study-only moves apart", () => {
+    const chapter = chapterOf(sampleChapter(), { d0: { edge: "reference" } });
+    const kinds = moveKinds(chapter, buildChapterLookup(chapter), "white");
+    expect(Object.fromEntries(kinds)).toStrictEqual({
+      w0: "yours",
+      w1: "covered",
+      w2: "yours",
+      d0: "reference",
+      s0: "covered"
+    });
+    // Everything under a reference move, and a reference chapter, is study-only.
+    const below = chapterOf(sampleChapter(), { w0: { edge: "reference" } });
+    expect(moveKinds(below, buildChapterLookup(below), "white").get("w1")).toBe("reference");
+    const reference = chapterOf(sampleChapter(), {}, { kind: "reference" });
+    expect(
+      new Set(moveKinds(reference, buildChapterLookup(reference), "white").values())
+    ).toStrictEqual(new Set(["reference"]));
+    // As Black, White's moves are the covered replies.
+    expect(moveKinds(chapter, buildChapterLookup(chapter), "black").get("w0")).toBe("covered");
+  });
+});
 
 describe("deriveChoices", () => {
   it("names accepted, preferred and reference continuations at a player-to-move position", () => {
@@ -173,77 +191,15 @@ describe("deriveChoices", () => {
   });
 });
 
-describe("choiceActions", () => {
-  const kinds = (row: Pick<ChoiceRow, "state" | "edge">, side: "player" | "opponent") =>
-    choiceActions(row, side).map((action) => `${action.kind}:${action.variant}`);
-
-  it("offers the player's moves accept, prefer and make reference by state", () => {
-    expect(kinds({ state: "preferred", edge: "included" }, "player")).toStrictEqual([
-      "make-reference:ghost"
-    ]);
-    expect(kinds({ state: "accepted", edge: "included" }, "player")).toStrictEqual([
-      "prefer:outline",
-      "make-reference:ghost"
-    ]);
-    expect(kinds({ state: "reference", edge: "reference" }, "player")).toStrictEqual([
-      "accept:outline",
-      "prefer:outline"
-    ]);
-  });
-
-  it("toggles an opponent's reply between covered and reference", () => {
-    expect(kinds({ state: "covered", edge: "covered" }, "opponent")).toStrictEqual([
-      "make-reference:ghost"
-    ]);
-    expect(kinds({ state: "reference", edge: "reference" }, "opponent")).toStrictEqual([
-      "cover:outline"
-    ]);
-  });
-
-  it("outside training scope only keeps a move as reference (or covers a reply again)", () => {
-    expect(kinds({ state: "untrained", edge: "included" }, "player")).toStrictEqual([
-      "make-reference:ghost"
-    ]);
-    expect(kinds({ state: "untrained", edge: "reference" }, "player")).toStrictEqual([]);
-    expect(kinds({ state: "untrained", edge: "reference" }, "opponent")).toStrictEqual([
-      "cover:ghost"
-    ]);
-    expect(kinds({ state: "untrained", edge: "covered" }, "opponent")).toStrictEqual([
-      "make-reference:ghost"
-    ]);
-  });
-});
-
 describe("boundaries", () => {
   it("defaults new own moves to reference and replies to covered", () => {
     const tree = sampleChapter();
     expect(defaultEdgeForNewMove(tree[0].fenAfter, "white")).toBe("reference");
     expect(defaultEdgeForNewMove(tree[0].fenAfter, "black")).toBe("covered");
   });
-
-  it("counts trainable decisions and the effect of a boundary toggle", () => {
-    const chapter = chapterOf(sampleChapter());
-    // Root (1. e4 / 1. d4) and after 1... e5 (2. Nf3).
-    expect(trainableDecisionCount("white", chapter)).toBe(2);
-    expect(decisionCountWithMeta("white", chapter, "w0", { disabled: true })).toBe(1);
-    expect(decisionCountWithMeta("white", chapter, "w1", { trainingStart: true })).toBe(1);
-    expect(decisionDeltaLabel(0)).toBe("no change");
-    expect(decisionDeltaLabel(-1)).toBe("−1 decision");
-    expect(decisionDeltaLabel(3)).toBe("+3 decisions");
-  });
 });
 
 describe("positions and labels", () => {
-  it("finds transpositions within the chapter", () => {
-    let tree = [rootNode()];
-    ({ tree } = addLine(tree, "root", ["g1f3", "g8f6", "b1c3"], "a"));
-    ({ tree } = addLine(tree, "root", ["b1c3", "g8f6", "g1f3"], "b"));
-    const lookup = buildChapterLookup({ tree });
-    expect(transpositionsOf(lookup, "a2")).toStrictEqual(["b2"]);
-    expect(transpositionsOf(lookup, "a0")).toStrictEqual([]);
-    expect(transpositionsOf(lookup, "missing")).toStrictEqual([]);
-  });
-
   it("labels a path with move numbers", () => {
     const lookup = buildChapterLookup({ tree: sampleChapter() });
     expect(pathLabel(lookup, "root")).toBe("Start");

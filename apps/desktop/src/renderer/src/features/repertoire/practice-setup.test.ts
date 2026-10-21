@@ -1,29 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
   RepertoireChapterSummary,
+  RepertoireWorkspaceState,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
-import { addLine, chapterOf, detailOf, rootNode } from "./__fixtures__/repertoire";
-import { pathLabel } from "./repertoire-model";
+import { detailOf } from "./__fixtures__/repertoire";
 import {
   autoStartPracticeInput,
   boundedInt,
   DEFAULT_CARD_LIMIT,
   EXPLAINED_CHAPTER_LIMIT,
   explainedChapterIds,
-  initialPracticeInput,
+  isExtraPractice,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
-  practiceFormFields,
-  practiceInputFromForm,
   practicableChapterIds,
-  presetForSetup,
-  isExtraPractice,
+  practiceSettings,
+  practiceSettingsForm,
+  practiceSettingsFromForm,
+  practiceStartInput,
   rehearsePreset,
-  rehearseStarts,
   retryMissedPreset,
-  savesPracticeDraft,
   summaryPresets,
   targetedPracticeInput
 } from "./practice-setup";
@@ -49,16 +46,24 @@ function chapter(
 const chapters = [
   chapter("A"),
   chapter("B", { enabled: false }),
-  chapter("R", { kind: "reference" })
+  chapter("R", { kind: "reference" }),
+  chapter("C", { sortOrder: 1 })
 ];
 
-describe("practice setup", () => {
-  it("only offers enabled opening chapters", () => {
-    expect([...practicableChapterIds(chapters)]).toStrictEqual(["A"]);
+function workspace(
+  practiceDraft: StartPracticeInput | null,
+  lastChapterId: string | null = null
+): RepertoireWorkspaceState {
+  return { lastChapterId, lastNodeId: null, orientation: "white", practiceDraft };
+}
+
+describe("practice settings", () => {
+  it("only draws from enabled opening chapters", () => {
+    expect([...practicableChapterIds(chapters)]).toStrictEqual(["A", "C"]);
   });
 
-  it("starts from the defaults without a saved draft", () => {
-    expect(initialPracticeInput(detailOf({ chapters }), null)).toStrictEqual({
+  it("start from the defaults without a saved draft", () => {
+    expect(practiceSettings(detailOf({ chapters }))).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
       cardLimit: DEFAULT_CARD_LIMIT,
@@ -66,55 +71,50 @@ describe("practice setup", () => {
     });
   });
 
-  it("drops saved chapters that are gone, disabled or reference", () => {
+  it("drop saved chapters that are gone, disabled or reference, and read Learn new as review", () => {
     const detail = detailOf({
       chapters,
-      workspace: {
-        lastChapterId: null,
-        lastNodeId: null,
-        orientation: "white",
-        practiceDraft: { repertoireId: "r1", mode: "learn-new", chapterIds: ["A", "B", "R", "C"] }
-      }
+      workspace: workspace({
+        repertoireId: "r1",
+        mode: "learn-new",
+        chapterIds: ["A", "B", "R", "X"],
+        positionKeys: ["stale"]
+      })
     });
-    expect(initialPracticeInput(detail, null)).toStrictEqual({
+    expect(practiceSettings(detail)).toStrictEqual({
       repertoireId: "r1",
-      mode: "learn-new",
+      mode: "review-due",
       chapterIds: ["A"]
     });
-    const none = initialPracticeInput(detail, { chapterIds: ["C"] });
-    expect(none).not.toHaveProperty("chapterIds");
+    const none = detailOf({
+      chapters,
+      workspace: workspace({ repertoireId: "r1", mode: "review-due", chapterIds: ["X"] })
+    });
+    expect(practiceSettings(none)).not.toHaveProperty("chapterIds");
   });
 
-  it("applies a preset and clamps a saved draft to the main's limits", () => {
+  it("clamp a saved draft to the main's limits and ignore another repertoire's", () => {
     const detail = detailOf({
       chapters,
-      workspace: {
-        lastChapterId: null,
-        lastNodeId: null,
-        orientation: "white",
-        practiceDraft: {
-          repertoireId: "r1",
-          mode: "review-due",
-          cardLimit: 9999,
-          newCardLimit: -3,
-          maxDepthPlies: 900
-        }
-      }
+      workspace: workspace({
+        repertoireId: "r1",
+        mode: "review-due",
+        cardLimit: 9999,
+        newCardLimit: -3,
+        maxDepthPlies: 900
+      })
     });
-    expect(initialPracticeInput(detail, { mode: "learn-new", chapterIds: ["A"] })).toStrictEqual({
+    expect(practiceSettings(detail)).toStrictEqual({
       repertoireId: "r1",
-      mode: "learn-new",
-      chapterIds: ["A"],
+      mode: "review-due",
       cardLimit: MAX_CARD_LIMIT,
       newCardLimit: 0,
       maxDepthPlies: MAX_DEPTH_PLIES
     });
-    // A draft of another repertoire is ignored.
-    const other = detailOf({ ...detail, id: "r2" });
-    expect(initialPracticeInput(other, null).repertoireId).toBe("r2");
+    expect(practiceSettings(detailOf({ ...detail, id: "r2" })).cardLimit).toBe(DEFAULT_CARD_LIMIT);
   });
 
-  it("reads bounded whole numbers from the fields", () => {
+  it("read bounded whole numbers from the fields", () => {
     expect(boundedInt("12", 1, 500)).toBe(12);
     expect(boundedInt("9000", 1, 500)).toBe(500);
     expect(boundedInt("0", 1, 500)).toBeUndefined();
@@ -122,50 +122,94 @@ describe("practice setup", () => {
     expect(boundedInt("0", 0, 500)).toBe(0);
   });
 
-  it("builds a start input within the limits", () => {
+  it("round-trip through the dialog's fields within the limits", () => {
+    const settings: StartPracticeInput = {
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      chapterIds: ["A"],
+      maxDepthPlies: 12,
+      cardLimit: 10,
+      newCardLimit: 3
+    };
+    const form = practiceSettingsForm(settings);
+    expect(form).toStrictEqual({
+      lines: true,
+      chapterIds: ["A"],
+      depth: "12",
+      cards: "10",
+      fresh: "3"
+    });
+    expect(practiceSettingsFromForm({ repertoireId: "r1", ...form })).toStrictEqual(settings);
     expect(
-      practiceInputFromForm({
+      practiceSettingsFromForm({
         repertoireId: "r1",
-        mode: "review-due",
+        lines: false,
         chapterIds: [],
         depth: "2000",
         cards: "abc",
-        fresh: "800"
+        fresh: ""
       })
     ).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
       maxDepthPlies: MAX_DEPTH_PLIES,
       cardLimit: DEFAULT_CARD_LIMIT,
-      newCardLimit: MAX_CARD_LIMIT
-    });
-    expect(
-      practiceInputFromForm({
-        repertoireId: "r1",
-        mode: "learn-new",
-        chapterIds: ["A"],
-        depth: "",
-        cards: "10",
-        fresh: ""
-      })
-    ).toStrictEqual({
-      repertoireId: "r1",
-      mode: "learn-new",
-      chapterIds: ["A"],
-      cardLimit: 10,
       newCardLimit: 0
     });
   });
 });
 
-describe("targeted practice presets", () => {
-  it("starts exactly the named decisions, whether due or new", () => {
+describe("practiceStartInput", () => {
+  it("reviews due positions, then new ones, with the settings", () => {
+    const detail = detailOf({
+      chapters,
+      workspace: workspace({ repertoireId: "r1", mode: "review-due", cardLimit: 7 })
+    });
+    expect(practiceStartInput(detail, "A")).toStrictEqual({
+      repertoireId: "r1",
+      mode: "review-due",
+      cardLimit: 7
+    });
+  });
+
+  it("rehearses the open chapter, else the last studied, else the first in scope", () => {
+    const lines = (lastChapterId: string | null, chapterIds: string[] = []) =>
+      detailOf({
+        chapters,
+        workspace: workspace(
+          {
+            repertoireId: "r1",
+            mode: "rehearse-lines",
+            maxDepthPlies: 8,
+            chapterIds
+          },
+          lastChapterId
+        )
+      });
+    expect(practiceStartInput(lines("C"), "A")).toStrictEqual({
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A" },
+      maxDepthPlies: 8
+    });
+    expect(practiceStartInput(lines("C"), "R").rehearse).toStrictEqual({ chapterId: "C" });
+    expect(practiceStartInput(lines(null, ["C"])).rehearse).toStrictEqual({ chapterId: "C" });
+    expect(practiceStartInput(lines(null)).rehearse).toStrictEqual({ chapterId: "A" });
+  });
+
+  it("falls back to the review when no chapter can be rehearsed", () => {
+    const detail = detailOf({
+      chapters: [chapter("R", { kind: "reference" })],
+      workspace: workspace({ repertoireId: "r1", mode: "rehearse-lines" })
+    });
+    expect(practiceStartInput(detail, "R").mode).toBe("review-due");
+  });
+});
+
+describe("practice presets", () => {
+  it("start exactly the named decisions, whether due or new", () => {
     expect(
-      targetedPracticeInput("r1", {
-        mode: "review-due",
-        positionKeys: ["k1", "k1", "k2"],
-        autoStart: true
-      })
+      targetedPracticeInput("r1", { mode: "review-due", positionKeys: ["k1", "k1", "k2"] })
     ).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
@@ -173,40 +217,23 @@ describe("targeted practice presets", () => {
       cardLimit: 2,
       newCardLimit: 2
     });
-  });
-
-  it("is no targeted start without autoStart or keys", () => {
-    expect(targetedPracticeInput("r1", { positionKeys: ["k1"] })).toBeNull();
-    expect(targetedPracticeInput("r1", { autoStart: true, positionKeys: [] })).toBeNull();
+    expect(targetedPracticeInput("r1", { positionKeys: [] })).toBeNull();
     expect(targetedPracticeInput("r1", null)).toBeNull();
   });
 
-  it("never puts the targeted keys into the setup form", () => {
-    const detail = detailOf({
-      workspace: {
-        lastChapterId: null,
-        lastNodeId: null,
-        orientation: "white",
-        practiceDraft: { repertoireId: "r1", mode: "learn-new", positionKeys: ["stale"] }
-      }
-    });
-    const initial = initialPracticeInput(detail, {
-      positionKeys: ["k1"],
-      autoStart: true
-    });
-    expect(initial.positionKeys).toBeUndefined();
-    expect(initial.mode).toBe("learn-new");
+  it("leave plain Practice to the settings", () => {
+    expect(autoStartPracticeInput("r1", {})).toBeNull();
+    expect(autoStartPracticeInput("r1", null)).toBeNull();
   });
 
-  it("retries a session's misses as an ungraded targeted queue", () => {
+  it("retry a session's misses as an ungraded targeted queue", () => {
     const preset = retryMissedPreset({ missedPositionKeys: ["k2", "k1", "k2"] });
     expect(preset).toStrictEqual({
       mode: "review-due",
       positionKeys: ["k2", "k1"],
-      ungraded: true,
-      autoStart: true
+      ungraded: true
     });
-    expect(targetedPracticeInput("r1", preset)).toStrictEqual({
+    expect(autoStartPracticeInput("r1", preset)).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
       positionKeys: ["k2", "k1"],
@@ -217,18 +244,15 @@ describe("targeted practice presets", () => {
     expect(retryMissedPreset({ missedPositionKeys: [] })).toBeNull();
     // "Refresh this decision" stays a graded targeted queue.
     expect(
-      targetedPracticeInput("r1", { mode: "review-due", positionKeys: ["k1"], autoStart: true })
+      targetedPracticeInput("r1", { mode: "review-due", positionKeys: ["k1"] })
     ).not.toHaveProperty("ungraded");
   });
 
-  it("offers Retry missed after a session, and Rehearse again instead after a rehearsal", () => {
+  it("offer Retry missed after a session, and Rehearse again instead after a rehearsal", () => {
     const missed = { missedPositionKeys: ["k1"] };
     expect(
       summaryPresets({ mode: "review-due", scope: { repertoireId: "r1" } }, missed)
-    ).toStrictEqual({
-      retryMissed: retryMissedPreset(missed),
-      rehearseAgain: null
-    });
+    ).toStrictEqual({ retryMissed: retryMissedPreset(missed), rehearseAgain: null });
     const rehearsal = {
       mode: "rehearse-lines" as const,
       scope: {
@@ -245,112 +269,14 @@ describe("targeted practice presets", () => {
     expect(summaryPresets(null, missed).retryMissed).toStrictEqual(retryMissedPreset(missed));
   });
 
-  it("calls a targeted session extra practice", () => {
+  it("call a targeted session extra practice", () => {
     expect(isExtraPractice({ positionKeys: ["k1"] })).toBe(true);
     expect(isExtraPractice({ positionKeys: [] })).toBe(false);
     expect(isExtraPractice({})).toBe(false);
   });
 
-  it("opens Practice again on the setup, keeping only chapters and mode", () => {
-    expect(
-      presetForSetup({ mode: "review-due", positionKeys: ["k1"], autoStart: true })
-    ).toStrictEqual({
-      mode: "review-due"
-    });
-    expect(presetForSetup({ positionKeys: ["k1"], autoStart: true })).toBeNull();
-    const chapters = { chapterIds: ["c1"] };
-    expect(presetForSetup(chapters)).toBe(chapters);
-    expect(presetForSetup(null)).toBeNull();
-  });
-});
-
-describe("rehearse lines setup", () => {
-  const rehearseDetail = (practiceDraft: StartPracticeInput | null = null) =>
-    detailOf({
-      chapters,
-      workspace: { lastChapterId: null, lastNodeId: null, orientation: "white", practiceDraft }
-    });
-
-  it("builds a rehearse scope with chapter, branch and depth, and no card limits", () => {
-    const form = {
-      repertoireId: "r1",
-      mode: "rehearse-lines" as const,
-      chapterIds: ["A"],
-      depth: "12",
-      cards: "20",
-      fresh: "5"
-    };
-    expect(
-      practiceInputFromForm({ ...form, rehearseChapterId: "A", rehearseFromNodeId: "n4" })
-    ).toStrictEqual({
-      repertoireId: "r1",
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "n4" },
-      maxDepthPlies: 12
-    });
-    expect(
-      practiceInputFromForm({ ...form, depth: "", rehearseChapterId: "A", rehearseFromNodeId: "" })
-    ).toStrictEqual({ repertoireId: "r1", mode: "rehearse-lines", rehearse: { chapterId: "A" } });
-  });
-
-  it("opens the form with what it would start", () => {
-    const input: StartPracticeInput = {
-      repertoireId: "r1",
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "n4" },
-      maxDepthPlies: 12
-    };
-    const fields = practiceFormFields(input, chapters);
-    expect(fields).toStrictEqual({
-      mode: "rehearse-lines",
-      chapterIds: [],
-      depth: "12",
-      cards: String(DEFAULT_CARD_LIMIT),
-      fresh: "5",
-      rehearseChapterId: "A",
-      rehearseFromNodeId: "n4"
-    });
-    expect(practiceInputFromForm({ repertoireId: "r1", ...fields })).toStrictEqual(input);
-    // Without a rehearsal: its first chapter, else the first practicable one.
-    const review = { repertoireId: "r1", mode: "review-due" as const, chapterIds: ["R", "A"] };
-    expect(practiceFormFields(review, chapters).rehearseChapterId).toBe("R");
-    expect(practiceFormFields({ ...review, chapterIds: [] }, chapters).rehearseChapterId).toBe("A");
-    expect(practiceFormFields({ ...review, chapterIds: undefined }, []).rehearseChapterId).toBe("");
-  });
-
-  it("restores a saved rehearsal draft and drops a chapter that can't be rehearsed", () => {
-    const draft: StartPracticeInput = {
-      repertoireId: "r1",
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "n4" },
-      maxDepthPlies: 8
-    };
-    expect(initialPracticeInput(rehearseDetail(draft), null)).toStrictEqual(draft);
-    const stale = { ...draft, rehearse: { chapterId: "B" } };
-    expect(initialPracticeInput(rehearseDetail(stale), null).rehearse).toBeUndefined();
-  });
-
-  it("preselects a rehearse preset over the draft", () => {
-    const initial = initialPracticeInput(
-      rehearseDetail({ repertoireId: "r1", mode: "review-due", cardLimit: 10 }),
-      { mode: "rehearse-lines", rehearse: { chapterId: "A", fromNodeId: "x" }, maxDepthPlies: 6 }
-    );
-    expect(initial).toMatchObject({
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "x" },
-      maxDepthPlies: 6,
-      cardLimit: 10
-    });
-  });
-
-  it("auto-starts a rehearse preset, and keeps it on the setup for Practice again", () => {
+  it("start a rehearsal preset with its chapter, branch and depth", () => {
     const preset = rehearsePreset({ chapterId: "A", fromNodeId: "n4" }, 10);
-    expect(preset).toStrictEqual({
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "n4" },
-      maxDepthPlies: 10,
-      autoStart: true
-    });
     expect(autoStartPracticeInput("r1", preset)).toStrictEqual({
       repertoireId: "r1",
       mode: "rehearse-lines",
@@ -362,97 +288,19 @@ describe("rehearse lines setup", () => {
       mode: "rehearse-lines",
       rehearse: { chapterId: "A" }
     });
-    expect(autoStartPracticeInput("r1", { ...preset, autoStart: false })).toBeNull();
-    expect(presetForSetup(preset)).toStrictEqual({
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "A", fromNodeId: "n4" },
-      maxDepthPlies: 10
-    });
-  });
-
-  it("lists branch starts where the player has an active continuation", () => {
-    let tree = [rootNode()];
-    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3"], "w"));
-    ({ tree } = addLine(tree, "root", ["d2d4"], "d"));
-    ({ tree } = addLine(tree, "w0", ["c7c5"], "s"));
-    const chapter = chapterOf(tree);
-    const { starts, truncated } = rehearseStarts(chapter, "white", pathLabel);
-    expect(starts.map((start) => start.nodeId)).toStrictEqual(["w1"]);
-    expect(starts[0].path).toContain("e5");
-    expect(truncated).toBe(false);
-    expect(rehearseStarts(chapter, "white", pathLabel, { limit: 0 })).toStrictEqual({
-      starts: [],
-      truncated: true
-    });
-    // The move after 1.e4 e5 is ply 3: a depth of 2 leaves nothing to start from.
-    expect(rehearseStarts(chapter, "white", pathLabel, { maxDepthPlies: 3 }).starts).toHaveLength(
-      1
-    );
-    expect(rehearseStarts(chapter, "white", pathLabel, { maxDepthPlies: 2 }).starts).toStrictEqual(
-      []
-    );
-  });
-
-  it("lists no branch starts in the lead-up above a start marker or past a stop", () => {
-    let tree = [rootNode()];
-    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], "w"));
-    const chapter = {
-      ...chapterOf(tree),
-      nodeMeta: {
-        w1: { edge: "included" as const, trainingStart: true },
-        w2: { edge: "included" as const, trainingStop: true }
-      }
-    };
-    // w1 (1.e4 e5) is the start; w2 (2.Nf3) stops, so 2...Nc6 is out of scope.
-    expect(
-      rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)
-    ).toStrictEqual(["w1"]);
-  });
-
-  it("lists no branch start at a paused decision (played as context, never asked)", () => {
-    let tree = [rootNode()];
-    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], "w"));
-    const chapter = chapterOf(tree);
-    const keys = buildChapterLookup(chapter).positionKeys;
-    expect(
-      rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)
-    ).toStrictEqual(["w1", "w3"]);
-    const paused = new Set([keys.get("w1")!]);
-    expect(
-      rehearseStarts(chapter, "white", pathLabel, { paused }).starts.map((start) => start.nodeId)
-    ).toStrictEqual(["w3"]);
-  });
-});
-
-describe("savesPracticeDraft", () => {
-  it("saves only a start from the setup form", () => {
-    const rehearse: StartPracticeInput = {
-      repertoireId: "r1",
-      mode: "rehearse-lines",
-      rehearse: { chapterId: "c1" }
-    };
-    expect(savesPracticeDraft(rehearse, false)).toBe(true);
-    // Study's "Rehearse from here" and the summary's "Rehearse again" are presets.
-    expect(savesPracticeDraft(rehearse, true)).toBe(false);
-    const targeted: StartPracticeInput = {
-      repertoireId: "r1",
-      mode: "review-due",
-      positionKeys: ["k1"]
-    };
-    expect(savesPracticeDraft(targeted, false)).toBe(false);
   });
 });
 
 describe("explainedChapterIds", () => {
-  const chapters = [chapter("b", { sortOrder: 1 }), chapter("a", { sortOrder: 0 })];
+  const ordered = [chapter("b", { sortOrder: 1 }), chapter("a", { sortOrder: 0 })];
   const rehearse = (chapterId: string) =>
     ({ mode: "rehearse-lines", rehearse: { chapterId } }) as const;
 
   it("names the rehearsed chapter, or every chapter in scope", () => {
-    const detail = detailOf({ chapters, decisionCount: 3 });
+    const detail = detailOf({ chapters: ordered, decisionCount: 3 });
     expect(explainedChapterIds(detail, rehearse("b"))).toStrictEqual(["b"]);
     expect(
-      explainedChapterIds(detail, { mode: "learn-new", chapterIds: ["b", "gone", "a"] })
+      explainedChapterIds(detail, { mode: "review-due", chapterIds: ["b", "gone", "a"] })
     ).toStrictEqual(["b", "a"]);
     // A chapter that is gone names nothing in particular.
     expect(explainedChapterIds(detail, rehearse("gone"))).toStrictEqual([]);
@@ -471,20 +319,15 @@ describe("explainedChapterIds", () => {
 
   it("over every chapter names one only when the repertoire has no decision", () => {
     expect(
-      explainedChapterIds(detailOf({ chapters, decisionCount: 3 }), { mode: "review-due" })
+      explainedChapterIds(detailOf({ chapters: ordered, decisionCount: 3 }), { mode: "review-due" })
     ).toStrictEqual([]);
     expect(
-      explainedChapterIds(detailOf({ chapters, decisionCount: 0 }), { mode: "review-due" })
+      explainedChapterIds(detailOf({ chapters: ordered, decisionCount: 0 }), { mode: "review-due" })
     ).toStrictEqual(["a"]);
     const studied = detailOf({
-      chapters,
+      chapters: ordered,
       decisionCount: 0,
-      workspace: {
-        lastChapterId: "b",
-        lastNodeId: null,
-        orientation: "white",
-        practiceDraft: null
-      }
+      workspace: workspace(null, "b")
     });
     expect(explainedChapterIds(studied, { mode: "review-due" })).toStrictEqual(["b"]);
     expect(

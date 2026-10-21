@@ -1,5 +1,4 @@
 import {
-  collectDecisions,
   computeScopeStates,
   effectivePreferredUci,
   nodeMetaOf,
@@ -38,9 +37,9 @@ import { uciSquares } from "@chaturanga/shared/chess/square";
 /* ------------------------------------------------------------------ choices panel */
 
 /** How one continuation counts, as the choices panel names it (text, never colour alone). */
-export type ChoiceState = "preferred" | "accepted" | "reference" | "covered" | "untrained";
+type ChoiceState = "preferred" | "accepted" | "reference" | "covered" | "untrained";
 
-export type ChoiceRow = {
+type ChoiceRow = {
   nodeId: string;
   uci: string;
   san: string;
@@ -54,23 +53,6 @@ export type ChoicesView = {
   /** Whose move it is at the position: the repertoire player's, or the opponent's. */
   side: "player" | "opponent";
   rows: ChoiceRow[];
-};
-
-export const CHOICE_LABELS: Record<ChoiceState, string> = {
-  preferred: "Preferred",
-  accepted: "Accepted",
-  reference: "Reference only",
-  covered: "Covered",
-  untrained: "Not practised"
-};
-
-/** What each state means for practice (the badge's description). */
-export const CHOICE_DESCRIPTIONS: Record<ChoiceState, string> = {
-  preferred: "Correct in practice, and the move hints point at.",
-  accepted: "Also correct in practice.",
-  reference: "Kept for study only: practice doesn't count it as correct. Accept it to practise it.",
-  covered: "A reply you prepare for: practice plays it to you and goes on from there.",
-  untrained: "This position isn't practised, so the move isn't asked or played in practice."
 };
 
 /**
@@ -168,40 +150,6 @@ export function deriveChoices(
   };
 }
 
-/** A button of a choice row: what it does to the move, and how prominent it is. */
-export type ChoiceAction = {
-  kind: "accept" | "prefer" | "make-reference" | "cover";
-  variant: "outline" | "ghost";
-};
-
-/**
- * The actions a choice row offers. A move outside training scope can only be kept as reference
- * (or covered again, at the opponent's turn): accepting or preferring it can't make a decision.
- * In scope, the player's reference move can be accepted, any accepted move preferred, and a
- * trained move made reference; an opponent's reply toggles between covered and reference.
- */
-export function choiceActions(
-  row: Pick<ChoiceRow, "state" | "edge">,
-  side: ChoicesView["side"]
-): ChoiceAction[] {
-  if (row.state === "untrained") {
-    if (side === "player") {
-      return row.edge === "reference" ? [] : [{ kind: "make-reference", variant: "ghost" }];
-    }
-    return [{ kind: row.edge === "reference" ? "cover" : "make-reference", variant: "ghost" }];
-  }
-  if (side === "opponent") {
-    return row.state === "covered"
-      ? [{ kind: "make-reference", variant: "ghost" }]
-      : [{ kind: "cover", variant: "outline" }];
-  }
-  const actions: ChoiceAction[] = [];
-  if (row.state === "reference") actions.push({ kind: "accept", variant: "outline" });
-  if (row.state !== "preferred") actions.push({ kind: "prefer", variant: "outline" });
-  if (row.state !== "reference") actions.push({ kind: "make-reference", variant: "ghost" });
-  return actions;
-}
-
 /** Default edge of a move added while studying (§5.2): own moves reference, replies covered. */
 export function defaultEdgeForNewMove(
   fenBefore: string,
@@ -210,47 +158,38 @@ export function defaultEdgeForNewMove(
   return playerToMove(fenBefore) === color ? "reference" : "covered";
 }
 
-/* ------------------------------------------------------------------ boundaries */
+/**
+ * What a move of the chapter is, as Study's tree and move menu show it: one of the player's moves
+ * (`yours`, an accepted choice), an opponent reply the repertoire prepares for (`covered`), or
+ * study-only material (`reference`: a reference edge on it or above it, a reference or disabled
+ * chapter, a disabled branch).
+ */
+export type MoveKind = "yours" | "covered" | "reference";
 
-type CountableChapter = Pick<
-  RepertoireChapter,
-  "id" | "kind" | "enabled" | "sortOrder" | "tree" | "nodeMeta"
->;
-
-/** Unique trainable decisions this chapter supports on its own. */
-export function trainableDecisionCount(color: RepertoireColor, chapter: CountableChapter): number {
-  return collectDecisions(color, [chapter]).size;
-}
-
-/** The chapter's trainable decision count if `nodeId`'s metadata were patched. */
-export function decisionCountWithMeta(
-  color: RepertoireColor,
-  chapter: CountableChapter,
-  nodeId: string,
-  patch: Partial<RepertoireNodeMeta>
-): number {
-  const meta = { ...nodeMetaOf(chapter.nodeMeta, nodeId), ...patch };
-  return trainableDecisionCount(color, {
-    ...chapter,
-    nodeMeta: { ...chapter.nodeMeta, [nodeId]: meta }
-  });
-}
-
-/** "+2 decisions" / "−1 decision" / "no change", for a boundary toggle's effect. */
-export function decisionDeltaLabel(delta: number): string {
-  if (delta === 0) return "no change";
-  const count = Math.abs(delta);
-  return `${delta > 0 ? "+" : "−"}${count} decision${count === 1 ? "" : "s"}`;
+/** Each move's kind (the root has none). */
+export function moveKinds(
+  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
+  lookup: ChapterLookup,
+  color: RepertoireColor
+): Map<string, MoveKind> {
+  const scopes = computeScopeStates(chapter, lookup);
+  const kinds = new Map<string, MoveKind>();
+  for (const id of lookup.order) {
+    const node = lookup.nodesById.get(id);
+    if (!node?.uci) continue;
+    const scope = scopes.get(id);
+    if (scope === "reference" || scope === "disabled") {
+      kinds.set(id, "reference");
+    } else if (playerToMove(node.fenBefore) === color) {
+      kinds.set(id, nodeMetaOf(chapter.nodeMeta, id).edge === "included" ? "yours" : "reference");
+    } else {
+      kinds.set(id, "covered");
+    }
+  }
+  return kinds;
 }
 
 /* ------------------------------------------------------------------ positions and labels */
-
-/** Other nodes of the chapter that reach the same position as `nodeId` (transpositions). */
-export function transpositionsOf(lookup: ChapterLookup, nodeId: string): string[] {
-  const key = lookup.positionKeys.get(nodeId);
-  if (!key) return [];
-  return lookup.order.filter((id) => id !== nodeId && lookup.positionKeys.get(id) === key);
-}
 
 /**
  * Stored occurrences of a position outside the open chapter (its own ones come from the draft,

@@ -1,25 +1,18 @@
-import { type ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
-import {
-  DEFAULT_REHEARSAL_DEPTH_PLIES,
-  continuations,
-  isDecisionNode,
-  rehearsalContext
-} from "@chaturanga/shared/chess/repertoire-rehearsal";
-import {
-  REPERTOIRE_ROOT_NODE_ID,
-  type PracticeMode,
-  type PracticeScope,
-  type PracticeSessionSnapshot,
-  type PracticeSummary,
-  type RepertoireChapter,
-  type RepertoireChapterSummary,
-  type RepertoireColor,
-  type RepertoireDetail,
-  type StartPracticeInput
+import type {
+  PracticeScope,
+  PracticeSessionSnapshot,
+  PracticeSummary,
+  RepertoireChapterSummary,
+  RepertoireDetail,
+  StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
 import { sortedChapters } from "./repertoire-chapters";
 
-/** Pure rules of the practice setup form: defaults, the saved draft, and the main's limits. */
+/**
+ * Pure rules of starting practice: the repertoire's practice settings (its saved draft, edited in
+ * the repertoire settings dialog), what Practice starts with them, the presets other screens start
+ * (a targeted queue, a line rehearsal), and the main process's limits.
+ */
 
 export const DEFAULT_CARD_LIMIT = 20;
 const DEFAULT_NEW_CARD_LIMIT = 5;
@@ -40,24 +33,25 @@ export function practicableChapterIds(
 export type RehearseTarget = NonNullable<PracticeScope["rehearse"]>;
 
 /**
- * What a practice screen opens with: chapters / mode to preselect ("Practice this chapter",
- * "Review due"), a targeted queue of decisions (`positionKeys`, e.g. "Refresh this decision"
- * from a game's opening comparison), or a line rehearsal (`rehearse`, "Rehearse from here"). A
- * targeted queue or a rehearsal starts on its own when `autoStart` is set.
+ * A session another screen starts at once: a targeted queue of decisions (`positionKeys`, e.g.
+ * "Refresh this decision" from a game's opening comparison, or "Retry missed"), or a line
+ * rehearsal (`rehearse`, e.g. "Rehearse again"). An empty preset is plain Practice: the
+ * repertoire's practice settings (practiceStartInput). Each navigation to practice carries its own
+ * preset object, so a page shown again for it never starts twice.
  */
 export type PracticePreset = {
-  chapterIds?: string[];
-  mode?: PracticeMode;
+  mode?: StartPracticeInput["mode"];
   positionKeys?: string[];
   /** A targeted queue as ungraded extra practice ("Retry missed"): no schedule changes. */
   ungraded?: boolean;
   rehearse?: RehearseTarget;
   /** Rehearsal only: the depth limit to start with ("Rehearse again" keeps the session's). */
   maxDepthPlies?: number;
-  autoStart?: boolean;
+  /** Plain Practice from Study: its chapter, which a rehearsal of lines plays. */
+  chapterId?: string;
 };
 
-/** The preset that rehearses `target` at once (Study's "Rehearse this chapter / from here"). */
+/** The preset that rehearses `target` at once ("Rehearse again", another line's chapter). */
 export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): PracticePreset {
   return {
     mode: "rehearse-lines",
@@ -65,25 +59,22 @@ export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): 
       chapterId: target.chapterId,
       ...(target.fromNodeId ? { fromNodeId: target.fromNodeId } : {})
     },
-    ...(maxDepthPlies ? { maxDepthPlies } : {}),
-    autoStart: true
+    ...(maxDepthPlies ? { maxDepthPlies } : {})
   };
 }
 
 /**
- * "Retry missed": the session's missed decisions as a targeted queue, started at once; null when
- * nothing was missed. It is a new session, so the missed session's own answers and summary stay
- * as they were, and it is ungraded: its answers are recorded with it, but the first scored
- * attempt's schedule (a missed decision's relearn step, its lapses) stays as it was. "Refresh
- * this decision" is a graded targeted queue.
+ * "Retry missed": the session's missed decisions as a targeted queue; null when nothing was
+ * missed. It is a new session, so the missed session's own answers and summary stay as they were,
+ * and it is ungraded: its answers are recorded with it, but the first scored attempt's schedule (a
+ * missed decision's relearn step, its lapses) stays as it was. "Refresh this decision" is a graded
+ * targeted queue.
  */
 export function retryMissedPreset(
   summary: Pick<PracticeSummary, "missedPositionKeys">
 ): PracticePreset | null {
   const positionKeys = [...new Set(summary.missedPositionKeys)];
-  return positionKeys.length
-    ? { mode: "review-due", positionKeys, ungraded: true, autoStart: true }
-    : null;
+  return positionKeys.length ? { mode: "review-due", positionKeys, ungraded: true } : null;
 }
 
 /**
@@ -110,23 +101,14 @@ export function isExtraPractice(scope: Pick<PracticeScope, "positionKeys">): boo
 }
 
 /**
- * Whether starting `input` saves it as the repertoire's practice setup draft: only a start from
- * the setup form does. An auto-started preset (a targeted queue, a rehearsal from Study or the
- * summary) is a one-off, so the next setup opens as the player left it.
- */
-export function savesPracticeDraft(input: StartPracticeInput, fromPreset: boolean): boolean {
-  return !fromPreset && !input.positionKeys?.length;
-}
-
-/**
- * The start input of an auto-started preset (a targeted queue or a line rehearsal), or null when
- * the preset doesn't start on its own.
+ * The start input of a preset that names its session (a line rehearsal or a targeted queue), or
+ * null for plain Practice (practiceStartInput then applies).
  */
 export function autoStartPracticeInput(
   repertoireId: string,
   preset: PracticePreset | null
 ): StartPracticeInput | null {
-  if (preset?.autoStart && preset.mode === "rehearse-lines" && preset.rehearse) {
+  if (preset?.mode === "rehearse-lines" && preset.rehearse) {
     const { rehearse } = rehearsePreset(preset.rehearse);
     const depth =
       preset.maxDepthPlies !== undefined ? clamp(preset.maxDepthPlies, 1, MAX_DEPTH_PLIES) : 0;
@@ -141,59 +123,35 @@ export function autoStartPracticeInput(
 }
 
 /**
- * The start input of an auto-started targeted preset, or null when the preset isn't one. Only
- * the named decisions are queued (no saved chapter filter or depth applies), each whether due or
- * new.
+ * The start input of a targeted preset, or null when the preset isn't one. Only the named
+ * decisions are queued (no saved chapter filter or depth applies), each whether due or new.
  */
 export function targetedPracticeInput(
   repertoireId: string,
   preset: PracticePreset | null
 ): StartPracticeInput | null {
   const positionKeys = [...new Set(preset?.positionKeys)];
-  if (!preset?.autoStart || !positionKeys.length) return null;
+  if (!positionKeys.length) return null;
   const limit = clamp(positionKeys.length, 1, MAX_CARD_LIMIT);
   return {
     repertoireId,
-    mode: preset.mode ?? "review-due",
+    mode: preset?.mode ?? "review-due",
     positionKeys,
     cardLimit: limit,
     newCardLimit: limit,
-    ...(preset.ungraded ? { ungraded: true } : {})
+    ...(preset?.ungraded ? { ungraded: true } : {})
   };
 }
 
 /**
- * The preset "Practice again" keeps: a targeted queue or a rehearsal isn't repeated (the setup
- * opens instead, a rehearsal's chapter and branch preselected).
+ * The repertoire's practice settings: its saved draft or the defaults. Practice always reviews
+ * due positions first, then new ones (an older Learn new draft reads as that), or rehearses lines.
+ * Chapter ids that no longer exist, are disabled or are reference chapters are dropped (the key
+ * too when none is left, meaning every enabled opening chapter), so a stale draft can't be
+ * refused on start; limits are clamped to the main process's bounds.
  */
-export function presetForSetup(preset: PracticePreset | null): PracticePreset | null {
-  if (!preset || (!preset.autoStart && !preset.positionKeys)) return preset;
-  const kept = presetSelection(preset);
-  return Object.keys(kept).length ? kept : null;
-}
-
-/** What a preset preselects in the setup form: chapters, mode, and a rehearsal with its depth. */
-type PresetSelection = Pick<PracticePreset, "chapterIds" | "mode" | "rehearse" | "maxDepthPlies">;
-
-function presetSelection(preset: PracticePreset | null): PresetSelection {
-  if (!preset) return {};
-  const { chapterIds, mode, rehearse, maxDepthPlies } = preset;
-  return {
-    ...(chapterIds ? { chapterIds } : {}),
-    ...(mode ? { mode } : {}),
-    ...(rehearse ? { rehearse } : {}),
-    ...(rehearse && maxDepthPlies ? { maxDepthPlies } : {})
-  };
-}
-
-/**
- * The setup's starting values: the saved draft or the defaults, then a preset. Chapter ids that
- * no longer exist, are disabled or are reference chapters are dropped (the key too when none is
- * left, meaning every enabled opening chapter), so a stale draft can't be refused on Start.
- */
-export function initialPracticeInput(
-  detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">,
-  preset: PracticePreset | null
+export function practiceSettings(
+  detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">
 ): StartPracticeInput {
   const saved = detail.workspace?.practiceDraft;
   const base: StartPracticeInput =
@@ -205,19 +163,42 @@ export function initialPracticeInput(
           cardLimit: DEFAULT_CARD_LIMIT,
           newCardLimit: DEFAULT_NEW_CARD_LIMIT
         };
-  const merged: StartPracticeInput = { ...base, ...presetSelection(preset) };
   const allowed = practicableChapterIds(detail.chapters);
-  const { chapterIds, rehearse, ...rest } = merged;
-  // A targeted queue is never the setup's form (it starts on its own).
-  delete rest.positionKeys;
-  const kept = (chapterIds ?? []).filter((id) => allowed.has(id));
-  // A rehearsal of a chapter that is gone, disabled or reference falls back to the chapter picker.
-  const keptRehearse = rehearse && allowed.has(rehearse.chapterId) ? rehearse : null;
+  const kept = (base.chapterIds ?? []).filter((id) => allowed.has(id));
   return {
-    ...rest,
+    repertoireId: detail.id,
+    mode: base.mode === "rehearse-lines" ? "rehearse-lines" : "review-due",
     ...(kept.length ? { chapterIds: kept } : {}),
-    ...(keptRehearse ? { rehearse: keptRehearse } : {}),
-    ...withinLimits(rest)
+    ...withinLimits(base)
+  };
+}
+
+/**
+ * What Practice starts: the practice settings' review (due positions first, then new ones), or a
+ * rehearsal of one chapter's lines when the settings say so — `chapterId` (Study's open chapter),
+ * else the chapter last studied, else the first in scope — falling back to the review when no
+ * chapter can be rehearsed.
+ */
+export function practiceStartInput(
+  detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">,
+  chapterId: string | null = null
+): StartPracticeInput {
+  const settings = practiceSettings(detail);
+  if (settings.mode !== "rehearse-lines") return settings;
+  const allowed = practicableChapterIds(detail.chapters);
+  const ordered = sortedChapters(detail.chapters).filter((chapter) => allowed.has(chapter.id));
+  const inScope = settings.chapterIds?.length
+    ? ordered.filter((chapter) => settings.chapterIds!.includes(chapter.id))
+    : ordered;
+  const rehearsed = [chapterId, detail.workspace?.lastChapterId ?? null, inScope.at(0)?.id ?? null]
+    .filter((id): id is string => id !== null)
+    .find((id) => allowed.has(id));
+  if (!rehearsed) return { ...settings, mode: "review-due" };
+  return {
+    repertoireId: detail.id,
+    mode: "rehearse-lines",
+    rehearse: { chapterId: rehearsed },
+    ...(settings.maxDepthPlies ? { maxDepthPlies: settings.maxDepthPlies } : {})
   };
 }
 
@@ -246,103 +227,40 @@ export function boundedInt(value: string, min: number, max: number): number | un
   return Math.min(parsed, max);
 }
 
-/** The setup form's fields, as typed (numbers are text until read with `boundedInt`). */
-type PracticeForm = {
-  mode: PracticeMode;
+/** The settings dialog's practice fields, as typed (numbers are text until read). */
+export type PracticeSettingsForm = {
+  /** Rehearse lines instead of reviewing positions. */
+  lines: boolean;
   chapterIds: readonly string[];
   depth: string;
   cards: string;
   fresh: string;
-  /** Rehearsal: the chapter, and the branch's node ("" or absent: the chapter start). */
-  rehearseChapterId?: string;
-  rehearseFromNodeId?: string;
 };
 
-/**
- * The form's fields for `input` (unset limits show their defaults). A rehearsal's chapter is the
- * input's, else its first chapter, else the first of `chapters` (the practicable ones).
- */
-export function practiceFormFields(
-  input: StartPracticeInput,
-  chapters: readonly Pick<RepertoireChapterSummary, "id">[]
-): Required<PracticeForm> {
+/** The dialog's fields for the practice settings (unset limits show their defaults). */
+export function practiceSettingsForm(settings: StartPracticeInput): PracticeSettingsForm {
   return {
-    mode: input.mode,
-    chapterIds: input.chapterIds ?? [],
-    depth: input.maxDepthPlies ? String(input.maxDepthPlies) : "",
-    cards: String(input.cardLimit ?? DEFAULT_CARD_LIMIT),
-    fresh: String(input.newCardLimit ?? DEFAULT_NEW_CARD_LIMIT),
-    rehearseChapterId:
-      input.rehearse?.chapterId ?? input.chapterIds?.[0] ?? chapters.at(0)?.id ?? "",
-    rehearseFromNodeId: input.rehearse?.fromNodeId ?? ""
+    lines: settings.mode === "rehearse-lines",
+    chapterIds: settings.chapterIds ?? [],
+    depth: settings.maxDepthPlies ? String(settings.maxDepthPlies) : "",
+    cards: String(settings.cardLimit ?? DEFAULT_CARD_LIMIT),
+    fresh: String(settings.newCardLimit ?? DEFAULT_NEW_CARD_LIMIT)
   };
 }
 
-/**
- * The start input built from the form's fields, within the main process's limits. A rehearsal
- * sends its chapter, optional branch and depth only: card limits don't apply to it.
- */
-export function practiceInputFromForm(
-  form: PracticeForm & { repertoireId: string }
+/** The practice settings saved from the dialog's fields, within the main process's limits. */
+export function practiceSettingsFromForm(
+  form: PracticeSettingsForm & { repertoireId: string }
 ): StartPracticeInput {
   const depth = boundedInt(form.depth, 1, MAX_DEPTH_PLIES);
-  if (form.mode === "rehearse-lines") {
-    return {
-      repertoireId: form.repertoireId,
-      mode: form.mode,
-      ...(form.rehearseChapterId
-        ? {
-            rehearse: {
-              chapterId: form.rehearseChapterId,
-              ...(form.rehearseFromNodeId ? { fromNodeId: form.rehearseFromNodeId } : {})
-            }
-          }
-        : {}),
-      ...(depth ? { maxDepthPlies: depth } : {})
-    };
-  }
   return {
     repertoireId: form.repertoireId,
-    mode: form.mode,
+    mode: form.lines ? "rehearse-lines" : "review-due",
     ...(form.chapterIds.length ? { chapterIds: [...form.chapterIds] } : {}),
     ...(depth ? { maxDepthPlies: depth } : {}),
     cardLimit: boundedInt(form.cards, 1, MAX_CARD_LIMIT) ?? DEFAULT_CARD_LIMIT,
     newCardLimit: boundedInt(form.fresh, 0, MAX_CARD_LIMIT) ?? 0
   };
-}
-
-/** How many branch starts the setup's picker lists before it says the rest are left out. */
-export const MAX_REHEARSE_STARTS = 200;
-
-export type RehearseStart = { nodeId: string; path: string };
-
-/**
- * Where a rehearsal can start inside a chapter: positions in training scope where the player is
- * to move and has a repertoire move within the depth limit, in authored order. The chapter start
- * is the picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
- * `paused` (position keys) are paused decisions: played as context, so none is listed here. (The
- * setup still offers one preselected by Study's "Rehearse from here" while a decision below it is
- * asked: the rehearsal plays it as lead-up.)
- */
-export function rehearseStarts(
-  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
-  color: RepertoireColor,
-  label: (lookup: ChapterLookup, nodeId: string) => string,
-  {
-    limit = MAX_REHEARSE_STARTS,
-    maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
-    paused = new Set()
-  }: { limit?: number; maxDepthPlies?: number; paused?: ReadonlySet<string> } = {}
-): { starts: RehearseStart[]; truncated: boolean } {
-  const context = rehearsalContext(chapter, color, { maxDepthPlies, paused });
-  const starts: RehearseStart[] = [];
-  for (const id of context.lookup.order) {
-    if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;
-    if (!continuations(context, id).children.length) continue;
-    if (starts.length >= limit) return { starts, truncated: true };
-    starts.push({ nodeId: id, path: label(context.lookup, id) });
-  }
-  return { starts, truncated: false };
 }
 
 /** The most chapters of a scope read to explain an empty practice start. */

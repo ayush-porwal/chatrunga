@@ -16,7 +16,6 @@ import {
   type HandoffOrigin,
   type RepertoireCommand
 } from "../features/repertoire/handoffs";
-import { presetForSetup } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import {
@@ -147,7 +146,8 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
   }
 
   /**
-   * Practice: the setup (no session, optionally with a preset), or a session to resume. A study
+   * Practice: a session to resume, else one that starts at once (the preset's, or with the
+   * repertoire's practice settings: each navigation carries its own preset, so it starts once). A study
    * draft still saving (left through the hub, say) is saved first, so practice grades the edited
    * chapter; when that save fails, the notice says so and the current screen stays (false, as when
    * a newer navigation wins).
@@ -179,13 +179,13 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
         )
     });
     if (!leftSaved) return false;
-    deps.setExtras((extras) => ({ ...extras, preset }));
+    deps.setExtras((extras) => ({ ...extras, preset: sessionId ? null : (preset ?? {}) }));
     showRepertoireView("repertoire-practice", practicePath(repertoireId, sessionId));
     record(history, { view: "repertoire-practice", repertoireId, sessionId });
     return true;
   }
 
-  /** The session started on the setup page: same screen, now naming the session. */
+  /** The session started: same screen, now naming the session. */
   function practiceSessionStarted(sessionId: string) {
     if (screen?.view !== "repertoire-practice") return;
     const { repertoireId } = screen;
@@ -193,13 +193,11 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     record("replace", { view: "repertoire-practice", repertoireId, sessionId });
   }
 
-  /** "Practice again" / "Start a new session": back to the setup as a new step. */
-  function practiceSetup() {
+  /** "Practice again" / "Start a new session": a new session as a new step. */
+  function practiceAgain() {
     if (screen?.view !== "repertoire-practice") return;
     useRepertoirePracticeStore.getState().reset();
-    void openRepertoirePractice(screen.repertoireId, {
-      preset: presetForSetup(screen.preset)
-    });
+    void openRepertoirePractice(screen.repertoireId);
   }
 
   // ---- Repertoire handoffs (Study → Play from here) and the Lichess guard ----------------------
@@ -393,7 +391,7 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     openRepertoireStudy,
     openRepertoirePractice,
     practiceSessionStarted,
-    practiceSetup,
+    practiceAgain,
     unlessRepertoireBlocked,
     playFromStudy,
     returnToRepertoire,
@@ -403,7 +401,7 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
 
 export type RepertoireCommands = ReturnType<typeof useRepertoireCommands>;
 
-/** The practice route: the setup, or a session. */
+/** The practice route: a new session, or the one it names. */
 function practicePath(repertoireId: string, sessionId: string | null): string {
   const base = `/repertoires/${encodeURIComponent(repertoireId)}/practice`;
   return sessionId ? `${base}/${encodeURIComponent(sessionId)}` : base;

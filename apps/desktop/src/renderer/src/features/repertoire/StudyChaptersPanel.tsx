@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -53,7 +53,8 @@ export function StudyChaptersPanel({
   onSetMany,
   onMove,
   onAdd,
-  onRemove
+  onRemove,
+  footer
 }: {
   chapters: readonly RepertoireChapterSummary[];
   currentChapterId: string;
@@ -67,6 +68,8 @@ export function StudyChaptersPanel({
   onMove: (chapterId: string, direction: -1 | 1) => void;
   onAdd: (title: string) => void;
   onRemove: (chapterId: string) => void;
+  /** After the list and Add chapter, in the same scroll (the open chapter's linked games). */
+  footer?: ReactNode;
 }) {
   const ordered = useMemo(() => sortedChapters(chapters), [chapters]);
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
@@ -227,7 +230,7 @@ export function StudyChaptersPanel({
       <div
         ref={scroller}
         onScroll={measure}
-        className="scroll-area -mr-3 grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-3"
+        className="scroll-area grid min-h-0 flex-1 content-start gap-2 overflow-y-auto"
       >
         <ul
           ref={list}
@@ -395,6 +398,7 @@ export function StudyChaptersPanel({
             Add chapter
           </Button>
         )}
+        {footer}
       </div>
 
       {removing ? (

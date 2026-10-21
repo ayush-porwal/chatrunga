@@ -4,7 +4,7 @@ import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { Color } from "@chaturanga/shared/types/chess";
-import { rehearsePreset, type PracticePreset } from "../features/repertoire/practice-setup";
+import type { PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/navigation";
@@ -145,19 +145,21 @@ export type PageCommands = {
   openRepertoireStudy: (target: StudyOpenTarget) => void;
   refreshRepertoireDecision: (repertoireId: string, positionKey: string) => void;
   repertoireStageApplied: () => void;
+  /** Practice: a session starts at once with the repertoire's practice settings. */
   openRepertoirePractice: (repertoireId: string) => void;
-  reviewRepertoire: (repertoireId: string) => void;
   /** "Resume practice": the unfinished session's route (it resumes there). */
   resumeRepertoirePractice: (target: { repertoireId: string; sessionId: string }) => void;
-  practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
-  /** A practice preset that starts on its own (line rehearsal: "Rehearse this chapter / again"). */
+  /** Study's Practice: the practice settings (a rehearsal of lines plays the open chapter). */
+  practiceFromStudy: (repertoireId: string, chapterId: string) => void;
+  /** A session from a preset ("Rehearse again", "Retry missed"), as a new step. */
   rehearseRepertoire: (repertoireId: string, preset: PracticePreset) => void;
   repertoireMissing: (message: string) => void;
   repertoireTabChange: (tab: StudyTab) => void;
   repertoirePositionChanged: () => void;
   openGameAtNode: (gameId: string, nodeId: string | null) => void;
   repertoirePracticeStarted: (sessionId: string) => void;
-  repertoirePracticeSetup: () => void;
+  /** "Practice again" / "Start a new session". */
+  repertoirePracticeAgain: () => void;
   /** Study → Play from here: Play's engine setup starting at the selected node. */
   playFromStudy: () => void;
   /** Play's In progress card on a saved engine game: open it and play on against its engine. */
@@ -221,7 +223,7 @@ export function AppPages({
             onFreeBoard={on.freeBoard}
             onOpenLichessGame={on.showGame}
             onRejoinSavedGame={on.rejoinSavedGame}
-            onRepertoireReview={on.reviewRepertoire}
+            onRepertoireReview={on.openRepertoirePractice}
             onRepertoireResume={on.resumeRepertoirePractice}
             onRepertoireStudy={on.openRepertoireStudy}
             onSolvePuzzleOfTheDay={on.solvePuzzleOfTheDay}
@@ -241,12 +243,7 @@ export function AppPages({
             onResume={on.resumeRepertoirePractice}
           />
         ) : view === "repertoire-study" || view === "repertoire-practice" ? (
-          <RepertoireScreenPage
-            view={view}
-            repertoire={repertoire}
-            desktopApiAvailable={desktopApiAvailable}
-            on={on}
-          />
+          <RepertoireScreenPage view={view} repertoire={repertoire} on={on} />
         ) : view === "settings" ? (
           <SettingsPage
             initialSection={settingsSection}
@@ -308,12 +305,10 @@ export function AppPages({
 function RepertoireScreenPage({
   view,
   repertoire,
-  desktopApiAvailable,
   on
 }: {
   view: "repertoire-study" | "repertoire-practice";
   repertoire: RepertoireScreen | null;
-  desktopApiAvailable: boolean;
   on: PageCommands;
 }) {
   // Its route is still catching up (the router applies a URL change in a transition, after the
@@ -333,18 +328,12 @@ function RepertoireScreenPage({
         onOpenChapter={(chapterId, nodeId = null) =>
           on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
         }
-        onPractice={(chapterIds) =>
-          on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
-        }
-        onRehearse={(target) =>
-          on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
-        }
+        onPractice={() => on.practiceFromStudy(repertoire.repertoireId, repertoire.chapterId)}
         onMissing={on.repertoireMissing}
         onHub={on.repertoireHub}
         onPositionChanged={on.repertoirePositionChanged}
         onOpenGame={on.openGameAtNode}
         onOpenEngineSettings={on.engineSettings}
-        onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
       />
     );
   }
@@ -354,7 +343,7 @@ function RepertoireScreenPage({
       sessionId={repertoire.sessionId}
       preset={repertoire.preset}
       onSessionStarted={on.repertoirePracticeStarted}
-      onSetup={on.repertoirePracticeSetup}
+      onAgain={on.repertoirePracticeAgain}
       onStudy={({ chapterId, nodeId }) =>
         on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
       }

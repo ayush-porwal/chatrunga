@@ -11,7 +11,7 @@ import { saveDecisionTextNow } from "./useChapterAutosave";
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
 /**
- * Study's edits of the decision at the selected position (Notes: the prompt and hint, wrong-move
+ * Study's edits of the decision at the selected position (its prompt and hint, wrong-move
  * feedback, pausing): typed into a draft, which a commit writes. Nothing happens without a
  * position key.
  */

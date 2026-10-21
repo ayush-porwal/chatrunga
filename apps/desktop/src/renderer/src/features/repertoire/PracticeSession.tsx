@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useId, useMemo } from "react";
 import { Eye, Lightbulb, Play, RotateCcw, Route, SkipForward, Square } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import type { Color } from "@chaturanga/shared/types/chess";
@@ -21,7 +21,9 @@ import {
   useRepertoirePracticeStore,
   type RepertoirePracticeState
 } from "../../stores/repertoire-practice-store";
+import { tabPanelProps } from "@/components/ui/segmented-control";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
+import { PracticeTabBar } from "./PracticeTabBar";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { isExtraPractice, rehearsePreset, type PracticePreset } from "./practice-setup";
 import {
@@ -52,13 +54,17 @@ type NextAction = { label: string; onClick: () => void; skips: boolean };
 export function PracticeSession({
   detail,
   session,
-  onRehearse
+  onRehearse,
+  onSettings
 }: {
   detail: RepertoireDetail;
   session: PracticeSessionSnapshot;
   /** "Rehearse it from <chapter>": a rehearsal of another chapter from an occurrence there. */
   onRehearse: (preset: PracticePreset) => void;
+  /** The repertoire settings (the tab bar's cog). */
+  onSettings: () => void;
 }) {
+  const panelId = useId();
   const card = currentCard(session)!;
   const { hintUci, reveal, leadUpIndex, orientation, rehearsal, otherLine, lineEnded } =
     useRepertoirePracticeStore(
@@ -134,10 +140,20 @@ export function PracticeSession({
           />
         </BoardStage>
       }
+      tabPanel={tabPanelProps(panelId, "practice")}
+      tabBar={
+        <PracticeTabBar
+          panelId={panelId}
+          label={rehearsing ? "Rehearsal" : "Practice"}
+          onSettings={onSettings}
+        />
+      }
+      flushBody
       summary={<SessionStats session={session} card={card} />}
       notices={
         failed ? (
           <Notice
+            className="mx-3 mt-3 w-auto"
             tone="danger"
             action={
               <Button type="button" variant="outline" size="xs" onClick={commands.retryFailed}>
@@ -151,7 +167,7 @@ export function PracticeSession({
       }
       footer={<SessionFooter busy={busy} nextAction={nextAction} onEnd={finish} />}
     >
-      <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3">
+      <div className="scroll-area grid h-full min-h-0 content-start gap-4 overflow-y-auto p-3">
         {card.prompt ? (
           <section aria-label="Prompt" className="grid gap-1">
             <p className="text-xs text-fg-muted">Prompt</p>

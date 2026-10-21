@@ -101,7 +101,7 @@ type Actions = {
   /**
    * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
    * existing child is only selected; a new one is added with `edge` and selected, unsaved until
-   * autosave. A reference stage selects the parent instead, so Choices lists the move with Accept.
+   * autosave (a reference one too: its menu makes it one of your moves).
    * Null when the parent is unknown or the move is illegal there.
    */
   stageMove: (
@@ -414,7 +414,6 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           get().setNodeMeta(result.nodeId, { edge, disabled: false });
         }
       }
-      if (edge === "reference") set({ selectedNodeId: parentId });
       return result;
     };
 

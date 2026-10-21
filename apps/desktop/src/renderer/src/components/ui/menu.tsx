@@ -139,7 +139,7 @@ function OverflowMenu({
             {visibleItems.map((item, index) => (
               <React.Fragment key={item.label}>
                 {item.divided && index > 0 ? (
-                  <span role="separator" className="mx-1 my-1 h-px bg-line-subtle" />
+                  <span aria-hidden="true" className="mx-1 my-1 h-px bg-line-subtle" />
                 ) : null}
                 <button
                   type="button"

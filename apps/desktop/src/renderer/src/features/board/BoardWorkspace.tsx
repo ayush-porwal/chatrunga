@@ -421,13 +421,6 @@ export function BoardStage({
   );
 }
 
-/**
- * Tabs for the workspace panel: text-only segments sized to their labels, sharing the full width;
- * tighter padding when the panel is at its minimum width so four labels still fit.
- */
-export const workspaceTabsClass =
-  "[&>button]:flex-auto [&>button]:px-2.5 @max-[360px]/panel:[&>button]:px-1.5";
-
 /** "White vs Black" game title for the titlebar. */
 export function PlayersTitle({ white, black }: { white: string; black: string }) {
   return (

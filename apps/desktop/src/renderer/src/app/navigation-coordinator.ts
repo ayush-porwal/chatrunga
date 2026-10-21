@@ -69,7 +69,7 @@ export type NavigationShell = {
   openRepertoireStudy: (
     entry: Extract<HistoryEntry, { view: "repertoire-study" }>
   ) => Promise<boolean>;
-  /** Opens practice (a session, or the setup); false as for `openRepertoireStudy`. */
+  /** Opens practice (a session to resume, or a new one); false as for `openRepertoireStudy`. */
   openRepertoirePractice: (repertoireId: string, sessionId: string | null) => Promise<boolean>;
   showGame: (tab: SideTab) => void;
   /** The review screen for the board now loaded, on the entry's tab and opening side. */

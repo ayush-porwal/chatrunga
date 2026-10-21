@@ -136,14 +136,14 @@ describe("history store", () => {
       orientation: "white" as const
     };
     history().push(study);
-    history().replaceCurrent({ ...study, nodeId: "n4", tab: "notes" });
-    history().replaceCurrent({ ...study, nodeId: "n5", tab: "notes", orientation: "black" });
+    history().replaceCurrent({ ...study, nodeId: "n4", tab: "chapters" });
+    history().replaceCurrent({ ...study, nodeId: "n5", tab: "chapters", orientation: "black" });
     history().push({ view: "repertoire-practice", repertoireId: "r1", sessionId: null });
     history().replaceCurrent({ view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" });
     expect(history().entries).toStrictEqual([
       START,
       { view: "repertoire-hub" },
-      { ...study, nodeId: "n5", tab: "notes", orientation: "black" },
+      { ...study, nodeId: "n5", tab: "chapters", orientation: "black" },
       { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" }
     ]);
     history().moveTo(2);

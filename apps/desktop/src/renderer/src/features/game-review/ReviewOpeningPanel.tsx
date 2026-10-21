@@ -324,8 +324,8 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
               });
               break;
             case "stage":
-              // Opens on Moves so the Choices panel shows the staged move (accepting it there is
-              // the explicit policy change).
+              // Opens on Moves with the staged move selected (making it one of your moves from its
+              // menu is the explicit policy change).
               onStudy?.({
                 repertoireId: comparison.data.repertoireId,
                 chapterId: action.chapterId,
@@ -429,7 +429,7 @@ function ComparisonResult({
           {stage?.kind === "stage" ? (
             <p className={fieldHint}>
               {stage.edge === "reference"
-                ? "Opens the chapter at this position with your move added for study only (if the chapter doesn't have it); accept it under Choices to make it part of your plan."
+                ? "Opens the chapter at this position with your move added for study only (if the chapter doesn't have it); choose “Your move” from its menu to make it part of your plan."
                 : "Opens the chapter with this reply added, or marked, as covered; then choose your answer to it."}
             </p>
           ) : null}
