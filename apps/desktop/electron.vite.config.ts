@@ -88,8 +88,12 @@ export default defineConfig({
       // readable build. Minify it; the sounds exception below is unchanged.
       minify: true,
       // Sounds stay files: Vite would inline the small ones as data: URLs, which the packaged app's
-      // CSP (media-src 'self') blocks, silencing them.
-      assetsInlineLimit: (filePath) => (/\.(mp3|wav|ogg)$/i.test(filePath) ? false : undefined),
+      // CSP (media-src 'self') blocks, silencing them. Engine logos stay files too, out of the
+      // startup chunk.
+      assetsInlineLimit: (filePath) =>
+        /\.(mp3|wav|ogg)$/i.test(filePath) || /[\\/]assets[\\/]engines[\\/]/.test(filePath)
+          ? false
+          : undefined,
       rollupOptions: {
         // Setting any option here makes electron-vite ask for the entry it otherwise defaults to.
         input: resolve(rootDir, "src/renderer/index.html"),

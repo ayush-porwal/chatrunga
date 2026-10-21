@@ -3,7 +3,7 @@ import { reviewRatingContext } from "@chaturanga/shared/chess/review-rating";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
-import { pickDefaultEngine } from "../features/game-review/review-engine-picker";
+import { reviewEngineFor } from "../features/analysis/analysis-engine";
 import { currentReviewSide } from "../features/game-review/review-side";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
@@ -70,7 +70,7 @@ export function useReviewRunner({
       onSideNeeded();
       return;
     }
-    const engine = reviewEngine(engines, defaultEngineId);
+    const engine = reviewEngineFor(engines, defaultEngineId);
     if (!engine) {
       review.setError("Choose an available evaluation engine in Review settings first.");
       onEngineMissing();
@@ -121,17 +121,6 @@ export function useReviewRunner({
   ]);
 
   return { startReview, hasMoves };
-}
-
-/** The evaluation engine a review runs on (the chosen one, else the default); null when unusable. */
-function reviewEngine(
-  engines: readonly EngineConfig[] | undefined,
-  defaultEngineId: string | null
-): EngineConfig | null {
-  const engine = defaultEngineId
-    ? engines?.find((item) => item.id === defaultEngineId)
-    : pickDefaultEngine(engines ?? []);
-  return engine?.isAvailable && !engine.isHumanPrediction ? engine : null;
 }
 
 /**

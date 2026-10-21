@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 import type { Color, GameMode, SavedGame } from "@chaturanga/shared/types/chess";
-import { useDatabasesQuery, useSaveGameMutation } from "../../queries/api";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import { useDatabasesQuery, useEnginesQuery, useSaveGameMutation } from "../../queries/api";
 import { usePuzzleOfTheDayQuery } from "../../queries/puzzles";
 import { useGameStore, type GameOutcome } from "../../stores/game-store";
 import { useLichessStore, type LiveLichessGame } from "../../stores/lichess-store";
-import { savedEngineClock, timeForfeitSave } from "../../app/rejoin-saved-game";
+import { savedEngineClock, savedEngineSide, timeForfeitSave } from "../../app/rejoin-saved-game";
 import { sessionFromSavedGame } from "../game/saved-game";
 import { clockLabel, playerLabel } from "../lichess/lichess-game";
 import { puzzleDatabasesKey, puzzleDatabasesOf } from "../puzzles/puzzle-set";
@@ -23,6 +24,8 @@ import {
 /** The longest wait before a saved game's clock is looked at again (timers cap far above it). */
 const MAX_FLAG_WAIT_MS = 24 * 60 * 60 * 1000;
 
+const NO_ENGINES: readonly EngineConfig[] = [];
+
 /**
  * The In progress card's game (see pickInProgress) and whether everything it depends on has been
  * read (`settled`), so the page shows its final layout at once.
@@ -37,18 +40,20 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
       over: Boolean(state.gameOutcome),
       white: state.headers.white,
       black: state.headers.black,
+      engineId: state.headers.engineId,
       moveTree: state.moveTree,
       currentFen: state.currentFen
     }))
   );
   const end = useMemo(() => mainlineSummary(board.moveTree), [board.moveTree]);
   const playing = usePlayingElsewhere();
-  const saved = useLatestSavedEngineGame();
+  const engines = useEnginesQuery().data ?? NO_ENGINES;
+  const saved = useLatestSavedEngineGame(engines);
 
   const card = pickInProgress({
     live: live ? liveGameInput(live, board, end) : null,
     playing: playing.games,
-    boardMatch: boardMatchInput(board, end),
+    boardMatch: boardMatchInput(board, end, engines),
     saved: saved.game
   });
   return { card, settled: saved.settled && playing.settled };
@@ -61,6 +66,7 @@ type BoardState = {
   over: boolean;
   white: string | null | undefined;
   black: string | null | undefined;
+  engineId: string | null | undefined;
   currentFen: string;
 };
 
@@ -88,13 +94,15 @@ function liveGameInput(
 /** The engine game being played on the board (null: none, or it has ended). */
 function boardMatchInput(
   board: BoardState,
-  end: ReturnType<typeof mainlineSummary>
+  end: ReturnType<typeof mainlineSummary>,
+  engines: readonly EngineConfig[]
 ): BoardMatchInput | null {
   const { engineSide } = board;
   if (board.mode !== "engine" || !engineSide || board.over) return null;
   return {
     savedId: board.gameId,
     engineName: (engineSide === "white" ? board.white : board.black) ?? "",
+    engine: savedEngineSide(board, engines)?.engine ?? null,
     humanColor: (engineSide === "white" ? "black" : "white") satisfies Color,
     fen: end?.fen ?? board.currentFen,
     lastMove: end?.lastMove ?? null
@@ -123,7 +131,10 @@ function usePlayingElsewhere() {
  * was away is no longer in progress: it is saved lost on time (see useEndSavedGameOnTime) and the
  * card skips it.
  */
-function useLatestSavedEngineGame(): { game: SavedGameInput | null; settled: boolean } {
+function useLatestSavedEngineGame(engines: readonly EngineConfig[]): {
+  game: SavedGameInput | null;
+  settled: boolean;
+} {
   const latest = useQuery({
     queryKey: ["games", "latest-unfinished-engine-game"],
     queryFn: async (): Promise<SavedGame | null> =>
@@ -148,19 +159,27 @@ function useLatestSavedEngineGame(): { game: SavedGameInput | null; settled: boo
   const flagged = latestClock?.flagged ?? null;
   useEndSavedGameOnTime(latestGame, flagged);
   return {
-    game: flagged ? null : savedGameInput(latestGame),
+    game: flagged ? null : savedGameInput(latestGame, engines),
     settled: !window.chaturanga || !latest.isPending
   };
 }
 
 /** A saved game as the card shows it, at its main line's end (null without one or its moves). */
-function savedGameInput(game: SavedGame | null): SavedGameInput | null {
+function savedGameInput(
+  game: SavedGame | null,
+  engines: readonly EngineConfig[]
+): SavedGameInput | null {
   const savedEnd = game ? mainlineSummary(game.moveTree) : null;
   if (!game || !savedEnd) return null;
   return {
     id: game.id,
     white: game.white,
     black: game.black,
+    engine:
+      savedEngineSide(
+        { white: game.white, black: game.black, engineId: game.headers?.engineId },
+        engines
+      )?.engine ?? null,
     fen: savedEnd.fen,
     lastMove: savedEnd.lastMove,
     plies: savedEnd.plies

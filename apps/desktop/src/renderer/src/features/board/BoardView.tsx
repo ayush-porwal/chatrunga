@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { uciFromUserMove, userMoveBetween } from "@/lib/uci";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { PlayerRow } from "./PlayerIdentity";
+import { useSavedEngineSide } from "../game/use-saved-engine-side";
 import { EvalBar } from "./EvalBar";
 import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
@@ -484,6 +485,13 @@ export function BoardView() {
     if (engineSide === color) return activeEngine ? engineDisplayName(activeEngine.name) : name;
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
+  // The engine's picture on its side: the match's engine while one is played, else a saved engine
+  // game's (opened on the board).
+  const savedEngine = useSavedEngineSide(headers);
+  const engineFor = (color: Color) => {
+    if (mode === "engine" && engineSide) return engineSide === color ? activeEngine : null;
+    return savedEngine?.side === color ? savedEngine.engine : null;
+  };
   const liveClocks = isMatchMode(mode) && hasLiveClock;
   // A followed broadcast game on its live position: the side to move's clock runs.
   const broadcastRunning = (color: Color) =>
@@ -503,7 +511,7 @@ export function BoardView() {
         )
       }
       clockActive={status.turn === player.color && !status.isEnd}
-      engine={mode === "engine" && engineSide === player.color ? activeEngine : null}
+      engine={engineFor(player.color)}
       hint={hint}
     />
   );

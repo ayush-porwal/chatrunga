@@ -19,6 +19,8 @@ size mode.
 
 ## Authors, licences and changes
 
-In [CREDITS.md](CREDITS.md), with the licence texts the sets need in [licenses/](licenses/); both
-ship inside every packaged build (`extraResources` in `apps/desktop/package.json`). A new set
-under a licence not in `licenses/` needs its text added there.
+In [PIECES.md](../../apps/desktop/resources/credits/PIECES.md), with the licence texts the sets
+need in [licenses/](../../apps/desktop/resources/credits/licenses/) beside it (the GPL-3.0 text is
+the root [LICENSE](../../LICENSE)); the `credits` folder ships inside every packaged build
+(`extraResources` in `apps/desktop/package.json`). A new set under a licence not there needs its
+text added to `licenses/`.

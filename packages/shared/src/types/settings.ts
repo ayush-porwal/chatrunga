@@ -142,7 +142,7 @@ export function pieceSizesClass(sizes: PieceSizes): string {
 export const pieceStyleOptions: Array<{
   id: PieceStyle;
   label: string;
-  /** Who drew the set; its licence is in scripts/piece-svg-sources/CREDITS.md. */
+  /** Who drew the set; its licence is in apps/desktop/resources/credits/PIECES.md. */
   description: string;
 }> = [
   {
@@ -324,7 +324,7 @@ export const pieceSizesOptions: Array<{ id: PieceSizes; label: string }> = [
 
 /**
  * The board's sound set (Settings → Sound). Each is a set of recordings shipped with the app; the
- * authors and licences are in assets/sounds/SOUND_CREDITS.md.
+ * authors and licences are in apps/desktop/resources/credits/SOUNDS.md.
  */
 export const SOUND_SETS = ["sfx", "piano", "nes", "futuristic", "pychess"] as const;
 export type SoundSet = (typeof SOUND_SETS)[number];

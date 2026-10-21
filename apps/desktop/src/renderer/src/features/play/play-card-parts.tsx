@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowLeftRight, Bot, Info, Loader2, X } from "lucide-react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { EngineIdentity } from "@/lib/engine-identity";
 import { cn } from "@/lib/utils";
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
 import { EngineAvatar } from "../analysis/EngineAvatar";
@@ -36,26 +37,26 @@ export function KingTile({ color }: { color: Color | "random" }) {
 }
 
 /**
- * The opponent: an engine (its image slot: its picture, or a knight on the board's dark square), a
- * Lichess opponent (neutral tile with an icon), or nobody yet (dashed). `side` puts the
- * opponent's colour on the corner.
+ * The opponent: an engine (its image slot: its picture, logo or monogram), a Lichess opponent
+ * (neutral tile with an icon), or nobody yet (dashed). `side` puts the opponent's colour on the
+ * corner.
  */
 export function OpponentTile({
   kind,
   icon,
-  imagePath,
+  engine,
   side
 }: {
   kind: "engine" | "online" | "empty";
   /** The online and empty tiles' icon. */
   icon?: ReactNode;
-  /** The engine's picture. */
-  imagePath?: string | null;
+  /** The engine, for its picture. */
+  engine?: EngineIdentity | null;
   side?: Color | null;
 }) {
   return (
     <span className="play-tile" data-kind={kind}>
-      {kind === "engine" ? <EngineAvatar imagePath={imagePath} size="fill" /> : icon}
+      {kind === "engine" ? <EngineAvatar engine={engine} size="fill" /> : icon}
       {side ? (
         <i
           className={cn("play-tile-dot", side === "white" ? "bg-piece-white" : "bg-piece-black")}

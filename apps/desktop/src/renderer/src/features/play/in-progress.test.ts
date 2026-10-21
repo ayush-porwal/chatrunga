@@ -39,6 +39,7 @@ const playing: LichessPlayingGame = {
 const boardMatch: BoardMatchInput = {
   savedId: "on-board",
   engineName: "Stockfish (managed)",
+  engine: { name: "Stockfish (managed)", imagePath: "/engines/sf.png" },
   humanColor: "white",
   fen: BLACK_TO_MOVE,
   lastMove: "g1f3"
@@ -48,6 +49,7 @@ const saved: SavedGameInput = {
   id: "saved-1",
   white: "Stockfish (managed)",
   black: "You",
+  engine: { name: "Stockfish (managed)" },
   fen: BLACK_TO_MOVE,
   lastMove: "c2c3",
   plies: 16
@@ -62,6 +64,7 @@ describe("pickInProgress", () => {
       source: "live",
       tag: "Live on Lichess",
       title: "You vs nightowl_77",
+      engine: null,
       detail: "10+0 · Rated · your move",
       excludeGameId: "saved-live",
       orientation: "white",
@@ -102,6 +105,7 @@ describe("pickInProgress", () => {
       source: "board",
       tag: "In progress",
       title: "You vs Stockfish",
+      engine: boardMatch.engine,
       detail: "Engine game · Move 9 · Stockfish to move",
       excludeGameId: "on-board",
       live: false
@@ -115,6 +119,7 @@ describe("pickInProgress", () => {
       targetId: "saved-1",
       excludeGameId: "saved-1",
       title: "You vs Stockfish",
+      engine: saved.engine,
       detail: "Engine game · Move 9 · your move",
       orientation: "black"
     });

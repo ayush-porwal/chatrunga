@@ -8,12 +8,13 @@ import { MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 
 /**
- * The downloadable engine assets (engines + Maia networks), in display order. Versions and
- * sizes come from `assets.status()` — the latest GitHub release, not hard-coded here.
+ * The downloadable engine assets (engines, Lc0's network, Maia networks), in display order.
+ * Versions and sizes come from `assets.status()` — the latest GitHub release, not hard-coded here.
  */
 export const ENGINE_ASSETS: readonly { id: EngineAssetId; label: string }[] = [
   { id: "stockfish", label: "Stockfish" },
   { id: "lc0", label: "Lc0" },
+  { id: "lc0-network", label: "Lc0 network" },
   { id: "maia-1100", label: "Maia 1100" },
   { id: "maia-1300", label: "Maia 1300" },
   { id: "maia-1500", label: "Maia 1500" },
@@ -74,33 +75,32 @@ export type EngineListRow =
       status: EngineAssetStatus;
       /**
        * The "(managed)" engine the app keeps for this download (it is what gets picked and
-       * tested); null until the download is usable, and always for Lc0, which only runs Maia.
+       * tested); null until the download is usable (Lc0's needs its network too), and always for
+       * Lc0's network, which Lc0's engine plays with.
        */
       engine: EngineConfig | null;
     }
   | { kind: "engine"; engine: EngineConfig };
 
 /**
- * Settings → Engines, in order: Stockfish, the Maia networks, Lc0 (the runtime Maia needs), then
- * the engines the user added. A managed engine joins its download's row by name, as the registry
- * sync names it; one with no known download (unexpected) is listed as a plain engine. Without the
- * download status (web preview, still loading) the list is just the engines.
+ * Settings → Engines, in order: Stockfish, Lc0 and its network (Lc0 also runs Maia), the Maia
+ * networks, then the engines the user added. A managed engine joins its download's row by name,
+ * as the registry sync names it; one with no known download (unexpected) is listed as a plain
+ * engine. Without the download status (web preview, still loading) the list is just the engines.
  */
 export function engineListRows(
   status: EngineAssetStatusMap | null,
   engines: readonly EngineConfig[]
 ): EngineListRow[] {
   if (!status) return engines.map((engine) => ({ kind: "engine", engine }));
-  const ordered = [
-    ...ENGINE_ASSETS.filter((asset) => asset.id !== "lc0"),
-    ...ENGINE_ASSETS.filter((asset) => asset.id === "lc0")
-  ];
   const assetRows: EngineListRow[] = [];
   const joined = new Set<string>();
-  for (const asset of ordered) {
+  for (const asset of ENGINE_ASSETS) {
     const managedName = `${asset.label} ${MANAGED_ENGINE_SUFFIX}`;
     const engine =
-      asset.id === "lc0" ? null : (engines.find((item) => item.name === managedName) ?? null);
+      asset.id === "lc0-network"
+        ? null
+        : (engines.find((item) => item.name === managedName) ?? null);
     if (engine) joined.add(engine.id);
     assetRows.push({
       kind: "asset",
@@ -175,31 +175,20 @@ export function progressPercent(progress: AssetProgress | undefined): number {
 /* ------------------------------------------------------------------ first-run setup */
 
 /**
- * What the welcome recommends: Stockfish (scores every move) and the Maia networks (what players
- * of each rating would play), where they are missing and downloadable here. Maia networks only run
- * inside Lc0, so a missing Lc0 comes along with them; where Lc0 has no download, Maia is left out
- * (its networks would sit unused). Lc0 on its own is optional and left to Settings.
+ * What the welcome recommends, where missing and downloadable here: Stockfish (scores every move),
+ * Lc0 with its network (a neural-network engine), and the Maia networks (what players of each
+ * rating would play). Lc0's network and Maia only run inside Lc0, so they come along only when Lc0
+ * runs or is downloaded too; where Lc0 has no download and isn't set up, they are left out (they
+ * would sit unused until the user installs Lc0; Settings → Engines still offers them).
  */
 export function recommendedDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
   if (!status) return [];
   const missing = missingDownloads(status);
-  const maiaInstalled = ENGINE_ASSETS.some(
-    (asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id])
-  );
-  const maiaMissing = missing.some((asset) => asset.id.startsWith("maia-"));
-  const lc0Runs = isAssetInstalled(status.lc0);
-  const lc0Download = missing.find((asset) => asset.id === "lc0");
-  const withMaia = lc0Runs || Boolean(lc0Download);
-  return missing.filter((asset) =>
-    asset.id === "lc0"
-      ? maiaMissing || maiaInstalled
-      : asset.id.startsWith("maia-")
-        ? withMaia
-        : true
-  );
+  const withLc0 = isAssetInstalled(status.lc0) || missing.some((asset) => asset.id === "lc0");
+  return missing.filter((asset) => asset.id === "stockfish" || asset.id === "lc0" || withLc0);
 }
 
-/** One line of the setup list: Stockfish on its own, the Maia networks (and the Lc0 they run in) together. */
+/** One line of the setup list: Stockfish, Lc0 with its network, the Maia networks. */
 export type SetupRow = {
   key: "stockfish" | "lc0" | "maia";
   label: string;
@@ -227,10 +216,9 @@ const SETUP_ROW_LABELS: Record<SetupRow["key"], string> = {
 };
 
 /** The setup row an asset is listed in. */
-function setupRowKey(id: EngineAssetId, hasMaia: boolean): SetupRow["key"] {
+function setupRowKey(id: EngineAssetId): SetupRow["key"] {
   if (id === "stockfish") return "stockfish";
-  // Lc0 runs the Maia weights, so it joins their row when they are part of the setup.
-  return id === "lc0" && !hasMaia ? "lc0" : "maia";
+  return id === "lc0" || id === "lc0-network" ? "lc0" : "maia";
 }
 
 /**
@@ -248,13 +236,12 @@ function memberProgress(
   return { bytesReceived, bytesTotal, status };
 }
 
-/** "Maia 1100–1900", "Maia 1500 + Lc0": the Maia row's ratings, and the Lc0 it brings. */
+/** "Maia 1100–1900", "Maia 1500": the Maia row's ratings. */
 function maiaRowLabel(ids: readonly EngineAssetId[]): string {
-  const ratings = ids.filter((id) => id.startsWith("maia-")).map((id) => id.replace("maia-", ""));
-  const maia =
-    ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
-  // Name Lc0 too, so a failed Lc0 download isn't reported as a Maia one.
-  return ids.includes("lc0") ? `${maia} + Lc0` : maia;
+  const ratings = ids.map((id) => id.replace("maia-", ""));
+  return ratings.length > 1
+    ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`
+    : `Maia ${ratings[0]}`;
 }
 
 /**
@@ -267,9 +254,8 @@ export function setupRows(
 ): SetupRow[] {
   const rows: SetupRow[] = [];
   const byKey = new Map<SetupRow["key"], SetupRow>();
-  const hasMaia = assets.some((asset) => asset.id.startsWith("maia-"));
   for (const asset of assets) {
-    const key = setupRowKey(asset.id, hasMaia);
+    const key = setupRowKey(asset.id);
     let row = byKey.get(key);
     if (!row) {
       row = {

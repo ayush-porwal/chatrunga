@@ -1,6 +1,7 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { LichessPlayingGame, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import type { EngineIdentity } from "@/lib/engine-identity";
 import { mainlinePath } from "../game/move-tree-model";
 import { yourSide } from "../../app/rejoin-saved-game";
 import { speedLabel } from "../lichess/lichess-game";
@@ -23,6 +24,8 @@ export type LiveGameInput = {
 export type BoardMatchInput = {
   savedId: string | null;
   engineName: string;
+  /** What the engine's picture is drawn from (null: no picture). */
+  engine: EngineIdentity | null;
   humanColor: Color;
   fen: string;
   lastMove: string | null;
@@ -33,6 +36,8 @@ export type SavedGameInput = {
   id: string;
   white: string | null;
   black: string | null;
+  /** What the engine's picture is drawn from (null: no picture). */
+  engine: EngineIdentity | null;
   fen: string;
   lastMove: string | null;
   plies: number;
@@ -48,6 +53,8 @@ export type InProgressCard = {
   live: boolean;
   tag: string;
   title: string;
+  /** An engine game's engine, whose picture leads the title; null for a Lichess game. */
+  engine: EngineIdentity | null;
   detail: string;
   fen: string;
   lastMove: string | null;
@@ -80,6 +87,7 @@ export function pickInProgress({
       live: true,
       tag: "Live on Lichess",
       title: `You vs ${live.opponent}`,
+      engine: null,
       detail: lichessDetail(
         live.clock ?? speedLabel(live.speed),
         live.rated,
@@ -100,6 +108,7 @@ export function pickInProgress({
       live: true,
       tag: "Live on Lichess",
       title: `You vs ${online.opponent.name}`,
+      engine: null,
       detail: lichessDetail(
         speedLabel(online.speed),
         online.rated,
@@ -120,6 +129,7 @@ export function pickInProgress({
       live: false,
       tag: "In progress",
       title: `You vs ${engine}`,
+      engine: boardMatch.engine,
       detail: engineDetail(boardMatch.fen, boardMatch.humanColor, engine),
       fen: boardMatch.fen,
       lastMove: boardMatch.lastMove,
@@ -135,6 +145,7 @@ export function pickInProgress({
       live: false,
       tag: "In progress",
       title: `You vs ${sides.engine}`,
+      engine: saved.engine,
       detail: engineDetail(saved.fen, sides.human, sides.engine),
       fen: saved.fen,
       lastMove: saved.lastMove,

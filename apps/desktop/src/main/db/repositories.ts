@@ -380,10 +380,11 @@ export const engineRepository = {
     return row ? toEngine(row) : null;
   },
 
-  create(input: CreateEngineInput): EngineConfig {
+  /** `id`: chosen by the caller when it has already stored something for the engine (its picture). */
+  create(input: CreateEngineInput, id: string = nanoid()): EngineConfig {
     const timestamp = now();
     const row = {
-      id: nanoid(),
+      id,
       name: input.name.trim() || "UCI Engine",
       executablePath: input.executablePath,
       workingDirectory: input.workingDirectory || null,
@@ -466,6 +467,20 @@ export const engineRepository = {
 
   remove(id: string): void {
     run("DELETE FROM engines WHERE id = ?", id);
+  },
+
+  /**
+   * Sets an engine's picture if it is still `from`, leaving `updated_at` (the list order) alone.
+   * For moving stored pictures (see engine-images.ts), not for user edits.
+   */
+  replaceImagePath(id: string, from: string, to: string | null): boolean {
+    const row = get<{ image_path: string | null }>(
+      "SELECT image_path FROM engines WHERE id = ?",
+      id
+    );
+    if (row?.image_path !== from) return false;
+    run("UPDATE engines SET image_path = ? WHERE id = ?", to, id);
+    return true;
   },
 
   clearDefault(): void {

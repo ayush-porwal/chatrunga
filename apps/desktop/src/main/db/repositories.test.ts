@@ -14,7 +14,8 @@ const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
 const { closeDb, databasePath, getDb } = await import("./index");
-const { gameRepository, retryOnceIfBusy, saveGameRetrying } = await import("./repositories");
+const { engineRepository, gameRepository, retryOnceIfBusy, saveGameRetrying } =
+  await import("./repositories");
 const { gameFingerprint } = await import("./game-fingerprint");
 
 const PGN = `[Event "Rapid"]
@@ -68,6 +69,25 @@ function saveImported() {
   const { game } = importPgnText(PGN);
   return gameRepository.save({ ...game, headers: game.headers });
 }
+
+describe("engineRepository pictures (SQLite)", () => {
+  it("creates an engine under a chosen id, and moves its picture without reordering the list", () => {
+    const engine = engineRepository.create(
+      { name: "Lc0", executablePath: "/opt/lc0", imagePath: "/old.png", isDefault: false },
+      "chosen-id"
+    );
+    expect(engine).toMatchObject({ id: "chosen-id", imagePath: "/old.png" });
+    // Only while the picture is still the one being moved.
+    expect(engineRepository.replaceImagePath("chosen-id", "/other.png", "/new.png")).toBe(false);
+    expect(engineRepository.replaceImagePath("chosen-id", "/old.png", "/new.png")).toBe(true);
+    expect(engineRepository.get("chosen-id")).toMatchObject({
+      imagePath: "/new.png",
+      updatedAt: engine.updatedAt
+    });
+    expect(engineRepository.replaceImagePath("missing", "/old.png", null)).toBe(false);
+    engineRepository.remove("chosen-id");
+  });
+});
 
 describe("gameRepository (SQLite)", () => {
   beforeEach(() => {

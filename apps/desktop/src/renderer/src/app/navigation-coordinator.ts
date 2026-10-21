@@ -85,7 +85,6 @@ export type NavigationShell = {
   resumePuzzleSet: (set: PuzzleSetSnapshot) => void;
   /** Ends the board's search, review and puzzle set before another board replaces it. */
   endBoardActivity: () => void;
-  defaultEngineId: string | null;
   exitFocus: () => void;
 };
 
@@ -256,24 +255,17 @@ async function restoreBoard(
   if (continuedSet) shell.resumePuzzleSet(continuedSet);
   // Put back as it was: not a move played, so without a move sound.
   withoutMoveSounds(() => useGameStore.getState().restoreView(snapshot));
-  if (snapshot.mode === "analysis") resumeBoardAnalysis(shell.defaultEngineId);
+  // The search was stopped while away; the position may be the same, so ask for it again (the
+  // board's own search: a study's engine panel left on the way hands the engine back to it).
+  if (snapshot.mode === "analysis") useAnalysisStore.getState().restartBoardSearch();
   shell.exitFocus();
   return "restored";
 }
 
-/** Analysis on the restored board: the default engine when none is picked, searching again. */
 /** A broadcast game comes back as it was left, then catches up with the live game. */
 function refollowRestored(snapshot: BoardSnapshot): void {
   if (snapshot.broadcast && !isFollowedBoard(useGameStore.getState().board))
     refollowBoard(snapshot.broadcast);
-}
-
-function resumeBoardAnalysis(defaultEngineId: string | null): void {
-  const analysis = useAnalysisStore.getState();
-  if (defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(defaultEngineId);
-  // The search was stopped while away; the position may be the same, so ask for it again (the
-  // board's own search: a study's engine panel left on the way hands the engine back to it).
-  useAnalysisStore.getState().restartBoardSearch();
 }
 
 /** The shell's side of a Game Review URL the window opened at (see `restoreReviewRoute`). */

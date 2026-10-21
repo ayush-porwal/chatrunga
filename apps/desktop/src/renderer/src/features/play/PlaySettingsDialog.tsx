@@ -1,24 +1,13 @@
-import {
-  useCallback,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode
-} from "react";
-import { Bot, Check, ChevronDown, Globe, SquareDashed, UserPlus } from "lucide-react";
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Bot, Globe, SquareDashed, UserPlus } from "lucide-react";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { settingsListboxPositionClass, settingsListboxSurfaceClass } from "@/lib/settings-listbox";
-import { frost } from "@/lib/ui";
 import { EngineAvatar } from "../analysis/EngineAvatar";
+import { EnginePicker, engineOption } from "../analysis/EnginePicker";
 import { playEngineOrder } from "./play-layout";
-import { useDismiss } from "@/lib/use-dismiss";
-import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
 import { cn } from "@/lib/utils";
 
 const OPTIONS: readonly PlayOpponent[] = ["engine", "pool", "friend", "ai", "board"];
@@ -301,36 +290,12 @@ function EngineRow({
   onPick: () => void;
   onEngine: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const listId = useId();
-  const selectedIndex = Math.max(
-    0,
-    engines.findIndex((engine) => engine.id === engineId)
-  );
-  const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } =
-    useListboxKeyboard({
-      id: listId,
-      count: engines.length,
-      selectedIndex,
-      isDisabled: (index) => !engines[index]?.isAvailable,
-      open,
-      setOpen: (next) => {
-        if (next) onPick();
-        setOpen(next);
-      },
-      onCommit: (index) => {
-        const engine = engines.at(index);
-        if (engine) onEngine(engine.id);
-      }
-    });
-  const close = useCallback(() => setOpen(false), []);
-  useDismiss(rootRef, open, close);
+  const options = useMemo(() => engines.map((engine) => engineOption(engine)), [engines]);
 
   if (!engines.length) {
     return (
       <button type="button" role="radio" aria-checked={false} disabled className={optionRow}>
-        <EngineAvatar size="sm" />
+        <EngineAvatar engine={null} size="sm" />
         <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
           No engine installed
         </b>
@@ -339,47 +304,19 @@ function EngineRow({
     );
   }
 
-  const selected = engines[selectedIndex];
+  const selected = engines.find((engine) => engine.id === engineId) ?? engines[0];
   return (
-    <div
-      ref={rootRef}
-      className={cn(
-        optionRow,
-        "relative py-2",
-        checked && "border-accent-strong bg-accent-soft/50"
-      )}
-    >
-      <EngineAvatar imagePath={selected.imagePath} size="sm" />
-      <button
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-label="Engine"
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-controls={open ? `${listId}-listbox` : undefined}
-        aria-activedescendant={open ? optionId(highlightedIndex) : undefined}
-        className={cn(
-          "flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-line-strong bg-surface-sunken pl-3 pr-2.5 text-left outline-none transition-colors duration-micro hover:border-accent focus-visible:ring-2 focus-visible:ring-accent/70",
-          open && "border-accent"
-        )}
-        onClick={() => {
-          onPick();
-          setOpen((value) => !value);
-        }}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
-          {engineDisplayName(selected.name)}
-        </b>
-        <ChevronDown
-          className={cn(
-            "size-3.75 shrink-0 text-fg-muted transition-transform duration-standard",
-            open && "rotate-180"
-          )}
-          aria-hidden="true"
-        />
-      </button>
+    <div className={cn(optionRow, "py-2", checked && "border-accent-strong bg-accent-soft/50")}>
+      <EngineAvatar engine={selected} size="sm" />
+      <EnginePicker
+        ariaLabel="Engine"
+        size="md"
+        className="flex-1"
+        options={options}
+        value={selected.id}
+        onChange={onEngine}
+        onOpen={onPick}
+      />
       <button
         ref={ref}
         type="button"
@@ -392,48 +329,6 @@ function EngineRow({
       >
         <RadioMark checked={checked} />
       </button>
-      {open ? (
-        <div className={cn(settingsListboxPositionClass, "left-12 right-9.5 top-[calc(100%+4px)]")}>
-          {/* The frosted layer under the list (glass), as in the piece-set listbox. */}
-          <span aria-hidden="true" className={cn(frost, "rounded-lg")} />
-          <div
-            id={`${listId}-listbox`}
-            role="listbox"
-            aria-label="Engines"
-            className={settingsListboxSurfaceClass}
-          >
-            {engines.map((engine, index) => {
-              const active = engine.id === selected.id;
-              return (
-                <button
-                  key={engine.id}
-                  id={optionId(index)}
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  aria-disabled={!engine.isAvailable || undefined}
-                  tabIndex={-1}
-                  disabled={!engine.isAvailable}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left outline-none transition-colors duration-micro hover:bg-control disabled:cursor-not-allowed disabled:opacity-50",
-                    index === highlightedIndex && "bg-control"
-                  )}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  onClick={() => commit(index)}
-                >
-                  <EngineAvatar imagePath={engine.imagePath} size="sm" />
-                  <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
-                    {engineDisplayName(engine.name)}
-                  </b>
-                  {active ? (
-                    <Check className="size-4 shrink-0 text-accent" aria-hidden="true" />
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

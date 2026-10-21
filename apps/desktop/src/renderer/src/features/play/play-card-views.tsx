@@ -377,7 +377,7 @@ export function engineView({
       you,
       opponent: (
         <MatchSide
-          tile={<OpponentTile kind="engine" imagePath={selected?.imagePath} side={engineSide} />}
+          tile={<OpponentTile kind="engine" engine={selected} side={engineSide} />}
           name={selected ? engineDisplayName(selected.name) : "Engine"}
         />
       ),

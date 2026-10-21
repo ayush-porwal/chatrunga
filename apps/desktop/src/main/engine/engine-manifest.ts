@@ -11,8 +11,8 @@
  *
  * ENGINE_MANIFEST is the offline FALLBACK: last known-good direct URLs, used
  * only when the GitHub API is unreachable or rate-limited and nothing is cached.
- * Maia weights are not versioned releases, so they always use their fixed raw
- * URLs from this manifest.
+ * Maia weights and Lc0's own network are not versioned releases, so they always
+ * use their fixed URLs from this manifest.
  */
 
 export type PlatformKey = "darwin-arm64" | "darwin-x64" | "linux-x64" | "win32-x64";
@@ -35,6 +35,12 @@ export const MAIA_ASSET_IDS: readonly MaiaAssetId[] = [
 ];
 
 export type ReleaseAssetId = "stockfish" | "lc0";
+
+/** The network Lc0 plays with as an engine of its own (Maia brings its own weights). */
+export const LC0_NETWORK_ID = "lc0-network";
+
+/** Weight files: fixed downloads, nothing to extract or execute. */
+export type WeightAssetId = MaiaAssetId | typeof LC0_NETWORK_ID;
 
 export type ArchiveKind = "tar" | "tar.gz" | "tar.xz" | "zip";
 
@@ -64,8 +70,16 @@ export type EngineManifest = {
     homepageUrl: string;
   };
   maiaWeights: { version: string; files: Record<MaiaAssetId, ManifestPlatformEntry> };
+  /** The network the managed Lc0 engine plays with, unless the user picks their own file. */
+  lc0Network: {
+    /** The network's name, recorded as the installed version. */
+    version: string;
+    file: ManifestPlatformEntry;
+  };
   licenses: {
     maia: { noticeUrl: string; authors: string; paperUrl: string; sourceUrl: string };
+    /** The networks page states no licence; only the source and its authors are recorded. */
+    lc0Network: { authors: string; sourceUrl: string };
   };
 };
 
@@ -186,6 +200,11 @@ const LC0_BASE = "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.
 // The .pb.gz is the weight file Lc0 reads directly; nothing to extract.
 const MAIA_BASE = "https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights";
 
+// Lc0's network — LCZero's recommended small net (https://lczero.org/play/networks/bestnets/):
+// T1-256x10-distilled-swa-2432500, a plain .pb.gz Lc0 reads directly. Runs on CPU or GPU.
+const LC0_NETWORK_URL =
+  "https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz";
+
 const maiaWeight = (id: MaiaAssetId, sizeBytes: number): ManifestPlatformEntry => ({
   url: `${MAIA_BASE}/${id}.pb.gz`,
   sizeBytes
@@ -252,12 +271,21 @@ export const ENGINE_MANIFEST = {
       "maia-1900": maiaWeight("maia-1900", 1_262_607)
     }
   },
+  lc0Network: {
+    version: "T1-256x10-distilled-swa-2432500",
+    // Exact size from the URL's Content-Length.
+    file: { url: LC0_NETWORK_URL, sizeBytes: 37_118_673 }
+  },
   licenses: {
     maia: {
       noticeUrl: "https://raw.githubusercontent.com/CSSLab/maia-chess/master/LICENSE",
       authors: "CSSLab (McGill / U.Toronto)",
       paperUrl: "https://www.cs.cornell.edu/~shmat/shmat_kdd20.pdf",
       sourceUrl: "https://github.com/CSSLab/maia-chess"
+    },
+    lc0Network: {
+      authors: "Leela Chess Zero project",
+      sourceUrl: "https://lczero.org/play/networks/bestnets/"
     }
   }
 } as const satisfies EngineManifest;
@@ -276,21 +304,27 @@ export function currentPlatformKey(
 /** The fallback download entry for an asset on a platform; null when it has to be installed manually. */
 export function resolveManifestEntry(
   manifest: EngineManifest,
-  id: ReleaseAssetId | MaiaAssetId,
+  id: ReleaseAssetId | WeightAssetId,
   platformKey: PlatformKey | null
 ): ManifestPlatformEntry | null {
   if (id === "stockfish") return platformKey ? manifest.stockfish.platforms[platformKey] : null;
   if (id === "lc0") return platformKey ? (manifest.lc0.platforms[platformKey] ?? null) : null;
-  return manifest.maiaWeights.files[id];
+  return weightEntry(manifest, id);
 }
 
-/** Version string of the fallback entry (a release tag for engines). */
+/** A weight file's download (the same on every platform). */
+export function weightEntry(manifest: EngineManifest, id: WeightAssetId): ManifestPlatformEntry {
+  return id === LC0_NETWORK_ID ? manifest.lc0Network.file : manifest.maiaWeights.files[id];
+}
+
+/** Version string of the fallback entry (a release tag for engines, the network's name for Lc0's). */
 export function manifestVersionFor(
   manifest: EngineManifest,
-  id: ReleaseAssetId | MaiaAssetId
+  id: ReleaseAssetId | WeightAssetId
 ): string {
   if (id === "stockfish") return manifest.stockfish.version;
   if (id === "lc0") return manifest.lc0.version;
+  if (id === LC0_NETWORK_ID) return manifest.lc0Network.version;
   return manifest.maiaWeights.version;
 }
 

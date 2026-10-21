@@ -24,7 +24,6 @@ import { flushGameAutosave, IMPORT_NEEDS_SAVE } from "./useGameAutosave";
 /** What the board commands need from the shell besides its navigation. */
 type BoardCommandDeps = {
   engines: readonly EngineConfig[] | undefined;
-  defaultEngineId: string | null;
   setReviewTab: (tab: ReviewTab) => void;
   setImportOpen: (open: boolean) => void;
   setGameReviewPickerOpen: (open: boolean) => void;
@@ -206,9 +205,6 @@ export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     currentGame().setMode("analysis");
-    if (deps.defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
-      useAnalysisStore.getState().setActiveEngine(deps.defaultEngineId);
-    }
     useAnalysisStore.getState().restartBoardSearch();
     record("push", historyEntry("game"));
   }

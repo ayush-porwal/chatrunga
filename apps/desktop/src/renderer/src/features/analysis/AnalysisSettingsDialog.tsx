@@ -1,4 +1,3 @@
-import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useId } from "react";
 import {
   ANALYSIS_DEPTH_RANGE,
@@ -17,10 +16,13 @@ import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { BoardSettingsGroup } from "../board/BoardSettingsGroup";
 import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
 import type { BoardSettingsTab } from "../../stores/board-settings-store";
-import { ENGINE_PERFORMANCE_DESCRIPTION, EnginePerformanceRows } from "../settings/EngineSettings";
+import {
+  ENGINE_PERFORMANCE_DESCRIPTION,
+  EnginePerformanceRows
+} from "../settings/engine-performance";
 import { useSetSetting } from "../settings/use-set-setting";
 import { analysisEngineFor } from "./analysis-engine";
-import { EngineAvatar } from "./EngineAvatar";
+import { EnginePicker, engineOption } from "./EnginePicker";
 
 const lineOptions = [1, 2, 3, 4, 5].map((count) => ({
   value: String(count),
@@ -115,9 +117,14 @@ export function AnalysisSettingsDialog({
 function AnalysisSettingsGroups({ settings }: { settings: AppSettings }) {
   const ids = useId();
   const engines = useEnginesQuery();
-  const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
   const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);
-  const engine = usable.find((item) => item.id === engineId) ?? null;
+  // Every installed engine; one that can't run is listed but can't be chosen (none usable: the
+  // picker says none is installed).
+  const engineOptions = engineId
+    ? (engines.data ?? []).map((item) =>
+        engineOption(item, item.isHumanPrediction ? "human-like" : undefined)
+      )
+    : [];
   const setSetting = useSetSetting();
   const timeOptions = TIME_OPTIONS_SEC.includes(settings.analysisTimeSec)
     ? TIME_OPTIONS_SEC
@@ -130,30 +137,13 @@ function AnalysisSettingsGroups({ settings }: { settings: AppSettings }) {
           label="Engine"
           htmlFor={`${ids}-engine`}
           control={
-            <div className="relative">
-              {engine ? (
-                <EngineAvatar
-                  imagePath={engine.imagePath}
-                  size="sm"
-                  className="pointer-events-none absolute left-1 top-1/2 z-10 -translate-y-1/2"
-                />
-              ) : null}
-              <Select
-                id={`${ids}-engine`}
-                className={cn(settingsRowSelect, "max-w-60", engine && "pl-9")}
-                value={engineId ?? ""}
-                disabled={!usable.length}
-                onChange={(event) => setSetting("analysisEngineId", event.target.value || null)}
-              >
-                {usable.length ? null : <option value="">No engine installed</option>}
-                {usable.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {engineDisplayName(item.name)}
-                    {item.isHumanPrediction ? " · human-like" : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <EnginePicker
+              id={`${ids}-engine`}
+              ariaLabel="Engine"
+              options={engineOptions}
+              value={engineId}
+              onChange={(value) => setSetting("analysisEngineId", value)}
+            />
           }
         />
         <SettingsGroupRow

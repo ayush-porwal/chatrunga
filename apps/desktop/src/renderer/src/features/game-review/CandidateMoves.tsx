@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
 import type { MaiaRatingBucket } from "@chaturanga/shared/schemas/constants";
 import { cn } from "@/lib/utils";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { FigurineSan } from "../analysis/EngineLines";
 import { MoveLink, type GoToLine } from "./MoveLinks";
 import {
@@ -53,6 +54,14 @@ export function CandidateMoves({
       {human.length ? (
         <MoveTable
           title={`Human moves · Maia ${userBucket}`}
+          icon={
+            // Overhangs the caption's line a pixel each way: the caption keeps its height.
+            <EngineAvatar
+              engine={{ name: "Maia", maiaRating: userBucket }}
+              size="xs"
+              className="-my-px"
+            />
+          }
           valueLabel="Chance"
           rows={human.map((row) => ({ key: row.uci, move: cell(row), value: percent(row.prob) }))}
         />
@@ -74,17 +83,23 @@ export function CandidateMoves({
 
 function MoveTable({
   title,
+  icon,
   valueLabel,
   rows
 }: {
   title: string;
+  /** The model's picture before the title (Maia's on Human moves). */
+  icon?: ReactNode;
   valueLabel: string;
   rows: ReadonlyArray<{ key: string; move: ReactNode; value: string }>;
 }) {
   return (
     <table className="w-full min-w-0 table-fixed text-[0.8125rem]">
-      <caption className="truncate border-b border-line-subtle bg-surface-sunken px-3 py-1.5 text-left text-xs font-medium text-fg-secondary">
-        {title}
+      <caption className="border-b border-line-subtle bg-surface-sunken px-3 py-1.5 text-left text-xs font-medium text-fg-secondary">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {icon}
+          <span className="truncate">{title}</span>
+        </span>
       </caption>
       <thead className="sr-only">
         <tr>

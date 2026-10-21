@@ -11,10 +11,11 @@ import {
   useOpenRouterConfigQuery,
   useUpdateSettingMutation
 } from "../../queries/api";
-import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
+import { pickMaiaEngines } from "./review-engine-picker";
 import { useOpenSettings } from "../settings/settings-link";
 import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
-import { EngineAvatar } from "../analysis/EngineAvatar";
+import { reviewEngineFor } from "../analysis/analysis-engine";
+import { EnginePicker, engineOption } from "../analysis/EnginePicker";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -28,7 +29,6 @@ import {
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
 import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
-import { cn } from "@/lib/utils";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const searchTimeOptions = [
@@ -115,10 +115,20 @@ function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetS
   const ids = useId();
   const engines = useEnginesQuery();
   const availableEngines = engines.data ?? [];
-  const automaticEngine = pickDefaultEngine(availableEngines);
-  const evaluationEngines = availableEngines.filter((engine) => !engine.isHumanPrediction);
-  const engine =
-    evaluationEngines.find((item) => item.id === settings.defaultEngineId) ?? automaticEngine;
+  // Automatic: the engine a review runs on when none is chosen.
+  const automaticEngine = reviewEngineFor(availableEngines, null);
+  const engineOptions = [
+    {
+      value: "",
+      engine: automaticEngine,
+      label: automaticEngine
+        ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
+        : "Choose an engine"
+    },
+    ...availableEngines
+      .filter((engine) => !engine.isHumanPrediction)
+      .map((engine) => engineOption(engine))
+  ];
   const installedMaiaLevels = REVIEW_MAIA_LEVELS.filter((level) =>
     pickMaiaEngines(availableEngines).some((item) => item.maiaRating === level)
   );
@@ -142,32 +152,13 @@ function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetS
         label="Evaluation engine"
         htmlFor={`${ids}-engine`}
         control={
-          <div className="relative">
-            {engine ? (
-              <EngineAvatar
-                imagePath={engine.imagePath}
-                size="sm"
-                className="pointer-events-none absolute left-1 top-1/2 z-10 -translate-y-1/2"
-              />
-            ) : null}
-            <Select
-              id={`${ids}-engine`}
-              className={cn(settingsRowSelect, "max-w-60", engine && "pl-9")}
-              value={settings.defaultEngineId ?? ""}
-              onChange={(event) => set("defaultEngineId", event.target.value || null)}
-            >
-              <option value="">
-                {automaticEngine
-                  ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
-                  : "Choose an engine"}
-              </option>
-              {evaluationEngines.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {engineDisplayName(item.name)}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <EnginePicker
+            id={`${ids}-engine`}
+            ariaLabel="Evaluation engine"
+            options={engineOptions}
+            value={settings.defaultEngineId ?? ""}
+            onChange={(value) => set("defaultEngineId", value || null)}
+          />
         }
       />
       <SettingsGroupRow

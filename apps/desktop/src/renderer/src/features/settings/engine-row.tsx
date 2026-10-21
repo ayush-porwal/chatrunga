@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
-import { Bot, Play, Star } from "lucide-react";
+import { Play, Star } from "lucide-react";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { MenuItem } from "@/components/ui/menu";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { localImageSrc } from "@/lib/local-image";
-import { cn } from "@/lib/utils";
 
 /* Pieces shared by Settings → Engines' rows: managed downloads and the engines the user added. */
 
@@ -87,33 +85,5 @@ export function EngineRowText({
         </span>
       ) : null}
     </div>
-  );
-}
-
-export function EngineImagePreview({
-  imagePath,
-  name,
-  size = "sm"
-}: {
-  imagePath: string | null;
-  name: string;
-  size?: "sm" | "md";
-}) {
-  const src = localImageSrc(imagePath);
-  return (
-    <span
-      className={cn(
-        // `relative`: contains the sr-only label (absolute), which otherwise stretches the page scroll height.
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-sunken text-fg-subtle",
-        size === "md" ? "size-9" : "size-8"
-      )}
-    >
-      {src ? (
-        <img className="size-full object-cover" src={src} alt="" />
-      ) : (
-        <Bot className="size-4" />
-      )}
-      <span className="sr-only">{name} engine image</span>
-    </span>
   );
 }

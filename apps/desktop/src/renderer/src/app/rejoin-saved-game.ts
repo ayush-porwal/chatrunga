@@ -10,6 +10,7 @@ import type {
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import type { EngineIdentity } from "@/lib/engine-identity";
 import { mainlineEnd } from "../features/game/move-tree-model";
 import { sessionFromSavedGame } from "../features/game/saved-game";
 import { latestPlayedNode, timeForfeitOutcome, type GameOutcome } from "../stores/game-store";
@@ -29,25 +30,62 @@ export function yourSide(white: string | null | undefined, black: string | null 
   return you(white) ? ("white" as const) : ("black" as const);
 }
 
+/** The engine's side of a saved engine game: the side that isn't "You" (see yourSide). */
+function engineSideOf(headers: Pick<GameHeaders, "white" | "black">): Color | null {
+  const humanSide = yourSide(headers.white, headers.black);
+  if (!humanSide) return null;
+  return humanSide === "white" ? "black" : "white";
+}
+
+/**
+ * The installed engine that played `engineSide` of a saved engine game: the one with the id the
+ * game saved, else (older games, or that engine since removed) the first `nameMatches` accepts
+ * with the name shown, so a game saved as "Stockfish (managed)" finds today's Stockfish.
+ */
+function savedGameEngine<E extends Pick<EngineConfig, "id" | "name">>(
+  headers: Pick<GameHeaders, "white" | "black" | "engineId">,
+  engineSide: Color,
+  engines: readonly E[],
+  nameMatches: (engine: E) => boolean = () => true
+): E | undefined {
+  const byId = headers.engineId ? engines.find((item) => item.id === headers.engineId) : undefined;
+  if (byId) return byId;
+  const name = engineDisplayName(headers[engineSide]?.trim() ?? "");
+  if (!name) return undefined;
+  return engines.find((item) => nameMatches(item) && engineDisplayName(item.name) === name);
+}
+
 /**
  * Who plays whom in a saved engine game, to play it on: "You" on one side, and the installed,
- * available engine that played the other — by the id the game saved, else (older games) by the
- * name shown, so a game saved as "Stockfish (managed)" finds today's Stockfish. Null when either
- * can't be told or isn't there.
+ * available engine that played the other (see savedGameEngine). Null when either can't be told or
+ * isn't there.
  */
 export function savedEngineMatch(
   headers: Pick<GameHeaders, "white" | "black" | "engineId">,
   engines: readonly EngineChoice[]
 ): { engine: EngineChoice; engineSide: Color; humanSide: Color } | null {
-  const humanSide = yourSide(headers.white, headers.black);
-  if (!humanSide) return null;
-  const engineSide: Color = humanSide === "white" ? "black" : "white";
-  const byId = headers.engineId ? engines.find((item) => item.id === headers.engineId) : undefined;
-  if (byId) return byId.isAvailable ? { engine: byId, engineSide, humanSide } : null;
-  const name = engineDisplayName(headers[engineSide]?.trim() ?? "");
-  if (!name) return null;
-  const engine = engines.find((item) => item.isAvailable && engineDisplayName(item.name) === name);
-  return engine ? { engine, engineSide, humanSide } : null;
+  const engineSide = engineSideOf(headers);
+  if (!engineSide) return null;
+  const engine = savedGameEngine(headers, engineSide, engines, (item) => item.isAvailable);
+  const humanSide: Color = engineSide === "white" ? "black" : "white";
+  return engine?.isAvailable ? { engine, engineSide, humanSide } : null;
+}
+
+/**
+ * The engine's side of a saved engine game ("You" on the other) and what its picture is drawn
+ * from: the installed engine that played it (by id, else by name; available or not), else just
+ * the name the game shows. Null when the sides can't be told or the engine's side is unnamed.
+ */
+export function savedEngineSide(
+  headers: Pick<GameHeaders, "white" | "black" | "engineId">,
+  engines: readonly (EngineIdentity & Pick<EngineConfig, "id">)[]
+): { side: Color; engine: EngineIdentity } | null {
+  const side = engineSideOf(headers);
+  if (!side) return null;
+  const installed = savedGameEngine(headers, side, engines);
+  if (installed) return { side, engine: installed };
+  const name = headers[side]?.trim();
+  return name ? { side, engine: { name } } : null;
 }
 
 /**
@@ -58,14 +96,10 @@ export function rejoinNotice(
   headers: Pick<GameHeaders, "white" | "black" | "engineId">,
   engines: readonly EngineChoice[]
 ): string | null {
-  const humanSide = yourSide(headers.white, headers.black);
-  if (!humanSide || savedEngineMatch(headers, engines)) return null;
-  const engineSide: Color = humanSide === "white" ? "black" : "white";
+  const engineSide = engineSideOf(headers);
+  if (!engineSide || savedEngineMatch(headers, engines)) return null;
   const name = engineDisplayName(headers[engineSide]?.trim() ?? "") || "Its engine";
-  const installed =
-    engines.some((item) => item.id === headers.engineId) ||
-    engines.some((item) => engineDisplayName(item.name) === name);
-  return installed
+  return savedGameEngine(headers, engineSide, engines)
     ? `${name} isn't available, so the game opened on the board.`
     : `${name} isn't installed, so the game opened on the board.`;
 }

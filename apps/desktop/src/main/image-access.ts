@@ -1,17 +1,25 @@
-import { win32 } from "node:path";
+import { posix, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { localImagePathFromUrl } from "./security";
 
 /**
  * Which local images the `chaturanga-image:` protocol may serve: engine pictures stored in the
- * engines table, and files the user picked in an open-file dialog this session (a picture being
- * set on a new engine, previewed before it is saved). Nothing else on disk.
+ * engines table, files in the app's own picture folder (engine pictures are copied there, see
+ * engine/engine-images.ts), and files the user picked in an open-file dialog this session (a
+ * picture being set on a new engine, previewed before it is saved). Nothing else on disk.
  *
  * Defence in depth, not a sandbox: the renderer can register an engine (an executable, a picture)
  * by design, so a picture only becomes readable by showing up as an engine's picture in Settings —
  * never silently. A typed path previews once the engine is saved.
  */
 const chosenThisSession = new Set<string>();
+
+const allowedFolders = new Set<string>();
+
+/** Pictures directly inside `dir` (the app's own copies) may be served. */
+export function allowImageFolder(dir: string): void {
+  allowedFolders.add(dir);
+}
 
 /** The user picked `path` in a file dialog. */
 export function allowChosenFile(path: string | null): void {
@@ -25,6 +33,10 @@ export function isServableImage(
 ): boolean {
   const requested = canonicalImagePath(path, windows);
   if (chosenThisSession.has(requested)) return true;
+  const folder = (windows ? win32 : posix).dirname(requested);
+  for (const allowed of allowedFolders) {
+    if (canonicalImagePath(allowed, windows) === folder) return true;
+  }
   for (const registered of registeredImages()) {
     if (registered && canonicalImagePath(registered, windows) === requested) return true;
   }

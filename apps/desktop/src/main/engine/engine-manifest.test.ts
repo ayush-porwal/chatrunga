@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import sf19 from "./__fixtures__/github/stockfish-latest-sf_19.json";
 import sf171 from "./__fixtures__/github/stockfish-sf_17.1.json";
 import lc0Latest from "./__fixtures__/github/lc0-latest-v0.32.1.json";
+import { LC0_NETWORK_DOWNLOAD_HOSTS } from "./github-releases";
 import {
   ENGINE_MANIFEST,
+  LC0_NETWORK_ID,
   LC0_SOURCE,
   MAIA_ASSET_IDS,
   STOCKFISH_SOURCE,
@@ -180,7 +182,8 @@ describe("bundled fallback manifest", () => {
     const entries = [
       ...Object.values(ENGINE_MANIFEST.stockfish.platforms),
       ...Object.values(ENGINE_MANIFEST.lc0.platforms),
-      ...Object.values(ENGINE_MANIFEST.maiaWeights.files)
+      ...Object.values(ENGINE_MANIFEST.maiaWeights.files),
+      ENGINE_MANIFEST.lc0Network.file
     ] as ManifestPlatformEntry[];
     for (const entry of entries) expect(entry.sha256).toBeUndefined();
   });
@@ -206,10 +209,28 @@ describe("bundled fallback manifest", () => {
     }
   });
 
+  it("has Lc0's recommended small network as a plain file from LCZero's storage, on every platform", () => {
+    for (const platform of [...SUPPORTED_PLATFORMS, null]) {
+      const entry = resolveManifestEntry(ENGINE_MANIFEST, LC0_NETWORK_ID, platform);
+      expect(entry).toStrictEqual({
+        url: "https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz",
+        sizeBytes: 37_118_673
+      });
+    }
+    // The only host its download may use.
+    expect(LC0_NETWORK_DOWNLOAD_HOSTS).toStrictEqual([
+      new URL(ENGINE_MANIFEST.lc0Network.file.url).hostname
+    ]);
+    expect(ENGINE_MANIFEST.licenses.lc0Network.authors).toBe("Leela Chess Zero project");
+  });
+
   it("maps assets to their fallback version", () => {
     expect(manifestVersionFor(ENGINE_MANIFEST, "stockfish")).toBe("sf_19");
     expect(manifestVersionFor(ENGINE_MANIFEST, "lc0")).toBe("v0.32.1");
     expect(manifestVersionFor(ENGINE_MANIFEST, "maia-1500")).toBe("v1.0");
+    expect(manifestVersionFor(ENGINE_MANIFEST, LC0_NETWORK_ID)).toBe(
+      "T1-256x10-distilled-swa-2432500"
+    );
   });
 
   it("maps the running platform to a manifest key", () => {

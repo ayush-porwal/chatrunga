@@ -13,7 +13,7 @@ import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
-import { analysisEngineFor, analysisLimitLabel } from "./analysis-engine";
+import { analysisLimitLabel, rowEngine } from "./analysis-engine";
 import {
   engineHolder,
   onPausedPosition,
@@ -90,8 +90,7 @@ function useEngineReadout() {
       latestInfo: state.latestInfo,
       topLines: state.topLines,
       bestMove: state.bestMove,
-      error: state.error,
-      activeEngineId: state.activeEngineId
+      error: state.error
     }))
   );
 }
@@ -192,7 +191,7 @@ function EngineStatusPanelContent({
   linesHint
 }: EnginePanelLayout & { position: EnginePanelPosition }) {
   const readout = useEngineReadout();
-  const { status, latestInfo, topLines, error, activeEngineId } = readout;
+  const { status, latestInfo, topLines, error } = readout;
   const { fen, analysing, engineGame } = position;
   const analysisSettings = useAnalysisSettings();
   // An engine game asks for one line; live analysis (running or stopped) for as many as its settings say.
@@ -214,7 +213,7 @@ function EngineStatusPanelContent({
     <section className="grid content-start gap-2">
       {hasData || !idle || headerAction ? (
         <StudyEngineHeader
-          engineId={activeEngineId}
+          engineGame={engineGame}
           status={engineStatus}
           restart={analysing ? restartLabel(status) : null}
           action={headerAction}
@@ -243,26 +242,26 @@ function EngineStatusPanelContent({
 }
 
 /**
- * Study's header row: the searching engine's name (`engineId`) and what it is doing, Restart
- * (`restart`, its label) while live analysis runs, and the panel's own control (`action`).
+ * Study's header row: the engine's picture and name (see useRowEngine) and what it is doing,
+ * Restart (`restart`, its label) while live analysis runs, and the panel's own control (`action`).
  */
 function StudyEngineHeader({
-  engineId,
+  engineGame,
   status,
   restart,
   action
 }: {
-  engineId: string | null;
+  engineGame: boolean;
   status: { label: string; short: string };
   restart: string | null;
   action: ReactNode;
 }) {
   const restartFresh = useAnalysisStore((state) => state.restartFresh);
-  const engines = useEnginesQuery();
-  const engine = engines.data?.find((item) => item.id === engineId);
+  const engine = useRowEngine(engineGame);
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <div className="flex min-w-0 items-baseline gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <EngineAvatar engine={engine} size="xs" />
         <h3 className="truncate text-sm font-semibold text-fg">
           {engine ? engineDisplayName(engine.name) : "Engine"}
         </h3>
@@ -437,13 +436,15 @@ function useLinesPosition(
   );
 }
 
-/** The engine row's engine: off, the one the switch would start; else the one searching. */
-function useRowEngine(searchingId: string | null): EngineConfig | undefined {
-  const analysisSettings = useAnalysisSettings();
+/**
+ * The engine an engine panel names (see rowEngine): an engine game's opponent, else the analysis
+ * engine chosen now, so picking another in Analysis settings shows at once.
+ */
+function useRowEngine(engineGame: boolean): EngineConfig | null {
+  const settings = useAnalysisSettings();
   const engines = useEnginesQuery();
-  const engineId =
-    searchingId || analysisEngineFor(engines.data, analysisSettings.analysisEngineId);
-  return engines.data?.find((item) => item.id === engineId);
+  const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
+  return rowEngine({ engines: engines.data, settings, activeEngineId, engineGame });
 }
 
 /** The board's engine row and, while it runs or is paused, its stats and lines. */
@@ -456,7 +457,7 @@ function BoardEngine({
 }) {
   const board = useBoardEnginePosition();
   const readout = useEngineReadout();
-  const { status, topLines, error, activeEngineId } = readout;
+  const { status, topLines, error } = readout;
   const { analysing, engineGame } = board;
   // Switched off with lines found: they stay, frozen (see the analysis store's paused).
   const paused = useAnalysisStore((state) => (analysing || engineGame ? null : state.paused));
@@ -467,7 +468,7 @@ function BoardEngine({
   const off = !analysing && !engineGame && !paused;
   // An engine game still being played: its opponent's search is the answer, so none of it shows.
   const gameOn = useGameStore((state) => engineHolder(state, false) === "engine-game");
-  const engine = useRowEngine(off ? null : activeEngineId);
+  const engine = useRowEngine(engineGame);
   const interactions = useLineInteractions(fen);
   const { primary, bestSan } = usePrincipalLine(fen, readout);
   const failed = status === "error";
@@ -556,13 +557,13 @@ function EngineHeading({
   failed,
   children
 }: {
-  engine: EngineConfig | undefined;
+  engine: EngineConfig | null;
   failed: boolean;
   children: ReactNode;
 }) {
   return (
     <>
-      <EngineAvatar imagePath={engine?.imagePath} size="lg" />
+      <EngineAvatar engine={engine} size="lg" />
       <div className="grid min-w-0 flex-1 gap-px">
         <h3 className="truncate text-[0.9375rem] font-semibold text-fg">
           {engine ? engineDisplayName(engine.name) : "Engine"}

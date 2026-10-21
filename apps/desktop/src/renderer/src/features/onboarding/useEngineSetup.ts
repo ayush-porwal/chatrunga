@@ -20,7 +20,7 @@ export type EngineSetup = {
   statusLoaded: boolean;
   /** The download status couldn't be read (the check failed, or no desktop bridge). */
   statusFailed: boolean;
-  /** Stockfish + Maia as the setup list shows them (sizes before, progress during, done after). */
+  /** Stockfish, Lc0 + Maia as the setup list shows them (sizes before, progress during, done after). */
   rows: SetupRow[];
   /** Nothing downloaded or queued yet, and something to offer. */
   offer: boolean;
@@ -93,6 +93,8 @@ export function useEngineSetup(): EngineSetup {
     const installed = status
       ? [
           status.stockfish,
+          status.lc0,
+          status["lc0-network"],
           status["maia-1100"],
           status["maia-1300"],
           status["maia-1500"],

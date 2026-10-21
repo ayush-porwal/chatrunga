@@ -4,6 +4,8 @@ import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insigh
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
@@ -16,11 +18,13 @@ import {
 import { useBoardSettingsStore } from "../../stores/board-settings-store";
 import { useGameStore } from "../../stores/game-store";
 import type { PuzzleWrongMove } from "../../stores/puzzle-store";
+import { reviewEngineFor } from "../analysis/analysis-engine";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { tokenizeCommentary } from "../game-review/commentary-moves";
 import { MoveLink } from "../game-review/MoveLinks";
 import { useOpenSettings } from "../settings/settings-link";
 import { uciLineToSan } from "../game-review/review-utils";
-import { explainEngine, explanationKey } from "./puzzle-explanation";
+import { explanationKey } from "./puzzle-explanation";
 import {
   explainView,
   requestPuzzleExplanation,
@@ -68,7 +72,7 @@ export function PuzzleExplanation({
     hasApiKey: Boolean(openRouter.data?.hasApiKey)
   });
   const model = openRouter.data?.model || DEFAULT_COMMENTARY_MODEL;
-  const engine = explainEngine(engines.data ?? [], settings.defaultEngineId);
+  const engine = reviewEngineFor(engines.data, settings.defaultEngineId);
   const otherSan = entry?.otherSan;
   const proseLine = useMemo<PuzzleProseLine | null>(
     () =>
@@ -96,7 +100,7 @@ export function PuzzleExplanation({
         return null;
       case "analysing":
       case "writing":
-        return <ExplainProgress phase={view.kind} engineName={engine?.name} model={model} />;
+        return <ExplainProgress phase={view.kind} engine={engine} model={model} />;
       case "ready":
         return <ExplanationCard explanation={view.explanation} line={proseLine} />;
       case "error":
@@ -148,11 +152,12 @@ export function PuzzleExplanation({
  */
 function ExplainProgress({
   phase,
-  engineName,
+  engine,
   model
 }: {
   phase: "analysing" | "writing";
-  engineName: string | undefined;
+  /** The engine analysing the puzzle (Review settings' evaluation engine). */
+  engine: EngineConfig | null;
   model: string;
 }) {
   return (
@@ -164,12 +169,21 @@ function ExplainProgress({
       <span key={phase} className="animate-fade-in text-sm text-fg-secondary">
         {phase === "analysing" ? "Analysing…" : "Writing…"}
       </span>
-      <span
-        className="ml-auto min-w-0 truncate text-2xs text-fg-subtle"
-        title={phase === "writing" ? `${model} via OpenRouter` : undefined}
-      >
-        {phase === "analysing" ? engineName : shortModelName(model)}
-      </span>
+      {phase === "analysing" ? (
+        engine ? (
+          <span className="ml-auto flex min-w-0 items-center gap-1.5 text-2xs text-fg-subtle">
+            <EngineAvatar engine={engine} size="xs" />
+            <span className="truncate">{engineDisplayName(engine.name)}</span>
+          </span>
+        ) : null
+      ) : (
+        <span
+          className="ml-auto min-w-0 truncate text-2xs text-fg-subtle"
+          title={`${model} via OpenRouter`}
+        >
+          {shortModelName(model)}
+        </span>
+      )}
     </div>
   );
 }
@@ -302,7 +316,7 @@ function PuzzleProse({ text, line }: { text: string; line: PuzzleProseLine | nul
   );
 }
 
-/** "anthropic/claude-sonnet-4.6" → "claude-sonnet-4.6"; the full id is in the tooltip. */
+/** "anthropic/claude-haiku-5.5" → "claude-haiku-5.5"; the full id is in the tooltip. */
 function shortModelName(model: string): string {
   return model.split("/").pop() || model;
 }

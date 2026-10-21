@@ -22,8 +22,6 @@ import {
 } from "./StepChrome";
 import type { EngineSetup } from "./useEngineSetup";
 
-const avatar = <EngineAvatar size="lg" className="size-[48px] rounded-[12px]" />;
-
 export function EnginesStep({
   setup,
   onBack,
@@ -141,8 +139,8 @@ function EngineList({ setup, view }: { setup: EngineSetup; view: EnginesView }) 
           <EngineRows setup={setup} />
           {setup.lc0Manual ? (
             <StepBand tone="info" icon={<Info />}>
-              Maia runs in Lc0, which has no download for this computer. Install Lc0, then add it in
-              Settings → Engines.
+              Lc0 (Maia runs in it too) has no download for this computer. Install Lc0, then add it
+              in Settings → Engines, where its network downloads too.
             </StepBand>
           ) : null}
         </>
@@ -157,13 +155,7 @@ function EngineRows({ setup }: { setup: EngineSetup }) {
     <StepRows label="Engines">
       {engine && own ? (
         <StepRow
-          lead={
-            <EngineAvatar
-              imagePath={engine.imagePath}
-              size="lg"
-              className="size-[48px] rounded-[12px]"
-            />
-          }
+          lead={<EngineAvatar engine={engine} size="lg" className="size-[48px] rounded-[12px]" />}
           title={own.name}
           detail={own.detail}
           end={<ReadyStatus />}
@@ -172,7 +164,13 @@ function EngineRows({ setup }: { setup: EngineSetup }) {
       {setup.rows.map((row) => (
         <StepRow
           key={row.key}
-          lead={avatar}
+          lead={
+            <EngineAvatar
+              engine={{ name: ENGINE_ROW_NAMES[row.key].name }}
+              size="lg"
+              className="size-[48px] rounded-[12px]"
+            />
+          }
           title={ENGINE_ROW_NAMES[row.key].name}
           detail={ENGINE_ROW_NAMES[row.key].purpose}
           end={

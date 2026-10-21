@@ -9,7 +9,7 @@ import notify from "../../assets/sounds/piano/GenericNotify.mp3";
 import lowTime from "../../assets/sounds/piano/LowTime.mp3";
 
 /**
- * Lichess's Piano set, by Enigmahack (AGPLv3+, see SOUND_CREDITS.md). No castling or error sound;
+ * Lichess's Piano set, by Enigmahack (AGPLv3+, see credits/SOUNDS.md). No castling or error sound;
  * Lichess plays its notification for a game start and a confirmation, so this does too.
  */
 export const files: SoundFiles = {

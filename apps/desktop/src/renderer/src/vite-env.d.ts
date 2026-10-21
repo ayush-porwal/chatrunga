@@ -5,6 +5,11 @@ declare module "*.mp3" {
   export default src;
 }
 
+declare module "*.webp" {
+  const src: string;
+  export default src;
+}
+
 declare module "*.css.gz?url" {
   const src: string;
   export default src;

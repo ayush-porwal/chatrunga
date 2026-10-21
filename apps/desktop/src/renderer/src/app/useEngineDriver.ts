@@ -228,6 +228,9 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     const analysing =
       useGameStore.getState().mode === "analysis" || useAnalysisStore.getState().target !== null;
     if (changed && analysing) useAnalysisStore.getState().restartSearch();
+    // Paused lines are the old engine's: they go, so the new engine's name never heads them.
+    if (previous.engineId !== analysisEngineId && useAnalysisStore.getState().paused)
+      useAnalysisStore.getState().endPause();
   }, [analysisEngineId, multipv, depth, moveTimeMs, resources]);
   // Engine search output from main.
   useEffect(() => {

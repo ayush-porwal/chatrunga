@@ -54,18 +54,8 @@ export function OpenRouterSettingsCard() {
           placeholder={DEFAULT_COMMENTARY_MODEL}
           autoComplete="off"
         />
-        {isLightweightCommentaryModel(model) ? (
-          <p className={fieldHint}>
-            Small, fast models tend to list facts instead of coaching. For clearer explanations try{" "}
-            <button
-              type="button"
-              className="font-mono text-fg-muted underline underline-offset-2 hover:text-fg"
-              onClick={() => setModel(DEFAULT_COMMENTARY_MODEL)}
-            >
-              {DEFAULT_COMMENTARY_MODEL}
-            </button>
-            .
-          </p>
+        {model.trim() !== DEFAULT_COMMENTARY_MODEL && isLightweightCommentaryModel(model) ? (
+          <p className={fieldHint}>Small, fast models tend to list facts instead of coaching.</p>
         ) : null}
       </Field>
       <Field label="OpenRouter API key" htmlFor="openrouter-key">

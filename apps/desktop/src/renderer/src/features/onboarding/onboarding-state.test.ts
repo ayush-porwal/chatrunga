@@ -184,10 +184,14 @@ describe("downloadPercent", () => {
 });
 
 describe("the ready engine row", () => {
-  it("names the app's Stockfish by what it does", () => {
+  it("names the app's Stockfish and Lc0 by what they do", () => {
     expect(readyEngineRow(engine({ name: "Stockfish (managed)" }))).toStrictEqual({
       name: "Stockfish",
       detail: "Best moves"
+    });
+    expect(readyEngineRow(engine({ name: "Lc0 (managed)" }))).toStrictEqual({
+      name: "Lc0",
+      detail: "Neural network"
     });
   });
 
@@ -203,6 +207,14 @@ describe("the ready engine row", () => {
 
   it("is left out when the list has its own Stockfish row", () => {
     expect(listedReadyEngine([setupRow("stockfish")], engine({}))).toBeNull();
+  });
+
+  it("leaves the app's Lc0 out when the list has its Lc0 row", () => {
+    const lc0 = engine({ name: "Lc0 (managed)" });
+    expect(listedReadyEngine([setupRow("lc0"), setupRow("maia")], lc0)).toBeNull();
+    expect(listedReadyEngine([setupRow("maia")], lc0)?.id).toBe("e");
+    // The user's own engine named Lc0 isn't the one that row installs.
+    expect(listedReadyEngine([setupRow("lc0")], engine({ name: "Lc0" }))?.id).toBe("e");
   });
 });
 

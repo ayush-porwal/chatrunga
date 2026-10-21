@@ -107,7 +107,6 @@ function fakeShell(overrides: Partial<NavigationShell> = {}): NavigationShell {
     releasePuzzleSession: vi.fn(),
     resumePuzzleSet: vi.fn(),
     endBoardActivity: vi.fn(),
-    defaultEngineId: "stockfish",
     exitFocus: vi.fn(),
     ...overrides
   };
@@ -264,7 +263,6 @@ describe("navigation coordinator", () => {
       expect(shell.getSavedGame).not.toHaveBeenCalled();
       expect(shell.stopEngineWork).toHaveBeenCalledWith({ stopSearch: false, keepReview: false });
       expect(useGameStore.getState().mode).toBe("analysis");
-      expect(useAnalysisStore.getState().activeEngineId).toBe("stockfish");
       // The board's own search: a study engine panel left on the way hands the engine back to it.
       const { searchEpoch, boardSearchEpoch } = useAnalysisStore.getState();
       expect(boardSearchEpoch).toBe(searchEpoch);

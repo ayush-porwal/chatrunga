@@ -33,7 +33,6 @@ export default defineConfig({
         "src/main/databases/external-databases.ts",
         "src/main/engine/engine-config.ts",
         "src/main/engine/engine-manager.ts",
-        "src/main/engine/engine-registry-sync.ts",
         "src/main/engine/probe-eval.ts",
         "src/main/lichess/index.ts",
         "src/main/chesscom/index.ts",

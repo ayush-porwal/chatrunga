@@ -3,11 +3,10 @@ import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { validatePuzzleProse } from "@chaturanga/shared/llm/puzzle-explanation";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { uniformRatings } from "@chaturanga/shared/types/ratings";
-import type { AnalysisLine, EngineConfig, EngineScore } from "@chaturanga/shared/types/engine";
+import type { AnalysisLine, EngineScore } from "@chaturanga/shared/types/engine";
 import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import {
   buildPuzzleExplanationPayload,
-  explainEngine,
   explainOutcome,
   explainSearchPlan,
   explanationKey,
@@ -120,23 +119,6 @@ describe("explainSearchPlan", () => {
     const plan = explainSearchPlan(puzzle, later, 2);
     expect(plan.positions.map((position) => position.multipv)).toStrictEqual([2, 1, 1]);
     expect(plan).toMatchObject({ beforeMistake: 1, afterMistake: 2 });
-  });
-});
-
-describe("explainEngine", () => {
-  const engine = (id: string, extra: Partial<EngineConfig> = {}) =>
-    ({ id, name: id, isAvailable: true, isDefault: false, ...extra }) as EngineConfig;
-  it("uses the review engine, else the automatic pick, never a human-prediction or missing one", () => {
-    const engines = [
-      engine("maia", { isHumanPrediction: true, isDefault: true }),
-      engine("sf", { isDefault: true }),
-      engine("other")
-    ];
-    expect(explainEngine(engines, null)?.id).toBe("sf");
-    expect(explainEngine(engines, "other")?.id).toBe("other");
-    expect(explainEngine(engines, "maia")).toBeNull();
-    expect(explainEngine(engines, "gone")).toBeNull();
-    expect(explainEngine([engine("sf", { isAvailable: false })], "sf")).toBeNull();
   });
 });
 
