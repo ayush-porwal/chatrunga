@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { createGameFromFen, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import type { BroadcastLiveGame, BroadcastPlayer } from "@chaturanga/shared/types/broadcast";
 import type { GameHeaders, GameSession, SaveGameInput } from "@chaturanga/shared/types/chess";
+import { withoutMoveSounds } from "../../app/useMoveSounds";
 import { useRoundStream } from "../../queries/broadcasts";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { useGameStore } from "../../stores/game-store";
@@ -176,22 +177,38 @@ export function undoBackToLive(): void {
 }
 
 /**
- * Keeps the followed game live: its round's stream stays open whatever the view, its moves are
- * merged as they arrive, and loading another board ends the follow. Mount once in the shell.
+ * Merges the followed game's moves into its board as they arrive, starting with any played while
+ * it wasn't followed (put in silently: they weren't played just now). Returns the stop.
  */
-export function useBroadcastFollow(): void {
+export function followLiveMoves(): () => void {
+  const { follow, games } = useBroadcastStore.getState();
+  const waiting = follow ? games[follow.gameId] : undefined;
+  if (waiting) withoutMoveSounds(() => applyLiveGame(waiting));
+  // The stream (re)opened with it sends every game once: the followed game's first sending is
+  // catching up too.
+  let catchingUp = follow?.gameId ?? null;
+  return useBroadcastStore.subscribe((state, previous) => {
+    const gameId = state.follow?.gameId;
+    if (!gameId) return;
+    const game = state.games[gameId];
+    if (!game || game === previous.games[gameId]) return;
+    if (gameId === catchingUp) {
+      catchingUp = null;
+      withoutMoveSounds(() => applyLiveGame(game));
+    } else applyLiveGame(game);
+  });
+}
+
+/**
+ * Keeps the followed game live while `shown` (its board on screen): its round's stream stays open
+ * and its moves are merged as they arrive. Elsewhere it waits, its stream closed, so no move lands
+ * (or sounds, or restarts the engine) behind another page; shown again, it catches up. Loading
+ * another board ends the follow. Mount once in the shell.
+ */
+export function useBroadcastFollow(shown: boolean): void {
   const roundId = useBroadcastStore((state) => state.follow?.roundId ?? null);
-  useRoundStream(roundId);
-  useEffect(
-    () =>
-      useBroadcastStore.subscribe((state, previous) => {
-        const gameId = state.follow?.gameId;
-        if (!gameId) return;
-        const game = state.games[gameId];
-        if (game && game !== previous.games[gameId]) applyLiveGame(game);
-      }),
-    []
-  );
+  useRoundStream(shown ? roundId : null);
+  useEffect(() => (shown ? followLiveMoves() : undefined), [shown]);
   useEffect(
     () =>
       useGameStore.subscribe((state) => {

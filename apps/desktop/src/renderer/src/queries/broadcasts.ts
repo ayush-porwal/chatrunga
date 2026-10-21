@@ -96,7 +96,7 @@ export function useBroadcastPlayersQuery(tourId: string | null, enabled = true) 
 
 /**
  * Feeds the broadcast store from the main process's live games. Mount once, above the views (a
- * followed game keeps moving while you're elsewhere).
+ * game you asked to hear about is streamed whatever the view).
  */
 export function useBroadcastEventSubscription() {
   useEffect(

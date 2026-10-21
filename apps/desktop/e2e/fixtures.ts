@@ -94,6 +94,57 @@ function movetext(sans: string, result: string): string {
   return `${parts.join(" ")} ${result}`;
 }
 
+type BroadcastSide = { name: string; title: string; rating: number; fed: string };
+
+/** The round's games as its PGN stream sends them. */
+function roundStream(
+  games: readonly {
+    id: string;
+    white: BroadcastSide;
+    black: BroadcastSide;
+    sans: string;
+    result: string;
+  }[]
+): string {
+  const { roundId } = BROADCAST;
+  return games
+    .map(
+      (game) => `[Event "FIDE Grand Swiss 2026"]
+[Round "7.${game.id.slice(-1)}"]
+[White "${game.white.name}"]
+[Black "${game.black.name}"]
+[WhiteElo "${game.white.rating}"]
+[BlackElo "${game.black.rating}"]
+[WhiteTitle "${game.white.title}"]
+[BlackTitle "${game.black.title}"]
+[Result "${game.result}"]
+[GameURL "https://lichess.org/broadcast/fide-grand-swiss-2026/round-7/${roundId}/${game.id}"]
+
+${movetext(game.sans, game.result)}
+
+`
+    )
+    .join("\n");
+}
+
+/** The round's stream in the folder writeBroadcastFixtures wrote. */
+const ROUND_STREAM_FILE = "round.pgn";
+
+/**
+ * Board 1 played on in the round's stream (`dir`, as writeBroadcastFixtures wrote it): 18. Nf3,
+ * and Black resigns. The stream sends it from its next connection.
+ */
+export function endBroadcastGame(dir: string): void {
+  writeFileSync(
+    join(dir, ROUND_STREAM_FILE),
+    roundStream(
+      BROADCAST_GAMES.map((game) =>
+        game.id === "Game0001" ? { ...game, sans: `${game.sans} Nf3`, result: "1-0" } : game
+      )
+    )
+  );
+}
+
 /**
  * The broadcast's Lichess answers as files, by URL (served by `routeToFile`): the top list, the
  * tournament, its round's boards and standings, and the round's PGN stream (three games).
@@ -135,22 +186,6 @@ export function writeBroadcastFixtures(dir: string): Record<string, string> {
     thinkTime: 30,
     status: game.result === "1/2-1/2" ? "½-½" : game.result
   }));
-  const pgn = BROADCAST_GAMES.map(
-    (game) => `[Event "FIDE Grand Swiss 2026"]
-[Round "7.${game.id.slice(-1)}"]
-[White "${game.white.name}"]
-[Black "${game.black.name}"]
-[WhiteElo "${game.white.rating}"]
-[BlackElo "${game.black.rating}"]
-[WhiteTitle "${game.white.title}"]
-[BlackTitle "${game.black.title}"]
-[Result "${game.result}"]
-[GameURL "https://lichess.org/broadcast/fide-grand-swiss-2026/round-7/${roundId}/${game.id}"]
-
-${movetext(game.sans, game.result)}
-
-`
-  ).join("\n");
   const answers: Record<string, unknown> = {
     "https://lichess.org/api/broadcast/top?page=1": {
       active: [{ tour, round }],
@@ -194,8 +229,8 @@ ${movetext(game.sans, game.result)}
     writeFileSync(file, JSON.stringify(body));
     files[url] = file;
   }
-  const stream = join(dir, "round.pgn");
-  writeFileSync(stream, pgn);
+  const stream = join(dir, ROUND_STREAM_FILE);
+  writeFileSync(stream, roundStream(BROADCAST_GAMES));
   files[
     `https://lichess.org/api/stream/broadcast/round/${roundId}.pgn?clocks=true&comments=false`
   ] = stream;
