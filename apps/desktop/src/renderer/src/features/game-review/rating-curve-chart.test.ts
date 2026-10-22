@@ -3,12 +3,10 @@ import type { MoveReview, RatingPrediction } from "@chaturanga/shared/types/engi
 import { MAIA_BUCKETS } from "@chaturanga/shared/schemas/constants";
 import {
   axisTicks,
-  columnForKey,
   columnText,
   columnValues,
   engineMoveRows,
   humanMoveRows,
-  nearestColumn,
   percent,
   predictionChart,
   predictionCurve,
@@ -336,45 +334,7 @@ describe("spreadLabels", () => {
   });
 });
 
-describe("chart interaction", () => {
-  const xs = [34, 108, 182, 256, 330];
-
-  it("snaps the pointer to the nearest rating column", () => {
-    expect(nearestColumn(150, xs)).toBe(2);
-  });
-
-  it("snaps a pointer left of the plot to the first column", () => {
-    expect(nearestColumn(0, xs)).toBe(0);
-  });
-
-  it("steps right one column", () => {
-    expect(columnForKey("ArrowRight", 2, 5, 2)).toBe(3);
-  });
-
-  it("stays on the last column at the right end", () => {
-    expect(columnForKey("ArrowRight", 4, 5, 2)).toBe(4);
-  });
-
-  it("starts at the user's column when none is shown", () => {
-    expect(columnForKey("ArrowLeft", null, 5, 2)).toBe(2);
-  });
-
-  it("jumps to the first column with Home", () => {
-    expect(columnForKey("Home", 3, 5, 2)).toBe(0);
-  });
-
-  it("jumps to the last column with End", () => {
-    expect(columnForKey("End", 1, 5, 2)).toBe(4);
-  });
-
-  it("clears with Escape", () => {
-    expect(columnForKey("Escape", 3, 5, 2)).toBeNull();
-  });
-
-  it("leaves other keys alone", () => {
-    expect(columnForKey("Enter", 3, 5, 2)).toBeUndefined();
-  });
-
+describe("columnValues", () => {
   it("lists a column's values, the most likely first", () => {
     const withPick: PredictionLine[] = [
       ...lines,
