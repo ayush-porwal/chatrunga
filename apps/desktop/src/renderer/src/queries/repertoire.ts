@@ -59,7 +59,6 @@ export const repertoireKeys = {
   chapter: (id: string, chapterId: string) => ["repertoires", id, "chapter", chapterId] as const,
   decision: (id: string, positionKey: string) =>
     ["repertoires", id, "decision", positionKey] as const,
-  pausedKeys: (id: string) => ["repertoires", id, "paused"] as const,
   occurrences: (id: string, positionKey: string) =>
     ["repertoires", id, "occurrences", positionKey] as const,
   comparison: (id: string, color: string, gameHash: string) =>
@@ -143,12 +142,11 @@ function invalidateRepertoire(queryClient: QueryClient, id: string | null) {
 }
 
 /**
- * Re-reads the cached decisions, paused positions, occurrence lists, game comparisons and game
+ * Re-reads the cached decisions, occurrence lists, game comparisons and game
  * links of a repertoire (a chapter save can reconcile any of them).
  */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
-  void queryClient.invalidateQueries({ queryKey: repertoireKeys.pausedKeys(id) });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "compare"] });
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.links(id) });
@@ -253,15 +251,6 @@ export function fetchPractisedElsewhere(
   positionKeys: string[]
 ): Promise<Record<string, string[]>> {
   return requireRepertoires().getPractisedElsewhere({ repertoireId: id, chapterId, positionKeys });
-}
-
-/** Position keys of the repertoire's paused decisions (a rehearsal plays them as context). */
-export function useRepertoirePausedKeysQuery(id: string | null) {
-  return useQuery({
-    queryKey: repertoireKeys.pausedKeys(id ?? ""),
-    queryFn: () => requireRepertoires().getPausedKeys(id!),
-    enabled: Boolean(id && repertoires())
-  });
 }
 
 /** Every chapter node reaching a position (transpositions across the repertoire). */

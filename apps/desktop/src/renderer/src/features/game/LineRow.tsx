@@ -70,7 +70,7 @@ export type LineEntry = { key: string; number: string | null; move: ReactNode };
  * inline with muted numbers and wrap; a line longer than one row starts folded to its first row,
  * fading at the right, with a chevron at the row's end that shows it whole (and folds it back).
  * Moving the current move into the line unfolds it. `actions` show at the row's end on hover or
- * focus, before the chevron.
+ * focus, before the chevron; `pinnedActions` (the current move's) show there at all times.
  */
 export function LineRow({
   id,
@@ -82,6 +82,7 @@ export function LineRow({
   entries,
   currentKey = null,
   actions,
+  pinnedActions,
   after,
   onPointerLeave,
   onBlur
@@ -98,6 +99,8 @@ export function LineRow({
   /** The current move's entry key when the current move is in this line. */
   currentKey?: string | null;
   actions?: ReactNode;
+  /** Shown at the row's end at all times (never hover-only), after `actions`. */
+  pinnedActions?: ReactNode;
   /** Drawn after the ruled row, inside the same column (a floating preview). */
   after?: ReactNode;
   onPointerLeave?: () => void;
@@ -198,6 +201,9 @@ export function LineRow({
             <div className="flex h-[1.75em] shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-micro ease-standard group-focus-within/line:opacity-100 group-hover/line:opacity-100">
               {actions}
             </div>
+          ) : null}
+          {pinnedActions ? (
+            <div className="flex h-[1.75em] shrink-0 items-center">{pinnedActions}</div>
           ) : null}
           {overflows ? (
             <LineFoldButton

@@ -42,14 +42,12 @@ const addLineLabel = (san: string) => `Add the line to ${san} to the chapter`;
  * engine game on the board, a Lichess game) keeps it: the panel says so instead of searching.
  */
 export function StudyEnginePanel({
-  id,
   chapter,
   node,
   orientation,
   onClose,
   onOpenSettings
 }: {
-  id: string;
   chapter: Pick<RepertoireChapter, "id" | "rootFen" | "tree">;
   node: MoveNode;
   orientation: Color;
@@ -101,13 +99,13 @@ export function StudyEnginePanel({
   );
 
   return (
-    // Its natural height above the tab (header and the lines in full; the tab below takes the rest
-    // and keeps its own minimum). Only past 60% of the body (many or unfolded lines) does it
-    // scroll. A hovered move's preview floats beside the side panel, so it never grows this.
+    // At the top of the Moves tab, as Analysis's engine block: its natural height (header and the
+    // lines in full; the tree below takes the rest). Only past 60% of the body (many or unfolded
+    // lines) does it scroll. A hovered move's preview floats beside the side panel, so it never
+    // grows this.
     <section
-      id={id}
       aria-label="Engine analysis"
-      className="scroll-area flex max-h-[60%] min-h-0 shrink-0 flex-col gap-2 overflow-y-auto rounded-lg border border-line-subtle p-2.5"
+      className="scroll-area flex max-h-[60%] min-h-0 shrink-0 flex-col gap-2 overflow-y-auto border-b border-line-subtle px-3 pt-3 pb-2.5"
     >
       {holder || over ? (
         <>

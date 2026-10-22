@@ -132,18 +132,25 @@ export function useSettingsWriter() {
       batch.add(patch, showSettings(queryClient, patch));
       return;
     }
+    void saveMany(patch);
+  }
+
+  /** As `setMany` (never batched), with the write's promise for a caller that waits for it. */
+  function saveMany(patch: Partial<AppSettings>): Promise<unknown> {
     batch.flush();
     // This value supersedes a drag's pending one for the same keys (Reset right after a drag).
     dropPendingSettings(settingKeys(patch));
     // mutateAsync: every write settles its own promise (mutate() callbacks only fire for the latest call).
-    trackSettingsSave(mutateAsync({ patch }));
+    const written = mutateAsync({ patch });
+    trackSettingsSave(written);
+    return written;
   }
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K], options?: Options) {
     setMany({ [key]: value }, options);
   }
 
-  return { set, setMany };
+  return { set, setMany, saveMany };
 }
 
 /** Setter for one saved setting, with `.many` for related keys together (see useSettingsWriter). */

@@ -135,6 +135,8 @@ test("edits a repertoire's name and tags; the hub search finds the new tag", asy
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Saved the details of “Sicilian Najdorf”.")).toBeVisible();
 
+  // The card title bar's magnifier opens the search field.
+  await page.getByRole("button", { name: "Search repertoires", exact: true }).click();
   const search = page.getByRole("searchbox", { name: "Search repertoires" });
   await search.fill("najdorf-bg5");
   const list = page.getByRole("list", { name: "Repertoires" });
@@ -331,8 +333,14 @@ function timeInPage(page: Page, action: string) {
   })()`);
 }
 
-const clickTab = (name: string) =>
-  `[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent.trim() === ${JSON.stringify(name)}).click()`;
+/** Clicks the tab named `name`: its label's text, not its decorative (aria-hidden) count pill. */
+const clickTab = (name: string) => `
+  const label = (tab) => [...tab.childNodes]
+    .filter((child) => !(child instanceof Element && child.getAttribute("aria-hidden") === "true"))
+    .map((child) => child.textContent)
+    .join("")
+    .trim();
+  [...document.querySelectorAll('[role="tab"]')].find((tab) => label(tab) === ${JSON.stringify(name)}).click();`;
 const typeSearch = (label: string, value: string) => `
   const input = document.querySelector('input[aria-label=${JSON.stringify(label)}]');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(value)});
@@ -397,10 +405,7 @@ test(
       return { perChapterSaves100Ms, bulk100Ms, bulk499Ms: Math.round(performance.now() - start) };
     });
 
-    await page
-      .getByRole("navigation", { name: "Repertoire location" })
-      .getByRole("button", { name: "Repertoire", exact: true })
-      .click();
+    await openHub(page);
     await page.getByRole("button", { name: "Large collection actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Import PGN", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Import PGN" });

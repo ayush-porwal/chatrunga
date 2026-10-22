@@ -8,13 +8,9 @@ import {
   blockerExplanation,
   blockerFocusNodeId,
   importPracticeNote,
-  markEffect,
   moveLabel,
   includeInPracticePlan,
   practiceEmptyExplanation,
-  scopeStatus,
-  startUnavailableReason,
-  studyPracticeAvailability,
   trainingFix,
   wideningQuestion
 } from "./training-explanations";
@@ -128,38 +124,6 @@ describe("blockerFocusNodeId", () => {
   });
 });
 
-describe("scopeStatus", () => {
-  it("says whether a position is practised and why not", () => {
-    expect(scopeStatus(null, lookup)).toBe("Practised");
-    expect(scopeStatus({ kind: "reference-move", nodeId: "s0" }, lookup)).toBe(
-      "Not practised: 1. e4 is reference only"
-    );
-    expect(scopeStatus({ kind: "before-start", nodeId: "s2" }, lookup)).toBe(
-      "Played for you: practice starts at 2. Nf3"
-    );
-    expect(scopeStatus({ kind: "stopped", nodeId: "s1" }, lookup)).toBe(
-      "Not practised: practice ends at 1... c5"
-    );
-    expect(scopeStatus({ kind: "disabled-branch", nodeId: "s1" }, lookup)).toBe(
-      "Not practised: 1... c5 is left out of practice"
-    );
-    expect(scopeStatus({ kind: "left-out" }, lookup)).toBe(
-      "Not practised: the chapter is left out of practice"
-    );
-    expect(scopeStatus({ kind: "reference-chapter" }, lookup)).toBe(
-      "Not practised: this is a reference chapter"
-    );
-  });
-});
-
-describe("markEffect", () => {
-  it("states the change in decisions, or that there is none", () => {
-    expect(markEffect(false, 2)).toBe("Turning it on: +2 decisions");
-    expect(markEffect(true, -1)).toBe("Turning it off: −1 decision");
-    expect(markEffect(false, 0)).toBe("No change to what this chapter practises");
-  });
-});
-
 describe("practiceEmptyExplanation", () => {
   const reference = {
     title: "Chapter 1",
@@ -202,95 +166,6 @@ describe("practiceEmptyExplanation", () => {
     });
     expect(practiceEmptyExplanation("learn-new", [], false).detail).toContain("paused");
     expect(practiceEmptyExplanation("rehearse-lines", [], false).detail).toContain("max depth");
-  });
-});
-
-describe("startUnavailableReason", () => {
-  const ready = {
-    decisionCount: 3,
-    practicableChapters: 1,
-    rehearsing: false,
-    rehearseChapterId: ""
-  };
-
-  it("names what keeps Start from running", () => {
-    expect(startUnavailableReason(ready)).toBeNull();
-    expect(startUnavailableReason({ ...ready, decisionCount: 0 })).toContain("see why above");
-    expect(startUnavailableReason({ ...ready, practicableChapters: 0 })).toContain("see why");
-    expect(startUnavailableReason({ ...ready, rehearsing: true })).toBe(
-      "Choose a chapter to rehearse."
-    );
-    expect(
-      startUnavailableReason({ ...ready, rehearsing: true, rehearseChapterId: "c1" })
-    ).toBeNull();
-  });
-
-  it("keeps a rehearsal of a chapter whose lines ask only paused decisions from starting", () => {
-    const rehearse = { ...ready, rehearsing: true, rehearseChapterId: "c1" };
-    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: false })).toBe(
-      "No line in this chapter asks a move of yours that isn't paused."
-    );
-    // Not known yet (still loading), or it asks: Start stays available.
-    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: null })).toBeNull();
-    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: true })).toBeNull();
-    // Only a rehearsal reads it.
-    expect(startUnavailableReason({ ...ready, rehearseChapterAsks: false })).toBeNull();
-  });
-});
-
-describe("studyPracticeAvailability", () => {
-  const paused = new Set(["k1"]);
-
-  it("gives the blocker as the reason for both actions", () => {
-    expect(
-      studyPracticeAvailability({
-        blocker: { title: "Your moves here are kept as reference", detail: "" },
-        decisionKeys: [],
-        paused,
-        rehearsableLines: 0
-      })
-    ).toStrictEqual({
-      practice: "Nothing to practise yet: your moves here are kept as reference.",
-      rehearse: "Nothing to practise yet: your moves here are kept as reference."
-    });
-    expect(
-      studyPracticeAvailability({
-        blocker: { title: "“Chapter 1” is left out of practice", detail: "" },
-        decisionKeys: [],
-        paused,
-        rehearsableLines: 0
-      }).practice
-    ).toBe("Nothing to practise yet: “Chapter 1” is left out of practice.");
-  });
-
-  it("says when every decision is paused, or no line asks a move", () => {
-    expect(
-      studyPracticeAvailability({
-        blocker: null,
-        decisionKeys: ["k1"],
-        paused,
-        rehearsableLines: 0
-      })
-    ).toStrictEqual({
-      practice: "Every decision in this chapter is paused (see Notes).",
-      rehearse: "Every decision in this chapter is paused (see Notes)."
-    });
-    expect(
-      studyPracticeAvailability({
-        blocker: null,
-        decisionKeys: ["k1", "k2"],
-        paused,
-        rehearsableLines: 0
-      })
-    ).toStrictEqual({ practice: null, rehearse: "No line in this chapter asks a move of yours." });
-    expect(
-      studyPracticeAvailability({
-        blocker: null,
-        decisionKeys: ["k2"],
-        paused,
-        rehearsableLines: 2
-      })
-    ).toStrictEqual({ practice: null, rehearse: null });
   });
 });
 

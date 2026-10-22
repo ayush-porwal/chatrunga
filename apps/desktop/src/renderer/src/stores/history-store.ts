@@ -6,6 +6,7 @@ import type { BroadcastGameRef } from "../features/broadcasts/broadcast-follow";
 import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
+import type { PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import type { PlayOpponent } from "./lichess-store";
@@ -88,6 +89,11 @@ export type HistoryEntry =
       repertoireId: string;
       /** The session (null: the setup). Only committed attempts come back on restore. */
       sessionId: string | null;
+      /**
+       * Without a session: the navigation's preset, so a restore shows the start it already made
+       * (its answer) instead of starting another session.
+       */
+      preset?: PracticePreset | null;
     };
 
 /** Oldest entries fall off beyond this. */

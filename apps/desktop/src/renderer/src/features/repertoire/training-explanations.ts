@@ -2,7 +2,6 @@ import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import {
   trainingPicks,
   type AcceptedAt,
-  type ScopeCause,
   type TrainingBlocker,
   type TrainingPick
 } from "@chaturanga/shared/chess/repertoire-training";
@@ -15,12 +14,12 @@ import {
   type RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import { COLOR_LABELS } from "./repertoire-chapters";
-import { decisionDeltaLabel, numberedSan, pathLabel } from "./repertoire-model";
+import { numberedSan, pathLabel } from "./repertoire-model";
 
 /*
- * Plain-language explanations of what practice asks and why it asks nothing: the study notice of
- * a chapter with nothing to practise, the reason a move isn't practised, the training marks and
- * the practice setup's empty states. Pure, so every text is unit-tested.
+ * Plain-language explanations of what practice asks and why it asks nothing: why a chapter has
+ * nothing to practise (and its one-click fix), and practice's empty states. Pure, so every text is
+ * unit-tested.
  */
 
 /** A move as it reads on its own: `1. e4`, `2... d6`. */
@@ -238,67 +237,6 @@ export function blockerFocusNodeId(blocker: TrainingBlocker, lookup: ChapterLook
   return "nodeId" in blocker ? blocker.nodeId : REPERTOIRE_ROOT_NODE_ID;
 }
 
-/* ------------------------------------------------------------------ one position */
-
-/** Why a position isn't practised, in a few words ("1. e4 is reference only"). */
-export function scopeReason(cause: ScopeCause, lookup: ChapterLookup): string {
-  const move = "nodeId" in cause ? moveLabel(lookup, cause.nodeId) : "";
-  switch (cause.kind) {
-    case "left-out":
-      return "the chapter is left out of practice";
-    case "reference-chapter":
-      return "this is a reference chapter";
-    case "reference-move":
-      return `${move} is reference only`;
-    case "disabled-branch":
-      return `${move} is left out of practice`;
-    case "stopped":
-      return `practice ends at ${move}`;
-    case "before-start":
-      return `practice starts at ${move}`;
-  }
-}
-
-/** How the selected position takes part in practice: "Practised", or why not. */
-export function scopeStatus(cause: ScopeCause | null, lookup: ChapterLookup): string {
-  if (!cause) return "Practised";
-  const reason = scopeReason(cause, lookup);
-  return cause.kind === "before-start" ? `Played for you: ${reason}` : `Not practised: ${reason}`;
-}
-
-/** A move's own mark, as the choices list names it next to "Not practised". */
-export const EDGE_NOTES: Record<RepertoireNodeMeta["edge"], string> = {
-  included: "accepted",
-  covered: "covered",
-  reference: "kept as reference"
-};
-
-/* ------------------------------------------------------------------ training marks */
-
-export type MarkKey = "trainingStart" | "trainingStop" | "disabled";
-
-/** Each training mark: its plain name and what it does to practice. */
-export const MARK_TEXT: Record<MarkKey, { label: string; description: string }> = {
-  trainingStart: {
-    label: "Start practice here",
-    description: "Practice begins at this move; earlier moves and other lines aren't asked."
-  },
-  trainingStop: {
-    label: "End practice here",
-    description: "Practice ends after this move; later moves are for study only."
-  },
-  disabled: {
-    label: "Leave out of practice",
-    description: "This move and what follows stay in the chapter but are never asked."
-  }
-};
-
-/** What switching a mark does to the chapter's decisions, e.g. "Turning it on adds 2 decisions". */
-export function markEffect(on: boolean, delta: number): string {
-  if (delta === 0) return "No change to what this chapter practises";
-  return `Turning it ${on ? "off" : "on"}: ${decisionDeltaLabel(delta)}`;
-}
-
 /* ------------------------------------------------------------------ practice setup */
 
 /**
@@ -368,60 +306,6 @@ function modeEmptyExplanation(mode: PracticeMode): PracticeEmpty {
         offerLearnNew: false
       };
   }
-}
-
-/** Why the setup's Start can't run (null when it can). */
-export function startUnavailableReason(state: {
-  decisionCount: number;
-  practicableChapters: number;
-  rehearsing: boolean;
-  rehearseChapterId: string;
-  /**
-   * Whether a rehearsal of the chosen chapter from its start asks a move (false: every line only
-   * plays paused decisions, replies or lead-up); null while that isn't known yet.
-   */
-  rehearseChapterAsks?: boolean | null;
-}): string | null {
-  if (!state.decisionCount || !state.practicableChapters) {
-    return "Nothing in this repertoire is practised yet — see why above.";
-  }
-  if (state.rehearsing && !state.rehearseChapterId) return "Choose a chapter to rehearse.";
-  if (state.rehearsing && state.rehearseChapterAsks === false) {
-    return "No line in this chapter asks a move of yours that isn't paused.";
-  }
-  return null;
-}
-
-/* ------------------------------------------------------------------ study actions */
-
-/** Why Study's "Practice this chapter" and "Rehearse this chapter" can't run (null: they can). */
-export type StudyPracticeAvailability = { practice: string | null; rehearse: string | null };
-
-export function studyPracticeAvailability(input: {
-  /** The headline of the chapter's blocker, when it has nothing to practise. */
-  blocker: Explanation | null;
-  decisionKeys: readonly string[];
-  paused: ReadonlySet<string>;
-  /** Lines a rehearsal from the chapter start would play. */
-  rehearsableLines: number;
-}): StudyPracticeAvailability {
-  if (input.blocker) {
-    const reason = `Nothing to practise yet: ${lowerFirst(input.blocker.title)}.`;
-    return { practice: reason, rehearse: reason };
-  }
-  if (input.decisionKeys.every((key) => input.paused.has(key))) {
-    const reason = "Every decision in this chapter is paused (see Notes).";
-    return { practice: reason, rehearse: reason };
-  }
-  return {
-    practice: null,
-    rehearse: input.rehearsableLines ? null : "No line in this chapter asks a move of yours."
-  };
-}
-
-/** "Your moves…" → "your moves…"; a quoted chapter title is left as it is. */
-function lowerFirst(text: string): string {
-  return /^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
 }
 
 /* ------------------------------------------------------------------ import preview */

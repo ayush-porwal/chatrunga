@@ -72,10 +72,9 @@ async function refuseInvoke(app: ElectronApplication, channel: string, message: 
     }, channel);
 }
 
+/** The titlebar: the save status, Retry, and Analyze and Play from here on the selected position. */
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
-/** Analyze and Play from here: icons in the side panel's status row, on the selected position. */
-const positionActions = (page: Page) => page.getByRole("group", { name: "Position actions" });
 
 async function openStudy(page: Page, repertoire = REPERTOIRE) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -83,13 +82,31 @@ async function openStudy(page: Page, repertoire = REPERTOIRE) {
 }
 
 async function backToHub(page: Page) {
-  await page
-    .getByRole("navigation", { name: "Repertoire location" })
-    .getByRole("button", { name: "Repertoire", exact: true })
-    .click();
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await expect(
     page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true })
   ).toBeVisible();
+}
+
+/**
+ * The starting position's (selected) menu → "Edit hint & prompt…": the practice prompt, hint and
+ * wrong-move feedback of the decision at the start.
+ */
+async function openPracticeTexts(page: Page) {
+  await studyPanel(page)
+    .getByRole("button", { name: "Starting position actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit hint & prompt…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Practice at the start" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/** Done: the dialog closes (committing its fields again). */
+async function closePracticeTexts(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "Practice at the start" });
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(dialog).toBeHidden();
 }
 
 test("a refused practice prompt keeps its text through leaving study, then Retry saves it", async ({
@@ -99,8 +116,8 @@ test("a refused practice prompt keeps its text through leaving study, then Retry
   await skipWelcome(page);
   await seedRepertoire(page);
   await openStudy(page);
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  const prompt = page.getByRole("textbox", { name: /^Prompt/ });
+  const dialog = await openPracticeTexts(page);
+  const prompt = dialog.getByRole("textbox", { name: /^Prompt/ });
   await expect(prompt).toBeEnabled();
   await expect(prompt).toHaveAttribute("maxlength", "2000");
 
@@ -110,23 +127,30 @@ test("a refused practice prompt keeps its text through leaving study, then Retry
   await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
   await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
   await expect(titlebar(page)).not.toContainText("Saved");
+  // Done writes it again, refused again.
+  await closePracticeTexts(page);
+  await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
 
   // Leaving and coming back keeps the typed prompt and its failed state.
   await backToHub(page);
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
+  await openPracticeTexts(page);
   await expect(prompt).toHaveValue("Take the centre");
+  await closePracticeTexts(page);
   await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
 
   await restore();
   await titlebar(page).getByRole("button", { name: "Retry", exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
   await expect(studyPanel(page).getByRole("alert")).toHaveCount(0);
+  await openPracticeTexts(page);
   await expect(prompt).toHaveValue("Take the centre");
+  await closePracticeTexts(page);
   // Saved for real: with the draft gone, a fresh visit shows the stored prompt.
   await backToHub(page);
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openPracticeTexts(page);
   await expect(prompt).toHaveValue("Take the centre");
   await expect(titlebar(page)).toContainText("Saved");
 });
@@ -142,32 +166,38 @@ test("another repertoire's refused hint doesn't keep this one's chapter from Pla
 
   // The other repertoire's hint write fails; its text stays unsaved there.
   await openStudy(page, OTHER);
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  const hint = page.getByRole("textbox", { name: /^Hint/ });
+  const dialog = await openPracticeTexts(page);
+  const hint = dialog.getByRole("textbox", { name: /^Hint/ });
   await expect(hint).toBeEnabled();
   const restore = await refuseInvoke(app, "repertoires:updateDecision", "Simulated write failure");
   await hint.fill("The knight belongs on f3");
   await hint.press("Tab");
+  await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
+  await closePracticeTexts(page);
   await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
   await backToHub(page);
 
   // This repertoire's chapter is saved: Play from here opens.
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
-  await positionActions(page).getByRole("button", { name: "Play from here", exact: true }).click();
+  await titlebar(page).getByRole("button", { name: "Play from here", exact: true }).click();
   await expect(page.getByText(`${REPERTOIRE} › Italian — starting position`)).toBeVisible();
   await expect(page.getByText("This chapter couldn't be saved")).toHaveCount(0);
 
-  // The other repertoire still holds its hint with Retry and Discard.
-  await restore();
+  // The other repertoire still holds its hint (closing the dialog writes it again, so look
+  // before the write is let through), with Retry and Discard.
   await openStudy(page, OTHER);
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
+  await openPracticeTexts(page);
   await expect(hint).toHaveValue("The knight belongs on f3");
+  await closePracticeTexts(page);
+  await restore();
   await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
   const notice = studyPanel(page).getByRole("alert");
   await expect(notice.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
   await notice.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
+  await openPracticeTexts(page);
   await expect(hint).toHaveValue("The knight belongs on f3");
 });
 
@@ -184,16 +214,20 @@ test("a chapter left out of practice still offers Analyze and Play from here", a
     page.getByRole("switch", { name: "Enable Italian for practice", exact: true })
   ).toBeVisible();
 
+  // The footer says the chapter practises nothing, with its one-click fix.
   const panel = studyPanel(page);
+  await expect(panel.getByText("“Italian” is left out of practice.")).toBeVisible();
   await expect(
-    panel.getByRole("button", { name: "Practice this chapter", exact: true })
-  ).toBeDisabled();
-  await expect(
-    positionActions(page).getByRole("button", { name: "Play from here", exact: true })
-  ).toBeEnabled();
-  const analyze = positionActions(page).getByRole("button", { name: "Analyze", exact: true });
-  await expect(analyze).toBeEnabled();
+    panel.getByRole("button", { name: "Include in practice", exact: true })
+  ).toBeVisible();
+  // Unavailable titlebar actions stay focusable (aria-disabled) to explain why: these are not.
+  const play = titlebar(page).getByRole("button", { name: "Play from here", exact: true });
+  await expect(play).toBeVisible();
+  await expect(play).not.toHaveAttribute("aria-disabled", "true");
+  const analyze = titlebar(page).getByRole("button", { name: "Analyze", exact: true });
+  await expect(analyze).not.toHaveAttribute("aria-disabled", "true");
   await analyze.click();
+  await expect(analyze).toHaveAttribute("aria-pressed", "true");
   await expect(panel.getByRole("region", { name: "Engine analysis" })).toBeVisible();
 });
 

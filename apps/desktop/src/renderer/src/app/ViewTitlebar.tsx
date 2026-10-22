@@ -1,3 +1,4 @@
+import { hasDesktopApi } from "@/lib/environment";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
   RepertoirePracticeTitlebar,
@@ -51,7 +52,7 @@ export function ViewTitlebar({
     AppCommands,
     | "startReview"
     | "stopReview"
-    | "repertoireHub"
+    | "playFromStudy"
     | "analyzePosition"
     | "reviewCurrentGame"
     | "playLichess"
@@ -77,13 +78,14 @@ export function ViewTitlebar({
   }
   if (view === "repertoire-study" && repertoire) {
     return (
-      <RepertoireStudyTitlebar repertoireId={repertoire.repertoireId} onHub={on.repertoireHub} />
+      <RepertoireStudyTitlebar
+        repertoireId={repertoire.repertoireId}
+        onPlayFromHere={hasDesktopApi() ? on.playFromStudy : undefined}
+      />
     );
   }
   if (view === "repertoire-practice" && repertoire) {
-    return (
-      <RepertoirePracticeTitlebar repertoireId={repertoire.repertoireId} onHub={on.repertoireHub} />
-    );
+    return <RepertoirePracticeTitlebar repertoireId={repertoire.repertoireId} />;
   }
   if (view === "broadcast-tournament" && broadcastScreen) {
     return (

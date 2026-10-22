@@ -8,6 +8,7 @@ import type {
 import { cardOf } from "../features/repertoire/__fixtures__/repertoire";
 import {
   currentCard,
+  lastShownCard,
   lineCompleteText,
   openingReplyMessage,
   OTHER_LINE_TEXT,
@@ -45,6 +46,14 @@ describe("repertoire practice store", () => {
     expect(store().orientation).toBe("black");
     expect(currentCard(store().session)?.queueItemId).toBe("a");
     expect(currentCard(null)).toBeNull();
+  });
+
+  it("shows a session ended early at the card it reached, not the queue's last", () => {
+    const ended = { ...session(), status: "finished" as const, cursor: 1 };
+    expect(lastShownCard(ended)?.queueItemId).toBe("b");
+    expect(lastShownCard({ ...ended, cursor: 2 })?.queueItemId).toBe("c");
+    expect(lastShownCard({ ...ended, cursor: 3 })?.queueItemId).toBe("c");
+    expect(lastShownCard(null)).toBeNull();
   });
 
   it("keeps the card after a move outside the repertoire, with its feedback", () => {

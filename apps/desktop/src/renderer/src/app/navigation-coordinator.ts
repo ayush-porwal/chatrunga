@@ -69,8 +69,13 @@ export type NavigationShell = {
   openRepertoireStudy: (
     entry: Extract<HistoryEntry, { view: "repertoire-study" }>
   ) => Promise<boolean>;
-  /** Opens practice (a session, or the setup); false as for `openRepertoireStudy`. */
-  openRepertoirePractice: (repertoireId: string, sessionId: string | null) => Promise<boolean>;
+  /**
+   * Opens practice (a session to resume, or the start its preset made); false as for
+   * `openRepertoireStudy`.
+   */
+  openRepertoirePractice: (
+    entry: Extract<HistoryEntry, { view: "repertoire-practice" }>
+  ) => Promise<boolean>;
   showGame: (tab: SideTab) => void;
   /** The review screen for the board now loaded, on the entry's tab and opening side. */
   showGameReview: (entry: Extract<HistoryEntry, { view: "game-review" }>) => void;
@@ -199,9 +204,7 @@ export async function restoreEntry(
       return (await shell.openRepertoireStudy(entry)) ? "shown" : "dropped";
     case "repertoire-practice":
       // A session that can't resume offers a new one on the page; nothing is graded on restore.
-      return (await shell.openRepertoirePractice(entry.repertoireId, entry.sessionId))
-        ? "shown"
-        : "dropped";
+      return (await shell.openRepertoirePractice(entry)) ? "shown" : "dropped";
   }
 }
 

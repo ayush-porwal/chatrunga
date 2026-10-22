@@ -142,7 +142,12 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
     case "repertoire-practice": {
       const screen = context.repertoireScreen;
       if (screen?.view !== "repertoire-practice") return { view: "repertoire-hub" };
-      return { view, repertoireId: screen.repertoireId, sessionId: screen.sessionId };
+      return {
+        view,
+        repertoireId: screen.repertoireId,
+        sessionId: screen.sessionId,
+        preset: screen.sessionId ? null : screen.preset
+      };
     }
     default:
       return { view };

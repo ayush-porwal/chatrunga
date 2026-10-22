@@ -441,8 +441,8 @@ describe("staging a move from a game comparison", () => {
     // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
     const result = store().stageMove("w1", "f1c4", "reference");
     expect(store().chapter!.nodeMeta[result!.nodeId]).toStrictEqual({ edge: "reference" });
-    // The decision stays selected, so Choices shows the new move with Accept.
-    expect(store().selectedNodeId).toBe("w1");
+    // The new move is selected: its menu makes it one of the player's moves.
+    expect(store().selectedNodeId).toBe(result!.nodeId);
     // Adding it and setting its edge are one undo step.
     expect(store().undoStack).toHaveLength(1);
     store().undo();
@@ -487,7 +487,7 @@ describe("staging a move from a game comparison", () => {
       created: false
     });
     expect(store().chapter!.nodeMeta.w2).toBeUndefined();
-    expect(store().selectedNodeId).toBe("w1");
+    expect(store().selectedNodeId).toBe("w2");
     expect(store().dirty).toBe(false);
   });
 

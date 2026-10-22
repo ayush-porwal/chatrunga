@@ -146,6 +146,14 @@ export function currentCard(session: PracticeSessionSnapshot | null): PracticeCa
   return session?.cards[session.cursor] ?? null;
 }
 
+/**
+ * The last card a finished session showed (its summary's board): the current one when it ended,
+ * not the queue's last (a session ended early never reached the cards after it).
+ */
+export function lastShownCard(session: PracticeSessionSnapshot | null): PracticeCard | null {
+  return currentCard(session) ?? session?.cards.at(-1) ?? null;
+}
+
 /** The session with `card` replacing the card of the same queue item, and totals recomputed. */
 export function withCard(
   session: PracticeSessionSnapshot,

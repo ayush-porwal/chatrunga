@@ -171,8 +171,19 @@ describe("history capture", () => {
     ).toStrictEqual({
       view: "repertoire-practice",
       repertoireId: "r1",
-      sessionId: "s1"
+      sessionId: "s1",
+      preset: null
     });
+    // Before its session: the navigation's own preset, so a restore takes that start's answer.
+    const preset = {};
+    const starting = captureEntry("repertoire-practice", {
+      ...context,
+      repertoireScreen: { ...practice, sessionId: null, preset }
+    });
+    expect(starting).toStrictEqual({ ...practice, sessionId: null, preset });
+    expect((starting as Extract<HistoryEntry, { view: "repertoire-practice" }>).preset).toBe(
+      preset
+    );
   });
 
   it("records the Play mode shown: the session's, else Play settings', else the account's", () => {

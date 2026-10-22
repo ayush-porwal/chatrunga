@@ -35,6 +35,8 @@ export type RepertoireSummary = {
   decisionCount: number;
   dueCount: number;
   lastStudiedAt: number | null;
+  /** The first chapter's starting position (the hub's thumbnail); null without chapters. */
+  firstChapterFen: string | null;
 };
 
 export type RepertoireChapterSummary = {

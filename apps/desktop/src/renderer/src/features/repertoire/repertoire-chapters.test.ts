@@ -5,7 +5,6 @@ import { addLine, cardOf, rootNode } from "./__fixtures__/repertoire";
 import {
   chapterOrderAfterMove,
   fenError,
-  mostDue,
   nextSortOrder,
   plural,
   relativeDay,
@@ -78,16 +77,9 @@ describe("chapter helpers", () => {
     expect(relativeDay(new Date(2026, 0, 5).getTime(), now)).toMatch(/2026/);
   });
 
-  it("pluralises counts and finds the repertoire with the most due", () => {
+  it("pluralises counts", () => {
     expect(plural(1, "chapter")).toBe("1 chapter");
     expect(plural(0, "decision")).toBe("0 decisions");
-    expect(
-      mostDue([
-        { id: "a", dueCount: 2 },
-        { id: "b", dueCount: 5 }
-      ])?.id
-    ).toBe("b");
-    expect(mostDue([{ id: "a", dueCount: 0 }])).toBeNull();
   });
 });
 

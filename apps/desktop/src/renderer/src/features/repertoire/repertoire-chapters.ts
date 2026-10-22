@@ -7,8 +7,7 @@ import {
   type PracticeMode,
   type RepertoireChapterSummary,
   type RepertoireColor,
-  type RepertoireDueSummary,
-  type RepertoireSummary
+  type RepertoireDueSummary
 } from "@chaturanga/shared/types/repertoire";
 
 /** Small pure helpers for chapter lists, labels and creation input. */
@@ -136,19 +135,9 @@ export type StudyStage = { nodeId: string; uci: string; edge: "covered" | "refer
 
 /** Opening study from another screen: optionally on a panel, with a move staged. */
 export type StudyOpenTarget = StudyTarget & {
-  tab?: "chapters" | "moves" | "notes";
+  tab?: "moves" | "chapters";
   stage?: StudyStage | null;
 };
-
-/** The repertoire with the most due decisions (where "Review due" starts), or null. */
-export function mostDue<T extends Pick<RepertoireSummary, "dueCount">>(
-  list: readonly T[]
-): T | null {
-  return list.reduce<T | null>(
-    (best, item) => (item.dueCount > (best?.dueCount ?? 0) ? item : best),
-    null
-  );
-}
 
 /** An unfinished practice session to resume, as Play and the hub offer it. */
 export type ResumePracticeTarget = NonNullable<RepertoireDueSummary["resume"]> & {

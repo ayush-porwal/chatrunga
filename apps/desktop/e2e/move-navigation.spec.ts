@@ -135,9 +135,7 @@ test("the repertoire study row steps through a chapter on one line, with no type
 
   // Practice's footer ends the session and offers nothing for typing a move.
   const study = page.getByRole("complementary", { name: "Repertoire study" });
-  await study.getByRole("button", { name: "Practice this chapter", exact: true }).click();
-  await page.getByRole("radio", { name: "Learn new", exact: true }).click();
-  await page.getByRole("button", { name: "Start learning", exact: true }).click();
+  await study.getByRole("button", { name: "Practice", exact: true }).click();
   await expect(page.getByText("Play your move on the board")).toBeVisible();
   await expect(page.getByRole("button", { name: "End session", exact: true })).toBeVisible();
   await expectNoTypedMoves(page, page.locator("cg-board").first());
