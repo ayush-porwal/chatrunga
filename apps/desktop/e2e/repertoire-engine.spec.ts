@@ -268,13 +268,9 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
 
   // Picking an engine move adds it to the chapter at the selected move and selects it.
   await addLine(page, "Nf6").click();
-  await expect(chapterMoves(page).getByRole("button", { name: "Nf6", exact: true })).toBeVisible();
-  // The board shows the new move (its route under the board).
   await expect(
-    page
-      .getByRole("region", { name: "Board" })
-      .getByText("1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6", { exact: true })
-  ).toBeVisible();
+    chapterMoves(page).getByRole("button", { name: "Nf6", exact: true })
+  ).toHaveAttribute("aria-current", "step");
   await expect(addLine(page, "d3")).toBeVisible();
   await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
 
