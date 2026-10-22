@@ -306,10 +306,9 @@ export function createBookStore(db: () => DatabaseSync) {
     /** The 0-based pages stored so far, in order. */
     pageIndexes(bookId: string): number[] {
       return sql
-        .all<{ page_index: number }>(
-          "SELECT page_index FROM book_pages WHERE book_id = ? ORDER BY page_index",
-          bookId
-        )
+        .all<{
+          page_index: number;
+        }>("SELECT page_index FROM book_pages WHERE book_id = ? ORDER BY page_index", bookId)
         .map((row) => row.page_index);
     },
 
