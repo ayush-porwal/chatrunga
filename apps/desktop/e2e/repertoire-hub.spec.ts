@@ -333,8 +333,14 @@ function timeInPage(page: Page, action: string) {
   })()`);
 }
 
-const clickTab = (name: string) =>
-  `[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent.trim() === ${JSON.stringify(name)}).click()`;
+/** Clicks the tab named `name`: its label's text, not its decorative (aria-hidden) count pill. */
+const clickTab = (name: string) => `
+  const label = (tab) => [...tab.childNodes]
+    .filter((child) => !(child instanceof Element && child.getAttribute("aria-hidden") === "true"))
+    .map((child) => child.textContent)
+    .join("")
+    .trim();
+  [...document.querySelectorAll('[role="tab"]')].find((tab) => label(tab) === ${JSON.stringify(name)}).click();`;
 const typeSearch = (label: string, value: string) => `
   const input = document.querySelector('input[aria-label=${JSON.stringify(label)}]');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(value)});
