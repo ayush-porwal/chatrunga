@@ -34,6 +34,7 @@ import {
   applyBookRepairEdits,
   bookLineId,
   bookRepairEdits,
+  describeBookRepairEdits,
   groupBookFailures,
   type BookRepairEdit,
   type BookRepairGroup
@@ -434,8 +435,19 @@ class BookRun {
     while (failure && (line.repairAttempts ?? 0) < MAX_REPAIRS) {
       failure = await this.repairOnce({ failure, page, line, images });
     }
+    // Only a repair that left its line legal is carried: a give-up or a still-illegal guess
+    // leaves the other lines failing, each with its own repairs to come from its own page.
+    if (line.moves === original || this.lineFailure(page, line)) return;
     const edits = bookRepairEdits(original, line.moves, first.ply);
     if (edits) this.carryOver(edits, first, failures, pages);
+  }
+
+  /** The line's first illegal move, played on its own (none when it's legal). */
+  private lineFailure(page: BookPageRecord, line: BookLine): BookLineFailure | undefined {
+    return mergeBookChapter({
+      color: this.book.color ?? "white",
+      pages: [{ ...page, lines: { game: null, lines: [line] } }]
+    }).failures.at(0);
   }
 
   /** Applies a representative's corrections to the other failing lines (stored as rewritten). */
@@ -446,6 +458,10 @@ class BookRun {
     pages: Map<number, BookPageRecord>
   ): void {
     const rewritten = new Set<number>();
+    const where = `${representative.label ?? "the main line"}, p. ${
+      representative.printedPage ?? representative.pageIndex + 1
+    }`;
+    const carriedFix = `${describeBookRepairEdits(edits)} (as repaired in ${where})`;
     for (const other of failures) {
       if (bookLineId(other) === bookLineId(representative)) continue;
       const target = pages.get(other.pageIndex)?.lines?.lines[other.lineIndex];
@@ -454,6 +470,8 @@ class BookRun {
       target.repairedFrom ??= target.moves;
       target.moves = moves;
       target.repairAttempts = (target.repairAttempts ?? 0) + 1;
+      // The model never saw this line: the report lists it to be checked against its page.
+      target.carriedFix = carriedFix;
       rewritten.add(other.pageIndex);
     }
     for (const pageIndex of rewritten) {
@@ -489,14 +507,13 @@ class BookRun {
     if (answer.moves) {
       line.repairedFrom ??= line.moves;
       line.moves = answer.moves;
+      // Repaired by the model itself: no longer a carried correction.
+      delete line.carriedFix;
     }
     const lines = page.lines ?? { game: null, lines: [line] };
     this.deps.store.saveLines(this.id, page.pageIndex, { lines, status: "done" });
     if (!answer.moves) return undefined;
-    const next = mergeBookChapter({
-      color: this.book.color ?? "white",
-      pages: [{ ...page, lines: { game: null, lines: [line] } }]
-    }).failures.at(0);
+    const next = this.lineFailure(page, line);
     return next && { ...next, lineIndex: failure.lineIndex };
   }
 

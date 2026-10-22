@@ -36,6 +36,11 @@ export type BookLine = {
   repairedFrom?: string;
   /** Repairs tried on this line (at most two). */
   repairAttempts?: number;
+  /**
+   * Set when another line's repair was carried over to this one (the model never saw it): what
+   * changed and where it was repaired, so the chapter report can ask for a check.
+   */
+  carriedFix?: string;
 };
 
 /** One page's lines. `game`: a complete game starting on this page. */
@@ -157,6 +162,8 @@ function parseLine(value: unknown, stored: boolean): BookLine | null {
   if (repairedFrom) line.repairedFrom = repairedFrom;
   const attempts = wholeNumber(value.repairAttempts, 1, 10);
   if (attempts !== null) line.repairAttempts = attempts;
+  const carriedFix = text(value.carriedFix, MAX_MOVETEXT);
+  if (carriedFix) line.carriedFix = carriedFix;
   return line;
 }
 

@@ -39,6 +39,11 @@ export type BookChapterReport = {
   illegalLines: BookLineProblem[];
   /** Lines rewritten by a repair (legal or not afterwards). */
   repairedLines: number;
+  /**
+   * Legal lines corrected by carrying over another line's repair, never shown to the model: what
+   * changed and where (worth a check). Absent in reports saved before this was recorded.
+   */
+  carriedLines?: BookLineProblem[];
   /** Moves in the chapter's tree. */
   moves: number;
   notesAnchored: number;

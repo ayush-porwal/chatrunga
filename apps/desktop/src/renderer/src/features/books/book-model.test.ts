@@ -302,6 +302,26 @@ describe("chapterReportSummary", () => {
     expect(summary.issues[1].error).toMatch(/couldn't be read/);
   });
 
+  it("lists lines corrected like another line, to be checked", () => {
+    const summary = chapterReportSummary({
+      ...report,
+      illegalLines: [],
+      unreadablePages: [],
+      carriedLines: [
+        {
+          pageIndex: 5,
+          printedPage: 43,
+          label: "a1",
+          error: "Corrected like another line: Bb9 → Bb5"
+        }
+      ]
+    });
+    expect(summary.text).toBe("1,477 moves · 1 corrected like another line");
+    expect(summary.issues).toStrictEqual([
+      { page: 6, printedPage: 43, label: "a1", error: "Corrected like another line: Bb9 → Bb5" }
+    ]);
+  });
+
   it("says so when every line was read", () => {
     expect(
       chapterReportSummary({ ...report, moves: 1, illegalLines: [], unreadablePages: [] }).text

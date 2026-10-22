@@ -344,6 +344,39 @@ describe("runBookImport", () => {
       repairedLines: 2,
       illegalLines: []
     });
+    // The copy was corrected without the model seeing it: the report asks for a check.
+    expect(store.pages(BOOK)[1].lines?.lines[1].carriedFix).toMatch(/^Bb9 → Bb5 \(as repaired in /);
+    expect(store.chapters(BOOK)[0].report?.carriedLines).toStrictEqual([
+      expect.objectContaining({
+        pageIndex: 1,
+        error: expect.stringContaining("Corrected like another line")
+      })
+    ]);
+  });
+
+  it("carries nothing from a repair that left its line illegal", async () => {
+    const copied = `${ILLEGAL_LINE} a6 4. Ba4 Nf6`;
+    const guess = "1. e4 e5 2. Nf3 Nc6 3. Bz5";
+    const answers: Record<string, string> = {
+      [ILLEGAL_LINE]: guess,
+      [guess]: guess,
+      [copied]: `${REPAIRED_LINE} a6 4. Ba4 Nf6`
+    };
+    const { chat, requests } = chapterA([ILLEGAL_LINE, copied], (line) =>
+      JSON.stringify({ moves: answers[line] })
+    );
+    await expect(runBookImport(BOOK, deps(chat), new AbortController().signal)).resolves.toBe(
+      "done"
+    );
+    // The copy keeps both of its repairs and gets one from its own page.
+    expect(repairLines(requests)).toStrictEqual([ILLEGAL_LINE, guess, copied]);
+    const stored = store.pages(BOOK)[1].lines?.lines[1];
+    expect(stored).toMatchObject({ moves: `${REPAIRED_LINE} a6 4. Ba4 Nf6`, repairAttempts: 1 });
+    expect(stored?.carriedFix).toBeUndefined();
+    expect(store.chapters(BOOK)[0].report).toMatchObject({
+      carriedLines: [],
+      illegalLines: [expect.objectContaining({ pageIndex: 1 })]
+    });
   });
 
   it("repairs a line the shared correction didn't fix on its own", async () => {

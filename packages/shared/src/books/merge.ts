@@ -89,8 +89,13 @@ type Builder = {
   byId: Map<string, WorkNode>;
   childByMove: Map<string, WorkNode>;
   nextId: number;
-  stats: Omit<BookChapterReport, "illegalLines" | "coverage" | "unreadablePages" | "moves">;
+  stats: Omit<
+    BookChapterReport,
+    "illegalLines" | "carriedLines" | "coverage" | "unreadablePages" | "moves"
+  >;
   failures: BookLineFailure[];
+  /** Legal lines that took another line's repair (report.carriedLines). */
+  carried: BookLineProblem[];
 };
 
 type PathStep = { token: MoveToken; work: WorkNode };
@@ -406,7 +411,8 @@ export function mergeBookChapter(input: BookMergeInput): BookMergeResult {
       disambiguated: 0,
       ambiguousGuesses: 0
     },
-    failures: []
+    failures: [],
+    carried: []
   };
   for (const page of input.pages) {
     const context = { game: page.lines.game ? gameTitle(page.lines.game) : null };
@@ -419,7 +425,17 @@ export function mergeBookChapter(input: BookMergeInput): BookMergeResult {
       const lineContext: LineContext = { page, line, lineIndex, game: context.game };
       const path = playLine(builder, lineContext, tokens);
       context.game = lineContext.game;
-      if (builder.failures.length === failuresBefore) builder.stats.legalLines += 1;
+      if (builder.failures.length === failuresBefore) {
+        builder.stats.legalLines += 1;
+        if (line.carriedFix) {
+          builder.carried.push({
+            pageIndex: page.pageIndex,
+            printedPage: page.printedPage,
+            label: line.label,
+            error: `Corrected like another line, without being read again: ${line.carriedFix}.`
+          });
+        }
+      }
       anchorNotes(builder, line, path);
     });
   }
@@ -447,6 +463,7 @@ function finish(builder: Builder, input: BookMergeInput): BookMergeResult {
     report: {
       ...builder.stats,
       illegalLines,
+      carriedLines: builder.carried,
       moves: nodes.length - 1,
       coverage: coverage(input.pages, nodes),
       unreadablePages: input.pages.filter((page) => page.unreadable).map((page) => page.pageIndex)

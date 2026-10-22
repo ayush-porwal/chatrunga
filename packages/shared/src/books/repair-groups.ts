@@ -198,3 +198,11 @@ export function applyBookRepairEdits(
   }
   return applied ? formatMoves(tokens) : null;
 }
+
+/** A correction as the chapter report shows it: "Nb5 → Bb5", "(nothing) → Nf3" for an insert. */
+export function describeBookRepairEdits(edits: readonly BookRepairEdit[]): string {
+  const side = (sans: readonly string[]) => (sans.length ? sans.join(" ") : "(nothing)");
+  return edits
+    .map((edit) => `${side(edit.remove)} → ${side(edit.insert.map((token) => token.san))}`)
+    .join(", ");
+}

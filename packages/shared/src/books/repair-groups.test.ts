@@ -5,6 +5,7 @@ import {
   applyBookRepairEdits,
   bookLineId,
   bookRepairEdits,
+  describeBookRepairEdits,
   groupBookFailures
 } from "./repair-groups";
 
@@ -90,5 +91,15 @@ describe("bookRepairEdits / applyBookRepairEdits", () => {
   it("derives nothing from a repair that changed an earlier move, or nothing", () => {
     expect(bookRepairEdits(MAIN, "1. d4 e5 2. Nf3 Nc6 3. Bb5 a6", 4)).toBeNull();
     expect(bookRepairEdits(MAIN, MAIN, 4)).toBeNull();
+  });
+
+  it("describes a correction for the chapter report", () => {
+    const edits = bookRepairEdits(
+      "1. e4 e5 2. Nf3 Nc6 3. Bb9 a6",
+      "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6",
+      4
+    );
+    expect(edits).not.toBeNull();
+    expect(describeBookRepairEdits(edits!)).toBe("Bb9 → Bb5");
   });
 });

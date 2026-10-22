@@ -288,6 +288,12 @@ export function chapterReportSummary(report: BookChapterReport): {
       label: line.label,
       error: line.error
     })),
+    ...(report.carriedLines ?? []).map((line) => ({
+      page: line.pageIndex + 1,
+      printedPage: line.printedPage,
+      label: line.label,
+      error: line.error
+    })),
     ...report.unreadablePages.map((pageIndex) => ({
       page: pageIndex + 1,
       printedPage: null,
@@ -297,10 +303,12 @@ export function chapterReportSummary(report: BookChapterReport): {
   ].sort((a, b) => a.page - b.page);
   const moves = `${report.moves.toLocaleString("en-US")} ${report.moves === 1 ? "move" : "moves"}`;
   const lines = report.illegalLines.length;
+  const carried = report.carriedLines?.length ?? 0;
   const unread = report.unreadablePages.length;
   const parts = [moves];
   if (lines) parts.push(`${lines} ${lines === 1 ? "line needs" : "lines need"} a look`);
+  if (carried) parts.push(`${carried} corrected like another line`);
   if (unread) parts.push(`${unread} ${unread === 1 ? "page" : "pages"} unread`);
-  if (!lines && !unread) parts.push("every line read");
+  if (!lines && !carried && !unread) parts.push("every line read");
   return { text: parts.join(" · "), issues };
 }
