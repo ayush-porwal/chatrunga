@@ -24,6 +24,7 @@ const { runBookImport } = await import("./import-job");
 const { BookChatError } = await import("./openrouter-chat");
 const { writeBookRepertoire } = await import("./book-repertoire");
 const { getChapter, getRepertoire } = await import("../repertoire/service");
+const { withRepertoireWriteGate } = await import("../repertoire/service-runtime");
 
 const store = createBookStore(getDb);
 const BOOK = "book-1";
@@ -92,6 +93,11 @@ function cancellingAt(index: number, controller: AbortController, requests: Book
     return { text: bookAnswer(request), costUsd: 0.01 };
   };
 }
+
+/** Cancels through `controller` once the write stage starts writing. */
+const abortingAtWrite = (controller: AbortController) => (event: BookProgressEvent) => {
+  if (event.stage === "write" && event.total === 1 && event.done === 0) controller.abort();
+};
 
 /** Rate limited `busy` times, then out of credits at the outline. */
 function failingChat(busy: number) {
@@ -261,6 +267,25 @@ describe("runBookImport", () => {
       lines: { game: null, lines: [] }
     });
     expect(store.chapters(BOOK)[1].report).toMatchObject({ unreadablePages: [3], moves: 3 });
+  });
+
+  it("writes nothing when cancelled while its write waits for the repertoire write gate", async () => {
+    let release!: () => void;
+    const held = withRepertoireWriteGate(() => new Promise<void>((resolve) => (release = resolve)));
+    const controller = new AbortController();
+    const { chat } = fakeChat();
+    // Cancelled (or removed) once the write is under way, before its turn at the gate.
+    const run = runBookImport(
+      BOOK,
+      { ...deps(chat), progress: abortingAtWrite(controller) },
+      controller.signal
+    );
+    await vi.waitFor(() => expect(controller.signal.aborted).toBe(true));
+    release();
+    await held;
+    await expect(run).resolves.toBe("paused");
+    expect(store.get(BOOK)).toMatchObject({ status: "paused", repertoireId: null });
+    expect(getDb().prepare("SELECT COUNT(*) AS n FROM repertoires").get()?.n).toBe(0);
   });
 
   it("fails with a message when no page gave a move", async () => {

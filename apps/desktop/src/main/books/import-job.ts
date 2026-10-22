@@ -418,7 +418,8 @@ class BookRun {
             report: result.report
           });
         }
-      }
+      },
+      signal: this.signal
     });
     this.emit(1, 1);
   }

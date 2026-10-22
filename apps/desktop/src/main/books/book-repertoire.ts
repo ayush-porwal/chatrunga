@@ -39,13 +39,22 @@ export type BookRepertoireInput = {
   chapters: readonly BookRepertoireChapter[];
   /** Runs inside the same transaction once the repertoire is stored (links the book to it). */
   linkBook: (repertoireId: string, chapterIds: readonly string[]) => void;
+  /**
+   * The import's cancel: checked once the write's turn at the gate comes, so a write queued
+   * behind other repertoire writes when its import was cancelled (or its book removed) never runs.
+   */
+  signal?: AbortSignal;
 };
 
 export type BookRepertoireResult = { repertoire: RepertoireDetail; chapterIds: string[] };
 
-/** Stores the book's repertoire; nothing is written when any chapter fails its checks. */
+/**
+ * Stores the book's repertoire; nothing is written when any chapter fails its checks, or when
+ * `signal` aborted before its turn (rejecting with the abort's reason).
+ */
 export function writeBookRepertoire(input: BookRepertoireInput): Promise<BookRepertoireResult> {
   return withRepertoireWriteGate(() => {
+    input.signal?.throwIfAborted();
     const now = clock();
     const id = nanoid();
     const chapters: RepertoireChapter[] = input.chapters.map((chapter, sortOrder) =>
