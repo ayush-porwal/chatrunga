@@ -317,11 +317,6 @@ describe("runMigrations", () => {
     expect({
       ...db.prepare("SELECT ocr_status, lines_status, lines_json FROM book_pages").get()
     }).toStrictEqual({ ocr_status: "pending", lines_status: "pending", lines_json: null });
-    // A title is the one read from the pages until the user chooses one.
-    expect({ ...db.prepare("SELECT title_chosen FROM books WHERE id = 'b'").get() }).toStrictEqual({
-      title_chosen: 0
-    });
-    expect(() => db.exec("UPDATE books SET title_chosen = 2")).toThrow(/CHECK constraint failed/);
     expect(() => db.exec("UPDATE books SET status = 'lost'")).toThrow(/CHECK constraint failed/);
 
     db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");
@@ -334,5 +329,31 @@ describe("runMigrations", () => {
     for (const table of ["books", "book_pages", "book_chapters"]) {
       expect({ ...db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() }).toStrictEqual({ n: 1 });
     }
+  });
+
+  it("14: a book that ran migration 13 gets title_chosen, unchosen; one that has it is left alone", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`CREATE TABLE repertoires (id TEXT PRIMARY KEY)`);
+    db.exec(`CREATE TABLE repertoire_chapters (id TEXT PRIMARY KEY)`);
+    db.exec("PRAGMA user_version = 12");
+    runMigrations(db, MIGRATIONS.slice(0, 13));
+    db.exec(`INSERT INTO books (id, title, page_count, source_name, sha256, status, ocr_model,
+        structure_model, created_at, updated_at)
+      VALUES ('b', 'Book', 2, 'book.pdf', 'hash', 'paused', 'ocr', 'model', 1, 1)`);
+    runMigrations(db, MIGRATIONS.slice(0, 14));
+    expect(version(db)).toBe(14);
+    // A title is the one read from the pages until the user chooses one.
+    expect({ ...db.prepare("SELECT title_chosen FROM books WHERE id = 'b'").get() }).toStrictEqual({
+      title_chosen: 0
+    });
+    expect(() => db.exec("UPDATE books SET title_chosen = 2")).toThrow(/CHECK constraint failed/);
+
+    // An unreleased build created the column in migration 13: running 14 again changes nothing.
+    db.exec("UPDATE books SET title_chosen = 1");
+    db.exec("PRAGMA user_version = 13");
+    runMigrations(db, MIGRATIONS.slice(0, 14));
+    expect({ ...db.prepare("SELECT title_chosen FROM books WHERE id = 'b'").get() }).toStrictEqual({
+      title_chosen: 1
+    });
   });
 });
