@@ -223,22 +223,25 @@ export function createBookService(deps: BookServiceDeps) {
       return deps.store.list().map(summary);
     },
 
-    /** The book pages of a repertoire imported from a book (null for any other repertoire). */
-    pages(repertoireId: string): BookPages | null {
+    /**
+     * The book pages of a repertoire imported from a book (null for any other repertoire). A page
+     * whose image file is gone has no `src` (the Book tab says so).
+     */
+    async pages(repertoireId: string): Promise<BookPages | null> {
       const book = deps.store.forRepertoire(repertoireId);
       if (!book) return null;
       deps.allowFolder(deps.files.folderOf(book.id));
-      return {
-        bookId: book.id,
-        title: book.title,
-        pages: deps.store.pages(book.id).map((page) => ({
+      const pages = await Promise.all(
+        deps.store.pages(book.id).map(async (page) => ({
           pageIndex: page.pageIndex,
           printedPage: page.printedPage,
-          src: deps.imageSrc(page.imageFile),
+          src: (await deps.files.readable(book.id, page.imageFile))
+            ? deps.imageSrc(page.imageFile)
+            : null,
           ocrText: page.ocrText
-        })),
-        chapters: deps.store.chapters(book.id)
-      };
+        }))
+      );
+      return { bookId: book.id, title: book.title, pages, chapters: deps.store.chapters(book.id) };
     },
 
     /** Deletes a book (not its repertoire) and its page images; a running import stops first. */

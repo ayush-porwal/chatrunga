@@ -4,7 +4,8 @@
  * the PDF), so they must really be a WebP, PNG or JPEG. The folders are served to the renderer
  * through the image protocol (image-access.ts) and deleted with their book.
  */
-import { readdir, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pictureStore } from "../picture-store";
 import { rasterType, type RasterType } from "../picture-bytes";
@@ -49,6 +50,15 @@ export function bookPageFiles(root: string, warn: (message: string, error: unkno
       const bytes = await readFile(path).catch(() => null);
       const type = bytes && rasterType(bytes);
       return bytes && type ? { bytes, type } : null;
+    },
+
+    /** Whether a stored page's file is still there and readable (a page shown to the user). */
+    async readable(bookId: string, path: string): Promise<boolean> {
+      if (dirname(path) !== folderOf(bookId)) return false;
+      return access(path, constants.R_OK).then(
+        () => true,
+        () => false
+      );
     },
 
     /** Deletes the book's folder. */

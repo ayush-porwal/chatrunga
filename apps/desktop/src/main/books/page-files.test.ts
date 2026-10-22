@@ -18,6 +18,9 @@ describe("book page files", () => {
     expect(readdirSync(join(root, "b1"))).toStrictEqual([second.split("/").at(-1)]);
     expect(first).not.toBe(second);
     await expect(files.read("b1", second)).resolves.toMatchObject({ type: "image/png" });
+    await expect(files.readable("b1", second)).resolves.toBe(true);
+    await expect(files.readable("b1", first)).resolves.toBe(false);
+    await expect(files.readable("b2", second)).resolves.toBe(false);
   });
 
   it("refuses bytes that aren't an image, odd book ids and files of another folder", async () => {

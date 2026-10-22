@@ -201,7 +201,7 @@ describe("book service", () => {
       expect.objectContaining({ stage: "lines", chapter: { index: 0, title: "Chapter A" } })
     );
 
-    const pages = books.pages(book.repertoireId!)!;
+    const pages = (await books.pages(book.repertoireId!))!;
     expect(pages).toMatchObject({ bookId: id, title: "Synthetic Openings" });
     expect(pages.chapters).toStrictEqual(book.chapters);
     expect(pages.chapters[0]).toMatchObject({
@@ -219,7 +219,17 @@ describe("book service", () => {
     );
     expect(pages.pages[0].src).toMatch(/^image:.*p0001-[0-9a-f]{16}\.webp$/);
     expect(allowFolder).toHaveBeenCalledWith(join(root, id));
-    expect(books.pages("another-repertoire")).toBeNull();
+    await expect(books.pages("another-repertoire")).resolves.toBeNull();
+
+    // A page whose image file went missing is served without one.
+    rmSync(store.pages(id)[1].imageFile);
+    const after = (await books.pages(book.repertoireId!))!;
+    expect(after.pages.map((entry) => entry.src === null)).toStrictEqual([
+      false,
+      true,
+      false,
+      false
+    ]);
   });
 
   it("refuses to start without a usable key, leaving the book as it was", async () => {
