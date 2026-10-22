@@ -57,7 +57,7 @@ jobs:
             target: --win
           # Packaged for the runner's own CPU only (releases build arm64 and x64).
           - name: macOS
-            os: macos-14
+            os: macos-15
             target: --mac --arm64
     env:
       CI: "true"
