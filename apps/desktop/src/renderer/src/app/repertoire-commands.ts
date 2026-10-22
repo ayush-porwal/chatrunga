@@ -16,6 +16,7 @@ import {
   type HandoffOrigin,
   type RepertoireCommand
 } from "../features/repertoire/handoffs";
+import { practiceAutoStarts } from "../features/repertoire/practice-start";
 import type { StudyOpenTarget } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import {
@@ -147,10 +148,12 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
 
   /**
    * Practice: a session to resume, else one that starts at once (the preset's, or with the
-   * repertoire's practice settings: each navigation carries its own preset, so it starts once). A study
-   * draft still saving (left through the hub, say) is saved first, so practice grades the edited
-   * chapter; when that save fails, the notice says so and the current screen stays (false, as when
-   * a newer navigation wins).
+   * repertoire's practice settings). Each navigation carries its own preset, recorded with its
+   * history entry, so it starts once: a restore passes it back and is shown that start's answer.
+   * Another Practice while this repertoire's start is still waiting for its answer (a double click)
+   * leaves that start alone. A study draft still saving (left through the hub, say) is saved first,
+   * so practice grades the edited chapter; when that save fails, the notice says so and the
+   * current screen stays (false, as when a newer navigation wins).
    */
   async function openRepertoirePractice(
     repertoireId: string,
@@ -160,6 +163,7 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     }: { sessionId?: string | null; preset?: RepertoireExtras["preset"] } = {},
     history: HistoryMode = "push"
   ): Promise<boolean> {
+    if (history === "push" && !sessionId && practiceStarting(repertoireId)) return true;
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
     // Held back by the study page being left and by this repertoire's unsaved changes (practice
@@ -179,10 +183,22 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
         )
     });
     if (!leftSaved) return false;
-    deps.setExtras((extras) => ({ ...extras, preset: sessionId ? null : (preset ?? {}) }));
+    const navigation = sessionId ? null : (preset ?? {});
+    deps.setExtras((extras) => ({ ...extras, preset: navigation }));
     showRepertoireView("repertoire-practice", practicePath(repertoireId, sessionId));
-    record(history, { view: "repertoire-practice", repertoireId, sessionId });
+    record(history, { view: "repertoire-practice", repertoireId, sessionId, preset: navigation });
     return true;
+  }
+
+  /** This repertoire's practice is on screen, its start still waiting for its answer. */
+  function practiceStarting(repertoireId: string): boolean {
+    return (
+      screen?.view === "repertoire-practice" &&
+      screen.repertoireId === repertoireId &&
+      screen.sessionId === null &&
+      screen.preset !== null &&
+      practiceAutoStarts.pending(screen.preset)
+    );
   }
 
   /** The session started: same screen, now naming the session. */

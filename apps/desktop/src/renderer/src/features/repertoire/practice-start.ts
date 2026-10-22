@@ -2,6 +2,7 @@ import type {
   PracticeSessionSnapshot,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import type { PracticePreset } from "./practice-setup";
 
 /**
  * Where the practice page's last start stands (a spinner while starting). Only the newest start
@@ -46,3 +47,32 @@ export function settleStart(
 export function isEmptyTargetedStart(state: PracticeStart): boolean {
   return state.status === "empty" && Boolean(state.input.positionKeys?.length);
 }
+
+/**
+ * Starts keyed by the navigation that asked for them (its preset object, which the history entry
+ * carries back): each runs once. A page shown again for the same navigation (Back / Forward, a
+ * remount) gets that start's answer (`reused`) instead of starting another session, and a start
+ * still waiting for its answer is `pending`, so a repeated Practice click doesn't start another.
+ */
+export class NavigationStarts<K extends object, T> {
+  private readonly starts = new WeakMap<K, { answer: Promise<T>; pending: boolean }>();
+
+  run(key: K, start: () => Promise<T>): { answer: Promise<T>; reused: boolean } {
+    const known = this.starts.get(key);
+    if (known) return { answer: known.answer, reused: true };
+    const entry = { answer: start(), pending: true };
+    this.starts.set(key, entry);
+    const settled = () => {
+      entry.pending = false;
+    };
+    entry.answer.then(settled, settled);
+    return { answer: entry.answer, reused: false };
+  }
+
+  pending(key: K): boolean {
+    return this.starts.get(key)?.pending ?? false;
+  }
+}
+
+/** Practice's auto-starts, by the navigation's preset (see NavigationStarts). */
+export const practiceAutoStarts = new NavigationStarts<PracticePreset, PracticeSessionSnapshot>();

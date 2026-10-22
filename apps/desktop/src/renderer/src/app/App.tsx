@@ -315,8 +315,8 @@ export function App() {
     openBroadcastTournament: (screen) => nav.openBroadcastTournament(screen, "none"),
     openRepertoireHub: () => repertoire.openRepertoireHub("none"),
     openRepertoireStudy: (entry) => repertoire.openRepertoireStudy(entry, "none"),
-    openRepertoirePractice: (repertoireId, sessionId) =>
-      repertoire.openRepertoirePractice(repertoireId, { sessionId }, "none"),
+    openRepertoirePractice: ({ repertoireId, sessionId, preset }) =>
+      repertoire.openRepertoirePractice(repertoireId, { sessionId, preset }, "none"),
     showGame: (tab) => nav.showGame(tab, "none"),
     showGameReview: (entry) => {
       setReviewTab(entry.tab);

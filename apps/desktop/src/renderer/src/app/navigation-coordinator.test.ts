@@ -183,13 +183,20 @@ describe("navigation coordinator", () => {
       expect(await restoreEntry({ view: "repertoire-hub" }, shell)).toBe("shown");
       expect(shell.openPuzzles).toHaveBeenCalledWith();
       expect(shell.openRepertoireHub).toHaveBeenCalledWith();
-      expect(
-        await restoreEntry(
-          { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" },
-          shell
-        )
-      ).toBe("shown");
-      expect(shell.openRepertoirePractice).toHaveBeenCalledWith("r1", "s1");
+      const practice = {
+        view: "repertoire-practice",
+        repertoireId: "r1",
+        sessionId: "s1"
+      } as const;
+      expect(await restoreEntry(practice, shell)).toBe("shown");
+      expect(shell.openRepertoirePractice).toHaveBeenCalledWith(practice);
+      // A session-less entry hands back its navigation's preset (that start is not made again).
+      const preset = {};
+      await restoreEntry(
+        { view: "repertoire-practice", repertoireId: "r1", sessionId: null, preset },
+        shell
+      );
+      expect(vi.mocked(shell.openRepertoirePractice).mock.lastCall?.[0].preset).toBe(preset);
     });
 
     it("brings the broadcast pages back, a tournament on its round and tab", async () => {
