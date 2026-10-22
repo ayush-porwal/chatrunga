@@ -9,7 +9,7 @@ import {
   type SecureStorageLike
 } from "../secure-json-file";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
-import { LICHESS_SPEEDS } from "./normalize";
+import { flairName, LICHESS_SPEEDS } from "./normalize";
 
 type StoredAccount = {
   account: LichessAccount | null;
@@ -53,6 +53,7 @@ function readAccount(value: unknown): LichessAccount | null {
     id: json.id,
     username: json.username,
     title: typeof json.title === "string" ? json.title : null,
+    flair: flairName(json.flair),
     perfs,
     connectedAt: finite(json.connectedAt) ?? 0,
     lastSyncAt: finite(json.lastSyncAt)
@@ -138,14 +139,17 @@ export class LichessAccountStore {
   }
 
   /**
-   * The account's ratings read again from Lichess. Only for the account still connected (another
-   * may have signed in meanwhile); returns the saved account, or null when it is gone.
+   * The account's ratings and flair read again from Lichess. Only for the account still connected
+   * (another may have signed in meanwhile); returns the saved account, or null when it is gone.
    */
-  updatePerfs(accountId: string, perfs: LichessAccount["perfs"]): Promise<LichessAccount | null> {
+  updatePerfs(
+    accountId: string,
+    fresh: Pick<LichessAccount, "perfs" | "flair">
+  ): Promise<LichessAccount | null> {
     return this.serialize(async () => {
       const current = await this.read();
       if (current.account?.id !== accountId) return null;
-      const account = { ...current.account, perfs };
+      const account = { ...current.account, ...fresh };
       await this.write({ ...current, account });
       return account;
     });

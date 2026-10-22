@@ -24,6 +24,7 @@ import { useGameFacetsQuery, useRecentGamePagesQuery } from "../../queries/api";
 import { useChesscomStore } from "../../stores/chesscom-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { PlayerMark } from "../game/library-rows";
+import { useYourSide } from "../profile/YourAvatar";
 import { useSavedGameActions } from "../game/saved-game-actions";
 import { useSavedEngineSide } from "../game/use-saved-engine-side";
 import { BoardThumbnail } from "../settings/board-thumbnail";
@@ -360,10 +361,15 @@ function GameRow({
     black: game.black,
     engineId: saved?.headers?.engineId
   });
+  const yourSide = useYourSide(game.white, game.black, game.source);
 
   const player = (color: Color, name: string) => (
     <span className="flex min-w-0 items-center gap-1.5">
-      <PlayerMark color={color} engine={engineSide?.side === color ? engineSide.engine : null} />
+      <PlayerMark
+        color={color}
+        engine={engineSide?.side === color ? engineSide.engine : null}
+        you={yourSide === color}
+      />
       <span
         className={cn(
           "truncate font-medium",

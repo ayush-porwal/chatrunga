@@ -17,6 +17,7 @@ const status: LichessStatus = {
     id: "ayush",
     username: "Ayush",
     title: null,
+    flair: null,
     perfs: {},
     connectedAt: 1,
     lastSyncAt: null

@@ -89,6 +89,7 @@ import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
 import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
+import { PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -159,6 +160,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   registerChesscomIpc();
+  registerProfileIpc();
   registerBroadcastIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
@@ -597,6 +599,31 @@ function registerUpdateIpc(): void {
   ipcMain.handle("updates:download", () => updateService.download());
   ipcMain.handle("updates:install", () => updateService.install());
   ipcMain.handle("updates:openDownload", () => updateService.openDownload());
+}
+
+/**
+ * Your picture (main/profile-picture), loaded in the background now (nothing waits for it): it
+ * starts following the accounts right away, as an account's picture may need downloading. The
+ * file dialog runs here; the module copies the picture picked.
+ */
+function registerProfileIpc(): void {
+  const profile = () => import("../profile-picture");
+  profile().then(
+    (pictures) => pictures.startProfilePictures(),
+    (error: unknown) => logger.error("profile-picture", "loading failed:", error)
+  );
+  ipcMain.handle("profile:picture", () => profile().then((pictures) => pictures.profilePicture()));
+  ipcMain.handle("profile:choosePicture", async (event) => {
+    const result = await showOpenDialog(event, {
+      properties: ["openFile"],
+      filters: [{ name: "Pictures", extensions: PICTURE_FILE_EXTENSIONS }]
+    });
+    const path = result.canceled ? null : (result.filePaths[0] ?? null);
+    return (await profile()).chooseProfilePicture(path);
+  });
+  ipcMain.handle("profile:removePicture", () =>
+    profile().then((pictures) => pictures.removeProfilePicture())
+  );
 }
 
 /**

@@ -48,7 +48,6 @@ import { getTelemetry, initTelemetry } from "./telemetry";
 import { resolveTelemetryConfig, usageAnalyticsConsent } from "./telemetry/config";
 import { noteEngineReadiness } from "./telemetry/engine-readiness";
 import { rescueLegacyDatasets } from "./databases/dataset-location";
-import { adoptStoredEngineImages } from "./engine/engine-images";
 import { engineImages } from "./ipc/engine-handler";
 import { broadcast } from "./ipc/broadcast";
 import { appWindows, isServiceContents } from "./app-windows";
@@ -469,7 +468,7 @@ function installWindowReveal(): void {
   );
 }
 
-/** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */
+/** Serves engine pictures and yours from disk; see image-access.ts for what is allowed. */
 function installLocalImageProtocol(): void {
   allowImageFolder(engineImages().dir);
   protocol.handle(IMAGE_SCHEME, (request) => {
@@ -527,19 +526,23 @@ function createAppIcon() {
 
 /**
  * Engine pictures saved before they were copied into the app's data move there (in the
- * background; a picture that can't be copied stays as it is). See engine/engine-images.ts.
+ * background; a picture that can't be copied stays as it is). See engine/engine-image-migration.ts.
  */
 function adoptEngineImages(): void {
-  adoptStoredEngineImages(engineImages(), engineRepository, (message, error) =>
-    logger.warn("engine-images", `${message}:`, errorMessage(error))
-  ).then(
-    (changed) => {
-      if (!changed) return;
-      logger.info("engine-images", `copied ${changed} engine picture(s) into the app's data`);
-      broadcast("engines:changed", undefined);
-    },
-    (error: unknown) => logger.error("engine-images", "moving engine pictures failed:", error)
-  );
+  import("./engine/engine-image-migration")
+    .then(({ adoptStoredEngineImages }) =>
+      adoptStoredEngineImages(engineImages(), engineRepository, (message, error) =>
+        logger.warn("engine-images", `${message}:`, errorMessage(error))
+      )
+    )
+    .then(
+      (changed) => {
+        if (!changed) return;
+        logger.info("engine-images", `copied ${changed} engine picture(s) into the app's data`);
+        broadcast("engines:changed", undefined);
+      },
+      (error: unknown) => logger.error("engine-images", "moving engine pictures failed:", error)
+    );
 }
 
 /**

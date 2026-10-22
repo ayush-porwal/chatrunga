@@ -14,6 +14,7 @@ import { reviewMoveShapes } from "../board/board-shapes";
 import { boardMoveMark } from "../board/move-mark";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { useSavedEngineSide } from "../game/use-saved-engine-side";
+import { useYourSide } from "../profile/YourAvatar";
 import { ReviewBoard } from "./ReviewBoard";
 import { uciSquares } from "./review-utils";
 
@@ -49,6 +50,7 @@ export function ReviewBoardStage({
   const boardFen = useGameStore((state) => state.currentFen);
   const orientation = useGameStore((state) => state.orientation);
   const headers = useGameStore((state) => state.headers);
+  const source = useGameStore((state) => state.source);
   // A BEST line on the board: the panels stay on its error, the board shows the line's position
   // (its move highlighted, none of the error's arrows or mark).
   const bestLine = useGameStore(activeBestLine);
@@ -86,12 +88,14 @@ export function ReviewBoardStage({
   const toMove = sideToMove(boardFen);
   // An engine game's engine side shows the engine's picture.
   const engineSide = useSavedEngineSide(headers);
+  const yourSide = useYourSide(headers.white, headers.black, source);
   const playerRow = (player: typeof top) => (
     <PlayerRow
       name={player.name}
       elo={player.elo}
       color={player.color}
       engine={engineSide?.side === player.color ? engineSide.engine : null}
+      you={yourSide === player.color}
       clock={clocks?.[player.color] ?? null}
       clockActive={toMove === player.color}
     />

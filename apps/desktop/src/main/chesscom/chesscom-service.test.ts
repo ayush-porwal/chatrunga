@@ -97,6 +97,7 @@ describe("ChesscomService", () => {
         id: "ayush_p64",
         username: "Ayush_P64",
         title: null,
+        avatar: "https://images.chesscomfiles.com/uploads/v1/user/1.png",
         ratings: { rapid: 1684, blitz: 1662, bullet: 1490, daily: 1550 },
         connectedAt: NOW,
         lastSyncAt: null
@@ -162,17 +163,33 @@ describe("ChesscomService", () => {
     expect(first.games.games).toStrictEqual([]);
   });
 
-  it("refreshes the ratings of the connected account", async () => {
+  it("refreshes the ratings and picture of the connected account", async () => {
     const stats = { chess_blitz: { last: { rating: 1700 } } };
+    const profile: Record<string, unknown> = {
+      username: "ayush_p64",
+      avatar: "https://images.chesscomfiles.com/uploads/v1/user/1.png"
+    };
     const { service } = await setup({
       ...ROUTES,
+      "/pub/player/ayush_p64": new Live(() => profile),
       "/pub/player/ayush_p64/stats": new Live(() => stats)
     });
     const finished = importDone(service);
     await service.connect({ username: "ayush_p64", firstImport: "year" });
     await finished;
     stats.chess_blitz.last.rating = 1712;
-    expect((await service.refreshAccount())?.ratings).toStrictEqual({ blitz: 1712 });
+    profile.avatar = "https://images.chesscomfiles.com/uploads/v1/user/2.png";
+    expect(await service.refreshAccount()).toMatchObject({
+      ratings: { blitz: 1712 },
+      avatar: "https://images.chesscomfiles.com/uploads/v1/user/2.png"
+    });
+    // A profile that can't be read keeps the picture known; the ratings still refresh.
+    profile.username = 5;
+    stats.chess_blitz.last.rating = 1720;
+    expect(await service.refreshAccount()).toMatchObject({
+      ratings: { blitz: 1720 },
+      avatar: "https://images.chesscomfiles.com/uploads/v1/user/2.png"
+    });
     await service.disconnect({ removeGames: false });
     expect(await service.refreshAccount()).toBeNull();
   });

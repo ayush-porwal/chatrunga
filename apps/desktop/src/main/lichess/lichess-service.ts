@@ -201,8 +201,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   }
 
   /**
-   * Reads the account's ratings again (`GET /api/account`) and saves them. Null when no account
-   * with a usable token is connected; rejects when Lichess can't be reached.
+   * Reads the account's ratings and flair again (`GET /api/account`) and saves them. Null when no
+   * account with a usable token is connected; rejects when Lichess can't be reached.
    */
   async refreshAccount(): Promise<LichessAccount | null> {
     const { account, tokenRejected } = await this.options.store.status();
@@ -213,7 +213,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
       account.lastSyncAt
     );
     if (fresh.id !== account.id) return null;
-    const saved = await this.options.store.updatePerfs(account.id, fresh.perfs);
+    const { perfs, flair } = fresh;
+    const saved = await this.options.store.updatePerfs(account.id, { perfs, flair });
     if (saved) this.emitStatus();
     return saved;
   }

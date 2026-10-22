@@ -56,6 +56,8 @@ import {
 import "./board.css";
 import { uciSquares } from "@chaturanga/shared/chess/square";
 import { isMaiaEngine } from "../play/engine-game";
+import { userSide } from "../analysis/post-game";
+import { useYourSide } from "../profile/YourAvatar";
 
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
 const FLASH_MS = 900;
@@ -67,6 +69,7 @@ export function BoardView() {
   const orientation = useGameStore((state) => state.orientation);
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const headers = useGameStore((state) => state.headers);
+  const source = useGameStore((state) => state.source);
   const mode = useGameStore((state) => state.mode);
   const engineSide = useGameStore((state) => state.engineSide);
   const hasLiveClock = useGameStore((state) => Boolean(state.engineClock && state.engineClockLive));
@@ -493,6 +496,9 @@ export function BoardView() {
   // The engine's picture on its side: the match's engine while one is played, else a saved engine
   // game's (opened on the board).
   const savedEngine = useSavedEngineSide(headers);
+  // Your side shows your picture: the side you play in a match, else the side the game names you.
+  const namedSide = useYourSide(headers.white, headers.black, source);
+  const yourSide = userSide(mode, engineSide) ?? namedSide;
   const engineFor = (color: Color) => {
     if (mode === "engine" && engineSide) return engineSide === color ? activeEngine : null;
     return savedEngine?.side === color ? savedEngine.engine : null;
@@ -517,6 +523,7 @@ export function BoardView() {
       }
       clockActive={status.turn === player.color && !status.isEnd}
       engine={engineFor(player.color)}
+      you={yourSide === player.color}
       hint={hint}
     />
   );

@@ -4,7 +4,11 @@
  * User-Agent as chess.com asks. Every answer is checked before use: the parsers below keep only
  * the fields the app reads, and drop what doesn't fit.
  */
-import { CHESSCOM_RATING_KEYS, type ChesscomRatings } from "@chaturanga/shared/types/chesscom";
+import {
+  CHESSCOM_RATING_KEYS,
+  type ChesscomAccount,
+  type ChesscomRatings
+} from "@chaturanga/shared/types/chesscom";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import { createSerialQueue } from "../secure-json-file";
 
@@ -97,12 +101,13 @@ export function playerPath(username: string, rest = ""): string {
   return `/pub/player/${encodeURIComponent(username.toLowerCase())}${rest}`;
 }
 
-export type ChesscomProfile = { id: string; username: string; title: string | null };
+export type ChesscomProfile = Pick<ChesscomAccount, "id" | "username" | "title" | "avatar">;
 
 /**
  * A player's profile (`/pub/player/{username}`). The API's `username` is lowercase; the profile
- * URL (`https://www.chess.com/member/Name`) has it as chess.com shows it. Null when the answer
- * isn't a profile.
+ * URL (`https://www.chess.com/member/Name`) has it as chess.com shows it; `avatar` is kept only as
+ * an https address (its host is checked where it is downloaded). Null when the answer isn't a
+ * profile.
  */
 export function parseProfile(json: unknown): ChesscomProfile | null {
   if (!isRecord(json) || typeof json.username !== "string") return null;
@@ -113,8 +118,14 @@ export function parseProfile(json: unknown): ChesscomProfile | null {
   return {
     id,
     username: shown && shown.toLowerCase() === id ? shown : id,
-    title: typeof json.title === "string" && /^[A-Z]{1,4}$/.test(json.title) ? json.title : null
+    title: typeof json.title === "string" && /^[A-Z]{1,4}$/.test(json.title) ? json.title : null,
+    avatar: httpsAddress(json.avatar)
   };
+}
+
+/** `value` when it is an https address of reasonable length, else null. */
+export function httpsAddress(value: unknown): string | null {
+  return typeof value === "string" && /^https:\/\/[^\s]{1,500}$/.test(value) ? value : null;
 }
 
 /** The player's current rating per kind of standard chess (`/stats` → `chess_rapid.last.rating`). */

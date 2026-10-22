@@ -24,6 +24,7 @@ import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
 import { RatingsSection } from "./RatingsSection";
 import { LichessAccountSection } from "../lichess/LichessAccount";
 import { ChesscomAccountSection } from "../chesscom/ChesscomAccount";
+import { YourPictureSection } from "./YourPictureSection";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { UsageDataSection } from "./UsageDataSection";
 import { useOnboardingSession } from "../onboarding/useOnboarding";
@@ -38,6 +39,7 @@ export type SettingsSectionId =
   | "ratings"
   | "lichess"
   | "chesscom"
+  | "picture"
   | "updates"
   | "usage"
   | "welcome";
@@ -61,7 +63,7 @@ export const SettingsPage = memo(function SettingsPage({
   const sections: SectionId[] = [
     "board",
     "sound",
-    ...(desktopApiAvailable ? (["lichess", "chesscom"] as const) : []),
+    ...(desktopApiAvailable ? (["lichess", "chesscom", "picture"] as const) : []),
     "ratings",
     "engines",
     "ai",
@@ -108,6 +110,9 @@ export const SettingsPage = memo(function SettingsPage({
             </SectionAnchor>
             <SectionAnchor id="chesscom">
               <ChesscomAccountSection />
+            </SectionAnchor>
+            <SectionAnchor id="picture">
+              <YourPictureSection />
             </SectionAnchor>
           </SettingsGroup>
         ) : null}

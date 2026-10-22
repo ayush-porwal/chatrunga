@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { EngineAvatar } from "../analysis/EngineAvatar";
+import { useYourPicture, YourAvatar } from "../profile/YourAvatar";
 import {
   resumePracticeTarget,
   type ResumePracticeTarget,
@@ -49,7 +50,7 @@ function BoardCard({
   lastMove?: string | null;
   tag: ReactNode;
   title: string;
-  /** Before the title: an engine game's engine picture. */
+  /** Before the title: your picture and an engine game's engine picture. */
   titleIcon?: ReactNode;
   /** The detail lines under the title. */
   children: ReactNode;
@@ -142,6 +143,7 @@ export function InProgressBoardCard({
   card: InProgress;
   onRejoin: () => void;
 }) {
+  const yours = useYourPicture();
   return (
     <BoardCard
       fen={card.fen}
@@ -149,7 +151,21 @@ export function InProgressBoardCard({
       lastMove={card.lastMove}
       tag={<Tag dot={card.live ? "info" : "accent"}>{card.tag}</Tag>}
       title={card.title}
-      titleIcon={card.engine ? <EngineAvatar engine={card.engine} size="xs" /> : null}
+      titleIcon={
+        // "You vs …": your picture, then the engine's (overlapping it a little).
+        yours || card.engine ? (
+          <span className="flex shrink-0 items-center">
+            {yours ? <YourAvatar picture={yours} size="xs" /> : null}
+            {card.engine ? (
+              <EngineAvatar
+                engine={card.engine}
+                size="xs"
+                className={yours ? "-ml-1 ring-2 ring-surface" : undefined}
+              />
+            ) : null}
+          </span>
+        ) : null
+      }
       action={{
         label: "Rejoin",
         icon: <LogIn />,

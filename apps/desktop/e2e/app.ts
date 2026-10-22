@@ -207,7 +207,7 @@ function launchEnv(
 
 /** Test doubles inside the main process; their records live on `globalThis.__e2e`. */
 async function installMainProcessGuards(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ app, dialog, shell }, dialogLogName) => {
+  await app.evaluate(({ app, dialog, session, shell }, dialogLogName) => {
     type Record = {
       fetches: string[];
       workers: string[];
@@ -282,6 +282,23 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
         headers: { "content-length": String(body.length), etag: '"e2e-fixture"' }
       });
     };
+
+    // Chromium's fetch on the accounts' picture session (main/profile-picture): only routed URLs
+    // answer, from a local file with its picture type; anything else fails as a network error.
+    const pictureTypes: { [extension: string]: string } = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp"
+    };
+    session.fromPartition("profile-picture").protocol.handle("https", (request) => {
+      state.fetches.push(request.url);
+      const file = state.routes[request.url];
+      if (!file) return Response.error();
+      return new Response(fs.readFileSync(file), {
+        headers: { "content-type": pictureTypes[path.extname(file)] ?? "application/octet-stream" }
+      });
+    });
 
     // Records worker threads (the puzzle scan) and their answers. The bundle imports Worker as an
     // ES binding: syncBuiltinESMExports makes it see the wrapped class.
@@ -360,7 +377,7 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 }
 
 /** The next native open dialog picks `file`. */
-function stubOpenFile(app: ElectronApplication, file: string) {
+export function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
     const previous = dialog.showOpenDialog.bind(dialog);
     dialog.showOpenDialog = async () => {

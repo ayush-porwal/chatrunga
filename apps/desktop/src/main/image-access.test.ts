@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
-import {
-  allowChosenFile,
-  allowImageFolder,
-  canonicalImagePath,
-  isServableImage
-} from "./image-access";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalImagePath } from "./image-access";
 
 describe("isServableImage", () => {
+  // The folders and files allowed are the module's own state: each test starts from a fresh copy.
+  let allowChosenFile: typeof import("./image-access").allowChosenFile;
+  let allowImageFolder: typeof import("./image-access").allowImageFolder;
+  let isServableImage: typeof import("./image-access").isServableImage;
+  beforeEach(async () => {
+    vi.resetModules();
+    ({ allowChosenFile, allowImageFolder, isServableImage } = await import("./image-access"));
+  });
+
   it("serves engine pictures and files picked this session, nothing else", () => {
     const registered = () => ["/engines/stockfish.png", null];
     expect(isServableImage("/engines/stockfish.png", registered)).toBe(true);
@@ -15,7 +19,7 @@ describe("isServableImage", () => {
     expect(isServableImage("/Users/me/Pictures/maia.png", registered)).toBe(true);
   });
 
-  it("serves the app's own picture folder, but nothing beside or below it", () => {
+  it("serves the app's own picture folders, but nothing beside or below them", () => {
     allowImageFolder("/data/engine-images");
     const none = () => [];
     expect(isServableImage("/data/engine-images/sf-0123456789abcdef.png", none)).toBe(true);
@@ -23,6 +27,12 @@ describe("isServableImage", () => {
     expect(isServableImage("/data/engine-images/../secret.png", none)).toBe(false);
     expect(isServableImage("/data/engine-images-x/x.png", none)).toBe(false);
     expect(isServableImage("/data/x.png", none)).toBe(false);
+    // Your picture's folder is served beside the engines' (each registered on its own).
+    expect(isServableImage("/data/profile-pictures/upload-0123456789abcdef.png", none)).toBe(false);
+    allowImageFolder("/data/profile-pictures");
+    expect(isServableImage("/data/profile-pictures/upload-0123456789abcdef.png", none)).toBe(true);
+    expect(isServableImage("/data/engine-images/sf-0123456789abcdef.png", none)).toBe(true);
+    expect(isServableImage("/data/profile-picture.json", none)).toBe(false);
     const windows = true;
     allowImageFolder("C:\\Users\\me\\AppData\\chaturanga\\engine-images");
     expect(

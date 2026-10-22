@@ -49,6 +49,7 @@ const lichessAccount = {
   id: "kakashi",
   username: "kakashi",
   title: null,
+  flair: null,
   perfs: {},
   connectedAt: 1,
   lastSyncAt: null

@@ -13,19 +13,25 @@ import {
 } from "./client";
 
 describe("chess.com API answers", () => {
-  it("reads a profile: the id, the name as chess.com shows it, and a title", () => {
+  it("reads a profile: the id, the name as chess.com shows it, a title and the picture", () => {
     expect(parseProfile(fixture("profile"))).toStrictEqual({
       id: "ayush_p64",
       username: "Ayush_P64",
-      title: null
+      title: null,
+      avatar: "https://images.chesscomfiles.com/uploads/v1/user/1.png"
     });
     expect(
       parseProfile({ username: "hikaru", url: "https://www.chess.com/member/Hikaru", title: "GM" })
-    ).toStrictEqual({ id: "hikaru", username: "Hikaru", title: "GM" });
-    // A profile URL naming someone else, or an odd title, isn't trusted.
+    ).toStrictEqual({ id: "hikaru", username: "Hikaru", title: "GM", avatar: null });
+    // A profile URL naming someone else, an odd title, or a picture that isn't https isn't trusted.
     expect(
-      parseProfile({ username: "erik", url: "https://www.chess.com/member/Other", title: "<b>" })
-    ).toStrictEqual({ id: "erik", username: "erik", title: null });
+      parseProfile({
+        username: "erik",
+        url: "https://www.chess.com/member/Other",
+        title: "<b>",
+        avatar: "http://images.chesscomfiles.com/x.png"
+      })
+    ).toStrictEqual({ id: "erik", username: "erik", title: null, avatar: null });
     for (const answer of [null, [], { username: 5 }, { username: "../x" }, { code: 0 }])
       expect(parseProfile(answer)).toBeNull();
   });

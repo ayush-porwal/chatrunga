@@ -15,6 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { EngineIdentity } from "@/lib/engine-identity";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { EngineAvatar } from "../analysis/EngineAvatar";
+import { useYourPicture, useYourSide, YourAvatar } from "../profile/YourAvatar";
+import { sideMark } from "../profile/side-mark";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { PiecePair } from "../play/piece-art";
 import { SourceBadge } from "../play/recent-games-controls";
@@ -53,12 +55,14 @@ export function LibraryGameRow({
   const white = playerName(game, "white");
   const black = playerName(game, "black");
   const engineSide = useSavedEngineSide(game);
+  const yourSide = useYourSide(game.white, game.black, game.source);
 
   const player = (color: Color, name: string) => (
     <span className="flex min-w-0 items-center gap-1">
       <PlayerMark
         color={color}
         engine={engineSide?.side === color ? engineSide.engine : null}
+        you={yourSide === color}
         dotClassName="size-2"
       />
       <span
@@ -124,23 +128,30 @@ export function LibraryGameRow({
 }
 
 /**
- * A player line's mark in a list of games: the engine's picture on the side an engine played (as
- * the board's player rows show it), else the side's dot; one slot either way, so the names line
- * up from row to row.
+ * A player line's mark in a list of games, as the board's player rows show it (see sideMark): the
+ * engine's picture on the side an engine played, your picture on yours, else the side's dot; one
+ * slot either way, so the names line up from row to row.
  */
 export function PlayerMark({
   color,
   engine,
+  you,
   dotClassName
 }: {
   color: Color;
   engine: EngineIdentity | null;
+  /** The side is yours (see useYourSide). */
+  you: boolean;
   dotClassName?: string;
 }) {
+  const yours = useYourPicture();
+  const mark = sideMark(engine, you ? yours : null);
   return (
     <span className="grid size-4.5 shrink-0 place-items-center">
-      {engine ? (
-        <EngineAvatar engine={engine} size="xs" />
+      {mark.kind === "engine" ? (
+        <EngineAvatar engine={mark.engine} size="xs" />
+      ) : mark.kind === "you" ? (
+        <YourAvatar picture={mark.picture} size="xs" />
       ) : (
         <SideDot color={color} className={dotClassName} />
       )}

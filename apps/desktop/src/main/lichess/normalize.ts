@@ -55,6 +55,13 @@ function speed(value: unknown, fallback: LichessSpeed): LichessSpeed {
   return isOneOf(LICHESS_SPEEDS, value) ? value : fallback;
 }
 
+/** A Lichess flair's name ("objects.crown", "nature.octopus-howard"), else null. */
+export function flairName(value: unknown): string | null {
+  return typeof value === "string" && /^[a-z0-9-]{1,40}\.[a-z0-9-]{1,80}$/.test(value)
+    ? value
+    : null;
+}
+
 /** `GET /api/account`. `lastSyncAt` is ours, not Lichess's. */
 export function normalizeAccount(
   value: unknown,
@@ -77,7 +84,15 @@ export function normalizeAccount(
       provisional: perf.prov === true
     } satisfies LichessPerf;
   }
-  return { id, username, title: text(json.title), perfs, connectedAt, lastSyncAt };
+  return {
+    id,
+    username,
+    title: text(json.title),
+    flair: flairName(json.flair),
+    perfs,
+    connectedAt,
+    lastSyncAt
+  };
 }
 
 /** A game player (`GameEventPlayer`) or challenge user; the Lichess AI has only `aiLevel`. */

@@ -6,13 +6,39 @@ import type { EngineIdentity } from "@/lib/engine-identity";
 import { cn } from "@/lib/utils";
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
 import { EngineAvatar } from "../analysis/EngineAvatar";
+import { useYourPicture, YourAvatar } from "../profile/YourAvatar";
 import { PieceArt, useBoardSquareColors } from "./piece-art";
 import { formatElapsed } from "./time-control";
 
 /* ------------------------------------------------------------------ tiles */
 
-/** You: a king on a board square in your colour (light king on a dark square), split for random. */
-export function KingTile({ color }: { color: Color | "random" }) {
+/**
+ * You: your picture (main/profile-picture) with your colour on its corner (half of each for
+ * random), else a king on a board square in your colour.
+ */
+export function YouTile({ color }: { color: Color | "random" }) {
+  const yours = useYourPicture();
+  if (!yours) return <KingTile color={color} />;
+  return (
+    <span className="play-tile">
+      <YourAvatar picture={yours} size="fill" />
+      <i
+        className={cn(
+          "play-tile-dot",
+          color === "white"
+            ? "bg-piece-white"
+            : color === "black"
+              ? "bg-piece-black"
+              : "play-tile-dot-split"
+        )}
+        aria-hidden="true"
+      />
+    </span>
+  );
+}
+
+/** A king on a board square in your colour (light king on a dark square), split for random. */
+function KingTile({ color }: { color: Color | "random" }) {
   const squares = useBoardSquareColors();
   if (color === "random") {
     return (

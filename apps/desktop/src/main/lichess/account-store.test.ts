@@ -25,6 +25,7 @@ const ACCOUNT: LichessAccount = {
   id: "kenneth",
   username: "Kenneth",
   title: null,
+  flair: null,
   perfs: { rapid: { rating: 1500, games: 10, provisional: false } },
   connectedAt: 1000,
   lastSyncAt: null

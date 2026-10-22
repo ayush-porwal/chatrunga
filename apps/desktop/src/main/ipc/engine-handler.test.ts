@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pngBytes } from "../__fixtures__/picture-bytes";
 
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
 const userData = vi.hoisted(() => ({ dir: "/nonexistent" }));
@@ -140,7 +141,7 @@ describe("engine create/update/remove", () => {
     let pictures: string;
     const copies = () => readdirSync(join(userData.dir, "engine-images")).sort();
     const picture = (name: string, contents: string) => {
-      writeFileSync(join(pictures, name), contents);
+      writeFileSync(join(pictures, name), pngBytes(contents));
       return join(pictures, name);
     };
 

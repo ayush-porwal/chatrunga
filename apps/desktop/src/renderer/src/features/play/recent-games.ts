@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import type { Color, GameSummary, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
+import type {
+  Color,
+  GameSource,
+  GameSummary,
+  MoveNode,
+  SavedGame
+} from "@chaturanga/shared/types/chess";
 import {
   LIBRARY_TAB_LABELS,
   LIBRARY_TABS,
@@ -86,20 +92,41 @@ export function playerName(game: Pick<GameSummary, Color>, color: Color): string
 }
 
 /**
- * The side the user played, which the thumbnail shows at the bottom: the "You" side of an engine
- * game, else the side named after a connected account (Lichess, Chess.com), else White.
+ * The side the user played: the "You" side of an engine game, else the side named after a
+ * connected account (Lichess, Chess.com); null when neither tells (someone else's game).
  */
-export function userSide(
+export function yourSideOf(
   game: Pick<GameSummary, Color>,
   usernames: readonly (string | null)[]
-): Color {
+): Color | null {
   const you = (color: Color) => game[color]?.trim() === "You";
   if (you("white") !== you("black")) return you("white") ? "white" : "black";
   for (const username of usernames) {
     const side = sideNamed(game, username);
     if (side) return side;
   }
-  return "white";
+  return null;
+}
+
+/**
+ * The connected accounts' usernames a game can name you by (for yourSideOf): a Lichess or Chess.com
+ * game's own site's only (its opponent may share your name on the other site), else both.
+ */
+export function accountUsernames(
+  source: GameSource | null | undefined,
+  accounts: { lichess: string | null; chesscom: string | null }
+): (string | null)[] {
+  if (source === "lichess") return [accounts.lichess];
+  if (source === "chesscom") return [accounts.chesscom];
+  return [accounts.lichess, accounts.chesscom];
+}
+
+/** The side the thumbnail shows at the bottom: the side the user played, else White. */
+export function userSide(
+  game: Pick<GameSummary, Color>,
+  usernames: readonly (string | null)[]
+): Color {
+  return yourSideOf(game, usernames) ?? "white";
 }
 
 /**
