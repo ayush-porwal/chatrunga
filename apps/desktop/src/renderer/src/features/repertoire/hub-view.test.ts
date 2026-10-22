@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { hubView } from "./hub-view";
 
-const base = { desktop: true, filtered: false, listed: 0, importing: 0, archivedCount: 0 };
+const base = {
+  desktop: true,
+  filtered: false,
+  listed: 0,
+  importing: 0,
+  archivedCount: 0 as number | undefined,
+  archivedFailed: false
+};
 
 describe("hubView", () => {
   it("shows the empty state without a card when there is no repertoire at all", () => {
@@ -27,6 +34,10 @@ describe("hubView", () => {
 
   it("waits for the archived count before choosing between the card and the empty state", () => {
     expect(hubView({ ...base, archivedCount: undefined })).toBe("loading");
+  });
+
+  it("shows the card when asking for archived repertoires failed, instead of waiting for ever", () => {
+    expect(hubView({ ...base, archivedCount: undefined, archivedFailed: true })).toBe("card");
   });
 
   it("has no card without the desktop app", () => {

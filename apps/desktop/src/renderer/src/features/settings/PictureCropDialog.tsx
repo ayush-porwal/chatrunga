@@ -36,7 +36,8 @@ const FRAME = 256;
  * Crop your picture: the picture under a frame shaped as your picture shows (the avatar's rounded
  * square), dragged to position it (or the arrow keys), zoomed with the slider (or the wheel, a
  * pinch, + and −). Save draws the square at PICTURE_OUTPUT_SIZE and hands it to `onSave` with the
- * crop; `error` is why the last save failed.
+ * crop; `error` is why the last save failed. From Save until the save ends (drawing, then `saving`)
+ * the dialog can't be closed: a save already under way would still apply after a Cancel.
  */
 export function PictureCropDialog({
   file,
@@ -56,15 +57,20 @@ export function PictureCropDialog({
   const [size, setSize] = useState<ImageSize | null>(null);
   const [crop, setCrop] = useState<PictureCrop>(file.crop ?? INITIAL_CROP);
   const [drawError, setDrawError] = useState<string | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const busy = drawing || saving;
 
   const save = () => {
     const image = imageRef.current;
-    if (!image || !size) return;
+    if (!image || !size || busy) return;
     setDrawError(null);
-    drawSquare(image, cropRect(crop, size)).then(
-      (bytes) => onSave(bytes, clampCrop(crop, size)),
-      () => setDrawError("Couldn’t draw the picture.")
-    );
+    setDrawing(true);
+    drawSquare(image, cropRect(crop, size))
+      .then(
+        (bytes) => onSave(bytes, clampCrop(crop, size)),
+        () => setDrawError("Couldn’t draw the picture.")
+      )
+      .finally(() => setDrawing(false));
   };
 
   return (
@@ -72,20 +78,14 @@ export function PictureCropDialog({
       size="sm"
       title="Crop your picture"
       description="Drag the picture or use the arrow keys; zoom with the slider."
-      onClose={onCancel}
+      onClose={busy ? undefined : onCancel}
       footer={
         <>
-          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled={!size || saving}
-            onClick={save}
-          >
-            {saving ? <Loader2 className="animate-spin" /> : null}
+          <Button type="button" variant="primary" size="sm" disabled={!size || busy} onClick={save}>
+            {busy ? <Loader2 className="animate-spin" /> : null}
             Save
           </Button>
         </>

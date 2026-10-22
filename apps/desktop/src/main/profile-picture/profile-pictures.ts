@@ -36,6 +36,8 @@ type Copy = { path: string; url: string | null };
 /** Every source's copy, and your photo's original (owned by "original") with its crop. */
 type State = Record<Source | "original", Copy | null> & { crop: PictureCrop | null };
 type Owner = Source | "original";
+/** The copies your own choices change (the accounts' pictures change on refresh). */
+const CHANGED_OWNERS: readonly Owner[] = ["upload", "original"];
 
 const NO_PICTURE: YourPicture = { src: null, source: null, adjustable: false };
 const NOT_A_PICTURE = "isn't a PNG, JPG, WebP or GIF file";
@@ -121,6 +123,8 @@ export class ProfilePictures {
     if (!info?.isFile()) throw new Error(`The picture ${basename(path)} wasn't found.`);
     if (info.size > PICTURE_MAX_BYTES) throw new Error("The picture is larger than 5 MB.");
     const bytes = await readFile(path);
+    // Again on what was read: the file may have grown (or been replaced) since its size was read.
+    if (bytes.length > PICTURE_MAX_BYTES) throw new Error("The picture is larger than 5 MB.");
     const type = rasterType(bytes);
     if (!type) throw new Error(`The picture ${basename(path)} ${NOT_A_PICTURE}.`);
     return { bytes, type, crop: null };
@@ -230,8 +234,15 @@ export class ProfilePictures {
     return this.serialize(async () => {
       const state = await this.read();
       const saved = { ...state };
-      await apply(state);
-      await this.commit(state, saved, ["upload", "original"]);
+      try {
+        await apply(state);
+      } catch (error) {
+        // A change that failed part way (an original written, then its crop not) leaves no file
+        // behind: what the saved state names stays, anything new goes.
+        await this.pruneTo(saved, CHANGED_OWNERS);
+        throw error;
+      }
+      await this.commit(state, saved, CHANGED_OWNERS);
       this.options.onChange();
       return this.resolve(state);
     });
@@ -244,17 +255,20 @@ export class ProfilePictures {
    * state and copies there were stay.
    */
   private async commit(state: State, saved: State, owners: readonly Owner[]): Promise<void> {
-    const prune = (from: State) =>
-      Promise.all(
-        owners.map((owner) => this.options.store.prune(owner, from[owner]?.path ?? null))
-      );
     try {
       await this.write(state);
     } catch (error) {
-      await prune(saved);
+      await this.pruneTo(saved, owners);
       throw error;
     }
-    await prune(state);
+    await this.pruneTo(state, owners);
+  }
+
+  /** Deletes `owners`' copies that `state` doesn't name. */
+  private async pruneTo(state: State, owners: readonly Owner[]): Promise<void> {
+    await Promise.all(
+      owners.map((owner) => this.options.store.prune(owner, state[owner]?.path ?? null))
+    );
   }
 
   /** The first source whose copy is there. */

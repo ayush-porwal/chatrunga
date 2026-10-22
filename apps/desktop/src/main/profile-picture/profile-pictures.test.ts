@@ -159,6 +159,38 @@ describe("ProfilePictures", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves no new original behind when its crop can't be written", async () => {
+    const kept = await choose(photo("me.png", "first"));
+    const keptCopies = copies();
+    const store = pictureStore(dir, { noun: "picture", warn: log });
+    // The original is written first, then the crop: the second write fails.
+    const write = store.write.bind(store);
+    const writes = vi
+      .spyOn(store, "write")
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error("disk full"));
+    const failing = new ProfilePictures({
+      store,
+      stateFile,
+      accountPictures: async () => ({ ...accounts }),
+      download,
+      onChange,
+      log
+    });
+    const file = await failing.open(photo("new.png", "second"));
+    await expect(
+      failing.save({
+        cropped: pngOfSize(512, 512, "second cut"),
+        original: Buffer.from(file.bytes),
+        crop: CROP
+      })
+    ).rejects.toThrow("disk full");
+    expect(writes.mock.calls.map(([owner]) => owner)).toStrictEqual(["original", "upload"]);
+    // The original written before the crop failed is gone; the kept photo's copies stay.
+    expect(copies()).toStrictEqual(keptCopies);
+    await expect(failing.picture()).resolves.toStrictEqual(kept);
+  });
+
   it("keeps the account's copy it had when a refresh can't be stored", async () => {
     accounts.chesscom = AVATAR;
     await pictures.refresh();

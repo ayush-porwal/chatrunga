@@ -45,7 +45,8 @@ export function useHubList(
     filtered,
     listed: list.isSuccess ? list.data.length : undefined,
     importing,
-    archivedCount: archived.data?.length
+    archivedCount: archived.data?.length,
+    archivedFailed: archived.isError
   });
   return { list, view };
 }

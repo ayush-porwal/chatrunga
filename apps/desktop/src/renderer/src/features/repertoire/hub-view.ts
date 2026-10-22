@@ -11,7 +11,8 @@ export function hubView({
   filtered,
   listed,
   importing,
-  archivedCount
+  archivedCount,
+  archivedFailed
 }: {
   /** Repertoires need the desktop app; the browser build has none. */
   desktop: boolean;
@@ -23,9 +24,14 @@ export function hubView({
   importing: number;
   /** Archived repertoires, asked only when the unfiltered list is empty (undefined until known). */
   archivedCount: number | undefined;
+  /**
+   * That question failed: the card shows (its title bar keeps New and the archived toggle in
+   * reach) rather than waiting for an answer that won't come.
+   */
+  archivedFailed: boolean;
 }): HubView {
   if (!desktop) return "none";
   if (filtered || importing > 0 || listed === undefined || listed > 0) return "card";
-  if (archivedCount === undefined) return "loading";
+  if (archivedCount === undefined) return archivedFailed ? "card" : "loading";
   return archivedCount > 0 ? "card" : "none";
 }
