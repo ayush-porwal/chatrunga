@@ -4,28 +4,22 @@ import {
   DEFAULT_PUZZLE_RATING,
   type PuzzleDifficulty
 } from "@chaturanga/shared/chess/puzzle-rating";
-import {
-  externalDatabaseSources,
-  type ExternalDatabaseSource,
-  type InstalledDatabase,
-  type PuzzleSample
-} from "@chaturanga/shared/types/database";
-import { Badge } from "@/components/ui/badge";
+import type { InstalledDatabase, PuzzleSample } from "@chaturanga/shared/types/database";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
-import { Page, PageHeader } from "@/components/ui/page";
 import { Skeleton } from "@/components/ui/skeleton";
-import { card, cardPadded, divider, sectionTitle, well } from "@/lib/ui";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import { card, pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 import { useFailedPuzzlesQuery, usePuzzleRatingSummaryQuery } from "../../queries/puzzles";
-import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
+import { CardTitleBar } from "../play/card-title";
 import {
-  activeFilterLabels,
   drawnRatingRange,
   puzzleDatabasesOf,
   puzzleFiltersChanged,
@@ -33,8 +27,10 @@ import {
   selectedPuzzleDatabase
 } from "./puzzle-set";
 import { LichessPuzzleFilters, PositionTrainingFilters } from "./PuzzleFilters";
-import { PuzzleRatingCard } from "./PuzzleRatingCard";
+import { PuzzleRatingChart } from "./PuzzleRatingChart";
 import { formatPuzzleRating } from "./PuzzleRatingLine";
+import { PuzzleThemeChart } from "./PuzzleThemeChart";
+import { toggleTheme } from "./rating-chart";
 
 export type PuzzleSessionConfig = {
   databaseId: string | null;
@@ -67,6 +63,12 @@ export type PuzzleSessionConfig = {
   };
 };
 
+/**
+ * The Puzzles page, laid out as Play (full width, bordered cards with title bars): Practice (the
+ * database, the filters and Start) and, from the first rated puzzle, the Rating chart and the
+ * themes' results. One column on a narrow window; from 56rem of width, Practice on the left and
+ * the charts beside it. The puzzle session itself is its own board screen.
+ */
 export const PuzzlePage = memo(function PuzzlePage({
   onDatabases,
   onStart
@@ -79,40 +81,21 @@ export const PuzzlePage = memo(function PuzzlePage({
   const puzzleDatabases = useMemo(() => puzzleDatabasesOf(databases.data ?? []), [databases.data]);
   const draft = usePuzzleDraftStore((state) => state.draft);
   const updateDraft = usePuzzleDraftStore((state) => state.update);
-  const {
-    themes,
-    lengths,
-    openings,
-    side,
-    difficulty,
-    popularityMin,
-    difficultyMin,
-    difficultyMax,
-    positionTags
-  } = draft;
   const selectedDatabase = selectedPuzzleDatabase(puzzleDatabases, draft.databaseId);
   const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
   const ratingSummary = usePuzzleRatingSummaryQuery();
   const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
-  // "Around my rating": the range follows the solver's current rating (Lichess sets only).
-  const drawn = drawnRatingRange(draft, isLichess, userRating.rating);
   const failedPuzzles = useFailedPuzzlesQuery(selectedDatabase?.sourceId ?? null);
   const failedIds = useMemo(
     () => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId),
     [failedPuzzles.data]
   );
-  const setDatabaseId = (value: string) => updateDraft({ databaseId: value });
-  const setThemes = (value: string[]) => updateDraft({ themes: value });
-  const setLengths = (value: string[]) => updateDraft({ lengths: value });
-  const setOpenings = (value: string[]) => updateDraft({ openings: value });
-  const setSide = (value: "any" | "white" | "black") => updateDraft({ side: value });
-  const onRatingMinChange = (value: number) => updateDraft({ ratingMin: value });
-  const onRatingMaxChange = (value: number) => updateDraft({ ratingMax: value });
-  const setDifficulty = (value: PuzzleDifficulty | null) => updateDraft({ difficulty: value });
-  const setPopularityMin = (value: number) => updateDraft({ popularityMin: value });
-  const setDifficultyMin = (value: number) => updateDraft({ difficultyMin: value });
-  const setDifficultyMax = (value: number) => updateDraft({ difficultyMax: value });
-  const setPositionTags = (value: string[]) => updateDraft({ positionTags: value });
+  const themes = draft.themes;
+  const onToggleTheme = useMemo(
+    () =>
+      isLichess ? (theme: string) => updateDraft({ themes: toggleTheme(themes, theme) }) : null,
+    [isLichess, themes, updateDraft]
+  );
 
   function sessionConfig(database: NonNullable<typeof selectedDatabase>): PuzzleSessionConfig {
     return puzzleSetConfig(draft, database, userRating.rating);
@@ -162,90 +145,87 @@ export const PuzzlePage = memo(function PuzzlePage({
   if (!selectedDatabase)
     return (
       <PuzzlesPage>
-        <NoPuzzleDatabase onDatabases={onDatabases} />
+        <EmptyState
+          className="m-auto animate-fade-in"
+          icon={<Puzzle />}
+          title="Download a puzzle database"
+          description="Puzzles come from free datasets stored on this computer, each downloaded once."
+          action={
+            <Button type="button" variant="primary" onClick={onDatabases}>
+              <Database />
+              Open databases
+            </Button>
+          }
+        />
       </PuzzlesPage>
     );
   return (
     <PuzzlesPage>
-      <div className="@container">
-        <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_var(--side-column)]">
-          <section className={cn(cardPadded, "grid gap-5")} aria-label="Filters">
-            <DatabaseField
-              databases={puzzleDatabases}
-              selected={selectedDatabase}
-              onChange={setDatabaseId}
-              onManage={onDatabases}
-            />
-            <div className={divider} />
-            {isLichess ? (
-              <LichessPuzzleFilters
-                lengths={lengths}
-                openings={openings}
-                popularityMin={popularityMin}
-                ratingMax={drawn.ratingMax}
-                ratingMin={drawn.ratingMin}
-                difficulty={difficulty}
-                userRating={formatPuzzleRating(userRating)}
-                side={side}
-                themes={themes}
-                onLengthsChange={setLengths}
-                onOpeningsChange={setOpenings}
-                onPopularityMinChange={setPopularityMin}
-                onRatingMaxChange={onRatingMaxChange}
-                onRatingMinChange={onRatingMinChange}
-                onDifficultyChange={setDifficulty}
-                onSideChange={setSide}
-                onThemesChange={setThemes}
-              />
-            ) : (
-              <PositionTrainingFilters
-                difficultyMax={difficultyMax}
-                difficultyMin={difficultyMin}
-                tags={positionTags}
-                onDifficultyMaxChange={setDifficultyMax}
-                onDifficultyMinChange={setDifficultyMin}
-                onTagsChange={setPositionTags}
-              />
-            )}
-          </section>
-
-          {/*
-            The set as it will be drawn, its actions, and the rating — first on narrow panels, sticky
-            beside the filters on wide ones.
-          */}
-          <div className="order-first grid gap-6 @3xl:sticky @3xl:top-0 @3xl:order-none">
-            <PuzzleSetCard
-              lichess={isLichess}
-              databaseName={selectedDatabase.name}
-              filters={activeFilterLabels(draft, isLichess, drawn)}
-            >
-              <PuzzleSetActions
+      <PuzzleGrid
+        practice={
+          <PracticeCard
+            filtersChanged={puzzleFiltersChanged(draft, isLichess)}
+            onManageDatabases={onDatabases}
+            footer={
+              <PracticeActions
                 sample={samplePuzzle}
                 failedCount={failedIds.length}
-                filtersChanged={puzzleFiltersChanged(draft, isLichess)}
+                unrated={!isLichess}
                 onStart={start}
                 onRetryFailed={retryFailed}
               />
-            </PuzzleSetCard>
-            <PuzzleRatingCard />
-          </div>
-        </div>
-      </div>
+            }
+          >
+            <DatabaseField
+              databases={puzzleDatabases}
+              selected={selectedDatabase}
+              onChange={(databaseId) => updateDraft({ databaseId })}
+            />
+            <SetFilters lichess={isLichess} rating={userRating} />
+          </PracticeCard>
+        }
+        rating={<PuzzleRatingChart />}
+        themes={<PuzzleThemeChart selected={themes} onToggleTheme={onToggleTheme} />}
+      />
     </PuzzlesPage>
   );
 });
 
-/** The page around whichever state the Puzzles page is in. */
+/** The page around whichever state the Puzzles page is in (as Play: full width, no header). */
 function PuzzlesPage({ children }: { children: ReactNode }) {
   return (
-    <Page>
-      <PageHeader
-        title="Puzzles"
-        description="Train on puzzles and positions from your downloaded databases."
-      />
+    <div className={pageShell}>
+      <div className="flex min-h-full flex-col gap-4 p-6">
+        <h1 className="sr-only">Puzzles</h1>
+        {children}
+      </div>
+    </div>
+  );
+}
 
-      {children}
-    </Page>
+/**
+ * The cards' places: stacked on a narrow window; from 56rem of width, Practice on the left (as wide
+ * as its filters read well) beside the Rating chart over the themes' results.
+ */
+function PuzzleGrid({
+  practice,
+  rating,
+  themes
+}: {
+  practice: ReactNode;
+  rating: ReactNode;
+  themes: ReactNode;
+}) {
+  return (
+    <div className="@container">
+      <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)]">
+        {practice}
+        <div className="grid min-w-0 gap-4">
+          {rating}
+          {themes}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -268,115 +248,146 @@ function DatabasesError({ error, onRetry }: { error: unknown; onRetry: () => voi
 }
 
 /**
- * The database the set is drawn from (its size, else where it comes from), and Manage databases.
+ * Practice: the title bar (Reset filters while they differ from the defaults, Manage databases),
+ * `children` (the database and the filters), then `footer` (Start and its companions).
  */
+function PracticeCard({
+  filtersChanged,
+  onManageDatabases,
+  footer,
+  children
+}: {
+  filtersChanged: boolean;
+  onManageDatabases: () => void;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
+  return (
+    <section className={cn(card, "flex flex-col")} aria-labelledby="puzzle-practice-title">
+      <CardTitleBar
+        id="puzzle-practice-title"
+        title="Practice"
+        actions={
+          <>
+            {filtersChanged ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="animate-fade-in"
+                onClick={resetFilters}
+              >
+                <RotateCcw />
+                Reset filters
+              </Button>
+            ) : null}
+            <IconButton label="Manage databases" icon={<Database />} onClick={onManageDatabases} />
+          </>
+        }
+      />
+      <div className="@container grid gap-5 px-4 pb-4">{children}</div>
+      <div className="grid gap-3 border-t border-line-subtle p-4">{footer}</div>
+    </section>
+  );
+}
+
+/** The database the set is drawn from (its size, else where it comes from). */
 function DatabaseField({
   databases,
   selected,
-  onChange,
-  onManage
+  onChange
 }: {
   databases: readonly InstalledDatabase[];
   selected: InstalledDatabase;
   onChange: (databaseId: string) => void;
-  onManage: () => void;
 }) {
   const fieldId = useId();
   return (
-    <div className="flex items-end gap-2">
-      <Field
-        label="Database"
-        hint={
-          selected.recordCount
-            ? `${selected.recordCount.toLocaleString()} ${selected.kind === "puzzle" ? "puzzles" : "positions"}`
-            : `${selected.provider}, ${selected.format}`
-        }
-        htmlFor={fieldId}
-        className="flex-1"
-      >
-        <Select id={fieldId} value={selected.id} onChange={(event) => onChange(event.target.value)}>
-          {databases.map((database) => (
-            <option key={database.id} value={database.id}>
-              {database.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <IconButton
-        label="Manage databases"
-        icon={<Database />}
-        variant="outline"
-        size="icon"
-        onClick={onManage}
-      />
-    </div>
+    <Field
+      label="Database"
+      hint={
+        selected.recordCount
+          ? `${selected.recordCount.toLocaleString()} ${selected.kind === "puzzle" ? "puzzles" : "positions"}`
+          : `${selected.provider}, ${selected.format}`
+      }
+      htmlFor={fieldId}
+    >
+      <Select id={fieldId} value={selected.id} onChange={(event) => onChange(event.target.value)}>
+        {databases.map((database) => (
+          <option key={database.id} value={database.id}>
+            {database.name}
+          </option>
+        ))}
+      </Select>
+    </Field>
   );
 }
 
-/**
- * The set as it will be drawn: its kind and database, the filters that apply, and its actions
- * (PuzzleSetActions).
- */
-function PuzzleSetCard({
+/** The selected set's filters (a Lichess set's, or a position set's), bound to the draft. */
+function SetFilters({
   lichess,
-  databaseName,
-  filters,
-  children
+  rating
 }: {
   lichess: boolean;
-  databaseName: string;
-  filters: readonly string[];
-  children: ReactNode;
+  /** The solver's rating ("Around my rating" draws the Lichess range from it). */
+  rating: { rating: number; deviation: number };
 }) {
+  const draft = usePuzzleDraftStore((state) => state.draft);
+  const update = usePuzzleDraftStore((state) => state.update);
+  if (!lichess)
+    return (
+      <PositionTrainingFilters
+        difficultyMax={draft.difficultyMax}
+        difficultyMin={draft.difficultyMin}
+        tags={draft.positionTags}
+        onDifficultyMaxChange={(difficultyMax) => update({ difficultyMax })}
+        onDifficultyMinChange={(difficultyMin) => update({ difficultyMin })}
+        onTagsChange={(positionTags) => update({ positionTags })}
+      />
+    );
+  // "Around my rating": the range follows the solver's current rating.
+  const drawn = drawnRatingRange(draft, true, rating.rating);
   return (
-    <aside className={cn(cardPadded, "grid gap-4")} aria-labelledby="puzzle-set-title">
-      <div className="grid gap-1">
-        <h2 id="puzzle-set-title" className={sectionTitle}>
-          {lichess ? "Puzzle set" : "Position set"}
-        </h2>
-        <p className="truncate text-xs text-fg-muted" title={databaseName}>
-          {databaseName}
-        </p>
-      </div>
-      <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
-        {filters.map((item) => (
-          <li key={item} className="max-w-full">
-            <Badge size="md" className="max-w-full animate-fade-in">
-              <span className="truncate">{item}</span>
-            </Badge>
-          </li>
-        ))}
-      </ul>
-      {lichess ? null : (
-        // The position set grades difficulty 1–4, with no rating to play against.
-        <p className="text-xs leading-5 text-fg-muted">
-          Unrated: these positions don&apos;t change your puzzle rating.
-        </p>
-      )}
-      {children}
-    </aside>
+    <LichessPuzzleFilters
+      lengths={draft.lengths}
+      openings={draft.openings}
+      popularityMin={draft.popularityMin}
+      ratingMax={drawn.ratingMax}
+      ratingMin={drawn.ratingMin}
+      difficulty={draft.difficulty}
+      userRating={formatPuzzleRating(rating)}
+      side={draft.side}
+      themes={draft.themes}
+      onLengthsChange={(lengths) => update({ lengths })}
+      onOpeningsChange={(openings) => update({ openings })}
+      onPopularityMinChange={(popularityMin) => update({ popularityMin })}
+      onRatingMaxChange={(ratingMax) => update({ ratingMax })}
+      onRatingMinChange={(ratingMin) => update({ ratingMin })}
+      onDifficultyChange={(difficulty: PuzzleDifficulty | null) => update({ difficulty })}
+      onSideChange={(side) => update({ side })}
+      onThemesChange={(themes) => update({ themes })}
+    />
   );
 }
 
 /**
- * The set's actions, under why the last start failed: Start, Retry the failed puzzles
- * (`failedCount`), and Reset filters (while they differ from the defaults). `sample` draws the
- * first puzzle.
+ * Practice's actions, under why the last start failed: Start, and Retry the failed puzzles
+ * (`failedCount`). `sample` draws the first puzzle. A position set says it is unrated.
  */
-function PuzzleSetActions({
+function PracticeActions({
   sample,
   failedCount,
-  filtersChanged,
+  unrated,
   onStart,
   onRetryFailed
 }: {
   sample: ReturnType<typeof useSamplePuzzleMutation>;
   failedCount: number;
-  filtersChanged: boolean;
+  unrated: boolean;
   onStart: () => void;
   onRetryFailed: () => void;
 }) {
-  const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
   const retrying = sample.isPending && Boolean(sample.variables.ids);
   const starting = sample.isPending && !retrying;
   // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
@@ -388,16 +399,10 @@ function PuzzleSetActions({
           {startError}
         </Notice>
       ) : null}
-      <div className="grid gap-2">
-        <Button
-          type="button"
-          variant="primary"
-          className="h-10"
-          disabled={sample.isPending}
-          onClick={onStart}
-        >
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="primary" disabled={sample.isPending} onClick={onStart}>
           {starting ? <Loader2 className="animate-spin" /> : <Play />}
-          {starting ? "Finding a puzzle…" : "Start puzzle set"}
+          {starting ? "Finding a puzzle…" : "Start puzzles"}
         </Button>
         {failedCount ? (
           <Button
@@ -413,121 +418,57 @@ function PuzzleSetActions({
               : `Retry ${failedCount} failed ${failedCount === 1 ? "puzzle" : "puzzles"}`}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "transition-opacity duration-standard",
-            !filtersChanged && "pointer-events-none opacity-0"
-          )}
-          tabIndex={filtersChanged ? undefined : -1}
-          aria-hidden={filtersChanged ? undefined : true}
-          onClick={resetFilters}
-        >
-          <RotateCcw />
-          Reset filters
-        </Button>
+        {unrated ? (
+          // The position set grades difficulty 1–4, with no rating to play against.
+          <span className="text-xs text-fg-muted">Unrated: no effect on your puzzle rating</span>
+        ) : null}
       </div>
     </>
   );
 }
 
-/** Same footprint as the filters card + set summary, so the page doesn't jump when databases load. */
+/** The same cards at the same places, so the page doesn't jump when the databases load. */
 function PuzzleSetupSkeleton() {
-  return (
-    <div className="@container" aria-busy="true" aria-label="Loading databases">
-      <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_var(--side-column)]">
-        <div className={cn(cardPadded, "grid gap-5")}>
-          <div className="grid gap-2">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-9" />
-          </div>
-          <div className={divider} />
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[0, 1, 2].map((index) => (
-              <div key={index} className="grid gap-2">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-9" />
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {[64, 48, 72, 56, 40, 68, 52].map((width, index) => (
-              <Skeleton key={index} className="h-7 rounded-full" style={{ width }} />
-            ))}
-          </div>
-        </div>
-        <div className={cn(cardPadded, "order-first grid gap-4 @3xl:order-none")}>
-          <Skeleton className="h-3.5 w-24" />
-          <div className="flex flex-wrap gap-1.5">
-            <Skeleton className="h-6 w-24 rounded-full" />
-            <Skeleton className="h-6 w-28 rounded-full" />
-          </div>
-          <Skeleton className="h-10 rounded-lg" />
-        </div>
-      </div>
+  const bar = (
+    <div className="flex h-12 items-center px-4">
+      <Skeleton className="h-3.5 w-20" />
     </div>
   );
-}
-
-/** No puzzle or position database yet: what each one offers, and the way to get it. */
-function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
-  // Read as any catalogue source, not just today's: a game library has no place here.
-  const catalogue: readonly ExternalDatabaseSource[] = externalDatabaseSources;
-  const sources = catalogue.filter(
-    (source) => source.kind === "puzzle" || source.kind === "position"
-  );
   return (
-    <section
-      className={cn(card, "grid animate-fade-in gap-6 px-6 py-8 sm:px-8")}
-      aria-labelledby="no-puzzle-db-title"
-    >
-      <div className="grid max-w-lg gap-2">
-        <span className="mb-1 grid size-10 place-items-center rounded-xl bg-accent-soft text-accent-fg [&_svg]:size-5">
-          <Puzzle aria-hidden="true" />
-        </span>
-        <h2 id="no-puzzle-db-title" className="text-base font-semibold text-fg">
-          Download a database to start training
-        </h2>
-        <p className="text-sm leading-6 text-fg-muted">
-          Puzzles come from free datasets stored on this computer. Pick one on the Databases page;
-          it only needs to be downloaded once.
-        </p>
-      </div>
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {sources.map((source) => (
-          <li key={source.id} className={cn(well, "grid content-start gap-1 px-4 py-3")}>
-            <span className="flex min-w-0 items-baseline justify-between gap-3">
-              <span className="truncate text-sm font-medium text-fg-secondary" title={source.name}>
-                {source.name}
-              </span>
-              {source.expectedRecords ? (
-                <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
-                  {compactCount(source.expectedRecords)}{" "}
-                  {source.kind === "puzzle" ? "puzzles" : "positions"}
-                </span>
-              ) : null}
-            </span>
-            <span className="line-clamp-2 text-xs leading-5 text-fg-muted">
-              {source.description}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <div>
-        <Button type="button" variant="primary" onClick={onDatabases}>
-          <Database />
-          Open databases
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-/** 5939980 → "5.9M", 12431 → "12K". */
-function compactCount(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
-    value
+    <div aria-busy="true" aria-label="Loading databases">
+      <PuzzleGrid
+        practice={
+          <div className={card}>
+            {bar}
+            <div className="grid gap-5 px-4 pb-4">
+              {[0, 1, 2, 3].map((index) => (
+                <div key={index} className="grid gap-2">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-9" />
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-1.5">
+                {[64, 48, 72, 56, 40, 68].map((width, index) => (
+                  <Skeleton key={index} className="h-7 rounded-full" style={{ width }} />
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-line-subtle p-4">
+              <Skeleton className="h-9 w-36 rounded-lg" />
+            </div>
+          </div>
+        }
+        rating={
+          <div className={card}>
+            {bar}
+            <div className="grid gap-4 px-4 pb-4">
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-55 rounded-md" />
+            </div>
+          </div>
+        }
+        themes={null}
+      />
+    </div>
   );
 }

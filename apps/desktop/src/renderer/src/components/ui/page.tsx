@@ -1,21 +1,14 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import {
-  pageContainer,
-  pageDescription,
-  pageShell,
-  sectionDescription,
-  sectionTitle,
-  eyebrow
-} from "@/lib/ui";
+import { pageContainer, pageShell, sectionDescription, sectionTitle, eyebrow } from "@/lib/ui";
 
 /**
  * Full-page wrapper: scrolls, centers content in the fluid page column (`pageContainer`: the
  * `--page-content` width and `--page-gutter` gutters from app.css, the same edges on every page).
- * Use for Home, Play, Puzzles, Databases, Settings.
+ * Use for Databases and Settings (Play, Puzzles and Repertoire are full width: `pageShell` + p-6).
  *
  *   <Page>
- *     <PageHeader title="Puzzles" actions={<Button variant="primary">Start</Button>} />
+ *     <PageHeader title="Settings" actions={<SaveStatus />} />
  *     ...sections
  *   </Page>
  */
@@ -30,28 +23,14 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The one page-header pattern: optional one-line description on the left, optional actions on the
- * right. The page name itself is shown once, in the app titlebar; here it is only the (visually
- * hidden) h1 for the accessibility tree, so pages never repeat a second big title.
+ * The one page-header pattern: optional actions on the right, no description line. The page name
+ * itself is shown once, in the app titlebar; here it is only the (visually hidden) h1 for the
+ * accessibility tree, so pages never repeat a second big title.
  */
-function PageHeader({
-  title,
-  description,
-  actions
-}: {
-  title: React.ReactNode;
-  description?: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
+function PageHeader({ title, actions }: { title: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <header
-      className={cn(
-        "flex min-h-9 flex-wrap items-center gap-4",
-        !description && !actions && "sr-only"
-      )}
-    >
+    <header className={cn("flex min-h-9 flex-wrap items-center gap-4", !actions && "sr-only")}>
       <h1 className="sr-only">{title}</h1>
-      {description ? <p className={cn(pageDescription, "min-w-0 flex-1")}>{description}</p> : null}
       {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   );

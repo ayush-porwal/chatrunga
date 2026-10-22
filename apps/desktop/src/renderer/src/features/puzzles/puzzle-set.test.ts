@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ratingRangeFor } from "@chaturanga/shared/chess/puzzle-rating";
 import { DEFAULT_PUZZLE_FILTERS } from "../../stores/puzzle-draft-store";
 import {
-  activeFilterLabels,
   drawnRatingRange,
   formatPuzzleTag,
+  moreFiltersSummary,
   puzzleDatabasesKey,
   puzzleDatabasesOf,
   puzzleDatasetLabel,
@@ -72,35 +72,31 @@ describe("puzzle set", () => {
   });
 });
 
-describe("the Puzzles page's set summary", () => {
+describe("the Puzzles page's filters", () => {
   const draft = { databaseId: "", ...DEFAULT_PUZZLE_FILTERS };
 
-  it("lists a Lichess set's filters, the range around the rating when asked", () => {
-    const own = drawnRatingRange(draft, true, 1700);
-    expect(own).toStrictEqual({ ratingMin: 600, ratingMax: 2800, aroundRating: false });
-    expect(activeFilterLabels(draft, true, own)).toStrictEqual([
-      "Rated 600–2800",
-      "Either side to move",
-      "Any theme"
-    ]);
-    const harder = { ...draft, difficulty: "harder" as const, side: "black" as const };
-    const around = drawnRatingRange(harder, true, 1700);
-    expect(around).toStrictEqual({ ...ratingRangeFor(1700, "harder"), aroundRating: true });
-    expect(
-      activeFilterLabels({ ...harder, themes: ["fork"], popularityMin: 50 }, true, around)
-    ).toStrictEqual([
-      `Rated ${around.ratingMin}–${around.ratingMax}`,
-      "Harder, around your rating",
-      "Black to move",
-      "Popularity 50+",
-      "fork"
-    ]);
+  it("draws a Lichess set from its own range, or around the rating when asked", () => {
+    expect(drawnRatingRange(draft, true, 1700)).toStrictEqual({
+      ratingMin: 600,
+      ratingMax: 2800,
+      aroundRating: false
+    });
+    const harder = { ...draft, difficulty: "harder" as const };
+    expect(drawnRatingRange(harder, true, 1700)).toStrictEqual({
+      ...ratingRangeFor(1700, "harder"),
+      aroundRating: true
+    });
     // A position set has no rating to draw around.
     expect(drawnRatingRange(harder, false, 1700).aroundRating).toBe(false);
-    expect(activeFilterLabels({ ...draft, positionTags: [] }, false, own)).toStrictEqual([
-      "Difficulty 1–4",
-      "Any tag"
-    ]);
+  });
+
+  it("sums up the folded filters only when one is set", () => {
+    expect(moreFiltersSummary([], 0)).toBeNull();
+    expect(moreFiltersSummary(["Italian_Game"], 0)).toBe("Italian Game");
+    expect(moreFiltersSummary(["Italian_Game", "Ruy_Lopez"], 20)).toBe(
+      "2 openings · popularity 20+"
+    );
+    expect(moreFiltersSummary([], -10)).toBe("popularity -10+");
   });
 
   it("offers Reset filters once the set's own filters leave the defaults", () => {

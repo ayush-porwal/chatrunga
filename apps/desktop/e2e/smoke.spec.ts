@@ -158,7 +158,7 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
   });
 
   await sidebar(page).getByRole("button", { name: "Puzzles", exact: true }).click();
-  await page.getByRole("button", { name: "Start puzzle set" }).click();
+  await page.getByRole("button", { name: "Start puzzles" }).click();
   const puzzle = page.getByRole("region", { name: "Puzzle" });
   const title = puzzle.getByRole("heading", { level: 2 });
   const puzzleId = puzzle.getByText(/^Puzzle #/);

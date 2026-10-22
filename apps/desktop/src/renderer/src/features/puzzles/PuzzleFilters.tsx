@@ -1,6 +1,7 @@
 /**
- * The Puzzles page's filters: a Lichess puzzle set's (difficulty or rating range, popularity, side
- * to move, themes, solution length, openings) and a position set's (difficulty, strategic tags).
+ * The Puzzles page's filters: a Lichess puzzle set's (difficulty or rating range, side to move,
+ * themes, solution length; popularity and openings under More filters) and a position set's
+ * (difficulty, strategic tags). Laid out for the Practice card's width (a size container).
  */
 import { useId, useMemo, useState, type ReactNode } from "react";
 import {
@@ -15,7 +16,7 @@ import { Input, Select } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { fieldLabel } from "@/lib/ui";
-import { formatPuzzleTag as formatTag } from "./puzzle-set";
+import { formatPuzzleTag as formatTag, moreFiltersSummary } from "./puzzle-set";
 import { formatRatingDelta } from "./PuzzleRatingLine";
 
 const lichessThemes = [
@@ -135,7 +136,7 @@ export function LichessPuzzleFilters({
   const difficultyId = useId();
   return (
     <div className="grid gap-4">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="grid gap-4 @sm:grid-cols-2">
         <Field label="Difficulty" hint={`Around your rating, ${userRating}`} htmlFor={difficultyId}>
           <Select
             id={difficultyId}
@@ -164,26 +165,14 @@ export function LichessPuzzleFilters({
           onMaxChange={onRatingMaxChange}
         />
       </div>
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-        <Field label="Min popularity" hint="−100 to 100" htmlFor={popularityId}>
-          <Input
-            id={popularityId}
-            type="number"
-            min={-100}
-            max={100}
-            value={popularityMin}
-            onChange={(event) => onPopularityMinChange(Number(event.target.value))}
-          />
-        </Field>
-        <FilterGroup label="Side to move">
-          <SegmentedControl
-            ariaLabel="Side to move"
-            options={sideOptions}
-            value={side}
-            onChange={onSideChange}
-          />
-        </FilterGroup>
-      </div>
+      <FilterGroup label="Side to move">
+        <SegmentedControl
+          ariaLabel="Side to move"
+          options={sideOptions}
+          value={side}
+          onChange={onSideChange}
+        />
+      </FilterGroup>
       <FilterGroup label="Themes">
         <ChipAutocomplete
           items={lichessThemes}
@@ -199,15 +188,56 @@ export function LichessPuzzleFilters({
           onChange={onLengthsChange}
         />
       </FilterGroup>
-      <Disclosure title="Openings" summary={selectionSummary(openings)}>
-        <ChipAutocomplete
-          items={lichessOpeningTags}
-          placeholder="Search openings"
-          selected={openings}
-          onChange={onOpeningsChange}
-        />
-      </Disclosure>
+      <MoreFilters summary={moreFiltersSummary(openings, popularityMin)}>
+        <Field
+          label="Min popularity"
+          hint="−100 to 100"
+          htmlFor={popularityId}
+          className="max-w-40"
+        >
+          <Input
+            id={popularityId}
+            type="number"
+            min={-100}
+            max={100}
+            value={popularityMin}
+            onChange={(event) => onPopularityMinChange(Number(event.target.value))}
+          />
+        </Field>
+        <FilterGroup label="Openings">
+          <ChipAutocomplete
+            items={lichessOpeningTags}
+            placeholder="Search openings"
+            selected={openings}
+            onChange={onOpeningsChange}
+          />
+        </FilterGroup>
+      </MoreFilters>
     </div>
+  );
+}
+
+/**
+ * The rarely changed filters, folded. They open by themselves whenever one is set (an opening
+ * chosen from Game review), so a filter in use is never hidden; the user can fold them again.
+ */
+function MoreFilters({ summary, children }: { summary: string | null; children: ReactNode }) {
+  const inUse = summary !== null;
+  const [open, setOpen] = useState(inUse);
+  const [wasInUse, setWasInUse] = useState(inUse);
+  if (inUse !== wasInUse) {
+    setWasInUse(inUse);
+    if (inUse) setOpen(true);
+  }
+  return (
+    <Disclosure
+      title="More filters"
+      summary={summary ?? "Openings, popularity"}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <div className="grid gap-4">{children}</div>
+    </Disclosure>
   );
 }
 
@@ -244,13 +274,6 @@ export function PositionTrainingFilters({
       </FilterGroup>
     </div>
   );
-}
-
-/** "Any" / the single selected label / "3 selected" — Disclosure summary for a multi-select. */
-function selectionSummary(selected: string[]): string {
-  if (!selected.length) return "Any";
-  if (selected.length === 1) return formatTag(selected[0]);
-  return `${selected.length} selected`;
 }
 
 /**

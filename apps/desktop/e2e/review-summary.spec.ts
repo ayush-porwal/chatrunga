@@ -230,7 +230,7 @@ test("the summary's opening and practice shortcuts open Puzzles with that filter
   await expect(page.getByRole("heading", { name: "Puzzles", level: 1 })).toBeVisible({
     timeout: 30_000
   });
-  await page.getByRole("button", { name: "Openings" }).click();
+  // More filters opens by itself with an opening set.
   await expect(page.getByRole("button", { name: "Remove Italian Game" })).toBeVisible();
 
   // Back to the review: a practice chip opens Puzzles with its theme.
@@ -246,8 +246,10 @@ test("the summary's opening and practice shortcuts open Puzzles with that filter
     .click();
   await expect(page.getByRole("heading", { name: "Puzzles", level: 1 })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove mate in 1" })).toBeVisible();
-  // The opening filter was cleared for it.
-  await page.getByRole("button", { name: "Openings" }).click();
+  // The opening filter was cleared for it: More filters, folded or open, has no opening.
+  await expect(page.getByRole("button", { name: /^More filters/ })).not.toContainText(
+    "Italian Game"
+  );
   await expect(page.getByRole("button", { name: "Remove Italian Game" })).toHaveCount(0);
 });
 
