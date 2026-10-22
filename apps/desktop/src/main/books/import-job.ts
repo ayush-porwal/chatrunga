@@ -249,6 +249,8 @@ class BookRun {
     let done = total - pending.length;
     this.emit(done, total);
     await eachLimited(pending, this.deps.concurrency?.ocr ?? 4, async (page) => {
+      // No reasoning effort: the model thinks as it does by default, which is what read the
+      // pages best (Haiku 5.5 thinks for about two thirds of its answer).
       const text = await this.ask({
         model: this.book.ocrModel,
         messages: bookOcrMessages(await this.image(page)),

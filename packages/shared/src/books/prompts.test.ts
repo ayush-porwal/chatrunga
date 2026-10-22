@@ -88,7 +88,7 @@ describe("estimateBookImport", () => {
     const book = estimateBookImport({ pageCount: 352, ...prices });
     expect(book.costUsd).toBeGreaterThan(2);
     expect(book.costUsd).toBeLessThan(5);
-    expect(book.minutes).toBe(52);
+    expect(book.minutes).toBe(59);
     expect(estimateBookImport({ pageCount: 0, ...prices })).toStrictEqual({
       costUsd: 0,
       minutes: 1

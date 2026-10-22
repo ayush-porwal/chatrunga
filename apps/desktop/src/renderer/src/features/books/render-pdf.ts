@@ -1,6 +1,6 @@
 /**
  * A chess book PDF as the import sends it to main: its page count, own title and SHA-256, and
- * each page rendered at about 150 dpi in grayscale as WebP (`books.addPage`). PDF.js loads on
+ * each page rendered at 300 dpi in grayscale as WebP (`books.addPage`). PDF.js loads on
  * first use (pdfjs-loader.ts), so nothing of it is in the startup bundle.
  */
 
@@ -37,8 +37,13 @@ export type PdfBook = {
   close(): Promise<void>;
 };
 
-export const PAGE_DPI = 150;
-const WEBP_QUALITY = 0.8;
+/**
+ * 300 dpi: at 150 a figurine is a few pixels wide, and repairing a misread line from a 300 dpi page
+ * fixed more of them. The same image is read, repaired from and shown in the Book tab.
+ */
+export const PAGE_DPI = 300;
+/** About 400 KB a page of print (twice 150 dpi at 0.8). */
+const WEBP_QUALITY = 0.6;
 /** PDF user space is 72 units to the inch. */
 const PDF_UNITS_PER_INCH = 72;
 

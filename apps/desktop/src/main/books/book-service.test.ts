@@ -117,7 +117,7 @@ describe("book service", () => {
       ocrModel: "vision/model",
       structureModel: "text/model",
       prices: "live",
-      minutes: 15
+      minutes: 17
     });
   });
 

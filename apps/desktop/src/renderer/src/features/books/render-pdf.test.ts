@@ -83,18 +83,18 @@ describe("openPdfBook", () => {
     await expect(openPdfBook(file, blank)).resolves.toMatchObject({ metadataTitle: null });
   });
 
-  it("renders a page at 150 dpi, copies it through a grayscale filter and encodes WebP", async () => {
+  it("renders a page at 300 dpi, copies it through a grayscale filter and encodes WebP", async () => {
     const { pdfjs, rendered, cleanup } = fakePdfjs(noMetadata);
     const { made, toBlob, createCanvas } = canvases();
     const book = await openPdfBook(file, { pdfjs, createCanvas });
     const bytes = await book.renderPage(1);
     expect(rendered).toStrictEqual([{ page: 2, scale: PAGE_DPI / 72 }]);
     expect(made.map(({ width, height }) => [width, height])).toStrictEqual([
-      [1275, 1650],
-      [1275, 1650]
+      [2550, 3300],
+      [2550, 3300]
     ]);
     expect(made[1].drawn).toStrictEqual([{ filter: "grayscale(1)", source: made[0] }]);
-    expect(toBlob).toHaveBeenCalledWith(expect.any(Function), "image/webp", 0.8);
+    expect(toBlob).toHaveBeenCalledWith(expect.any(Function), "image/webp", 0.6);
     expect(new TextDecoder().decode(bytes)).toBe("encoded as image/webp");
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
