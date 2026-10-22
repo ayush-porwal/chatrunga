@@ -17,7 +17,7 @@ import { fieldHint } from "@/lib/ui";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useSettingsQuery } from "../../queries/api";
 import { useSaveRepertoireWorkspaceMutation } from "../../queries/repertoire";
-import { useSetSetting } from "../settings/use-set-setting";
+import { useSettingsWriter } from "../settings/use-set-setting";
 import {
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
@@ -45,20 +45,26 @@ const ADVANCE_LABELS: Record<PracticeAutoAdvanceMs, string> = {
  * The repertoire's settings (the cog in Study and Practice): what Practice starts. Positions
  * reviews the due ones first, then new ones, from the chosen chapters (none: every enabled opening
  * chapter) up to a depth, with card limits; Lines rehearses a chapter's lines instead.
- * "Next card" is the app-wide auto-advance. Saved together with Save; a running session keeps
- * its own scope.
+ * "Next card" is the app-wide auto-advance. Saved together with Save (the repertoire's settings
+ * first; "Next card" only once they are), closing once both are; a failure stays in the dialog.
+ * A running session keeps its own scope.
  */
 export function RepertoireSettingsDialog({
   detail,
-  onClose
+  onClose,
+  onSaved
 }: {
   detail: RepertoireDetail;
   onClose: () => void;
+  /** Both writes succeeded: the repertoire as it now is (before the dialog closes). */
+  onSaved?: (saved: RepertoireDetail) => void;
 }) {
   const ids = { depth: useId(), cards: useId(), fresh: useId(), advance: useId() };
   const settings = useSettingsQuery();
-  const setSetting = useSetSetting();
+  const { saveMany } = useSettingsWriter();
   const save = useSaveRepertoireWorkspaceMutation();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<PracticeSettingsForm>(() =>
     practiceSettingsForm(practiceSettings(detail))
   );
@@ -77,21 +83,33 @@ export function RepertoireSettingsDialog({
         : [...form.chapterIds, id]
     });
 
-  function submit() {
-    if (advance !== null) setSetting("practiceAutoAdvanceMs", advance);
-    save.mutate(
-      {
-        repertoireId: detail.id,
-        workspace: {
-          lastChapterId: detail.workspace?.lastChapterId ?? null,
-          lastNodeId: detail.workspace?.lastNodeId ?? null,
-          orientation: detail.workspace?.orientation ?? detail.color,
-          practiceDraft: practiceSettingsFromForm({ repertoireId: detail.id, ...form })
-        },
-        practiceSetup: true
-      },
-      { onSuccess: onClose }
-    );
+  async function submit() {
+    setSaving(true);
+    setError(null);
+    const workspace = {
+      lastChapterId: detail.workspace?.lastChapterId ?? null,
+      lastNodeId: detail.workspace?.lastNodeId ?? null,
+      orientation: detail.workspace?.orientation ?? detail.color,
+      practiceDraft: practiceSettingsFromForm({ repertoireId: detail.id, ...form })
+    };
+    try {
+      await save.mutateAsync({ repertoireId: detail.id, workspace, practiceSetup: true });
+    } catch (cause) {
+      setError(ipcErrorMessage(cause) || "Couldn't save the settings.");
+      setSaving(false);
+      return;
+    }
+    if (advance !== null) {
+      try {
+        await saveMany({ practiceAutoAdvanceMs: advance });
+      } catch (cause) {
+        setError(ipcErrorMessage(cause) || "Couldn't save “Next card”.");
+        setSaving(false);
+        return;
+      }
+    }
+    onSaved?.({ ...detail, workspace });
+    onClose();
   }
 
   return (
@@ -109,10 +127,10 @@ export function RepertoireSettingsDialog({
             type="button"
             variant="primary"
             size="sm"
-            disabled={save.isPending}
-            onClick={submit}
+            disabled={saving}
+            onClick={() => void submit()}
           >
-            {save.isPending ? "Saving…" : "Save"}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </>
       }
@@ -226,11 +244,7 @@ export function RepertoireSettingsDialog({
         </Field>
       )}
 
-      {save.error ? (
-        <Notice tone="danger">
-          {ipcErrorMessage(save.error) || "Couldn't save the settings."}
-        </Notice>
-      ) : null}
+      {error ? <Notice tone="danger">{error}</Notice> : null}
     </Dialog>
   );
 }
