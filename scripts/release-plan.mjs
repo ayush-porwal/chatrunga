@@ -38,6 +38,9 @@ function parseArgs(argv) {
   if (!["stable", "nightly"].includes(args.channel))
     throw new Error(`Invalid channel: ${args.channel}`);
   if (args.date && !/^\d{8}$/.test(args.date)) throw new Error(`Invalid date: ${args.date}`);
+  if (args.channel === "nightly" && args.version) {
+    throw new Error("A nightly's version is set automatically: leave --version empty.");
+  }
   return args;
 }
 

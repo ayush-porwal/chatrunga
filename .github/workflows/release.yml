@@ -17,17 +17,17 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: Stable release, or a nightly prerelease of main
+        description: Stable release, or a nightly prerelease of main (its version is set automatically)
         type: choice
         options: [stable, nightly]
         default: stable
       bump:
-        description: Version bump from the latest vX.Y.Z tag (ignored when "version" is set)
+        description: Stable only. Version bump from the latest release (ignored when "version" is set)
         type: choice
         options: [patch, minor, major]
         default: patch
       version:
-        description: Exact version instead of a bump, e.g. 0.2.0 or 0.2.0-nightly.1 (optional)
+        description: Stable only (a nightly refuses it). Exact version instead of a bump, e.g. 0.2.0 or 0.3.0-rc.1 (optional)
         type: string
         required: false
       draft:

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { bumpVersion, nightlyVersion, releaseNotes } from "./release-plan.mjs";
 
@@ -46,4 +47,20 @@ test("a nightly sorts after the previous one and before its patch's release", ()
   // The release after nightlies of 0.2.9 is 0.2.9 itself (bumped from the stable 0.2.8).
   assert.equal(bumpVersion("0.2.8", "patch"), "0.2.9");
   assert.equal(bumpVersion("0.2.9-nightly.20261023", "patch"), "0.2.9");
+});
+
+test("a nightly refuses an exact version rather than ignoring it", () => {
+  const run = spawnSync(
+    process.execPath,
+    [
+      new URL("./release-plan.mjs", import.meta.url).pathname,
+      "--channel",
+      "nightly",
+      "--version",
+      "1.0.0"
+    ],
+    { encoding: "utf8" }
+  );
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /set automatically/);
 });
