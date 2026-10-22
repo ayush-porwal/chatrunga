@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enginePicture, fallbackPicture } from "./engine-identity";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import { enginePicture, fallbackPicture, reviewEngineIdentity } from "./engine-identity";
 
 /** The family whose logo an engine without its own image shows (null: its monogram). */
 const family = (engine: Parameters<typeof fallbackPicture>[0]) => {
@@ -22,15 +23,20 @@ describe("an engine's family logo", () => {
     expect(family({ name: "Stockfish 17.1" })).toBe("stockfish");
     expect(family({ name: "Maia 1500 (managed)" })).toBe("maia");
     expect(family({ name: "Maia 1100" })).toBe("maia");
+    expect(family({ name: "Maia (managed)" })).toBe("maia");
     expect(family({ name: "Lc0" })).toBe("lc0");
     expect(family({ name: "lc0" })).toBe("lc0");
     expect(family({ name: "Lc0 v0.31.2" })).toBe("lc0");
     expect(family({ name: "Leela Chess Zero" })).toBe("lc0");
   });
 
-  it("tells Maia from Lc0 by the prediction flag, the rating or the weights file", () => {
+  it("tells Maia 3 by its runtime, whatever its name", () => {
+    expect(family({ name: "Human model", runtime: "maia3" })).toBe("maia");
+    expect(family({ name: "Komodo", runtime: "custom-uci" })).toBeNull();
+  });
+
+  it("tells Maia from Lc0 by the prediction flag or the weights file", () => {
     expect(family({ name: "Lc0", isHumanPrediction: true })).toBe("maia");
-    expect(family({ name: "Lc0", maiaRating: 1900 })).toBe("maia");
     expect(family({ name: "Lc0", weightsPath: "/nets/maia-1900.pb.gz" })).toBe("maia");
     // Only the file's name counts, not the folders above it.
     expect(family({ name: "Lc0", weightsPath: "/Users/maia/nets/t2.pb.gz" })).toBe("lc0");
@@ -127,5 +133,27 @@ describe("enginePicture", () => {
       text: "KD",
       hue: hue("Komodo Dragon")
     });
+  });
+});
+
+describe("a saved analysis's engine", () => {
+  const reckless = { id: "e1", name: "Reckless", imagePath: "/pictures/reckless.png" };
+  const engines = [{ id: "sf", name: "Stockfish (managed)" }, reckless] as EngineConfig[];
+
+  it("is the engine row it ran on (with the user's picture), found by id", () => {
+    const info = { engineId: "e1", engineName: "Reckless 0.10.0-dev-6ab" };
+    expect(reviewEngineIdentity(info, engines)).toBe(engines[1]);
+  });
+
+  it("is just its recorded name when that engine is gone, unknown yet, or not recorded", () => {
+    const info = { engineId: "removed", engineName: "Reckless 0.10.0-dev-6ab" };
+    expect(reviewEngineIdentity(info, engines)).toStrictEqual({ name: info.engineName });
+    expect(reviewEngineIdentity({ ...info, engineId: "e1" }, undefined)).toStrictEqual({
+      name: info.engineName
+    });
+    expect(reviewEngineIdentity({ engineId: null, engineName: "Lc0" }, engines)).toStrictEqual({
+      name: "Lc0"
+    });
+    expect(reviewEngineIdentity({ engineId: null, engineName: null }, engines)).toBeNull();
   });
 });

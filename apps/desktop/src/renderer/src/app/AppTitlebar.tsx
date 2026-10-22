@@ -24,6 +24,7 @@ import { useSaveStatusStore } from "../stores/save-status-store";
 import { SidebarToggle } from "./AppSidebar";
 import { historyShortcutLabels } from "./useHistoryShortcuts";
 import { gameModeLabel, gamePlayerNames, resultBadgeLabel } from "./game-title";
+import { isMaiaEngine } from "../features/play/engine-game";
 
 /**
  * The one titlebar row across the full window width (window drag region, chrome colour):
@@ -255,7 +256,8 @@ export const GameTitlebar = memo(function GameTitlebar({
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
   const engine = engines?.find((item) => item.id === activeEngineId);
-  const engineName = engine ? engineDisplayName(engine.name) : null;
+  // Maia goes by the game's name for it, with its rating ("Maia 1500").
+  const engineName = engine && !isMaiaEngine(engine) ? engineDisplayName(engine.name) : null;
 
   const error = game.lastError || (showAnalysisError ? analysisError : null);
   const players = gamePlayerNames(game, engineName);
@@ -337,7 +339,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
       result={resultBadgeLabel(headers.result, headers.termination)}
       actions={
         <>
-          <AnalysisSwitcher />
+          <AnalysisSwitcher onAnalyzeAgain={gameLoading ? undefined : onAnalyze} />
           {running || hasMoves ? (
             <Button
               type="button"

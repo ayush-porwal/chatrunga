@@ -219,7 +219,7 @@ export function App() {
   // The repertoire board has its own move keys (they must not step the game behind it).
   useMoveKeyboardShortcuts({ enabled: gameBoardViews.has(appView) });
   useDatabaseDownloads();
-  useEngineDriver(analysisOptions);
+  useEngineDriver(analysisOptions, { ratings: settings.playerRatings });
   useGameAutosave();
   usePlayedGameLink();
   const { mutate: updateSetting } = useUpdateSettingMutation();

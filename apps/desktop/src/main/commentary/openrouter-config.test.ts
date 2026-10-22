@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { OpenRouterConfigStore } from "./openrouter-config";
 
 vi.mock("electron", () => ({
@@ -63,6 +64,33 @@ describe("OpenRouterConfigStore", () => {
 
     expect(await store.set({ apiKey: null })).toMatchObject({ hasApiKey: false });
     expect(await store.getApiKey()).toBeNull();
+  });
+
+  it("stores no model for the default, so a saved key follows later defaults", async () => {
+    const path = await storePath();
+    const store = new OpenRouterConfigStore(path);
+
+    // Settings sends the default it shows along with the key.
+    await store.set({ model: DEFAULT_COMMENTARY_MODEL, apiKey: "secret" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ model: null });
+    expect((await store.get()).model).toBe(DEFAULT_COMMENTARY_MODEL);
+
+    await store.set({ model: "  " });
+    expect((await store.get()).model).toBe(DEFAULT_COMMENTARY_MODEL);
+  });
+
+  it("reads an earlier default saved by older builds as the current default", async () => {
+    const path = await storePath();
+    await writeFile(path, JSON.stringify({ model: "anthropic/claude-sonnet-4.6" }));
+    const store = new OpenRouterConfigStore(path);
+
+    expect((await store.get()).model).toBe(DEFAULT_COMMENTARY_MODEL);
+    // A model the user chose stays theirs, an earlier default too once this build saved it.
+    await store.set({ model: "openai/gpt-test" });
+    expect((await store.get()).model).toBe("openai/gpt-test");
+    await store.set({ model: "anthropic/claude-sonnet-4.6" });
+    expect((await store.get()).model).toBe("anthropic/claude-sonnet-4.6");
+    expect((await new OpenRouterConfigStore(path).get()).model).toBe("anthropic/claude-sonnet-4.6");
   });
 
   it("keeps both fields when a model change and a key change overlap", async () => {

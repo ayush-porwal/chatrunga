@@ -5,10 +5,13 @@ import { openingBook } from "../engine/opening-book";
 import { getDb } from "./index";
 import { gameFingerprint } from "./game-fingerprint";
 import {
+  reviewJsonWithCurve,
   reviewListingFields,
   reviewRowId,
   toSavedReviewInfo,
-  type GameReviewRow
+  withStoredCurves,
+  type GameReviewRow,
+  type MaiaCurveTarget
 } from "./review-rows";
 import {
   defaultSettings,
@@ -29,8 +32,8 @@ import { resolveGameReviewRating } from "@chaturanga/shared/chess/review-rating"
 import type {
   CreateEngineInput,
   EngineConfig,
+  EngineRuntime,
   GameReview,
-  MaiaRating,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
 import { PUZZLE_CONTINUATION_EVENT } from "@chaturanga/shared/types/chess";
@@ -45,11 +48,9 @@ import type {
   SavedGame,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
-import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
 import { allRows, queriesOn, rollbackIfOpen, sqliteErrcode } from "./rows";
 import { parseStoredJson } from "../stored-json";
 import { parseMoveTree, rebuiltCursor, remapReviewToTree, storedHeaders } from "./stored-game";
-import { isOneOf } from "@chaturanga/shared/types/guards";
 import {
   emptyTabCounts,
   isGameSource,
@@ -68,7 +69,8 @@ type EngineRow = {
   protocol: string;
   is_default: number;
   is_human_prediction: number | null;
-  maia_rating: number | null;
+  /** Migration 11; "custom-uci" for every row stored before it. */
+  runtime: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -137,7 +139,7 @@ function clampLimit(limit: number | undefined): number {
 type ReviewListingRow = Omit<GameReviewRow, "game_id" | "review_json">;
 
 const REVIEW_LISTING_COLUMNS =
-  "review_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count";
+  "review_id, created_at, engine_id, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count";
 
 /** Per-game analysis count and newest date, for summaries. */
 const REVIEW_COUNTS_SQL = `(SELECT COUNT(*) FROM game_reviews r WHERE r.game_id = games.id) AS review_count,
@@ -224,12 +226,6 @@ export function saveGameRetrying(
   }, delayMs);
 }
 
-/** Explicit rating column, else a `maia-1500`-style engine name / weights file. */
-function inferMaiaRating(row: EngineRow): MaiaRating | undefined {
-  if (isOneOf(MAIA_RATINGS, row.maia_rating)) return row.maia_rating;
-  return maiaRatingFromText(`${row.name} ${row.weights_path ?? ""}`);
-}
-
 function toEngine(row: EngineRow): EngineConfig {
   return {
     id: row.id,
@@ -240,11 +236,10 @@ function toEngine(row: EngineRow): EngineConfig {
     imagePath: row.image_path ?? null,
     args: parseArgs(row.args),
     protocol: "uci",
-    runtime: "custom-uci",
+    runtime: row.runtime === "maia3" ? "maia3" : "custom-uci",
     isAvailable: true,
     isDefault: Boolean(row.is_default),
     isHumanPrediction: Boolean(row.is_human_prediction),
-    maiaRating: inferMaiaRating(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -355,7 +350,10 @@ function patchedPath(value: string | null | undefined, current: string | null): 
 }
 
 /** The engine's stored fields with the patch applied: fields the patch leaves out keep their value. */
-function patchedEngine(existing: EngineConfig, patch: UpdateEngineInput) {
+function patchedEngine(
+  existing: EngineConfig,
+  patch: UpdateEngineInput & { runtime?: EngineRuntime }
+) {
   return {
     name: patch.name ?? existing.name,
     executablePath: patch.executablePath ?? existing.executablePath,
@@ -366,7 +364,7 @@ function patchedEngine(existing: EngineConfig, patch: UpdateEngineInput) {
     args: patch.args ?? existing.args,
     isDefault: patch.isDefault ?? existing.isDefault,
     isHumanPrediction: patch.isHumanPrediction ?? existing.isHumanPrediction,
-    maiaRating: patch.maiaRating ?? existing.maiaRating ?? null
+    runtime: patch.runtime ?? existing.runtime
   };
 }
 
@@ -380,8 +378,14 @@ export const engineRepository = {
     return row ? toEngine(row) : null;
   },
 
-  /** `id`: chosen by the caller when it has already stored something for the engine (its picture). */
-  create(input: CreateEngineInput, id: string = nanoid()): EngineConfig {
+  /**
+   * `id`: chosen by the caller when it has already stored something for the engine (its picture).
+   * `runtime`: only the registry sync's managed Maia row is "maia3" (the IPC input has no runtime).
+   */
+  create(
+    input: CreateEngineInput & { runtime?: EngineRuntime },
+    id: string = nanoid()
+  ): EngineConfig {
     const timestamp = now();
     const row = {
       id,
@@ -394,7 +398,7 @@ export const engineRepository = {
       protocol: "uci",
       isDefault: input.isDefault ?? this.list().length === 0,
       isHumanPrediction: input.isHumanPrediction ?? false,
-      maiaRating: input.maiaRating ?? null,
+      runtime: input.runtime ?? "custom-uci",
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -405,7 +409,7 @@ export const engineRepository = {
       run(
         `INSERT INTO engines (
           id, name, executable_path, working_directory, weights_path, image_path, args, protocol,
-          is_default, is_enabled, is_human_prediction, maia_rating, created_at, updated_at
+          is_default, is_enabled, is_human_prediction, runtime, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.name,
@@ -418,7 +422,7 @@ export const engineRepository = {
         row.isDefault ? 1 : 0,
         1, // is_enabled: unused legacy NOT NULL column
         row.isHumanPrediction ? 1 : 0,
-        row.maiaRating,
+        row.runtime,
         row.createdAt,
         row.updatedAt
       );
@@ -426,10 +430,18 @@ export const engineRepository = {
     return this.get(row.id)!;
   },
 
-  update(id: string, patch: UpdateEngineInput): EngineConfig {
+  /**
+   * `runtime`: only the registry sync sets it (repairing its managed Maia row). Maia is never the
+   * default engine: it evaluates nothing (engine-manager.ts, assertUciEngine).
+   */
+  update(id: string, patch: UpdateEngineInput & { runtime?: EngineRuntime }): EngineConfig {
     const existing = this.get(id);
     if (!existing) throw new Error("Engine not found");
     const next = patchedEngine(existing, patch);
+    if (patch.isDefault && next.runtime === "maia3")
+      throw new Error(
+        "Maia can't be the default engine: it predicts human moves. Choose an engine such as Stockfish."
+      );
     transaction(() => {
       if (patch.isDefault) this.clearDefault();
 
@@ -443,7 +455,7 @@ export const engineRepository = {
           args = ?,
           is_default = ?,
           is_human_prediction = ?,
-          maia_rating = ?,
+          runtime = ?,
           updated_at = ?
         WHERE id = ?`,
         next.name,
@@ -454,7 +466,7 @@ export const engineRepository = {
         JSON.stringify(next.args),
         next.isDefault ? 1 : 0,
         next.isHumanPrediction ? 1 : 0,
-        next.maiaRating,
+        next.runtime,
         now(),
         id
       );
@@ -568,17 +580,29 @@ const deletedReviewIds = new Set<string>();
 
 /**
  * The analysis on the board, saved under its own id: a new one is added (re-analysing keeps the
- * earlier ones), and one already saved is updated (its AI commentary grows as moves are viewed).
+ * earlier ones), and one already saved is updated (its AI commentary grows as moves are viewed;
+ * Maia 3 rating curves saved into it meanwhile are kept, see withStoredCurves).
  */
-function saveReview(gameId: string, review: GameReview): void {
-  const reviewId = reviewRowId(review, gameId);
+function saveReview(gameId: string, saving: GameReview): void {
+  const reviewId = reviewRowId(saving, gameId);
   if (deletedReviewIds.has(reviewId)) return;
+  const review = saving.maia
+    ? withStoredCurves(
+        saving,
+        get<{ review_json: string }>(
+          "SELECT review_json FROM game_reviews WHERE game_id = ? AND review_id = ?",
+          gameId,
+          reviewId
+        )?.review_json
+      )
+    : saving;
   const fields = reviewListingFields(review);
   run(
     `INSERT INTO game_reviews (
-      review_id, game_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      review_id, game_id, created_at, engine_id, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(review_id) DO UPDATE SET
+      engine_id = excluded.engine_id,
       engine_name = excluded.engine_name,
       move_time_ms = excluded.move_time_ms,
       depth = excluded.depth,
@@ -590,6 +614,7 @@ function saveReview(gameId: string, review: GameReview): void {
     reviewId,
     gameId,
     fields.created_at,
+    fields.engine_id,
     fields.engine_name,
     fields.move_time_ms,
     fields.depth,
@@ -689,6 +714,29 @@ export const gameRepository = {
     if (!row || !stored) return null;
     const { moveTree, rebuilt } = parseMoveTree(row);
     return parseStoredReview(stored.review_json, row, moveTree, rebuilt);
+  },
+
+  /**
+   * Saves Maia 3's rating curve into one move of a saved analysis (see MaiaCurveTarget). False
+   * when the analysis is gone or no longer has that move.
+   */
+  saveMaiaCurve(gameId: string, reviewId: string, target: MaiaCurveTarget): boolean {
+    return transaction(() => {
+      const stored = get<{ review_json: string }>(
+        "SELECT review_json FROM game_reviews WHERE game_id = ? AND review_id = ?",
+        gameId,
+        reviewId
+      );
+      const json = stored ? reviewJsonWithCurve(stored.review_json, target) : null;
+      if (json === null) return false;
+      run(
+        "UPDATE game_reviews SET review_json = ? WHERE game_id = ? AND review_id = ?",
+        json,
+        gameId,
+        reviewId
+      );
+      return true;
+    });
   },
 
   /**
@@ -881,6 +929,11 @@ export const settingsRepository = {
     } catch {
       return row.value;
     }
+  },
+
+  /** Deletes an old key that is no longer a setting, once it has been migrated. */
+  removeStored(key: LegacySettingKey): void {
+    run("DELETE FROM settings WHERE key = ?", key);
   },
 
   /** Several settings in one transaction: all of them are stored, or none (a theme and its colors). */

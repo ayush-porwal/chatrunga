@@ -10,14 +10,15 @@ import {
 } from "react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { GameOpening, MoveReview } from "@chaturanga/shared/types/engine";
-import { useEnginesQuery } from "../../queries/api";
-import { useOpenSettings } from "../settings/settings-link";
-import { pickMaiaEngines } from "./review-engine-picker";
+import { useMaia3Installed } from "../../queries/maia";
+import { MaiaDownloadPrompt } from "./MaiaDownloadPrompt";
 import {
   buildReviewChartData,
   chartTooltip,
   chartTooltipText,
+  difficultyTitle,
   nearestPointIndex,
+  winningChancesTitle,
   type ChartMainlineMove,
   type ChartPoint,
   type ReviewChartData
@@ -61,7 +62,8 @@ import { CollapsibleHeader, CollapsibleToggle } from "@/components/ui/collapsibl
  * The review's charts, stacked and linked at the bottom of the side panel: winning chances (the
  * reviewed side's area from the bottom, the opponent's from the top, the game's phases, a dot on
  * every marked move and a ring on the key insights), how hard each best move was to find at the
- * review's Maia model, and the time each move took. They share one move axis, one current-move
+ * rating Maia read it at (the mover's for Maia 3, the review's model for Maia 1), and the time
+ * each move took. They share one move axis, one current-move
  * line, one hover and one tooltip; a click jumps the board to the move, and with the charts
  * focused the arrow keys step through the moves. The drawn layers redraw only when the review or
  * the size changes; moving the selection or the hover only moves the lines.
@@ -77,6 +79,7 @@ export const ReviewCharts = memo(function ReviewCharts({
   selectedNodeId,
   onSelectNode,
   reviewedSide,
+  evalEngine = null,
   variationSelected = false,
   totalPlies,
   keyMomentIds,
@@ -92,6 +95,8 @@ export const ReviewCharts = memo(function ReviewCharts({
   onSelectNode: (nodeId: string) => void;
   /** The side being reviewed: its winning chances fill from the bottom. */
   reviewedSide: Color;
+  /** The display name of the engine whose evaluations the winning chances are (null: unknown). */
+  evalEngine?: string | null;
   /** The selected node is off the main line, so no move is marked current. */
   variationSelected?: boolean;
   /**
@@ -137,7 +142,7 @@ export const ReviewCharts = memo(function ReviewCharts({
   const win = useFold("win");
   const difficulty = useFold("difficulty");
   const times = useFold("times");
-  const maiaInstalled = useMaiaInstalled();
+  const maiaInstalled = useMaia3Installed();
   const layout = chartsLayout({
     hasEvals: data.hasEvals,
     hasDifficulty: data.hasDifficulty && data.model !== null,
@@ -203,6 +208,7 @@ export const ReviewCharts = memo(function ReviewCharts({
           selectedNodeId={variationSelected ? null : selectedNodeId}
           onSelectNode={onSelectNode}
           reviewedSide={reviewedSide}
+          evalEngine={evalEngine}
         />
       )}
     </section>
@@ -276,7 +282,8 @@ function ChartViews({
   totalPlies,
   selectedNodeId,
   onSelectNode,
-  reviewedSide
+  reviewedSide,
+  evalEngine
 }: {
   id: string;
   data: ReviewChartData;
@@ -288,6 +295,7 @@ function ChartViews({
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
   reviewedSide: Color;
+  evalEngine: string | null;
 }) {
   const { points } = data;
   const [measure, width, viewsElement] = useWidth();
@@ -342,7 +350,7 @@ function ChartViews({
         </p>
         {focused && selected ? (
           <p aria-live="polite" className="sr-only">
-            {chartTooltipText(chartTooltip(selected, reviewedSide, data.model))}
+            {chartTooltipText(chartTooltip(selected, reviewedSide, evalEngine))}
           </p>
         ) : null}
         {width > 0 ? (
@@ -353,6 +361,7 @@ function ChartViews({
               height={views.win}
               data={data}
               reviewedSide={reviewedSide}
+              evalEngine={evalEngine}
             />
             {axisAfter("win")}
             {layout.difficulty === "prompt" ? (
@@ -363,7 +372,6 @@ function ChartViews({
                 frame={frame}
                 height={views.difficulty}
                 points={points}
-                model={data.model}
               />
             )}
             {axisAfter("difficulty")}
@@ -379,7 +387,7 @@ function ChartViews({
         {hovered && width > 0 ? (
           <ChartTooltip
             point={hovered}
-            tooltip={chartTooltip(hovered, reviewedSide, data.model)}
+            tooltip={chartTooltip(hovered, reviewedSide, evalEngine)}
             x={scale.x(hovered.ply)}
             width={width}
           />
@@ -516,17 +524,19 @@ function WinningChancesView({
   frame,
   height,
   data,
-  reviewedSide
+  reviewedSide,
+  evalEngine
 }: {
   fold: Fold;
   frame: ChartFrame;
   height: number | null;
   data: ReviewChartData;
   reviewedSide: Color;
+  evalEngine: string | null;
 }) {
   const plot = winPlotHeight(height ?? 0);
   return (
-    <FoldingView fold={fold} label="Winning chances">
+    <FoldingView fold={fold} label={winningChancesTitle(evalEngine)}>
       {data.hasEvals ? (
         <ChartSvg id={fold.id} chart="winning-chances" height={height} frame={frame}>
           <WinningChancesLayer
@@ -555,18 +565,17 @@ function DifficultyView({
   fold,
   frame,
   height,
-  points,
-  model
+  points
 }: {
   fold: Fold;
   frame: ChartFrame;
   height: number | null;
   points: readonly ChartPoint[];
-  model: number | null;
 }) {
   const plot = stripPlotHeight(height ?? 0);
+  const title = useMemo(() => difficultyTitle(points), [points]);
   return (
-    <FoldingView fold={fold} label={<>Difficulty at {model} · Maia</>}>
+    <FoldingView fold={fold} label={title ?? "Difficulty · Maia"}>
       <ChartSvg id={fold.id} chart="difficulty" height={height} frame={frame}>
         <DifficultyLayer points={points} scale={frame.scale} plot={plot} />
         <Cursor {...frame.cursor} top={STRIP_INSET} bottom={STRIP_INSET + plot} />
@@ -601,45 +610,25 @@ function TimesView({
 function chartsDescription(data: ReviewChartData): string {
   const views = ["the winning chances after each move, the reviewed side's from the bottom"];
   if (data.hasDifficulty && data.model !== null)
-    views.push(`how hard the best move was to find at Maia ${data.model}`);
+    views.push("how hard the best move was to find at the rating Maia read it at");
   if (data.hasTimes) views.push("the time each move took");
   return `Charts of ${views.join(", ")}. Marked moves are coloured; ringed ones are the key insights. The left and right arrow keys step through the moves, Home and End go to the start and the end.`;
 }
 
-/** Whether a Maia model is installed; null while the engines load. */
-function useMaiaInstalled(): boolean | null {
-  const engines = useEnginesQuery();
-  if (!engines.data) return null;
-  return pickMaiaEngines(engines.data).length > 0;
-}
-
 /**
- * The difficulty view's place when the review has no Maia data: one line pointing to where Maia is
- * installed, or (with Maia installed) to analysing again with it.
+ * The difficulty view's place when the review has no Maia data: Maia 3's download while it isn't
+ * installed, else a pointer to analysing the game again with Maia on.
  */
 function MaiaPrompt() {
-  const installed = useMaiaInstalled();
-  const openSettings = useOpenSettings();
-  if (installed)
+  if (useMaia3Installed() === false)
     return (
-      <p className="text-2xs text-fg-subtle" style={{ paddingLeft: GUTTER }} data-maia-prompt>
-        Difficulty needs Maia: analyse the game again with Maia on.
-      </p>
+      <div style={{ paddingLeft: GUTTER }}>
+        <MaiaDownloadPrompt variant="line" />
+      </div>
     );
   return (
     <p className="text-2xs text-fg-subtle" style={{ paddingLeft: GUTTER }} data-maia-prompt>
-      Difficulty needs a Maia model.{" "}
-      {openSettings ? (
-        <button
-          type="button"
-          className="text-accent underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-          onClick={() => openSettings("engines")}
-        >
-          Install Maia
-        </button>
-      ) : (
-        "Install Maia in Settings → Engines."
-      )}
+      Difficulty needs Maia: analyze the game again with Maia on.
     </p>
   );
 }

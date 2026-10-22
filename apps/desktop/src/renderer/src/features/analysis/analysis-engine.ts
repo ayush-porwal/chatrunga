@@ -1,6 +1,7 @@
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { pickDefaultEngine } from "../game-review/review-engine-picker";
+import { isMaiaEngine } from "../play/engine-game";
 
 /** How far live analysis searches, for the panel header: `depth 24`, `10 s per move`; null when it runs until stopped. */
 export function analysisLimitLabel(
@@ -17,14 +18,31 @@ export function defaultEngineFor(engines: readonly EngineConfig[] | undefined): 
 }
 
 /**
- * The engine live analysis runs: the one the user chose while it's still installed and usable,
- * else the default among the usable engines. Null when none is usable (analysis says so).
+ * An engine that analyses: not Maia (Maia 3 has no search; a Maia network only predicts human
+ * moves). Whether it can run now is `isAvailable`.
+ */
+export function isAnalysisEngine(
+  engine: Pick<EngineConfig, "runtime" | "isHumanPrediction">
+): boolean {
+  return !isMaiaEngine(engine) && !engine.isHumanPrediction;
+}
+
+/** An engine live analysis can run now: one that analyses, and available. */
+export function canAnalyse(
+  engine: Pick<EngineConfig, "isAvailable" | "runtime" | "isHumanPrediction">
+): boolean {
+  return engine.isAvailable && isAnalysisEngine(engine);
+}
+
+/**
+ * The engine live analysis runs: the one the user chose while it's still installed and can analyse,
+ * else the default among those. Null when none can (analysis says so).
  */
 export function analysisEngineFor(
   engines: readonly EngineConfig[] | undefined,
   chosen: string | null
 ): string | null {
-  const usable = engines?.filter((engine) => engine.isAvailable) ?? [];
+  const usable = engines?.filter(canAnalyse) ?? [];
   return usable.find((engine) => engine.id === chosen)?.id ?? defaultEngineFor(usable);
 }
 
@@ -55,14 +73,13 @@ export function rowEngine({
 
 /**
  * The engine that reviews a game and explains a puzzle (Review settings' evaluation engine): the
- * chosen one, else the automatic pick. Null when that one can't run or only predicts human moves.
+ * chosen one while it can run, else the default engine. Never one that only predicts human moves;
+ * null when no engine can review.
  */
 export function reviewEngineFor(
   engines: readonly EngineConfig[] | undefined,
   defaultEngineId: string | null
 ): EngineConfig | null {
-  const engine = defaultEngineId
-    ? engines?.find((item) => item.id === defaultEngineId)
-    : pickDefaultEngine(engines ?? []);
-  return engine?.isAvailable && !engine.isHumanPrediction ? engine : null;
+  const usable = engines?.filter((engine) => engine.isAvailable && !engine.isHumanPrediction) ?? [];
+  return usable.find((engine) => engine.id === defaultEngineId) ?? pickDefaultEngine(usable);
 }

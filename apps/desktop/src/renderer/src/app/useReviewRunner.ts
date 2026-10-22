@@ -90,9 +90,8 @@ export function useReviewRunner({
         reviewId,
         gameId,
         engineId: engine.id,
-        // Omitted ids let main pick every installed Maia filtered by `reviewMaiaLevels`;
-        // an empty list turns Maia off for this review.
-        ...(reviewUseMaia ? {} : { predictionEngineIds: [] }),
+        // Main reads Maia 3 at each side's rating (or Review settings' `reviewMaiaRating`).
+        useMaia: reviewUseMaia,
         rootFen,
         moves: reviewInput,
         moveTimeMs: reviewSearchTimeMs,

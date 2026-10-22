@@ -21,7 +21,7 @@ import {
   EnginePerformanceRows
 } from "../settings/engine-performance";
 import { useSetSetting } from "../settings/use-set-setting";
-import { analysisEngineFor } from "./analysis-engine";
+import { analysisEngineFor, isAnalysisEngine } from "./analysis-engine";
 import { EnginePicker, engineOption } from "./EnginePicker";
 
 const lineOptions = [1, 2, 3, 4, 5].map((count) => ({
@@ -118,12 +118,10 @@ function AnalysisSettingsGroups({ settings }: { settings: AppSettings }) {
   const ids = useId();
   const engines = useEnginesQuery();
   const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);
-  // Every installed engine; one that can't run is listed but can't be chosen (none usable: the
-  // picker says none is installed).
+  // Every installed engine that analyses (not Maia); one that can't run is listed but can't be
+  // chosen (none usable: the picker says none is installed).
   const engineOptions = engineId
-    ? (engines.data ?? []).map((item) =>
-        engineOption(item, item.isHumanPrediction ? "human-like" : undefined)
-      )
+    ? (engines.data ?? []).filter(isAnalysisEngine).map((item) => engineOption(item))
     : [];
   const setSetting = useSetSetting();
   const timeOptions = TIME_OPTIONS_SEC.includes(settings.analysisTimeSec)

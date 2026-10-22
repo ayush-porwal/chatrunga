@@ -1,14 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { renderHeadline } from "./headline";
+import { MAIA3_RATINGS } from "../engine/maia3";
+import { MAIA_BUCKETS } from "../schemas/constants";
 import { buildRatingCurve } from "./rating-curve";
 
+/** A Maia 1 review's five-level curve (1100-1900). */
 function curve(opts: {
   playedProb: [number, number, number, number, number];
   bestProb: [number, number, number, number, number];
   playedIsBest: boolean;
   userBucket: 1100 | 1300 | 1500 | 1700 | 1900;
 }) {
-  return buildRatingCurve(opts);
+  const { userBucket, ...rest } = opts;
+  return buildRatingCurve({ ratings: MAIA_BUCKETS, userRating: userBucket, ...rest });
+}
+
+/** A Maia 3 curve over its 21 ratings (600-2600) from a function of the rating. */
+function maia3Curve(
+  played: (rating: number) => number,
+  best: (rating: number) => number,
+  opts: { playedIsBest: boolean; userRating: number }
+) {
+  return buildRatingCurve({
+    ratings: MAIA3_RATINGS,
+    playedProb: MAIA3_RATINGS.map(played),
+    bestProb: MAIA3_RATINGS.map(best),
+    ...opts
+  });
 }
 
 describe("renderHeadline", () => {
@@ -21,7 +39,7 @@ describe("renderHeadline", () => {
     });
     // playedProb[1500] = 0.55 → in the 0.40-0.70 zone → specific variant
     expect(renderHeadline(c)).toBe(
-      "Maia assigns this move 55% weight in the lower buckets, even though the engine dislikes it."
+      "Maia assigns this move 55% weight at 1500, even though the engine dislikes it."
     );
   });
 
@@ -33,17 +51,17 @@ describe("renderHeadline", () => {
       userBucket: 1500
     });
     // playedProb[1500] = 0.31 → below 0.40 → generic variant
-    expect(renderHeadline(c)).toBe("The lower-rated Maia models frequently select this move.");
+    expect(renderHeadline(c)).toBe("Maia frequently selects this move at lower ratings.");
   });
 
-  it("renders rating_cliff with the cliffRating bucket - 200", () => {
+  it("renders rating_cliff with the rating before the cliff", () => {
     const c = curve({
       playedProb: [0.62, 0.55, 0.45, 0.18, 0.04],
       bestProb: [0.1, 0.2, 0.35, 0.55, 0.7],
       playedIsBest: false,
       userBucket: 1500
     });
-    // cliffRating = 1700 → headline says "above 1500" (= 1700 - 200)
+    // cliffRating = 1700 → headline says "above 1500" (the level before it)
     expect(renderHeadline(c)).toBe("Maia estimates drop sharply above 1500.");
   });
 
@@ -54,7 +72,7 @@ describe("renderHeadline", () => {
       playedIsBest: false,
       userBucket: 1500
     });
-    expect(renderHeadline(c)).toBe("Difficult — the lower-rated Maia models rarely select this.");
+    expect(renderHeadline(c)).toBe("Difficult — Maia rarely selects this at lower ratings.");
   });
 
   it("renders your_level_blindspot with the user's bucket %", () => {
@@ -65,7 +83,7 @@ describe("renderHeadline", () => {
       userBucket: 1500
     });
     expect(renderHeadline(c)).toBe(
-      "Maia assigns this move 55% weight at your level, despite the engine's concern."
+      "Maia assigns this move 55% weight at 1500, despite the engine's concern."
     );
   });
 
@@ -76,9 +94,7 @@ describe("renderHeadline", () => {
       playedIsBest: true,
       userBucket: 1300
     });
-    expect(renderHeadline(c)).toBe(
-      "Strong engine choice — lower-rated Maia models rarely select it."
-    );
+    expect(renderHeadline(c)).toBe("Strong engine choice — Maia rarely selects it at 1300.");
   });
 
   it("renders opening_principle with locked copy", () => {
@@ -88,7 +104,7 @@ describe("renderHeadline", () => {
       playedIsBest: true,
       userBucket: 1500
     });
-    expect(renderHeadline(c)).toBe("Standard idea — the models agree on this continuation.");
+    expect(renderHeadline(c)).toBe("Standard idea — Maia expects it at every rating.");
   });
 
   it("returns null for neutral label so the panel omits the headline", () => {
@@ -110,7 +126,22 @@ describe("renderHeadline", () => {
       userBucket: 1500
     });
     expect(renderHeadline(c)).toBe(
-      "Maia assigns this move 55% weight at your level, despite the engine's concern."
+      "Maia assigns this move 55% weight at 1500, despite the engine's concern."
     );
+  });
+
+  it("names Maia 3's ratings from the curve", () => {
+    const cliff = maia3Curve(
+      (rating) => 0.6 - (rating - 600) * 0.0002,
+      () => 0.2,
+      { playedIsBest: false, userRating: 1500 }
+    );
+    expect(renderHeadline(cliff)).toBe("Maia estimates drop sharply above 2100.");
+    const find = maia3Curve(
+      (rating) => rating / 5000,
+      (rating) => rating / 5000,
+      { playedIsBest: true, userRating: 1400 }
+    );
+    expect(renderHeadline(find)).toBe("Strong engine choice — Maia rarely selects it at 1400.");
   });
 });

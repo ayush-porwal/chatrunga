@@ -76,7 +76,6 @@ async function reviewNewestChesscomGame(page: Page): Promise<void> {
       moveTimeMs: 250,
       createdAt: Date.now(),
       side: "black",
-      maiaEngines: [],
       summary: {
         totalMoves: 0,
         best: 0,

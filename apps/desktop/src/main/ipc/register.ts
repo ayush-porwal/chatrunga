@@ -28,10 +28,12 @@ import {
 import { listInstalledDatabases } from "../databases/installed-databases";
 import { puzzleOfTheDay, samplePuzzle } from "../databases/puzzle-sampling";
 import { engineConfigForId, listAllEngines } from "../engine/engine-config";
-import type { EngineEvents, EngineManager } from "../engine/engine-manager";
+import { assertUciEngine, type EngineEvents, type EngineManager } from "../engine/engine-manager";
 import { probeEvalScore } from "../engine/probe-eval";
 import { ALL_ASSET_IDS, getAssetManager, isAssetId, type AssetId } from "../engine/asset-manager";
 import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
+import { disposeMaia3Evaluator } from "../maia";
+import { withMaia3Fixture } from "../maia/model-path";
 import { gameFingerprint, lichessGameId } from "../db/game-fingerprint";
 import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
@@ -182,6 +184,12 @@ export function registerIpc(engineManager: EngineManager): void {
   });
 }
 
+/** Maia (the Maia 3 row) evaluates nothing: an evaluation asked of it fails at once, saying so. */
+function refuseMaiaEvaluation(engineId: string, use: string): void {
+  const config = engineConfigForId(engineId);
+  if (config) assertUciEngine(config, use);
+}
+
 function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
   registerEngineCrudIpc();
@@ -198,28 +206,37 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const input = parseProbeEvalInput(value);
     const config = engineConfigForId(input.engineId);
     if (!config) throw new Error("Engine not found");
+    assertUciEngine(config, "a draw probe");
     // The warm process (lc0's network) has exited first, and no search starts one during the probe.
     return engineManager.runExclusive(() =>
       probeEvalScore(config, input.fen, input.moves, input.movetimeMs)
     );
   });
-  ipcMain.handle("engines:reviewGame", (_event, input: unknown) =>
-    runGameReview(engineManager, parseReviewGameInput(input))
-  );
+  ipcMain.handle("engines:reviewGame", (_event, value: unknown) => {
+    const input = parseReviewGameInput(value);
+    refuseMaiaEvaluation(input.engineId, "a review's evaluation");
+    return runGameReview(engineManager, input);
+  });
   ipcMain.handle("engines:cancelReview", (_event, reviewId: unknown) =>
     engineManager.cancelReview(asId(reviewId, "review id"))
   );
-  ipcMain.handle("engines:analysePositions", (_event, input: unknown) =>
-    runPositionAnalysis(engineManager, parseAnalysePositionsInput(input))
-  );
+  ipcMain.handle("engines:analysePositions", (_event, value: unknown) => {
+    const input = parseAnalysePositionsInput(value);
+    refuseMaiaEvaluation(input.engineId, "position analysis");
+    return runPositionAnalysis(engineManager, input);
+  });
+  ipcMain.handle("engines:maiaCurve", async (_event, input: unknown) => {
+    const { maiaCurve, parseMaiaCurveInput } = await import("./maia-curve");
+    return maiaCurve(parseMaiaCurveInput(input));
+  });
   ipcMain.handle("engines:stop", () => engineManager.stop());
 }
 
 /**
- * Lc0 has no download on macOS or Linux, so Maia (which runs inside Lc0) only works once the user
- * points the app at their own Lc0. One they installed in the usual place (e.g. Homebrew) is
- * picked up at startup instead. Never replaces a path the user chose, never comes back after they
- * forgot it (until they choose one again), and never fails startup.
+ * Lc0 has no download on macOS or Linux, so it only works once the user points the app at their
+ * own Lc0. One they installed in the usual place (e.g. Homebrew) is picked up at startup instead.
+ * Never replaces a path the user chose, never comes back after they forgot it (until they choose
+ * one again), and never fails startup.
  */
 async function adoptInstalledLc0(assetManager: ReturnType<typeof getAssetManager>): Promise<void> {
   try {
@@ -235,7 +252,7 @@ async function adoptInstalledLc0(assetManager: ReturnType<typeof getAssetManager
   }
 }
 
-/** Engine binary + Maia weight downloads, mirrored into the engines table. */
+/** Engine binary, network and Maia 3 model downloads, mirrored into the engines table. */
 function registerAssetIpc(): void {
   const assetManager = getAssetManager();
   const parseAssetId = (value: unknown): AssetId => {
@@ -269,10 +286,19 @@ function registerAssetIpc(): void {
     .then(() => assetManager.refreshReleasesInBackground())
     .catch((error) => logger.error("asset-manager", "init failed:", error));
 
+  // A host still open would keep reading the model it loaded (until five idle minutes close it)
+  // while reviews record the new one: close it, and the next request loads the new model. (Only
+  // a missing model is downloaded with the others: no host can be open on it.)
+  const modelChanged = (ids: readonly AssetId[]) => {
+    if (ids.includes("maia3")) disposeMaia3Evaluator();
+  };
+
   const install = async (assetId: unknown): Promise<EngineAssetActionResult> => {
     try {
       await ready;
-      await assetManager.downloadAsset(parseAssetId(assetId));
+      const id = parseAssetId(assetId);
+      await assetManager.downloadAsset(id);
+      modelChanged([id]);
       await syncEngines();
       return { ok: true };
     } catch (error) {
@@ -288,12 +314,12 @@ function registerAssetIpc(): void {
         typeof options === "object" &&
         options !== null &&
         (options as { refresh?: unknown }).refresh === true;
-      return assetManager.getStatus({ refresh });
+      return withMaia3Fixture(await assetManager.getStatus({ refresh }));
     }
   );
   ipcMain.handle("assets:checkForUpdates", async (): Promise<EngineAssetStatusMap> => {
     await ready;
-    return assetManager.checkForUpdates();
+    return withMaia3Fixture(await assetManager.checkForUpdates());
   });
   ipcMain.handle("assets:download", (_event, assetId: unknown) => install(assetId));
   // Same pipeline as a download: fetch the latest release, verify, swap the file in place.
@@ -301,7 +327,7 @@ function registerAssetIpc(): void {
   ipcMain.handle("assets:downloadAll", async (): Promise<EngineAssetDownloadSummary> => {
     await ready;
     // Only what is missing and has a download for this platform (not Lc0 on macOS / Linux).
-    const status = await assetManager.getStatus();
+    const status = withMaia3Fixture(await assetManager.getStatus());
     const result = await assetManager.downloadAll(
       ALL_ASSET_IDS.filter((id) => status[id].state === "missing" && status[id].autoDownload)
     );
@@ -311,6 +337,7 @@ function registerAssetIpc(): void {
   ipcMain.handle("assets:remove", async (_event, assetId: unknown) => {
     const id = parseAssetId(assetId);
     await assetManager.removeAsset(id);
+    modelChanged([id]);
     // Forgetting Lc0's path sticks: startup doesn't pick the same binary up again.
     if (id === "lc0") settingsRepository.set("lc0AutoDetect", false);
     await syncEngines();
@@ -318,6 +345,7 @@ function registerAssetIpc(): void {
   ipcMain.handle("assets:setCustomPath", async (_event, assetId: unknown, customPath: unknown) => {
     const id = parseAssetId(assetId);
     await assetManager.setCustomPath(id, asAbsolutePath(customPath, "custom path"));
+    modelChanged([id]);
     if (id === "lc0") settingsRepository.set("lc0AutoDetect", true);
     await syncEngines();
   });

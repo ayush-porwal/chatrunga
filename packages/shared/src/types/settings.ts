@@ -1,4 +1,4 @@
-import type { MaiaRating } from "./engine";
+import { nearestMaia3Rating } from "../engine/maia3";
 import { isOneOf } from "./guards";
 import {
   normalizePlayerRatings,
@@ -350,6 +350,8 @@ export type AppSettings = {
   playOpponent: PlayOpponent | null;
   /** Play settings: the engine the Play card opens with (null: the default engine). */
   playEngineId: string | null;
+  /** Play: the Maia 3 rating last chosen for the Maia opponent (null: not chosen yet). */
+  playMaiaRating: number | null;
   boardOrientation: "white" | "black";
   boardTheme: BoardTheme;
   /** `#RRGGBB`; when both this and `boardSquareDark` are set, they override the preset theme square colors. */
@@ -397,8 +399,11 @@ export type AppSettings = {
   reviewShowTopLines: boolean;
   /** MultiPV lines per reviewed position (1-5). */
   reviewMultiPv: number;
-  /** Maia levels to run during review; null = every installed level. */
-  reviewMaiaLevels: ReviewMaiaLevel[] | null;
+  /**
+   * Review: the one Maia 3 rating both sides' moves are read at, on the 600–2600 grid; null reads
+   * each side at its own game rating (see chess/review-rating.ts `resolveReviewSideRatings`).
+   */
+  reviewMaiaRating: number | null;
   /** Live analysis: the engine to analyse with (null: the default engine). */
   analysisEngineId: string | null;
   /** Live analysis: how many lines (MultiPV), 1–5. */
@@ -435,7 +440,7 @@ export type AppSettings = {
    */
   usageAnalyticsEnabled: boolean;
   /**
-   * Startup may adopt an Lc0 installed outside the app (Homebrew, PATH) for Maia. Turned off when
+   * Startup may adopt an Lc0 installed outside the app (Homebrew, PATH). Turned off when
    * the user forgets Lc0's path, back on when they choose a binary; not shown in Settings.
    */
   lc0AutoDetect: boolean;
@@ -471,10 +476,6 @@ export type ReviewCommentaryProvider = "openrouter";
 export const PRACTICE_AUTO_ADVANCE_MS = [0, 600, 1500, 3000] as const;
 export type PracticeAutoAdvanceMs = (typeof PRACTICE_AUTO_ADVANCE_MS)[number];
 
-export type ReviewMaiaLevel = MaiaRating;
-export const REVIEW_MAIA_LEVELS: readonly ReviewMaiaLevel[] = [
-  1100, 1300, 1500, 1700, 1900
-] as const;
 export const MAX_ENGINE_THREADS = 8;
 
 /** How far live analysis searches each position: until stopped (as Lichess's infinite analysis), to a depth, or for a time. */
@@ -507,6 +508,7 @@ export const boardThemeSquareColors: Record<BoardTheme, { light: string; dark: s
 export const defaultSettings: AppSettings = {
   playOpponent: null,
   playEngineId: null,
+  playMaiaRating: null,
   boardOrientation: "white",
   boardTheme: "brown",
   boardSquareLight: null,
@@ -533,7 +535,7 @@ export const defaultSettings: AppSettings = {
   reviewPlayerColor: "white",
   reviewShowTopLines: true,
   reviewMultiPv: 3,
-  reviewMaiaLevels: null,
+  reviewMaiaRating: null,
   analysisEngineId: null,
   analysisLines: 3,
   analysisLimit: "infinite",
@@ -561,10 +563,11 @@ export const defaultSettings: AppSettings = {
 };
 
 /**
- * Settings older builds stored that are no longer settings; read once, at startup, to migrate them
- * (main/rating-migration.ts). `reviewPlayerRating`: the one rating every mode now starts from.
+ * Settings older builds stored that are no longer settings; read once, at startup, to migrate them.
+ * `reviewPlayerRating` (main/rating-migration.ts): the one rating every mode now starts from.
+ * `reviewMaiaLevels` (main/maia-settings-migration.ts): Maia 1's review levels.
  */
-export type LegacySettingKey = "reviewPlayerRating";
+export type LegacySettingKey = "reviewPlayerRating" | "reviewMaiaLevels";
 
 /** Whether `key` names a setting (every setting has a default). */
 export function isSettingKey(key: string): key is keyof AppSettings {
@@ -630,14 +633,23 @@ export function normalizeAppearanceSettings(settings: AppSettings): AppSettings 
   return rest;
 }
 
-/** Validates Play's opponent and engine choice (a bad value: not chosen yet). Idempotent. */
+/**
+ * A stored Maia 3 rating on its 600–2600 grid (snapped to the nearest 100); null for unset or
+ * anything that isn't a number.
+ */
+function normalizeMaia3RatingSetting(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? nearestMaia3Rating(value) : null;
+}
+
+/** Validates Play's opponent, engine and Maia rating choice (a bad value: not chosen yet). Idempotent. */
 export function normalizePlaySettings(settings: AppSettings): AppSettings {
   const opponent: unknown = settings.playOpponent;
   const engineId: unknown = settings.playEngineId;
   return {
     ...settings,
     playOpponent: isOneOf(PLAY_OPPONENTS, opponent) ? opponent : null,
-    playEngineId: typeof engineId === "string" && engineId.length > 0 ? engineId : null
+    playEngineId: typeof engineId === "string" && engineId.length > 0 ? engineId : null,
+    playMaiaRating: normalizeMaia3RatingSetting(settings.playMaiaRating)
   };
 }
 
@@ -765,7 +777,6 @@ export function normalizeDefaultEngineId(value: unknown): string | null {
 
 /** Validates the review/engine resource settings, falling back to defaults for bad values. Idempotent. */
 export function normalizeReviewEngineSettings(settings: AppSettings): AppSettings {
-  const levels = settings.reviewMaiaLevels;
   // Unset is auto: null, or a key missing from settings a caller didn't merge over the defaults,
   // the same way resolveEngineThreads reads it.
   const threads = settings.engineThreads ?? null;
@@ -773,9 +784,7 @@ export function normalizeReviewEngineSettings(settings: AppSettings): AppSetting
     ...settings,
     defaultEngineId: normalizeDefaultEngineId(settings.defaultEngineId),
     reviewMultiPv: clampInt(settings.reviewMultiPv, 1, 5, defaultSettings.reviewMultiPv),
-    reviewMaiaLevels: Array.isArray(levels)
-      ? REVIEW_MAIA_LEVELS.filter((level) => levels.map(Number).includes(level))
-      : null,
+    reviewMaiaRating: normalizeMaia3RatingSetting(settings.reviewMaiaRating),
     engineThreads: threads === null ? null : clampInt(threads, 1, 256, 1),
     engineHashMb: clampInt(
       settings.engineHashMb,

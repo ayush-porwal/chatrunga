@@ -1,5 +1,3 @@
-import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/constants";
-import type { RatingCurve } from "@chaturanga/shared/schemas";
 import type {
   EngineScore,
   MoveAnnotation,
@@ -11,8 +9,9 @@ import { uciToSan } from "./review-utils";
 
 /*
  * The Engine tab's Human prediction (RatingCurve.tsx draws it), after Maia Chess's analysis panel:
- * Maia's moves at the user's rating beside the engine's, and how often players at each Maia rating
- * play the move played, the best move and Maia's own pick, as lines over the five rating levels.
+ * Maia's moves at the mover's rating (Maia 3) or the user's level (Maia 1) beside the engine's, and
+ * how often players at each rating play the move played, the best move and Maia's own pick, as
+ * lines over the ratings Maia was read at (Maia 3's 21 from 600 to 2600, Maia 1's five levels).
  */
 
 /** Who a line or a row stands for: the move played, the engine's best, or Maia's pick. */
@@ -21,9 +20,12 @@ export type PredictionRole = "played" | "best" | "maia";
 export type PredictionLine = {
   role: PredictionRole;
   san: string;
-  /** Maia's probability at each rating level (MAIA_BUCKETS order). */
+  /** Maia's probability at each rating of the curve (its `ratings` order). */
   probs: readonly number[];
 };
+
+/** The curve's lines over the ratings Maia was read at, ascending. */
+export type PredictionCurve = { ratings: readonly number[]; lines: PredictionLine[] };
 
 /** What each line is called (the legend, the tooltip). */
 export const PREDICTION_ROLE_NAMES: Record<PredictionRole, string> = {
@@ -56,7 +58,7 @@ export type PredictionRow = {
   role: Exclude<PredictionRole, "maia"> | null;
 };
 
-/** Maia's top moves at the user's level and how likely each is. */
+/** Maia's top moves at one rating and how likely each is. */
 export type HumanMoveRow = PredictionRow & { prob: number };
 /** The engine's candidate moves and their score (White's side). */
 export type EngineMoveRow = PredictionRow & { score: EngineScore };
@@ -71,21 +73,15 @@ export function percent(value: number): string {
 }
 
 /**
- * The move's probability at each Maia level, from each level's top moves (a move outside them is
- * one Maia hardly plays: 0).
+ * The prediction the Human moves table reads: Maia 3's at the mover's rating, else the move's
+ * prediction at `bucket` (markedRating): Maia 1's level nearest the user's rating, when Maia ran
+ * there, or, on a Maia 3 move a partial run missed, its curve's point at the mover's rating.
  */
-function levelProbabilities(predictions: readonly RatingPrediction[], uci: string): number[] {
-  return MAIA_BUCKETS.map(
-    (rating) =>
-      predictions
-        .find((prediction) => prediction.rating === rating)
-        ?.topMoves.find((item) => item.uci === uci)?.prob ?? 0
+export function tablePrediction(move: MoveReview, bucket: number): RatingPrediction | undefined {
+  return (
+    move.moverPrediction ??
+    move.humanPredictions?.find((prediction) => prediction.rating === bucket)
   );
-}
-
-/** The level Maia ran at for the user's bucket, if it did. */
-function userLevel(move: MoveReview, bucket: MaiaRatingBucket): RatingPrediction | undefined {
-  return move.humanPredictions?.find((prediction) => prediction.rating === bucket);
 }
 
 function roleOf(move: MoveReview, uci: string): PredictionRow["role"] {
@@ -94,30 +90,60 @@ function roleOf(move: MoveReview, uci: string): PredictionRow["role"] {
 }
 
 /**
- * The chart's lines: the move played and the engine's best (one line when they are the same), and
- * Maia's own pick at the user's level when it is neither.
+ * `uci`'s probability at each prediction: the full policy's (`fromFull`, stored for the played and
+ * best moves), else its share among the prediction's top moves, else 0 (a move Maia hardly plays).
  */
-export function predictionLines(move: MoveReview, curve: RatingCurve): PredictionLine[] {
-  const san = (uci: string) => uciToSan(move.fenBefore, uci) ?? uci;
-  const lines: PredictionLine[] = [
-    { role: "played", san: san(move.playedMove), probs: curve.playedProb }
-  ];
-  if (move.bestMove && move.bestMove !== move.playedMove)
-    lines.push({ role: "best", san: san(move.bestMove), probs: curve.bestProb });
-  const pick = userLevel(move, curve.userRatingBucket)?.topMoves[0]?.uci;
-  if (pick && roleOf(move, pick) === null) {
-    lines.push({
-      role: "maia",
-      san: san(pick),
-      probs: levelProbabilities(move.humanPredictions ?? [], pick)
-    });
-  }
-  return lines;
+function probabilities(
+  predictions: readonly RatingPrediction[],
+  uci: string,
+  fromFull: (prediction: RatingPrediction) => number | undefined = () => undefined
+): number[] {
+  return predictions.map(
+    (prediction) =>
+      fromFull(prediction) ?? prediction.topMoves.find((item) => item.uci === uci)?.prob ?? 0
+  );
 }
 
-/** Maia's top moves at the user's level, most likely first. */
-export function humanMoveRows(move: MoveReview, bucket: MaiaRatingBucket): HumanMoveRow[] {
-  return (userLevel(move, bucket)?.topMoves ?? []).slice(0, TABLE_ROWS).flatMap((item) => {
+/**
+ * The chart's lines over `predictions`' ratings (one prediction per rating, ascending): the move
+ * played and the engine's best (one line when they are the same), and Maia's own pick at `marked`
+ * (the mover's rating, or the user's level) when it is neither. Null with fewer than two ratings.
+ */
+export function predictionCurve(
+  move: MoveReview,
+  predictions: readonly RatingPrediction[],
+  marked: number
+): PredictionCurve | null {
+  const byRating = new Map(predictions.map((prediction) => [prediction.rating, prediction]));
+  const sorted = [...byRating.values()].sort((a, b) => a.rating - b.rating);
+  if (sorted.length < 2) return null;
+  const san = (uci: string) => uciToSan(move.fenBefore, uci) ?? uci;
+  const lines: PredictionLine[] = [
+    {
+      role: "played",
+      san: san(move.playedMove),
+      probs: probabilities(sorted, move.playedMove, (prediction) => prediction.playedProb)
+    }
+  ];
+  const best = move.bestMove;
+  if (best && best !== move.playedMove)
+    lines.push({
+      role: "best",
+      san: san(best),
+      probs: probabilities(sorted, best, (prediction) => prediction.bestProb)
+    });
+  const pick = (byRating.get(marked) ?? move.moverPrediction)?.topMoves[0]?.uci;
+  if (pick && roleOf(move, pick) === null)
+    lines.push({ role: "maia", san: san(pick), probs: probabilities(sorted, pick) });
+  return { ratings: sorted.map((prediction) => prediction.rating), lines };
+}
+
+/** A prediction's top moves (the Human moves table), most likely first. */
+export function humanMoveRows(
+  move: MoveReview,
+  prediction: RatingPrediction | undefined
+): HumanMoveRow[] {
+  return (prediction?.topMoves ?? []).slice(0, TABLE_ROWS).flatMap((item) => {
     const san = uciToSan(move.fenBefore, item.uci);
     return san ? [{ uci: item.uci, san, prob: item.prob, role: roleOf(move, item.uci) }] : [];
   });
@@ -136,7 +162,7 @@ export function engineMoveRows(move: MoveReview, limit: number): EngineMoveRow[]
 
 /** Room for the % axis on the left, the moves' names right of the lines, the ratings below. */
 const PAD = { left: 34, right: 52, top: 18, bottom: 24 };
-/** The user's level's band: at most this wide, and never wider than this share of a step. */
+/** The marked rating's band: at most this wide, and never wider than this share of a step. */
 const BAND_WIDTH = 44;
 const BAND_SHARE = 0.6;
 /** End labels sit this far right of the last point, at least `LABEL_GAP` apart (11px bold). */
@@ -144,6 +170,12 @@ const LABEL_OFFSET = 8;
 const LABEL_GAP = 14;
 /** A label's baseline sits this far under the middle of its text (11px). */
 const LABEL_BASELINE = 4;
+/** Rating labels' centres stay this far apart ("2600" in 10.5px mono, and a gap). */
+const TICK_LABEL_GAP = 34;
+/** Steps (in points) between labelled ratings, the smallest that keeps them apart wins. */
+const TICK_LABEL_STRIDES = [1, 2, 4, 5, 10] as const;
+/** Points closer than this draw smaller markers (Maia 3's 21 ratings in a narrow panel). */
+const DENSE_STEP = 24;
 
 type PredictionPoint = { x: number; y: number };
 type PredictionSeries = {
@@ -159,11 +191,14 @@ export type PredictionChart = {
   plot: { left: number; right: number; top: number; bottom: number };
   /** Round steps from 0 to the top of the axis. */
   yTicks: Array<{ y: number; label: string }>;
-  xTicks: Array<{ x: number; rating: number; user: boolean }>;
-  /** The user's level, behind the lines (none when it isn't one of Maia's). */
-  userBand: { x: number; width: number } | null;
-  /** A level's band (the user's, or the hovered one's), as wide as the user's. */
+  /** Every rating's column; `label`: its rating is written under the axis (the marked one bold). */
+  xTicks: Array<{ x: number; rating: number; marked: boolean; label: boolean }>;
+  /** The marked rating, behind the lines (none when Maia wasn't read at it). */
+  markBand: { x: number; width: number } | null;
+  /** A rating's band (the marked one's, or the hovered one's), as wide as the marked one's. */
   bandWidth: number;
+  /** The points are too close for full-size markers. */
+  dense: boolean;
   /** Drawn bottom to top: Maia's pick, the move played, then the best (a dot inside a diamond). */
   series: PredictionSeries[];
   /** Each line's move, right of its last point. */
@@ -187,10 +222,27 @@ export function axisTicks(highest: number): { max: number; ticks: number[] } {
   return { max: max / 100, ticks };
 }
 
-/** The chart for `lines` in a `width` × `height` box, the user's level marked. */
+/**
+ * Which of `count` columns `step` px apart write their rating: every `stride`-th from the first
+ * (the smallest stride whose labels keep {@link TICK_LABEL_GAP} apart), the last, and the marked
+ * one, which drops a neighbour too close to it.
+ */
+export function tickLabels(count: number, step: number, marked: number): boolean[] {
+  const stride =
+    TICK_LABEL_STRIDES.find((each) => each * step >= TICK_LABEL_GAP) ?? Math.max(1, count - 1);
+  const minIndexGap = TICK_LABEL_GAP / Math.max(step, Number.EPSILON);
+  return Array.from({ length: count }, (_, index) => {
+    if (index === marked) return true;
+    const onGrid = index % stride === 0 || index === count - 1;
+    return onGrid && (marked < 0 || Math.abs(index - marked) >= minIndexGap);
+  });
+}
+
+/** The chart for `lines` over `ratings` in a `width` × `height` box, the `marked` rating shaded. */
 export function predictionChart(
   lines: readonly PredictionLine[],
-  userBucket: MaiaRatingBucket,
+  ratings: readonly number[],
+  marked: number,
   size: { width: number; height: number }
 ): PredictionChart {
   const { width, height } = size;
@@ -202,7 +254,7 @@ export function predictionChart(
   };
   const clamped = lines.map((line) => ({ ...line, probs: line.probs.map(clamp01) }));
   const axis = axisTicks(Math.max(0, ...clamped.flatMap((line) => line.probs)));
-  const step = (plot.right - plot.left) / (MAIA_BUCKETS.length - 1);
+  const step = (plot.right - plot.left) / Math.max(1, ratings.length - 1);
   const x = (index: number) => plot.left + index * step;
   const y = (value: number) => plot.top + (1 - value / axis.max) * (plot.bottom - plot.top);
 
@@ -214,8 +266,9 @@ export function predictionChart(
     const area = `${path} L${last.x.toFixed(1)},${plot.bottom} L${first.x.toFixed(1)},${plot.bottom} Z`;
     return { role: line.role, points, path, area };
   });
-  const userIndex = MAIA_BUCKETS.indexOf(userBucket);
+  const markedIndex = ratings.indexOf(marked);
   const bandWidth = Math.min(BAND_WIDTH, step * BAND_SHARE);
+  const labelled = tickLabels(ratings.length, step, markedIndex);
   const labels = series.map((line, index) => {
     const last = line.points[line.points.length - 1];
     return { role: line.role, x: last.x + LABEL_OFFSET, text: clamped[index].san };
@@ -230,13 +283,15 @@ export function predictionChart(
     height,
     plot,
     yTicks: axis.ticks.map((value) => ({ y: y(value), label: percent(value) })),
-    xTicks: MAIA_BUCKETS.map((rating, index) => ({
+    xTicks: ratings.map((rating, index) => ({
       x: x(index),
       rating,
-      user: index === userIndex
+      marked: index === markedIndex,
+      label: labelled[index] ?? false
     })),
-    userBand: userIndex < 0 ? null : { x: x(userIndex) - bandWidth / 2, width: bandWidth },
+    markBand: markedIndex < 0 ? null : { x: x(markedIndex) - bandWidth / 2, width: bandWidth },
     bandWidth,
+    dense: step < DENSE_STEP,
     series: [...series].sort((a, b) => DRAW_ORDER[a.role] - DRAW_ORDER[b.role]),
     endLabels: labels.map((label, index) => ({ ...label, y: labelYs[index] }))
   };
@@ -270,7 +325,7 @@ export function spreadLabels(ys: readonly number[], gap: number, lowest: number)
 
 /* ---------------------------------------------------------------- interaction */
 
-/** The column (rating level) nearest to `x`, of columns at `xs`. */
+/** The column (rating) nearest to `x`, of columns at `xs`. */
 export function nearestColumn(x: number, xs: readonly number[]): number {
   let nearest = 0;
   xs.forEach((columnX, index) => {
@@ -306,7 +361,7 @@ export function columnForKey(
   }
 }
 
-/** Each line's value at a level, the most likely first (the tooltip's rows). */
+/** Each line's value at a rating, the most likely first (the tooltip's rows). */
 export function columnValues(
   lines: readonly PredictionLine[],
   index: number
@@ -316,10 +371,14 @@ export function columnValues(
     .sort((a, b) => b.value - a.value);
 }
 
-/** A level's values as one sentence: "1700: Maia's pick Qe8+ 58%, Played Rd1 3%, Best Qd5 2%". */
-export function columnText(lines: readonly PredictionLine[], index: number): string {
+/** A rating's values as one sentence: "1700: Maia's pick Qe8+ 58%, Played Rd1 3%, Best Qd5 2%". */
+export function columnText(
+  lines: readonly PredictionLine[],
+  ratings: readonly number[],
+  index: number
+): string {
   const rows = columnValues(lines, index).map(
     (row) => `${PREDICTION_ROLE_NAMES[row.role]} ${row.san} ${percent(row.value)}`
   );
-  return `${MAIA_BUCKETS[index] ?? ""}: ${rows.join(", ")}`;
+  return `${ratings[index] ?? ""}: ${rows.join(", ")}`;
 }

@@ -24,7 +24,7 @@ import {
   useLibraryView,
   type LibraryView
 } from "../features/game/RecentGames";
-import { mainlineReviewInput } from "../features/game-review/review-utils";
+import { mainlineReviewInput, reviewEngineName } from "../features/game-review/review-utils";
 import { ReviewCharts } from "../features/game-review/ReviewCharts";
 import { reviewSideColor, useReviewSide } from "../features/game-review/review-side";
 import { moverOf } from "../features/game-review/review-summary";
@@ -224,7 +224,7 @@ function GameFooter() {
     (state) => mainBoardSurface(state.mode, state.analysisBoard) === "analysis"
   );
   const goToNode = useGameStore((state) => state.goToNode);
-  const { hasReview, maia, moves, opening, running } = useLoadedGameReview(moveTree);
+  const { hasReview, maia, moves, opening, running, evalEngine } = useLoadedGameReview(moveTree);
   const mainline = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
   const onMainline = useMemo(
     () => currentNodeId === "root" || mainline.some((move) => move.nodeId === currentNodeId),
@@ -250,6 +250,7 @@ function GameFooter() {
             selectedNodeId={currentNodeId}
             onSelectNode={goToNode}
             reviewedSide={side}
+            evalEngine={evalEngine}
             totalPlies={running ? mainline.length : undefined}
             keyMomentIds={momentIds}
             opening={opening}
@@ -268,7 +269,8 @@ function GameFooter() {
 
 /**
  * The review store's review, for the footer charts, when it belongs to the loaded game (none
- * otherwise): its moves, whether it is still running, and once finished its opening and Maia data.
+ * otherwise): its moves, whether it is still running, and once finished its opening, engine and
+ * Maia data.
  */
 function useLoadedGameReview(moveTree: readonly MoveNode[]) {
   const reviewStatus = useReviewStore((state) => state.status);
@@ -287,6 +289,7 @@ function useLoadedGameReview(moveTree: readonly MoveNode[]) {
     moves: hasReview ? reviewMoves : EMPTY_REVIEW_MOVES,
     running,
     opening: finished?.opening,
+    evalEngine: reviewEngineName(finished),
     maia: {
       model: finished?.rating?.maiaModel ?? null,
       rating: finished?.rating?.rating ?? 1500,

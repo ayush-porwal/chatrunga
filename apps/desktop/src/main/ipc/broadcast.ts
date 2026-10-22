@@ -1,8 +1,8 @@
-import { BrowserWindow } from "electron";
+import { appWindows } from "../app-windows";
 
-/** Sends to every live window (a closed window's webContents must not be used). */
+/** Sends to every live app window (a closed window's webContents must not be used). */
 export function broadcast(channel: string, payload: unknown): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of appWindows()) {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
       window.webContents.send(channel, payload);
     }

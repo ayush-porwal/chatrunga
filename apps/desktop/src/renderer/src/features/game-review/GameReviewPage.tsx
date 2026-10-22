@@ -6,7 +6,7 @@ import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { reviewsByNode, selectDisplayedOpening, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
-import { mainlineReviewInput, type ReviewTab } from "./review-utils";
+import { mainlineReviewInput, reviewEngineName, type ReviewTab } from "./review-utils";
 import { ReviewBoardStage, reviewPlayers } from "./ReviewBoardStage";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
@@ -18,6 +18,7 @@ import { ReviewSummaryTab } from "./ReviewSummaryTab";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
+import { maiaCurveSource } from "./maia-curve-source";
 import { ReviewCharts } from "./ReviewCharts";
 import { useAnalysisFollow } from "./useAnalysisFollow";
 import { useReviewPanelAnchor } from "./useReviewPanelAnchor";
@@ -137,6 +138,7 @@ function GameReviewPageInner({
     [settings.repertoireCompareWhite, settings.repertoireCompareBlack]
   );
   const reviewByNodeId = useMemo(() => reviewsByNode(moves), [moves]);
+  const maiaCurveSource = useMaiaCurveSource(review, isRunning, gameId);
   const { panelMove, panelParentId, variationAnchor, moveContext, goToLine } = useReviewPanelAnchor(
     { moveTree, selectedNodeId, moves, reviewByNodeId, selectNode }
   );
@@ -176,6 +178,8 @@ function GameReviewPageInner({
   // The rating the shown review was made for (an older one: what a review now would use).
   const currentRating = useReviewRating(settings, side);
   const shownRating = review?.rating ?? currentRating;
+  // The engine whose evaluations are shown (unknown while a run replaces the shown review).
+  const shownEngine = reviewEngineName(isRunning ? null : review);
   const userRating = shownRating.rating;
   const commentaryOptions = {
     detail: settings.reviewCommentaryDetail,
@@ -315,6 +319,9 @@ function GameReviewPageInner({
         running={isRunning}
         showTopLines={settings.reviewShowTopLines}
         userRating={userRating}
+        reviewedSide={side}
+        evalEngine={shownEngine}
+        maiaCurveSource={maiaCurveSource}
         onAnalyze={onAnalyze}
         moves={moves}
         parentNodeId={panelParentId}
@@ -351,6 +358,7 @@ function GameReviewPageInner({
                   selectedNodeId={selectedNodeId}
                   onSelectNode={selectNode}
                   reviewedSide={side}
+                  evalEngine={shownEngine}
                   keyMomentIds={momentIds}
                   mainline={reviewInput}
                   timeControl={headers.timeControl}
@@ -439,6 +447,20 @@ const ReviewTabBar = memo(function ReviewTabBar({
 });
 
 const EMPTY_MOVES: MoveReview[] = [];
+
+/**
+ * Where a move's rating curve is read from, and the ratings Maia read each side at: a finished
+ * Maia 3 review (null otherwise). Main reads it once the autosave has written the review, moments
+ * after it finishes; until then the curve query asks again (queries/maia.ts).
+ */
+function useMaiaCurveSource(review: GameReview | null, running: boolean, gameId: string | null) {
+  const reviewId = running ? undefined : review?.reviewId;
+  const maia = review?.maia;
+  return useMemo(
+    () => maiaCurveSource(gameId, reviewId ? { reviewId, maia } : null),
+    [gameId, reviewId, maia]
+  );
+}
 
 /** The analysis shown (a running review's, as it comes in). */
 function useShownReview() {

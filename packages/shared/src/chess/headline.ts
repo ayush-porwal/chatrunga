@@ -10,7 +10,8 @@ import { probFor } from "./rating-curve";
  *
  * Returns `null` when the label is `neutral` — the panel then omits the note.
  *
- * Percentages are rounded to the nearest 5% (clamped to 5-95).
+ * Percentages are rounded to the nearest 5% (clamped to 5-95). Ratings come from the curve: the
+ * player's (`userRatingBucket`; Maia 3: the mover's rating) and the ones Maia was read at.
  *
  * Copy is intentionally framed as a Maia model estimate, not as a measured
  * claim about a population of human players.
@@ -21,24 +22,25 @@ export function renderHeadline(curve: RatingCurve): string | null {
       return renderTrap(curve);
 
     case "rating_cliff": {
-      const cliff = curve.interpretation.cliffRating;
-      if (!cliff) return "Maia estimates drop sharply at higher rating buckets.";
-      return `Maia estimates drop sharply above ${cliff - 200}.`;
+      // The last rating before the drop: "above 1500" for a cliff at Maia 1's 1700.
+      const index = curve.ratings.indexOf(curve.interpretation.cliffRating ?? Number.NaN);
+      if (index < 1) return "Maia estimates drop sharply at higher ratings.";
+      return `Maia estimates drop sharply above ${curve.ratings[index - 1]}.`;
     }
 
     case "only_master_finds":
-      return "Difficult — the lower-rated Maia models rarely select this.";
+      return "Difficult — Maia rarely selects this at lower ratings.";
 
     case "your_level_blindspot": {
       const pct = roundPctTo5(probFor(curve, curve.userRatingBucket, "played") * 100);
-      return `Maia assigns this move ${pct}% weight at your level, despite the engine's concern.`;
+      return `Maia assigns this move ${pct}% weight at ${curve.userRatingBucket}, despite the engine's concern.`;
     }
 
     case "found_what_your_level_misses":
-      return "Strong engine choice — lower-rated Maia models rarely select it.";
+      return `Strong engine choice — Maia rarely selects it at ${curve.userRatingBucket}.`;
 
     case "opening_principle":
-      return "Standard idea — the models agree on this continuation.";
+      return "Standard idea — Maia expects it at every rating.";
 
     case "neutral":
       return null;
@@ -57,10 +59,10 @@ function renderTrap(curve: RatingCurve): string {
   // Specific variant lands when the player is squarely in the trap zone.
   if (userPlayedProb > 0.4 && userPlayedProb <= 0.7) {
     const pct = roundPctTo5(userPlayedProb * 100);
-    return `Maia assigns this move ${pct}% weight in the lower buckets, even though the engine dislikes it.`;
+    return `Maia assigns this move ${pct}% weight at ${curve.userRatingBucket}, even though the engine dislikes it.`;
   }
   // Otherwise the generic punch line wins.
-  return "The lower-rated Maia models frequently select this move.";
+  return "Maia frequently selects this move at lower ratings.";
 }
 
 function roundPctTo5(pct: number): number {

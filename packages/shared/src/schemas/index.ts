@@ -5,7 +5,8 @@
 
 export type { TacticalFact } from "./tactical-fact";
 export type { EngineSignal } from "./engine-signal";
-export { MAIA_BUCKETS, type MaiaRatingBucket, type RatingCurve } from "./rating-curve";
+export { MAIA_BUCKETS } from "./constants";
+export type { RatingCurve } from "./rating-curve";
 export {
   reviewInsightPayloadSchema,
   type CuratorReason,

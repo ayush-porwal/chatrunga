@@ -9,4 +9,14 @@ describe("app notice store", () => {
     useAppNoticeStore.getState().dismiss();
     expect(useAppNoticeStore.getState().message).toBeNull();
   });
+
+  it("offers Maia 3's download only with the notice that asked for it", () => {
+    useAppNoticeStore.getState().show("Maia 3 isn't installed", { maia3Download: true });
+    expect(useAppNoticeStore.getState().maia3Download).toBe(true);
+    useAppNoticeStore.getState().show("next");
+    expect(useAppNoticeStore.getState().maia3Download).toBe(false);
+    useAppNoticeStore.getState().show("again", { maia3Download: true });
+    useAppNoticeStore.getState().dismiss();
+    expect(useAppNoticeStore.getState().maia3Download).toBe(false);
+  });
 });

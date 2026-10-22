@@ -146,7 +146,7 @@ export const RELEASE_DOWNLOAD_HOSTS: readonly string[] = [
   "objects.githubusercontent.com",
   "release-assets.githubusercontent.com"
 ];
-/** Maia weights and their LICENSE are raw repository files. */
+/** The Maia 3 model is a raw repository file. */
 export const RAW_DOWNLOAD_HOSTS: readonly string[] = [
   ...RELEASE_DOWNLOAD_HOSTS,
   "raw.githubusercontent.com"

@@ -5,57 +5,71 @@ import type {
   GameReview,
   ReviewGameInput
 } from "@chaturanga/shared/types/engine";
-import { existsSync } from "node:fs";
-import { resolveReviewRating, type ReviewRating } from "@chaturanga/shared/chess/review-rating";
+import {
+  resolveReviewRating,
+  resolveReviewSideRatings,
+  type ReviewRating
+} from "@chaturanga/shared/chess/review-rating";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { settingsRepository } from "../db/repositories";
 import { errorMessage } from "../logger";
-import { engineConfigForId, engineResourceOptions, listAllEngines } from "../engine/engine-config";
+import { engineConfigForId, engineResourceOptions } from "../engine/engine-config";
 import type { EngineManager } from "../engine/engine-manager";
+import { getAssetManager } from "../engine/asset-manager";
+import { ENGINE_MANIFEST } from "../engine/engine-manifest";
 import {
   analysePositionsWithEngine,
   reviewGameWithEngine,
+  type ReviewMaia,
   type ReviewProgressSink
 } from "../engine/review";
-import { selectMaiaEnginesForReview } from "../engine/review-analysis";
+import { getMaia3Evaluator } from "../maia";
 import { getTelemetry } from "../telemetry";
-import { engineFamily, plyBucket, reviewFailureCode } from "../telemetry/properties";
+import {
+  engineFamily,
+  maiaProperties,
+  plyBucket,
+  reviewFailureCode
+} from "../telemetry/properties";
 
-/** Executable (and weights, when set) are on disk. */
-function engineFilesExist(config: EngineConfig): boolean {
-  if (!config.executablePath || !existsSync(config.executablePath)) return false;
-  return !config.weightsPath || existsSync(config.weightsPath);
+/** The installed Maia 3 model's version (the pinned one when the install didn't record it). */
+function maia3ModelVersion(): string {
+  const record = getAssetManager().getInstalled().maia3;
+  return record.version ?? record.manifestVersion ?? ENGINE_MANIFEST.maia3.version;
 }
 
 /**
- * Maia engines for a review: explicit ids are filtered to runnable engines;
- * omitted ids mean "every installed Maia" when the setting is on; an empty
- * array disables Maia. Levels come from the `reviewMaiaLevels` setting.
+ * Maia 3 for a review, when it runs (`useMaia`, else the `reviewUseMaia` setting) and is installed:
+ * each side is read at its game rating, else the Settings rating for the game's mode, or both at
+ * the `reviewMaiaRating` override (see resolveReviewSideRatings).
  */
-function maiaEnginesFor(input: ReviewGameInput, evaluationEngine: EngineConfig) {
-  const settings = settingsRepository.getAll();
-  const candidates = input.predictionEngineIds
-    ? input.predictionEngineIds
-        .map(engineConfigForId)
-        .filter((cfg): cfg is EngineConfig => Boolean(cfg))
-    : settings.reviewUseMaia
-      ? listAllEngines()
-      : [];
-  return selectMaiaEnginesForReview(
-    candidates.filter((cfg) => cfg.id !== evaluationEngine.id && engineFilesExist(cfg)),
-    settings.reviewMaiaLevels
-  );
+function reviewMaiaFor(input: ReviewGameInput, settings: AppSettings): ReviewMaia | null {
+  if (!(input.useMaia ?? settings.reviewUseMaia)) return null;
+  const evaluator = getMaia3Evaluator();
+  if (!evaluator.isInstalled()) return null;
+  const context = input.rating;
+  return {
+    evaluator,
+    modelVersion: maia3ModelVersion(),
+    ratings: resolveReviewSideRatings({
+      gameRatings: context ? { white: context.whiteElo, black: context.blackElo } : null,
+      timeControl: input.timeControl,
+      speed: context?.speed ?? null,
+      ratings: settings.playerRatings,
+      override: settings.reviewMaiaRating
+    })
+  };
 }
 
 /**
  * The rating a review is made for (chess/review-rating.ts): the game's own for the reviewed side,
- * else the Settings one for its mode. Never asks Lichess. The Maia model is the nearest of the
- * levels this review runs (none when it runs no Maia).
+ * else the Settings one for its mode. Never asks Lichess. `maiaRating`: the rating Maia 3 read that
+ * side at (null when the review has no Maia), recorded as the review's Maia model.
  */
 export function reviewRatingFor(
   input: Pick<ReviewGameInput, "rating" | "timeControl">,
   settings: Pick<AppSettings, "playerRatings" | "reviewPlayerColor">,
-  maiaEngines: readonly { maiaRating: number }[]
+  maiaRating: number | null
 ): ReviewRating {
   const context = input.rating;
   return resolveReviewRating({
@@ -64,7 +78,7 @@ export function reviewRatingFor(
     timeControl: input.timeControl,
     speed: context?.speed ?? null,
     ratings: settings.playerRatings,
-    installedMaiaModels: maiaEngines.map((engine) => engine.maiaRating)
+    installedMaiaModels: maiaRating === null ? [] : [maiaRating]
   });
 }
 
@@ -73,7 +87,7 @@ function reviewShape(
   input: ReviewGameInput,
   config: EngineConfig,
   multipv: number,
-  maiaLevels: number
+  maia: ReviewMaia | null
 ) {
   return {
     ply_count: input.moves.length,
@@ -81,7 +95,7 @@ function reviewShape(
     engine_family: engineFamily(config),
     search_ms: input.moveTimeMs ?? undefined,
     multipv,
-    maia_levels: maiaLevels
+    ...maiaProperties(maia !== null)
   };
 }
 
@@ -115,6 +129,25 @@ function relayedProgress(
 }
 
 /**
+ * A finished review with what it was made for. The operation id travels with the saved review, so
+ * opening it later is attributable; the rating it was made for, so it shows where that came from;
+ * and the side it was made for.
+ */
+function withReviewFacts(
+  review: GameReview,
+  input: ReviewGameInput,
+  settings: AppSettings
+): GameReview {
+  const side = input.rating?.side ?? settings.reviewPlayerColor;
+  return {
+    ...review,
+    reviewId: input.reviewId,
+    rating: reviewRatingFor(input, settings, review.maia?.[side].rating ?? null),
+    side
+  };
+}
+
+/**
  * Runs a full game review, streaming progress through EngineManager events
  * (relayed to the renderer) and resolving with the finished review.
  *
@@ -131,15 +164,14 @@ export async function runGameReview(
   const settings = settingsRepository.getAll();
   const multipv = reviewMultipv(input, settings);
   const { reviewId } = input;
-  const maiaEngines = maiaEnginesFor(input, config);
-  const rating = reviewRatingFor(input, settings, maiaEngines);
+  const maia = reviewMaiaFor(input, settings);
 
   const telemetry = getTelemetry();
   const startedAt = performance.now();
   const operation = {
     review_id: reviewId,
     game_ref: telemetry?.gameRef(input.gameId) ?? undefined,
-    ...reviewShape(input, config, multipv, maiaEngines.length)
+    ...reviewShape(input, config, multipv, maia)
   };
   // Starting a review is a user action (Analyze).
   telemetry?.markActive("study");
@@ -153,20 +185,9 @@ export async function runGameReview(
       config,
       { ...input, multipv },
       relayedProgress(engineManager, input, () => (movesDone += 1)),
-      {
-        ...engineResourceOptions(settings),
-        playerRating: rating.rating,
-        maiaConfigs: maiaEngines
-      }
+      { ...engineResourceOptions(settings), maia }
     );
-    // The operation id travels with the saved review, so opening it later is attributable; the
-    // rating it was made for, so it shows where that came from; and the side it was made for.
-    const finished: GameReview = {
-      ...review,
-      reviewId,
-      rating,
-      side: input.rating?.side ?? settings.reviewPlayerColor
-    };
+    const finished = withReviewFacts(review, input, settings);
     telemetry?.record("review_completed", {
       ...operation,
       duration_ms: Math.round(performance.now() - startedAt)

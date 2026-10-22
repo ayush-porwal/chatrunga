@@ -7,7 +7,8 @@ import {
   parseGameRating,
   ratingModeForTimeControl,
   resolveGameReviewRating,
-  resolveReviewRating
+  resolveReviewRating,
+  resolveReviewSideRatings
 } from "./review-rating";
 
 /** A distinct rating per mode, so a test can tell which one was read. */
@@ -214,5 +215,71 @@ describe("resolveGameReviewRating", () => {
         ratings
       })
     ).toMatchObject({ rating: 1200, source: "settings", mode: "blitz" });
+  });
+});
+
+describe("resolveReviewSideRatings", () => {
+  it("reads each side at its own game rating, snapped to Maia 3's 100-point grid", () => {
+    expect(
+      resolveReviewSideRatings({
+        gameRatings: { white: "2149", black: 1533 },
+        timeControl: "180+2",
+        ratings
+      })
+    ).toStrictEqual({
+      white: { rating: 2100, source: "game" },
+      black: { rating: 1500, source: "game" }
+    });
+  });
+
+  it("reads a side without a game rating at the user's rating for the game's mode", () => {
+    expect(
+      resolveReviewSideRatings({
+        gameRatings: { white: "?", black: "1850" },
+        timeControl: "1800+30",
+        ratings
+      })
+    ).toStrictEqual({
+      white: { rating: 1400, source: "settings" },
+      black: { rating: 1900, source: "game" }
+    });
+    expect(resolveReviewSideRatings({ speed: "ultraBullet", ratings }).white).toStrictEqual({
+      rating: 1100,
+      source: "settings"
+    });
+  });
+
+  it("falls back to 1500 without any rating", () => {
+    expect(resolveReviewSideRatings({})).toStrictEqual({
+      white: { rating: 1500, source: "settings" },
+      black: { rating: 1500, source: "settings" }
+    });
+  });
+
+  it("reads both sides at the Review-settings rating when one is set", () => {
+    expect(
+      resolveReviewSideRatings({
+        gameRatings: { white: 2400, black: 900 },
+        ratings,
+        override: 1720
+      })
+    ).toStrictEqual({
+      white: { rating: 1700, source: "override" },
+      black: { rating: 1700, source: "override" }
+    });
+    expect(
+      resolveReviewSideRatings({ gameRatings: { white: 2400 }, override: null }).white
+    ).toStrictEqual({ rating: 2400, source: "game" });
+  });
+
+  it("keeps every rating within 600–2600", () => {
+    expect(resolveReviewSideRatings({ gameRatings: { white: 3100, black: 250 } })).toStrictEqual({
+      white: { rating: 2600, source: "game" },
+      black: { rating: 600, source: "game" }
+    });
+    expect(resolveReviewSideRatings({ override: 100 }).black).toStrictEqual({
+      rating: 600,
+      source: "override"
+    });
   });
 });

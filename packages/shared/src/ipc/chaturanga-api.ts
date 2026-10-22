@@ -23,8 +23,10 @@ import type {
   EngineScore,
   EngineTestResult,
   GameReview,
+  MaiaCurveInput,
   ProbeEvalInput,
   PuzzleExplanation,
+  RatingPrediction,
   ReviewCompleted,
   ReviewFailed,
   ReviewGameInput,
@@ -247,6 +249,13 @@ export type ChaturangaApi = {
     cancelReview(reviewId: string): Promise<void>;
     /** Engine lines for a few single positions; `cancelReview(requestId)` stops it. */
     analysePositions(input: AnalysePositionsInput): Promise<AnalysePositionsResult>;
+    /**
+     * Maia 3's prediction for a move of a saved Maia 3 analysis at every rating 600–2600 (21
+     * entries, ascending by rating), computed on first request and saved into the move's
+     * `humanPredictions`. Rejects when Maia 3 isn't installed, the analysis isn't saved (yet) or
+     * wasn't made with Maia 3, or it has no such move.
+     */
+    maiaCurve(input: MaiaCurveInput): Promise<RatingPrediction[]>;
     stop(): Promise<void>;
   };
   games: {
@@ -530,7 +539,7 @@ export type ChaturangaApi = {
     openDownload(): Promise<boolean>;
   };
 
-  /** Asset manager bridge — engine, Lc0 network + Maia weight downloads (main/engine/asset-manager.ts). */
+  /** Asset manager bridge — engine, Lc0 network + Maia 3 model downloads (main/engine/asset-manager.ts). */
   assets: {
     /** Installs the latest release of one asset. */
     download(assetId: EngineAssetId): Promise<EngineAssetActionResult>;
@@ -570,11 +579,8 @@ export type EngineAssetId =
   | "lc0"
   /** The network the "Lc0 (managed)" engine plays with (downloaded, or the user's own file). */
   | "lc0-network"
-  | "maia-1100"
-  | "maia-1300"
-  | "maia-1500"
-  | "maia-1700"
-  | "maia-1900";
+  /** Maia 3's ONNX model, run in a hidden host window (engine/maia3.ts). */
+  | "maia3";
 
 export type EngineAssetActionResult = { ok: true } | { ok: false; error: string };
 
@@ -604,7 +610,7 @@ export type EngineAssetStatus = {
   updateAvailable: boolean;
   /** Size of what a download/update would fetch, from the GitHub release (or fallback list). */
   downloadSizeBytes: number | null;
-  /** "github": live/cached release lookup; "fallback": bundled last known-good; "fixed": Maia weights and Lc0's network. */
+  /** "github": live/cached release lookup; "fallback": bundled last known-good; "fixed": Maia 3's model and Lc0's network. */
   latestSource: "github" | "fallback" | "fixed" | null;
   /** False when the platform has no download (Lc0 on macOS / Linux): show `installInstructions`. */
   autoDownload: boolean;

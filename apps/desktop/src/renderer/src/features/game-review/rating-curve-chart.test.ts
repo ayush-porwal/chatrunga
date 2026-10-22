@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveReview, RatingPrediction } from "@chaturanga/shared/types/engine";
 import { MAIA_BUCKETS } from "@chaturanga/shared/schemas/constants";
-import { buildRatingCurveForMove } from "./review-utils";
 import {
   axisTicks,
   columnForKey,
@@ -12,8 +11,10 @@ import {
   nearestColumn,
   percent,
   predictionChart,
-  predictionLines,
+  predictionCurve,
   spreadLabels,
+  tablePrediction,
+  tickLabels,
   type PredictionLine
 } from "./rating-curve-chart";
 
@@ -71,9 +72,9 @@ function move(overrides: Partial<MoveReview> = {}): MoveReview {
 }
 
 const linesOf = (review: MoveReview) =>
-  predictionLines(review, buildRatingCurveForMove(review, 1500));
+  predictionCurve(review, review.humanPredictions ?? [], 1500)?.lines ?? [];
 
-describe("predictionLines", () => {
+describe("predictionCurve", () => {
   it("draws the move played, the best move and Maia's own pick", () => {
     expect(linesOf(move()).map((line) => [line.role, line.san])).toStrictEqual([
       ["played", "g4"],
@@ -104,12 +105,51 @@ describe("predictionLines", () => {
     const pick = move({ playedMove: "d2d4", san: "d4" });
     expect(linesOf(pick).map((line) => line.role)).toStrictEqual(["played", "best"]);
   });
+
+  it("spans Maia 3's 21 ratings in order, Maia's pick read at the mover's rating", () => {
+    const ratings = Array.from({ length: 21 }, (_, index) => 600 + index * 100);
+    // d4 is Maia's pick below 1500, c4 from 1500; given shuffled (the curve sorts them).
+    const at = (rating: number, pick: string) => ({
+      rating,
+      topMoves: [
+        { uci: pick, prob: 0.5 },
+        { uci: "e2e4", prob: 0.2 }
+      ],
+      playedProb: rating / 10_000
+    });
+    const curve = [
+      ...ratings.slice(9).map((rating) => at(rating, "c2c4")),
+      ...ratings.slice(0, 9).map((rating) => at(rating, "d2d4"))
+    ].reverse();
+    const maia3 = move({
+      humanPredictions: curve,
+      moverPrediction: { rating: 1800, topMoves: [{ uci: "c2c4", prob: 0.5 }] }
+    });
+    const result = predictionCurve(maia3, curve, 1800);
+    expect(result?.ratings).toStrictEqual(ratings);
+    expect(result?.lines.map((line) => [line.role, line.san])).toStrictEqual([
+      ["played", "g4"],
+      ["best", "e4"],
+      ["maia", "c4"]
+    ]);
+    expect(result?.lines[0].probs[0]).toBeCloseTo(0.06);
+    // c4 is outside the top moves below 1500.
+    expect(result?.lines[2].probs.slice(8, 10)).toStrictEqual([0, 0.5]);
+  });
+
+  it("draws no curve from a single rating", () => {
+    expect(predictionCurve(move(), predictions().slice(0, 1), 1100)).toBeNull();
+  });
 });
 
 describe("the move tables", () => {
   it("lists Maia's moves at the user's level, most likely first, the played and best marked", () => {
     expect(
-      humanMoveRows(move(), 1500).map((row) => [row.san, percent(row.prob), row.role])
+      humanMoveRows(move(), tablePrediction(move(), 1500)).map((row) => [
+        row.san,
+        percent(row.prob),
+        row.role
+      ])
     ).toStrictEqual([
       ["d4", "45%", null],
       ["e4", "30%", "best"],
@@ -118,7 +158,18 @@ describe("the move tables", () => {
   });
 
   it("lists no human moves when Maia didn't run at the user's level", () => {
-    expect(humanMoveRows(move({ humanPredictions: [] }), 1500)).toStrictEqual([]);
+    const none = move({ humanPredictions: [] });
+    expect(humanMoveRows(none, tablePrediction(none, 1500))).toStrictEqual([]);
+  });
+
+  it("lists Maia 3's moves at the mover's rating, whatever the user's level", () => {
+    const maia3 = move({
+      moverPrediction: { rating: 2100, topMoves: [{ uci: "g1f3", prob: 0.6 }] }
+    });
+    expect(tablePrediction(maia3, 1500)?.rating).toBe(2100);
+    expect(humanMoveRows(maia3, tablePrediction(maia3, 1500)).map((row) => row.san)).toStrictEqual([
+      "Nf3"
+    ]);
   });
 
   it("lists the engine's candidates by their first move and White's score", () => {
@@ -147,7 +198,7 @@ const lines: PredictionLine[] = [
 
 describe("predictionChart", () => {
   it("spreads the five rating levels across the plot", () => {
-    const chart = predictionChart(lines, 1500, size);
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
     expect(chart.xTicks.map((tick) => [tick.rating, tick.x])).toStrictEqual([
       [1100, 34],
       [1300, 108],
@@ -158,13 +209,13 @@ describe("predictionChart", () => {
   });
 
   it("tops the axis at the first quarter step that holds every value", () => {
-    const chart = predictionChart(lines, 1500, size);
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
     expect(chart.yTicks.map((tick) => tick.label)).toStrictEqual(["0%", "25%", "50%"]);
   });
 
   it("goes up to 100% for a move nearly everyone plays", () => {
     const common = [{ role: "best" as const, san: "e4", probs: [0.6, 0.7, 0.8, 0.9, 0.95] }];
-    const chart = predictionChart(common, 1500, size);
+    const chart = predictionChart(common, MAIA_BUCKETS, 1500, size);
     expect(chart.yTicks.map((tick) => tick.label)).toStrictEqual([
       "0%",
       "25%",
@@ -175,30 +226,44 @@ describe("predictionChart", () => {
   });
 
   it("puts a value at its height in the plot", () => {
-    const chart = predictionChart(lines, 1500, size);
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
     // 35% of a 50% axis over a plot from 18 to 108.
     expect(chart.series[0].points[2].y).toBeCloseTo(18 + (1 - 0.35 / 0.5) * 90);
   });
 
   it("fills the area under a line down to 0", () => {
-    const chart = predictionChart(lines, 1500, size);
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
     expect(chart.series[0].area.endsWith("L330.0,108 L34.0,108 Z")).toBe(true);
   });
 
-  it("marks the user's rating level, centred on its point", () => {
-    const chart = predictionChart(lines, 1500, size);
-    expect(chart.userBand).toStrictEqual({ x: 182 - 22, width: 44 });
+  it("marks the marked rating, centred on its point", () => {
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
+    expect(chart.markBand).toStrictEqual({ x: 182 - 22, width: 44 });
   });
 
-  it("flags only the user's level on the axis", () => {
-    const chart = predictionChart(lines, 1500, size);
-    expect(chart.xTicks.filter((tick) => tick.user).map((tick) => tick.rating)).toStrictEqual([
+  it("flags only the marked rating on the axis, and writes all five", () => {
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
+    expect(chart.xTicks.filter((tick) => tick.marked).map((tick) => tick.rating)).toStrictEqual([
       1500
+    ]);
+    expect(chart.xTicks.every((tick) => tick.label)).toBe(true);
+    expect(chart.dense).toBe(false);
+  });
+
+  it("thins Maia 3's 21 ratings to round labels, the marked one always written", () => {
+    const ratings = Array.from({ length: 21 }, (_, index) => 600 + index * 100);
+    const flat: PredictionLine[] = [{ role: "played", san: "e4", probs: ratings.map(() => 0.2) }];
+    const chart = predictionChart(flat, ratings, 1500, size);
+    expect(chart.dense).toBe(true);
+    expect(chart.xTicks[9]).toMatchObject({ rating: 1500, marked: true, label: true });
+    // Every 400 from 600, 1400 dropped beside the marked 1500.
+    expect(chart.xTicks.filter((tick) => tick.label).map((tick) => tick.rating)).toStrictEqual([
+      600, 1000, 1500, 1800, 2200, 2600
     ]);
   });
 
   it("names each line right of its last point", () => {
-    const chart = predictionChart(lines, 1500, size);
+    const chart = predictionChart(lines, MAIA_BUCKETS, 1500, size);
     expect(chart.endLabels.map((label) => [label.text, label.x])).toStrictEqual([
       ["Be3", 338],
       ["Nf5", 338]
@@ -210,7 +275,7 @@ describe("predictionChart", () => {
       { role: "played", san: "Be3", probs: [0.2, 0.2, 0.2, 0.2, 0.3] },
       { role: "best", san: "Nf5", probs: [0.2, 0.2, 0.2, 0.2, 0.29] }
     ];
-    const [played, best] = predictionChart(close, 1500, size).endLabels;
+    const [played, best] = predictionChart(close, MAIA_BUCKETS, 1500, size).endLabels;
     expect(best.y - played.y).toBeCloseTo(14);
   });
 
@@ -219,7 +284,7 @@ describe("predictionChart", () => {
       { role: "played", san: "g4", probs: [0.1, 0.05, 0.02, 0, 0] },
       { role: "best", san: "e4", probs: [0.2, 0.2, 0.2, 0.2, 0] }
     ];
-    const chart = predictionChart(low, 1500, size);
+    const chart = predictionChart(low, MAIA_BUCKETS, 1500, size);
     // The plot's bottom (108) plus the baseline's drop under the text's middle.
     expect(Math.max(...chart.endLabels.map((label) => label.y))).toBeCloseTo(108 + 4);
   });
@@ -244,6 +309,16 @@ describe("axisTicks", () => {
 
   it("never goes past 100%", () => {
     expect(axisTicks(1).max).toBe(1);
+  });
+});
+
+describe("tickLabels", () => {
+  it("writes every rating with room for it", () => {
+    expect(tickLabels(5, 74, 2)).toStrictEqual([true, true, true, true, true]);
+  });
+
+  it("writes every other one when only that fits, and the last", () => {
+    expect(tickLabels(6, 20, -1)).toStrictEqual([true, false, true, false, true, true]);
   });
 });
 
@@ -315,6 +390,6 @@ describe("chart interaction", () => {
 
 describe("columnText", () => {
   it("reads a level's values out, the most likely first", () => {
-    expect(columnText(lines, 4)).toBe("1900: Best Nf5 38%, Played Be3 22%");
+    expect(columnText(lines, MAIA_BUCKETS, 4)).toBe("1900: Best Nf5 38%, Played Be3 22%");
   });
 });

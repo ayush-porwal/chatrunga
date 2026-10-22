@@ -11,6 +11,13 @@ import type {
   EngineError,
   EngineInfo
 } from "@chaturanga/shared/types/engine";
+import {
+  Maia3UnavailableError,
+  type Maia3Evaluator,
+  type Maia3Output,
+  type Maia3Query
+} from "@chaturanga/shared/engine/maia3";
+import { MAX_THINK_MS, MIN_THINK_MS } from "../maia/think-time";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-live-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -640,6 +647,168 @@ describe("EngineManager", () => {
     });
     await expectEventually(() => events.infos.length > 0);
     expect(events.infos[0]).toMatchObject({ searchId: "split", depth: 5, pv: ["e2e4", "e7e5"] });
+  });
+});
+
+const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
+/** A Maia 3 stand-in: each request waits until the test answers it (or its signal aborts). */
+function pendingMaia() {
+  const requests: {
+    queries: readonly Maia3Query[];
+    options?: { priority?: string; signal?: AbortSignal };
+    answer: (policy: Record<string, number>) => void;
+    fail: (error: Error) => void;
+  }[] = [];
+  const evaluator: Maia3Evaluator = {
+    isInstalled: () => true,
+    dispose: () => undefined,
+    evaluate: (queries, options) =>
+      new Promise<Maia3Output[]>((resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        requests.push({
+          queries,
+          options,
+          answer: (policy) => resolve(queries.map(() => ({ policy, value: 0.5 }))),
+          fail: reject
+        });
+      })
+  };
+  return { evaluator, requests };
+}
+
+function maiaRow(): EngineConfig {
+  const config: EngineConfig = {
+    id: "maia",
+    name: "Maia (managed)",
+    executablePath: "/engines/maia3_simplified.onnx",
+    workingDirectory: null,
+    weightsPath: null,
+    imagePath: null,
+    args: [],
+    protocol: "uci",
+    runtime: "maia3",
+    isAvailable: true,
+    isDefault: false,
+    isHumanPrediction: true,
+    createdAt: 0,
+    updatedAt: 0
+  };
+  engines.set(config.id, config);
+  return config;
+}
+
+const maiaGame = {
+  engineId: "maia",
+  side: "black" as const,
+  fen: START,
+  moves: ["e2e4"],
+  maia: { rating: 1800, opponentRating: 1400 }
+};
+
+describe("EngineManager Maia games", () => {
+  let manager: InstanceType<typeof EngineManager>;
+  let maia: ReturnType<typeof pendingMaia>;
+
+  beforeEach(() => {
+    maiaRow();
+    maia = pendingMaia();
+    // 0.7 of the way through the policy: the second move of a 60/40 split.
+    manager = new EngineManager({ maia3: () => maia.evaluator, random: () => 0.7 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    return manager.dispose();
+  });
+
+  it("plays a move drawn from Maia's policy at once in an untimed game, at its rating against the user's", async () => {
+    const events = collect(manager);
+    const started = manager.start({ ...maiaGame, searchId: "m1" });
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(1));
+    expect(maia.requests[0].queries).toStrictEqual([
+      { fen: AFTER_E4, eloSelf: 1800, eloOppo: 1400 }
+    ]);
+    expect(maia.requests[0].options?.priority).toBe("game");
+    maia.requests[0].answer({ e7e5: 0.6, c7c5: 0.4 });
+    await started;
+    expect(events.bestMoves).toStrictEqual([{ engineId: "maia", searchId: "m1", move: "c7c5" }]);
+    expect(events.errors).toStrictEqual([]);
+  });
+
+  it("drops a move superseded or stopped while Maia evaluates, without an error", async () => {
+    const events = collect(manager);
+    const first = manager.start({ ...maiaGame, searchId: "old" });
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(1));
+    const second = manager.start({ ...maiaGame, searchId: "new" });
+    await first;
+    expect(maia.requests[0].options?.signal?.aborted).toBe(true);
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(2));
+    const stopped = manager.stop();
+    await second;
+    await stopped;
+    // A late answer changes nothing.
+    maia.requests[1].answer({ e7e5: 1 });
+    await Promise.resolve();
+    expect(events.bestMoves).toStrictEqual([]);
+    expect(events.errors).toStrictEqual([]);
+  });
+
+  it("thinks for a human-like time in a timed game, and a stop cancels the wait", async () => {
+    vi.useFakeTimers();
+    const events = collect(manager);
+    const clock = { wtime: 300_000, btime: 300_000, winc: 0, binc: 0 };
+    const started = manager.start({ ...maiaGame, searchId: "timed", clock });
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(1));
+    maia.requests[0].answer({ e7e5: 0.6, c7c5: 0.4 });
+    await vi.advanceTimersByTimeAsync(MIN_THINK_MS - 1);
+    expect(events.bestMoves).toStrictEqual([]);
+    await vi.advanceTimersByTimeAsync(MAX_THINK_MS);
+    await started;
+    expect(events.bestMoves.map((move) => move.move)).toStrictEqual(["c7c5"]);
+
+    const next = manager.start({
+      ...maiaGame,
+      moves: ["e2e4", "c7c5", "g1f3"],
+      searchId: "t2",
+      clock
+    });
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(2));
+    maia.requests[1].answer({ d7d6: 1 });
+    await vi.advanceTimersByTimeAsync(10);
+    await manager.stop();
+    await next;
+    await vi.advanceTimersByTimeAsync(MAX_THINK_MS);
+    expect(events.bestMoves).toHaveLength(1);
+  });
+
+  it("reports Maia failing as a UCI engine's failure: an error event and a rejection", async () => {
+    const events = collect(manager);
+    const started = manager.start({ ...maiaGame, searchId: "m1" });
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(1));
+    maia.requests[0].fail(new Maia3UnavailableError("The Maia 3 model isn't installed."));
+    await expect(started).rejects.toThrow(/isn't installed/);
+    expect(events.errors).toStrictEqual([
+      { engineId: "maia", searchId: "m1", message: "The Maia 3 model isn't installed." }
+    ]);
+  });
+
+  it("refuses Maia for live analysis, and its engine test loads Maia 3", async () => {
+    const events = collect(manager);
+    await expect(
+      manager.startAnalysis({ engineId: "maia", searchId: "a1", fen: START, moves: [] })
+    ).rejects.toThrow(/Maia can't be used for analysis/);
+    expect(events.errors).toHaveLength(1);
+
+    const tested = manager.testEngine("maia");
+    await vi.waitFor(() => expect(maia.requests).toHaveLength(1));
+    maia.requests[0].answer({ e2e4: 1 });
+    await expect(tested).resolves.toStrictEqual({
+      ok: true,
+      name: "Maia 3",
+      author: "CSSLab",
+      isHumanPrediction: true
+    });
   });
 });
 

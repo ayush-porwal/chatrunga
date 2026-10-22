@@ -704,4 +704,36 @@ describe("assessMove: other praise", () => {
     ).toBeNull();
     expect(assessMove({ ...base, humanPredictions: levels }).annotation).toBe("excellent");
   });
+
+  it("reads a Maia 3 move at the mover's own rating rather than the player's level", () => {
+    const base = position(START_FEN, "e4", [
+      ["e2e4", "cp 100"],
+      ["d2d4", "cp 20"]
+    ]);
+    // The rating curve's grid: at 1200 the move is hard to find, at 1800 it is natural.
+    const curve: RatingPrediction[] = [
+      { rating: 1200, topMoves: [{ uci: "d2d4", prob: 0.5 }], playedProb: 0.02 },
+      { rating: 1800, topMoves: [{ uci: "e2e4", prob: 0.5 }], playedProb: 0.5 }
+    ];
+    const hard = curve[0];
+    const natural = curve[1];
+    // The mover played at 1800 (its moverPrediction): obvious there, whatever playerRating says.
+    expect(
+      assessMove(
+        { ...base, humanPredictions: curve, moverPrediction: natural },
+        { playerRating: 1200 }
+      )
+    ).toMatchObject({ annotation: null, tags: expect.arrayContaining(["natural_move"]) });
+    expect(
+      assessMove(
+        { ...base, humanPredictions: curve, moverPrediction: hard },
+        { playerRating: 1800 }
+      ).tags
+    ).toContain("hard_to_find");
+    // A move with only its mover's prediction is still read; untrusted Maia still reads none.
+    expect(assessMove({ ...base, moverPrediction: hard }).annotation).toBe("excellent");
+    expect(assessMove({ ...base, moverPrediction: hard }, { trustMaia: false }).tags).not.toContain(
+      "hard_to_find"
+    );
+  });
 });

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { GameReview } from "../types/engine";
-import { reviewInfoBrief, reviewInfoLabel, reviewInfoWhen, savedReviewInfo } from "./review-info";
+import {
+  reviewInfoBrief,
+  reviewInfoDetails,
+  reviewInfoLabel,
+  reviewInfoWhen,
+  savedReviewInfo
+} from "./review-info";
 
 const review = {
   engineId: "sf",
@@ -22,9 +28,11 @@ describe("review info", () => {
     const info = savedReviewInfo(review, "r1");
     expect(info).toMatchObject({
       reviewId: "r1",
+      engineId: "sf",
       engineName: "Stockfish 17",
       moveTimeMs: 1000,
       maiaLevels: [1100, 1900],
+      maiaModel: "maia1",
       moveCount: 2,
       commentaryCount: 1
     });
@@ -55,6 +63,7 @@ describe("review info", () => {
   it("doesn't trust stored fields, and counts only the comments the app shows", () => {
     const odd = {
       ...review,
+      engineId: 7,
       engineName: 1,
       moveTimeMs: "fast",
       maiaEngines: [{ rating: "x" }, { rating: 1500 }],
@@ -65,10 +74,49 @@ describe("review info", () => {
       ]
     } as unknown as GameReview;
     expect(savedReviewInfo(odd, "r")).toMatchObject({
+      engineId: null,
       engineName: null,
       moveTimeMs: null,
       maiaLevels: [1500],
       commentaryCount: 1
     });
+  });
+
+  it("says which Maia read the moves: Maia 3 when the review records it, else Maia 1's engines", () => {
+    const side = { rating: 1500, source: "game" };
+    const maia3 = {
+      ...review,
+      maiaEngines: undefined,
+      maia: { model: "maia3", modelVersion: "v", white: side, black: side }
+    } as unknown as GameReview;
+    expect(savedReviewInfo(maia3, "r").maiaModel).toBe("maia3");
+    const none = { ...review, maiaEngines: [], maia: "maia3" } as unknown as GameReview;
+    expect(savedReviewInfo(none, "r")).not.toHaveProperty("maiaModel");
+  });
+
+  it("labels a Maia 3 analysis with each side's rating, a Maia 1 one with its levels", () => {
+    const maia3 = (white: unknown, black: unknown) =>
+      reviewInfoDetails(
+        savedReviewInfo(
+          {
+            ...review,
+            maiaEngines: undefined,
+            commentary: [],
+            maia: { model: "maia3", modelVersion: "v", white, black }
+          } as unknown as GameReview,
+          "r"
+        )
+      );
+    expect(maia3({ rating: 1500, source: "game" }, { rating: 1600, source: "game" })).toBe(
+      "Stockfish 17 · 1 s/move · Maia 3 · 1500/1600"
+    );
+    expect(maia3({ rating: 1800, source: "override" }, { rating: 1800, source: "override" })).toBe(
+      "Stockfish 17 · 1 s/move · Maia 3 · 1800"
+    );
+    // Ratings that can't be read: the model alone.
+    expect(maia3({ rating: "x" }, null)).toBe("Stockfish 17 · 1 s/move · Maia 3");
+    expect(reviewInfoDetails(savedReviewInfo({ ...review, commentary: [] }, "r"))).toBe(
+      "Stockfish 17 · 1 s/move · Maia 1100–1900"
+    );
   });
 });

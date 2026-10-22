@@ -9,7 +9,7 @@ import {
   type Ref
 } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Sparkles, Trash2 } from "lucide-react";
 import {
   reviewInfoBrief,
   reviewInfoLabel,
@@ -23,11 +23,12 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePresence } from "@/components/ui/use-presence";
+import { reviewEngineIdentity } from "@/lib/engine-identity";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { frost, popover } from "@/lib/ui";
 import { useDismiss } from "@/lib/use-dismiss";
 import { cn } from "@/lib/utils";
-import { useDeleteAnalysesMutation } from "../../queries/api";
+import { useDeleteAnalysesMutation, useEnginesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 import { useReviewStore } from "../../stores/review-store";
@@ -48,9 +49,10 @@ const PICKER_WIDTH = "w-60 max-w-[calc(100vw-1rem)]";
  * The game's saved analyses in Game review's titlebar: a compact button naming the one shown (its
  * date, and Latest when it's the newest; the rest in its tooltip) that opens the list to switch
  * between them (each with its own AI commentary) or delete them, after a confirmation. Locked
- * while a review runs.
+ * while a review runs. Analyses made with Maia 1 say so; while one is shown, the list offers to
+ * analyze the game again (with Maia 3), as the titlebar's Analyze again does.
  */
-export function AnalysisSwitcher() {
+export function AnalysisSwitcher({ onAnalyzeAgain }: { onAnalyzeAgain?: () => void }) {
   const analyses = useReviewStore((state) => state.analyses);
   const review = useReviewStore((state) => state.review);
   const running = useReviewStore((state) => state.status === "running");
@@ -210,6 +212,12 @@ export function AnalysisSwitcher() {
                   />
                 ))}
                 <Separator className="my-1" />
+                <AnalyzeAgainItem
+                  shown={shown}
+                  hidden={state === "closed"}
+                  onClose={close}
+                  onAnalyzeAgain={onAnalyzeAgain}
+                />
                 <button
                   type="button"
                   tabIndex={state === "closed" ? -1 : undefined}
@@ -361,9 +369,9 @@ function DeleteAnalysesDialog({
 }
 
 /**
- * One saved analysis in the list: when (and Latest), its engine (picture and name) and search, and
- * its delete button. Everything else about how it was made (Maia levels, AI comments) is in its
- * tooltip.
+ * One saved analysis in the list: when (and Latest), its engine (picture and name) and search, a
+ * note when Maia 1 made it, and its delete button. Everything else about how it was made (Maia's
+ * ratings, AI comments) is in its tooltip.
  */
 function AnalysisRow({
   info,
@@ -385,6 +393,7 @@ function AnalysisRow({
 }) {
   const when = reviewInfoWhen(info);
   const label = reviewInfoLabel(info);
+  const engine = reviewEngineIdentity(info, useEnginesQuery().data);
   return (
     <div className="flex items-center gap-1 rounded-md transition-colors hover:bg-control focus-within:bg-control">
       <button
@@ -408,12 +417,17 @@ function AnalysisRow({
           <span className="truncate">{when}</span>
           {latest ? <LatestTag /> : null}
         </span>
-        {info.engineName ? (
-          <EngineAvatar engine={{ name: info.engineName }} size="xs" className="size-4" />
+        {engine ? (
+          <EngineAvatar engine={engine} size="xs" className="size-4" />
         ) : (
           <span aria-hidden="true" />
         )}
         <span className="truncate text-xs text-fg-muted">{reviewInfoBrief(info)}</span>
+        {info.maiaModel === "maia1" ? (
+          <span className="col-start-2 truncate text-2xs text-fg-subtle">
+            Maia 1 · analyze again for Maia 3
+          </span>
+        ) : null}
       </button>
       <IconButton
         label={`Delete the analysis of ${when}`}
@@ -425,6 +439,37 @@ function AnalysisRow({
         className="mr-1 shrink-0 text-fg-subtle hover:text-danger"
       />
     </div>
+  );
+}
+
+/**
+ * While a Maia 1 analysis is shown: analyze the game again (with Maia 3), as Analyze again does.
+ */
+function AnalyzeAgainItem({
+  shown,
+  hidden,
+  onClose,
+  onAnalyzeAgain
+}: {
+  shown: SavedReviewInfo | null;
+  hidden: boolean;
+  onClose: () => void;
+  onAnalyzeAgain: (() => void) | undefined;
+}) {
+  if (shown?.maiaModel !== "maia1" || !onAnalyzeAgain) return null;
+  return (
+    <button
+      type="button"
+      tabIndex={hidden ? -1 : undefined}
+      onClick={() => {
+        onClose();
+        onAnalyzeAgain();
+      }}
+      className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-fg-secondary outline-none transition-colors hover:bg-control hover:text-fg focus-visible:bg-control [&_svg]:size-4 [&_svg]:shrink-0"
+    >
+      <Sparkles aria-hidden="true" />
+      Analyze again with Maia 3
+    </button>
   );
 }
 

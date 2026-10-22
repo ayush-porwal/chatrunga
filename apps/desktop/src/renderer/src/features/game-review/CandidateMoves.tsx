@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
-import type { MaiaRatingBucket } from "@chaturanga/shared/schemas/constants";
 import { cn } from "@/lib/utils";
 import { EngineAvatar } from "../analysis/EngineAvatar";
 import { FigurineSan } from "../analysis/EngineLines";
@@ -15,22 +14,27 @@ import {
 import { formatScore } from "./review-score";
 
 /**
- * The position's candidate moves, as Maia Chess sets them side by side: Maia's at the user's level
- * with how likely each is ("Human moves", when Maia ran there) and the engine's with their score
- * ("Engine moves"). The move played and the best move take their lines' colours; each move plays
- * from the position before the move.
+ * The position's candidate moves, as Maia Chess sets them side by side: Maia's at `humanRating`
+ * (the mover's rating for Maia 3, the user's level for Maia 1) with how likely each is ("Human
+ * moves at 1600", when Maia ran there) and the engine's with their score ("Engine moves", named
+ * by the engine when known). The move played and the best move take their lines' colours; each
+ * move plays from the position before the move.
  */
 export function CandidateMoves({
   human,
   engine,
-  userBucket,
+  humanRating,
+  engineName,
   annotation,
   parentNodeId,
   onGoToLine
 }: {
   human: readonly HumanMoveRow[];
   engine: readonly EngineMoveRow[];
-  userBucket: MaiaRatingBucket;
+  /** The rating Maia's moves were read at. */
+  humanRating: number;
+  /** The engine's display name (null: unknown). */
+  engineName: string | null;
   annotation: MoveAnnotation | null;
   /** The position the moves are played from. */
   parentNodeId: string | null;
@@ -53,11 +57,11 @@ export function CandidateMoves({
     >
       {human.length ? (
         <MoveTable
-          title={`Human moves · Maia ${userBucket}`}
+          title={`Human moves at ${humanRating}`}
           icon={
             // Overhangs the caption's line a pixel each way: the caption keeps its height.
             <EngineAvatar
-              engine={{ name: "Maia", maiaRating: userBucket }}
+              engine={{ name: "Maia", isHumanPrediction: true }}
               size="xs"
               className="-my-px"
             />
@@ -68,7 +72,7 @@ export function CandidateMoves({
       ) : null}
       {engine.length ? (
         <MoveTable
-          title="Engine moves"
+          title={engineName ? `Engine moves · ${engineName}` : "Engine moves"}
           valueLabel="Eval"
           rows={engine.map((row) => ({
             key: row.uci,

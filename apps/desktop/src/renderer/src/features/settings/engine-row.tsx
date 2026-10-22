@@ -12,12 +12,11 @@ export function formatTestResult(
   result: { ok: boolean; name?: string; error?: string; isHumanPrediction?: boolean },
   fallbackName: string
 ): TestResult {
-  return result.ok
-    ? {
-        ok: true,
-        message: `${result.name || fallbackName} responded${result.isHumanPrediction ? " (Maia detected)" : ""}.`
-      }
-    : { ok: false, message: result.error || "Engine failed to start." };
+  if (!result.ok) return { ok: false, message: result.error || "Engine failed to start." };
+  const name = result.name || fallbackName;
+  // Maia found in an engine not named for it (Maia 3's own test reports "Maia 3").
+  const detected = result.isHumanPrediction && !/maia/i.test(name) ? " (Maia detected)" : "";
+  return { ok: true, message: `${name} responded${detected}.` };
 }
 
 /** Starts a saved engine for a UCI handshake; resolves with the notice to show (null outside the app). */
@@ -40,7 +39,10 @@ export async function testSavedEngine(
   }
 }
 
-/** The ⋯ items every saved engine has: Set as default (the disabled "Default engine" once it is), and Test. */
+/**
+ * The ⋯ items every saved engine has: Set as default (the disabled "Default engine" once it is;
+ * not for Maia 3, which only plays and predicts human moves), and Test.
+ */
 export function savedEngineMenuItems({
   engine,
   disabled,
@@ -52,6 +54,8 @@ export function savedEngineMenuItems({
   onSetDefault: () => void;
   onTest: () => void;
 }): MenuItem[] {
+  const test: MenuItem = { label: "Test", icon: <Play />, onSelect: onTest, disabled };
+  if (engine.runtime === "maia3") return [test];
   return [
     {
       label: engine.isDefault ? "Default engine" : "Set as default",
@@ -59,18 +63,21 @@ export function savedEngineMenuItems({
       onSelect: onSetDefault,
       disabled: disabled || engine.isDefault
     },
-    { label: "Test", icon: <Play />, onSelect: onTest, disabled }
+    test
   ];
 }
 
 export function EngineRowText({
   name,
   detail,
+  detailTitle = detail,
   badges
 }: {
   name: string;
   /** Version or executable path, under the name; omitted when there is none. */
   detail?: string | null;
+  /** The detail's tooltip, where the detail is shortened (a custom file's name for its path). */
+  detailTitle?: string | null;
   badges?: ReactNode;
 }) {
   return (
@@ -80,10 +87,26 @@ export function EngineRowText({
         {badges}
       </div>
       {detail ? (
-        <span className="truncate font-mono text-2xs text-fg-subtle" title={detail}>
+        <span
+          className="truncate font-mono text-2xs text-fg-subtle"
+          title={detailTitle ?? undefined}
+        >
           {detail}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A row's trailing actions in fixed 32px slots, the primary action (a download, or the spinner while
+ * busy) then the ⋯ menu, each left empty when absent, so every row's actions line up.
+ */
+export function EngineRowActions({ primary, menu }: { primary?: ReactNode; menu?: ReactNode }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <span className="grid size-8 place-items-center">{primary}</span>
+      <span className="grid size-8 place-items-center">{menu}</span>
     </div>
   );
 }

@@ -7,7 +7,7 @@ const engine = (id: string, patch: Partial<EngineConfig> = {}) =>
 
 describe("analysis engine", () => {
   const engines = [
-    engine("maia"),
+    engine("komodo"),
     engine("sf", { isDefault: true }),
     engine("gone", { isAvailable: false })
   ];
@@ -19,7 +19,7 @@ describe("analysis engine", () => {
   });
 
   it("uses the chosen engine while it's installed and usable, else a usable default", () => {
-    expect(analysisEngineFor(engines, "maia")).toBe("maia");
+    expect(analysisEngineFor(engines, "komodo")).toBe("komodo");
     expect(analysisEngineFor(engines, "gone")).toBe("sf");
     expect(analysisEngineFor(engines, "removed")).toBe("sf");
     expect(analysisEngineFor(engines, null)).toBe("sf");
@@ -27,6 +27,14 @@ describe("analysis engine", () => {
     const brokenDefault = [engine("sf", { isDefault: true, isAvailable: false }), engine("lc0")];
     expect(analysisEngineFor(brokenDefault, null)).toBe("lc0");
     expect(analysisEngineFor([engine("x", { isAvailable: false })], null)).toBeNull();
+  });
+
+  it("never analyses with Maia, even when it is chosen, the default or the only engine", () => {
+    const maia3 = engine("maia", { runtime: "maia3", isHumanPrediction: true, isDefault: true });
+    const maia1 = engine("maia-1900", { isHumanPrediction: true });
+    expect(analysisEngineFor([maia3, maia1, engine("sf")], "maia")).toBe("sf");
+    expect(analysisEngineFor([maia1, engine("sf")], "maia-1900")).toBe("sf");
+    expect(analysisEngineFor([maia3, maia1], null)).toBeNull();
   });
 });
 
@@ -66,7 +74,7 @@ describe("the engine row's engine", () => {
 });
 
 describe("review engine", () => {
-  it("uses the chosen engine, else the automatic pick, never a human-prediction or unusable one", () => {
+  it("uses the chosen engine, else the default one, never a human-prediction or unusable one", () => {
     const engines = [
       engine("maia", { isHumanPrediction: true, isDefault: true }),
       engine("sf", { isDefault: true }),
@@ -74,8 +82,12 @@ describe("review engine", () => {
     ];
     expect(reviewEngineFor(engines, null)?.id).toBe("sf");
     expect(reviewEngineFor(engines, "other")?.id).toBe("other");
-    expect(reviewEngineFor(engines, "maia")).toBeNull();
-    expect(reviewEngineFor(engines, "gone")).toBeNull();
+    // A choice that can't review (gone, Maia, unusable) falls back to the default engine.
+    expect(reviewEngineFor(engines, "maia")?.id).toBe("sf");
+    expect(reviewEngineFor(engines, "gone")?.id).toBe("sf");
+    expect(reviewEngineFor([engine("sf", { isAvailable: false }), engine("other")], "sf")?.id).toBe(
+      "other"
+    );
     expect(reviewEngineFor([engine("sf", { isAvailable: false })], "sf")).toBeNull();
     expect(reviewEngineFor([engine("sf", { isAvailable: false })], null)).toBeNull();
     expect(reviewEngineFor(undefined, null)).toBeNull();

@@ -15,7 +15,6 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("boardSquareLight", "#F0D9B5")).toBe("#f0d9b5");
     expect(parseSettingValue("boardSquareDark", " FFFFFF ")).toBe("#ffffff");
     expect(parseSettingValue("engineThreads", 4)).toBe(4);
-    expect(parseSettingValue("reviewMaiaLevels", [1100, 1900])).toStrictEqual([1100, 1900]);
     expect(parseSettingValue("onboardingCompletedAt", Date.now())).toBeTypeOf("number");
     expect(parseSettingValue("repertoireCompareWhite", "rep-1")).toBe("rep-1");
     expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
@@ -36,6 +35,10 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("playEngineId", null)).toBeNull();
     expect(parseSettingValue("soundSet", "pychess")).toBe("pychess");
     expect(parseSettingValue("soundSilentCheck", true)).toBe(true);
+    expect(parseSettingValue("reviewMaiaRating", 1700)).toBe(1700);
+    expect(parseSettingValue("reviewMaiaRating", null)).toBeNull();
+    expect(parseSettingValue("playMaiaRating", 600)).toBe(600);
+    expect(parseSettingValue("playMaiaRating", 2600)).toBe(2600);
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -44,7 +47,6 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("boardTheme", "neon")).toThrow(/setting boardTheme/);
     expect(() => parseSettingValue("reviewMultiPv", 2.5)).toThrow(/setting reviewMultiPv/);
     expect(() => parseSettingValue("engineHashMb", 1)).toThrow(/setting engineHashMb/);
-    expect(() => parseSettingValue("reviewMaiaLevels", [1200])).toThrow(/setting reviewMaiaLevels/);
     expect(() => parseSettingValue("recentFilePaths", "path")).toThrow(/setting recentFilePaths/);
     expect(() => parseSettingValue("repertoireCompareWhite", 7)).toThrow(/repertoireCompareWhite/);
     expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow(
@@ -62,6 +64,11 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("soundSet", "standard")).toThrow(/setting soundSet/);
     expect(() => parseSettingValue("soundSet", "robot")).toThrow(/setting soundSet/);
     expect(() => parseSettingValue("soundSilentCheck", "on")).toThrow(/setting soundSilentCheck/);
+    // Maia 3's grid only: 600–2600 in steps of 100.
+    expect(() => parseSettingValue("reviewMaiaRating", 1650)).toThrow(/setting reviewMaiaRating/);
+    expect(() => parseSettingValue("reviewMaiaRating", 500)).toThrow(/setting reviewMaiaRating/);
+    expect(() => parseSettingValue("playMaiaRating", 2700)).toThrow(/setting playMaiaRating/);
+    expect(() => parseSettingValue("playMaiaRating", "1500")).toThrow(/setting playMaiaRating/);
     // One rating per mode: not the single number older builds stored, nor a mode short or damaged.
     expect(() => parseSettingValue("playerRatings", 1500)).toThrow(/setting playerRatings/);
     const { correspondence: _missing, ...fourModes } = uniformRatings(1500);

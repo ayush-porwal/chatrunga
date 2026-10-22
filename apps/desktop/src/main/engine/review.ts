@@ -5,7 +5,6 @@ import {
   type EngineScore,
   type GameOpening,
   type GameReview,
-  type MaiaRating,
   type MoveAssessment,
   type MoveReview,
   type MoveVerification,
@@ -13,6 +12,7 @@ import {
   type ReviewGameInput,
   type ReviewMoveInputItem,
   type ReviewProgressPhase,
+  type ReviewSideRating,
   type TerminalState,
   type Wdl
 } from "@chaturanga/shared/types/engine";
@@ -31,6 +31,11 @@ import {
 } from "@chaturanga/shared/chess/move-assessment";
 import { classifyOpening } from "@chaturanga/shared/chess/opening-book";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import {
+  maia3Prediction,
+  type Maia3Evaluator,
+  type Maia3Output
+} from "@chaturanga/shared/engine/maia3";
 import { logger } from "../logger";
 import { openingBook } from "./opening-book";
 import {
@@ -39,7 +44,6 @@ import {
   type ResolvedReviewSearch
 } from "./review-search";
 import {
-  buildRatingPrediction,
   computeEvalLoss,
   tacticalMotifsForBestMove,
   terminalScore,
@@ -51,7 +55,7 @@ import {
   timeSpentForMove
 } from "@chaturanga/shared/chess/move-times";
 import { fileStamp, moveKey, ReviewCache, type CachedMove } from "./review-cache";
-import { UciReviewSession, type PolicyResult } from "./uci-review-session";
+import { UciReviewSession } from "./uci-review-session";
 
 export type ReviewProgressSink = {
   /**
@@ -73,7 +77,7 @@ export type ReviewProgressSink = {
     lines: AnalysisLine[];
   }) => void;
   /**
-   * Fires once per move, after the evaluation engine and every Maia level have reported. `opening`
+   * Fires once per move, after the evaluation engine and Maia have reported. `opening`
    * is the game's (known before the first move: it comes from the opening book).
    */
   onMoveCompleted?: (input: {
@@ -89,8 +93,6 @@ export type ReviewEngineOptions = {
   threads?: number;
   /** UCI Hash (MB) for the evaluation engine. */
   hashMb?: number;
-  /** Player rating; picks the Maia level whose difficulty the move assessment reads. */
-  playerRating?: number | null;
   /**
    * How long an optional check search (see verifyMove) may take before the move is left unverified
    * and the review goes on. Defaults to the search's own timeout.
@@ -101,43 +103,49 @@ export type ReviewEngineOptions = {
 /** Finished moves of earlier reviews (see ReviewCache). */
 const reviewCache = new ReviewCache();
 
-type MaiaConfig = EngineConfig & { maiaRating: MaiaRating };
+/**
+ * Maia 3 for a review: the evaluator, the model's version and the rating each side's moves are read
+ * at (eloSelf = eloOppo = it; see resolveReviewSideRatings).
+ */
+export type ReviewMaia = {
+  evaluator: Maia3Evaluator;
+  modelVersion: string;
+  ratings: { white: ReviewSideRating; black: ReviewSideRating };
+};
 
 /** Everything a move's review depends on besides the move itself (see reviewJobKey). */
 type ReviewJob = {
   config: EngineConfig;
-  maiaConfigs: readonly MaiaConfig[];
+  maia: ReviewMaia | null;
   multipv: number;
   search: ResolvedReviewSearch;
   options: ReviewEngineOptions;
 };
 
 /**
- * The cache key of a review job. `stamps` are the engines' file stamps as they were loaded (see
+ * The cache key of a review job. `stamps` are the engine's file stamps as they were loaded (see
  * engineFileStamps), not read again here.
  */
 function reviewJobKey(
-  { config, maiaConfigs, multipv, search, options }: ReviewJob,
+  { config, maia, multipv, search, options }: ReviewJob,
   stamps: ReadonlyMap<EngineConfig, readonly (string | null)[]>
 ): string {
-  const engine = (item: EngineConfig) => [
-    item.id,
-    item.executablePath,
-    item.args,
-    item.weightsPath,
-    stamps.get(item) ?? null,
-    item.updatedAt
-  ];
   return JSON.stringify([
     GAME_REVIEW_SCHEMA_VERSION,
     MOVE_ASSESSMENT_POLICY,
-    engine(config),
-    maiaConfigs.map((item) => [...engine(item), item.maiaRating]),
+    [
+      config.id,
+      config.executablePath,
+      config.args,
+      config.weightsPath,
+      stamps.get(config) ?? null,
+      config.updatedAt
+    ],
+    maia ? [maia.modelVersion, maia.ratings.white.rating, maia.ratings.black.rating] : null,
     multipv,
     search,
     options.threads ?? null,
-    options.hashMb ?? null,
-    options.playerRating ?? null
+    options.hashMb ?? null
   ]);
 }
 
@@ -155,11 +163,11 @@ function sameStamps(
   return [...a].every(([item, stamps]) => JSON.stringify(stamps) === JSON.stringify(b.get(item)));
 }
 
-type MaiaSlot = {
-  config: MaiaConfig;
-  session: UciReviewSession;
-  alive: boolean;
-};
+/**
+ * Maia 3 during a review. Its first failure drops it for the rest of the review (`alive`); the
+ * review's abort signal stops its queued requests when the review is cancelled or ends.
+ */
+type MaiaRun = ReviewMaia & { alive: boolean; signal: AbortSignal };
 
 /** A review in progress: its engines and settings, and the game's facts every move reads. */
 type ReviewRun = {
@@ -167,7 +175,7 @@ type ReviewRun = {
   sink: ReviewProgressSink;
   options: ReviewEngineOptions;
   session: UciReviewSession;
-  maiaSlots: readonly MaiaSlot[];
+  maia: MaiaRun | null;
   multipv: number;
   search: ResolvedReviewSearch;
   timeControl: ReturnType<typeof parseTimeControl>;
@@ -181,33 +189,29 @@ function throwIfCancelled(sink: ReviewProgressSink): void {
   if (sink.shouldCancel?.()) throw new Error("Review cancelled");
 }
 
+/** How often a running review checks whether it was cancelled, to abort its Maia requests. */
+const CANCEL_POLL_MS = 100;
+
 export async function reviewGameWithEngine(
   config: EngineConfig,
   input: ReviewGameInput,
   sink: ReviewProgressSink = {},
-  {
-    maiaConfigs = [],
-    ...options
-  }: ReviewEngineOptions & { maiaConfigs?: readonly MaiaConfig[] } = {}
+  { maia = null, ...options }: ReviewEngineOptions & { maia?: ReviewMaia | null } = {}
 ): Promise<GameReview> {
   const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
   const search = resolveReviewSearchParams(input);
   const session = new UciReviewSession(config, sink.shouldCancel);
-  let maiaSlots: MaiaSlot[] = maiaConfigs.map((cfg) => ({
-    config: cfg,
-    session: new UciReviewSession(cfg, sink.shouldCancel),
-    alive: true
-  }));
+  // Aborted when the review is cancelled or ends, so Maia requests still queued are dropped.
+  const aborter = new AbortController();
+  const cancelWatch = setInterval(() => {
+    if (sink.shouldCancel?.()) aborter.abort(new Error("Review cancelled"));
+  }, CANCEL_POLL_MS);
+  const maiaRun: MaiaRun | null = maia ? { ...maia, alive: true, signal: aborter.signal } : null;
 
-  // Taken before the engines start: a file replaced while they load may not be what they loaded.
-  const stampsBeforeStart = engineFileStamps([config, ...maiaConfigs]);
+  // Taken before the engine starts: a file replaced while it loads may not be what it loaded.
+  const stampsBeforeStart = engineFileStamps([config]);
   try {
-    maiaSlots = await startEngines(session, maiaSlots, multipv, options);
-    const maiaEngines = maiaSlots.map((slot) => ({
-      rating: slot.config.maiaRating,
-      engineId: slot.config.id,
-      name: engineDisplayName(slot.config.name)
-    }));
+    await session.start({ multipv, threads: options.threads, hashMb: options.hashMb });
 
     // The game's book moves (opening theory) and its opening.
     const theory = classifyOpening(openingBook(), input.moves);
@@ -216,7 +220,7 @@ export async function reviewGameWithEngine(
       sink,
       options,
       session,
-      maiaSlots,
+      maia: maiaRun,
       multipv,
       search,
       timeControl: parseTimeControl(input.timeControl),
@@ -228,14 +232,8 @@ export async function reviewGameWithEngine(
     let previousAssessed: AssessedMove | null = null;
     // An engine file replaced during startup: this review's results are not cached under either
     // version. Otherwise they are keyed by the stamps taken before the start (what was loaded).
-    const job: ReviewJob = {
-      config,
-      maiaConfigs: maiaSlots.map((slot) => slot.config),
-      multipv,
-      search,
-      options
-    };
-    const cached = sameStamps(stampsBeforeStart, engineFileStamps([config, ...maiaConfigs]))
+    const job: ReviewJob = { config, maia, multipv, search, options };
+    const cached = sameStamps(stampsBeforeStart, engineFileStamps([config]))
       ? reviewCache.job(reviewJobKey(job, stampsBeforeStart))
       : new Map<string, CachedMove>();
     for (let index = 0; index < input.moves.length; index += 1) {
@@ -248,7 +246,6 @@ export async function reviewGameWithEngine(
       const moveReview = reviewed.review;
       const assessment = assessMove(moveReview, {
         previous: previousAssessed,
-        playerRating: options.playerRating ?? null,
         book: theory.book[index] ?? false
       });
       const assessed: MoveReview = { ...moveReview, assessment };
@@ -256,6 +253,7 @@ export async function reviewGameWithEngine(
       moves.push(assessed);
       sink.onMoveCompleted?.({ moveIndex: index, move: assessed, opening: theory.opening });
     }
+    throwIfCancelled(sink);
 
     return {
       schemaVersion: GAME_REVIEW_SCHEMA_VERSION,
@@ -263,8 +261,7 @@ export async function reviewGameWithEngine(
       engineId: config.id,
       engineName: engineDisplayName(session.engineName ?? config.name),
       engineSettings: engineSettingsOf(session, multipv, search),
-      maiaEngines,
-      predictionEngineIds: maiaEngines.map((engine) => engine.engineId),
+      ...maiaRecord(maia, moves),
       depth: search.recordDepth,
       moveTimeMs: search.recordMoveTimeMs,
       multipv,
@@ -274,38 +271,53 @@ export async function reviewGameWithEngine(
       opening: theory.opening
     };
   } finally {
+    clearInterval(cancelWatch);
+    aborter.abort(new Error("Review ended"));
     session.stop();
-    for (const slot of maiaSlots) slot.session.stop();
   }
 }
 
+/** How a review records Maia 3, when it read any move. */
+function maiaRecord(
+  maia: ReviewMaia | null,
+  moves: readonly MoveReview[]
+): Pick<GameReview, "maia"> {
+  if (!maia || !moves.some((move) => move.moverPrediction)) return {};
+  return {
+    maia: {
+      model: "maia3",
+      modelVersion: maia.modelVersion,
+      white: maia.ratings.white,
+      black: maia.ratings.black
+    }
+  };
+}
+
 /**
- * Starts the evaluation engine and every Maia level at once (Maia (lc0) weight loads take seconds
- * each). A broken Maia degrades the review (that level is dropped and stopped); a broken
- * evaluation engine fails it. The Maia levels that started.
+ * Maia 3's answer for `fen`, read at the side to move's rating (as eloSelf and eloOppo). Null
+ * without Maia, after it was dropped, or when the review was cancelled; a failure drops Maia for the
+ * rest of the review (the review goes on without it). Never rejects.
  */
-async function startEngines(
-  session: UciReviewSession,
-  maiaSlots: readonly MaiaSlot[],
-  multipv: number,
-  options: ReviewEngineOptions
-): Promise<MaiaSlot[]> {
-  const [mainStart, ...maiaStarts] = await Promise.allSettled([
-    session.start({ multipv, threads: options.threads, hashMb: options.hashMb }),
-    ...maiaSlots.map((slot) => slot.session.start({ policyOnly: true }))
-  ]);
-  if (mainStart.status === "rejected") throw mainStart.reason;
-  return maiaSlots.filter((slot, index) => {
-    const result = maiaStarts[index];
-    if (result.status === "fulfilled") return true;
-    logger.warn(
-      "review",
-      `Maia ${slot.config.maiaRating} failed to start; continuing without it:`,
-      result.reason
-    );
-    slot.session.stop();
-    return false;
-  });
+async function maiaAnswer(
+  maia: MaiaRun | null,
+  fen: string
+): Promise<{ output: Maia3Output; rating: number } | null> {
+  if (!maia?.alive) return null;
+  const rating = maia.ratings[statusForFen(fen).turn].rating;
+  try {
+    const outputs = await maia.evaluator.evaluate([{ fen, eloSelf: rating, eloOppo: rating }], {
+      priority: "review",
+      signal: maia.signal
+    });
+    const output = outputs.at(0);
+    if (!output) throw new Error("Maia 3 gave no answer");
+    return { output, rating };
+  } catch (error) {
+    if (maia.signal.aborted) return null;
+    maia.alive = false;
+    logger.warn("review", "Maia 3 failed; the review goes on without it:", error);
+    return null;
+  }
 }
 
 /** The engine settings a review records: Threads / Hash only when the engine took them. */
@@ -352,7 +364,7 @@ async function reviewedMove(
     };
   }
   const fresh = await reviewMove(run, index, previous.replyLines, previous.assessed);
-  // Only complete results are kept: after a Maia level failed, this review's moves lack its
+  // Only complete results are kept: after Maia failed, this review's moves lack its
   // prediction, and a later review (with Maia working again) must search them afresh; a move
   // whose check failed is checked again next time. Kept unassessed: the assessment depends on the
   // move before, which another game may differ in.
@@ -396,9 +408,9 @@ function phaseReporter(sink: ReviewProgressSink, move: ReviewMoveInputItem, inde
 
 /**
  * Searches move `index` afresh: the position before it (reusing the previous move's reply lines,
- * the same position and settings, so one full search per ply), every live Maia level's policy,
- * the position after it, then the check it may need. `complete` when nothing was left out (every
- * Maia level answered, any check succeeded), so the result may be cached.
+ * the same position and settings, so one full search per ply) while Maia 3 reads it at the mover's
+ * rating, the position after it, then the check it may need. `complete` when nothing was left out
+ * (Maia answered when it runs, any check succeeded), so the result may be cached.
  */
 async function reviewMove(
   run: ReviewRun,
@@ -419,13 +431,7 @@ async function reviewMove(
   const topLinesPromise: Promise<AnalysisLine[]> = previousReplyLines
     ? Promise.resolve(previousReplyLines)
     : session.analyze({ fen: move.fenBefore, multipv, search, shouldCancel: sink.shouldCancel });
-  const activeMaia = run.maiaSlots.filter((slot) => slot.alive);
-  const maiaPromise = Promise.allSettled(
-    activeMaia.map(async (slot) => ({
-      slot,
-      policy: await slot.session.analyzePolicy(move.fenBefore, sink.shouldCancel)
-    }))
-  );
+  const maiaPromise = maiaAnswer(run.maia, move.fenBefore);
 
   const topLines = await topLinesPromise;
   throwIfCancelled(sink);
@@ -442,12 +448,17 @@ async function reviewMove(
     });
   }
 
-  const humanPredictions = maiaPredictions(activeMaia, await maiaPromise, {
-    fen: move.fenBefore,
-    playedUci,
-    bestUci: topLines[0]?.pv[0] ?? null
-  });
+  const maia = await maiaPromise;
   throwIfCancelled(sink);
+  const moverPrediction = maia
+    ? maia3Prediction({
+        output: maia.output,
+        fen: move.fenBefore,
+        rating: maia.rating,
+        playedUci,
+        bestUci: topLines[0]?.pv[0] ?? null
+      })
+    : undefined;
 
   const review = withGameClock(
     buildMoveReview({
@@ -456,7 +467,7 @@ async function reviewMove(
       topLines,
       replyLines,
       terminal,
-      humanPredictions,
+      moverPrediction,
       previousMove: input.moves[index - 1]?.uci ?? null
     }),
     run,
@@ -467,42 +478,8 @@ async function reviewMove(
     review,
     replyLines,
     terminal,
-    complete: checked && run.maiaSlots.every((slot) => slot.alive)
+    complete: checked && (run.maia === null || moverPrediction !== undefined)
   };
-}
-
-/**
- * The Maia levels' predictions for the position. A level that errored or timed out is dropped
- * (stopped, and not asked again); the rest carry on.
- */
-function maiaPredictions(
-  activeMaia: readonly MaiaSlot[],
-  results: readonly PromiseSettledResult<{ slot: MaiaSlot; policy: PolicyResult }>[],
-  position: { fen: string; playedUci: string; bestUci: string | null }
-): RatingPrediction[] {
-  const predictions: RatingPrediction[] = [];
-  for (const [slotIndex, result] of results.entries()) {
-    if (result.status === "rejected") {
-      // Settled in the order activeMaia was mapped, so this is the slot that failed.
-      const slot = activeMaia[slotIndex];
-      logger.warn("review", `Maia ${slot.config.maiaRating} failed; dropping it:`, result.reason);
-      slot.alive = false;
-      slot.session.stop();
-      continue;
-    }
-    const { slot, policy } = result.value;
-    const prediction = buildRatingPrediction({
-      rating: slot.config.maiaRating,
-      engineId: slot.config.id,
-      fen: position.fen,
-      stats: policy.stats,
-      wdl: policy.wdl,
-      playedUci: position.playedUci,
-      bestUci: position.bestUci
-    });
-    if (prediction) predictions.push(prediction);
-  }
-  return predictions;
 }
 
 /**
@@ -521,7 +498,6 @@ async function checkIfNeeded(
   const { sink, options } = run;
   const need = verificationNeed(review, {
     previous: previousAssessed,
-    playerRating: options.playerRating ?? null,
     book: run.book[index] ?? false
   });
   if (!need) return true;
@@ -593,10 +569,10 @@ function buildMoveReview(input: {
   topLines: AnalysisLine[];
   replyLines: AnalysisLine[];
   terminal: TerminalState | null;
-  humanPredictions: RatingPrediction[];
+  moverPrediction: RatingPrediction | undefined;
   previousMove: string | null;
 }): MoveReview {
-  const { move, playedUci, topLines, replyLines, terminal, humanPredictions } = input;
+  const { move, playedUci, topLines, replyLines, terminal, moverPrediction } = input;
   const best = topLines.at(0);
   const after = afterMove(terminal, replyLines);
   const playedLine = topLines.find((line) => line.pv[0] === playedUci);
@@ -619,7 +595,7 @@ function buildMoveReview(input: {
     playedLineScore: playedLine?.score ?? null,
     wdlAfter: after.wdl,
     terminal,
-    humanPredictions: humanPredictions.length > 0 ? humanPredictions : undefined,
+    ...(moverPrediction ? { moverPrediction } : {}),
     motifs: tacticalMotifsForBestMove(
       move.fenBefore,
       bestMove,

@@ -80,6 +80,16 @@ function findPackagedExecutable(distDir = join(desktopDir, "dist")): string {
 
 export type LaunchedApp = { app: ElectronApplication; page: Page; pageErrors: string[] };
 
+/** How a launch differs from a normal start. */
+type LaunchOptions = {
+  /**
+   * Maia 3 is the app's deterministic stand-in (`CHATURANGA_E2E_MAIA3=fixture`, main's
+   * maia/model-path.ts): installed, its "Maia (managed)" engine listed, answering at once, so no
+   * journey downloads the model. Off, Maia 3 isn't installed (its download is offered).
+   */
+  maia3Fixture?: boolean;
+};
+
 /** What a launch leaves behind to explain a quit that hangs: its profile and its console's tail. */
 const launches = new WeakMap<
   ElectronApplication,
@@ -93,25 +103,11 @@ const OUTPUT_LINES = 200;
  * proxy, Node's fetch through the same proxy and a guard that only serves `routeToFile` URLs),
  * analytics and updates off, native open/save/message dialogs and external links stubbed.
  */
-async function launchApp(profile: string): Promise<LaunchedApp> {
+async function launchApp(profile: string, options: LaunchOptions = {}): Promise<LaunchedApp> {
   const target = appTarget();
   // Where this launch's lines start in main.log (a profile launched before has some already).
   const logStart = readMainLog(profile).length;
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  // A dev-server URL or run-as-node from the caller's shell would change what launches.
-  delete env.ELECTRON_RENDERER_URL;
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, {
-    CHATURANGA_USER_DATA_DIR: profile,
-    CHATURANGA_TELEMETRY_ENABLED: "false",
-    // Packaged builds check for updates; they would ask this dead address instead of GitHub.
-    CHATURANGA_UPDATE_FEED_URL: `${BLACKHOLE}/`,
-    NODE_USE_ENV_PROXY: "1",
-    HTTP_PROXY: BLACKHOLE,
-    HTTPS_PROXY: BLACKHOLE,
-    NO_PROXY: "localhost,127.0.0.1,::1"
-  });
+  const env = launchEnv(profile, options);
   const switches = [`--proxy-server=${BLACKHOLE}`];
   // CHATURANGA_E2E_SMALL_SCREEN=1: the window GitHub's Windows runners give the app (a 1024×768
   // screen at 1×, less the title bar, the resize borders and the taskbar), to check layout
@@ -179,6 +175,34 @@ async function launchApp(profile: string): Promise<LaunchedApp> {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.waitForLoadState("domcontentloaded");
   return { app, page, pageErrors };
+}
+
+/**
+ * The app's environment: the caller's, less what would change what launches, plus the throwaway
+ * profile, analytics off and every request through a dead proxy.
+ */
+function launchEnv(
+  profile: string,
+  { maia3Fixture = false }: LaunchOptions
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
+  // A dev-server URL or run-as-node from the caller's shell would change what launches.
+  delete env.ELECTRON_RENDERER_URL;
+  delete env.ELECTRON_RUN_AS_NODE;
+  // Maia 3's stand-in only where a journey asks for it.
+  delete env.CHATURANGA_E2E_MAIA3;
+  if (maia3Fixture) env.CHATURANGA_E2E_MAIA3 = "fixture";
+  return Object.assign(env, {
+    CHATURANGA_USER_DATA_DIR: profile,
+    CHATURANGA_TELEMETRY_ENABLED: "false",
+    // Packaged builds check for updates; they would ask this dead address instead of GitHub.
+    CHATURANGA_UPDATE_FEED_URL: `${BLACKHOLE}/`,
+    NODE_USE_ENV_PROXY: "1",
+    HTTP_PROXY: BLACKHOLE,
+    HTTPS_PROXY: BLACKHOLE,
+    NO_PROXY: "localhost,127.0.0.1,::1"
+  });
 }
 
 /** Test doubles inside the main process; their records live on `globalThis.__e2e`. */
@@ -651,8 +675,11 @@ function removeProfile(dir: string): void {
 type Fixtures = {
   /** A fresh profile directory, deleted after the test. */
   profile: string;
-  /** Launches the app on a profile (the test's own by default); every launch is closed afterwards. */
-  launch: (profile?: string) => Promise<LaunchedApp>;
+  /**
+   * Launches the app on a profile (the test's own by default), with `options`; every launch is
+   * closed afterwards.
+   */
+  launch: (profile?: string, options?: LaunchOptions) => Promise<LaunchedApp>;
 };
 
 export const test = base.extend<Fixtures>({
@@ -665,8 +692,8 @@ export const test = base.extend<Fixtures>({
   },
   launch: async ({ profile }, provide, testInfo) => {
     const launched: LaunchedApp[] = [];
-    await provide(async (dir = profile) => {
-      const app = await launchApp(dir);
+    await provide(async (dir = profile, options) => {
+      const app = await launchApp(dir, options);
       launched.push(app);
       return app;
     });

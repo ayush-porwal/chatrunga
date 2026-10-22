@@ -87,6 +87,34 @@ describe("engineRepository pictures (SQLite)", () => {
     expect(engineRepository.replaceImagePath("missing", "/old.png", null)).toBe(false);
     engineRepository.remove("chosen-id");
   });
+
+  it("stores how an engine runs: a UCI process unless created as the Maia 3 row", () => {
+    const uci = engineRepository.create({ name: "Stockfish", executablePath: "/opt/sf" });
+    const maia = engineRepository.create({
+      name: "Maia (managed)",
+      executablePath: "/engines/maia3_simplified.onnx",
+      isHumanPrediction: true,
+      runtime: "maia3"
+    });
+    expect(engineRepository.get(uci.id)?.runtime).toBe("custom-uci");
+    // An update (a picture, a rename) keeps it.
+    engineRepository.update(maia.id, { imagePath: "/maia.png" });
+    expect(engineRepository.get(maia.id)).toMatchObject({
+      runtime: "maia3",
+      isHumanPrediction: true
+    });
+    // Maia is never made the default engine (it evaluates nothing); the default stays.
+    expect(engineRepository.get(uci.id)?.isDefault).toBe(true);
+    expect(() => engineRepository.update(maia.id, { isDefault: true })).toThrow(
+      /Maia can't be the default engine/
+    );
+    expect(engineRepository.get(uci.id)?.isDefault).toBe(true);
+    expect(engineRepository.get(maia.id)?.isDefault).toBe(false);
+    // The registry sync repairs a row's runtime.
+    expect(engineRepository.update(uci.id, { runtime: "maia3" }).runtime).toBe("maia3");
+    engineRepository.remove(uci.id);
+    engineRepository.remove(maia.id);
+  });
 });
 
 describe("gameRepository (SQLite)", () => {
@@ -530,6 +558,81 @@ describe("gameRepository (SQLite)", () => {
         reviewCount: 2,
         lastReviewedAt: 20
       });
+    });
+
+    it("lists which Maia an analysis read; a Maia 3 rating curve saved into a move outlives later saves without it", () => {
+      const game = saveImported();
+      const maia = {
+        model: "maia3",
+        modelVersion: "maia3_simplified@0013cc8",
+        white: { rating: 2800, source: "game" },
+        black: { rating: 1500, source: "settings" }
+      };
+      saveWith(
+        game,
+        reviewOf(game, "maia1", 10, {
+          maiaEngines: [{ rating: 1900, engineId: "m", name: "Maia 1900" }]
+        })
+      );
+      saveWith(game, reviewOf(game, "maia3", 20, { maia }));
+      expect(
+        gameRepository
+          .get(game.id)!
+          .reviews.map((info) => [info.reviewId, info.maiaModel, info.maiaLevels])
+      ).toStrictEqual([
+        // Maia 3: White's and Black's ratings, in that order.
+        ["maia3", "maia3", [2800, 1500]],
+        ["maia1", "maia1", [1900]]
+      ]);
+      expect(gameRepository.get(game.id)!.reviews.map((info) => info.engineId)).toStrictEqual([
+        "sf",
+        "sf"
+      ]);
+      // Stored so that builds knowing only Maia 1 (they keep the integers) list no Maia levels.
+      const listing = (reviewId: string) =>
+        getDb()
+          .prepare("SELECT maia_levels_json FROM game_reviews WHERE review_id = ?")
+          .get(reviewId)?.maia_levels_json;
+      expect(JSON.parse(String(listing("maia3")))).toStrictEqual([
+        "maia3",
+        { white: 2800, black: 1500 }
+      ]);
+      // A listing the first Maia 3 builds wrote (the ratings as integers) still reads.
+      getDb()
+        .prepare("UPDATE game_reviews SET maia_levels_json = ? WHERE review_id = 'maia3'")
+        .run(JSON.stringify(["maia3", 2800, 1500]));
+      expect(gameRepository.get(game.id)!.reviews[0]).toMatchObject({
+        maiaModel: "maia3",
+        maiaLevels: [2800, 1500]
+      });
+
+      const move = gameRepository.getReview(game.id, "maia3")!.moves[1];
+      const curve = [{ rating: 600, topMoves: [{ uci: "b8c6", prob: 0.4 }], whiteWinProb: 0.6 }];
+      const target = { index: 1, ply: move.ply, fenAfter: move.fenAfter, curve };
+      expect(gameRepository.saveMaiaCurve(game.id, "maia3", target)).toBe(true);
+      // Not that move any more, or no such analysis: nothing is saved.
+      const moved = { ...target, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" };
+      expect(gameRepository.saveMaiaCurve(game.id, "maia3", moved)).toBe(false);
+      expect(gameRepository.saveMaiaCurve(game.id, "missing", target)).toBe(false);
+      expect(gameRepository.getReview(game.id, "maia3")!.moves[1].humanPredictions).toStrictEqual(
+        curve
+      );
+
+      // The renderer saves the analysis it loaded before the curve (a comment arrived): kept.
+      saveWith(
+        game,
+        reviewOf(game, "maia3", 20, {
+          maia,
+          commentary: [{ ply: 1, prose: "Good start.", generatedAt: 21 }]
+        })
+      );
+      const saved = gameRepository.getReview(game.id, "maia3")!;
+      expect(saved.commentary).toHaveLength(1);
+      expect(saved.moves.map((item) => item.humanPredictions)).toStrictEqual([
+        undefined,
+        curve,
+        undefined
+      ]);
     });
 
     it("saving without a review (or with none) never removes the saved ones", () => {

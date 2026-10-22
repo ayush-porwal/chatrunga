@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // After electron-builder: checks every packaged app in apps/desktop/dist has the files it can't
-// start (or run engines/datasets) without — main, preload, renderer and the worker threads —
-// plus every chunk and asset those entry points refer to, so a broken package fails the release instead of
-// reaching users. What is required comes from the package itself, never from the local out/.
+// start (or run engines/datasets/Maia 3) without — main, preload, renderer, the worker threads and
+// the Maia host page — plus every chunk and asset those entry points refer to, so a broken package
+// fails the release instead of reaching users. What is required comes from the package itself, never from the local out/.
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, posix, resolve, sep } from "node:path";
@@ -25,12 +25,29 @@ export const WORKERS = [
   "out/main/repertoire-backup-restore-worker.js"
 ];
 
+/**
+ * Maia 3's hidden host window (main/maia/maia-host.ts): its page, its preload, and the files main
+ * serves it by name at the paths CSSLab's code asks for (`/maia-worker.js`, then the ONNX Runtime
+ * files under `/ort/` that the worker loads at run time), which no reference finds. Each is
+ * required: a packaged build without one can't load Maia 3.
+ */
+export const MAIA_HOST = [
+  "out/maia-host/index.html",
+  "out/maia-host/main.js",
+  "out/maia-host/maia-worker.js",
+  "out/maia-host/ort/ort.wasm.min.js",
+  "out/maia-host/ort/ort-wasm-simd-threaded.mjs",
+  "out/maia-host/ort/ort-wasm-simd-threaded.wasm",
+  "out/preload/maia-host.cjs"
+];
+
 /** Files every package must contain. */
 export const REQUIRED = [
   "out/main/index.js",
   ...WORKERS,
   "out/preload/index.cjs",
   "out/renderer/index.html",
+  ...MAIA_HOST,
   "package.json"
 ];
 
@@ -39,7 +56,9 @@ const ENTRY_POINTS = [
   "out/main/index.js",
   ...WORKERS,
   "out/preload/index.cjs",
-  "out/renderer/index.html"
+  "out/renderer/index.html",
+  "out/maia-host/index.html",
+  "out/preload/maia-host.cjs"
 ];
 
 /** Relative module specifiers in a bundle: static/dynamic `import` and `require` of "./…" or "../…". */
@@ -48,7 +67,10 @@ export function relativeImports(source) {
   return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))];
 }
 
-/** A reference to a file next to the one that names it (not a URL, data: URI or fragment). */
+/**
+ * A reference to a file in the package (not a URL, data: URI or fragment). A root-relative one
+ * ("/main.js", the Maia host page's) is from its page's folder, the root of the host's scheme.
+ */
 const isLocal = (reference) => !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(reference);
 
 /**

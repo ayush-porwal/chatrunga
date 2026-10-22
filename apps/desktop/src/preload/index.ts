@@ -98,6 +98,7 @@ const api: ChaturangaApi = {
     reviewGame: (input) => ipcRenderer.invoke("engines:reviewGame", input),
     cancelReview: (reviewId) => ipcRenderer.invoke("engines:cancelReview", reviewId),
     analysePositions: (input) => ipcRenderer.invoke("engines:analysePositions", input),
+    maiaCurve: (input) => ipcRenderer.invoke("engines:maiaCurve", input),
     stop: () => ipcRenderer.invoke("engines:stop")
   },
   games: {
@@ -274,7 +275,7 @@ const api: ChaturangaApi = {
     install: () => ipcRenderer.invoke("updates:install"),
     openDownload: () => ipcRenderer.invoke("updates:openDownload")
   },
-  // Engine + Maia weight downloads (main/engine/asset-manager.ts).
+  // Engine, Lc0 network + Maia 3 model downloads (main/engine/asset-manager.ts).
   assets: {
     download: (assetId) => ipcRenderer.invoke("assets:download", assetId),
     downloadAll: () => ipcRenderer.invoke("assets:downloadAll"),

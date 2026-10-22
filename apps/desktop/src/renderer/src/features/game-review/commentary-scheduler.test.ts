@@ -146,6 +146,8 @@ describe("commentary written before the current move marks", () => {
     expect(writtenForEarlierMarks(ai())).toBe(true);
     expect(writtenForEarlierMarks(ai({ payloadVersion: 1 }))).toBe(true);
     expect(writtenForEarlierMarks(ai({ payloadVersion: 2 }))).toBe(false);
+    // Later payloads (3: Maia 3) kept the marks.
+    expect(writtenForEarlierMarks(ai({ payloadVersion: 3 }))).toBe(false);
     expect(writtenForEarlierMarks(undefined)).toBe(false);
     // Paid-for text is never thrown away or re-requested automatically.
     expect(decideCommentary({ ...base, cached: ai(), settingsKey: key })).toBe("cached");

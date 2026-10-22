@@ -1,5 +1,5 @@
 /**
- * The rating a game review is made for: it picks the Maia level whose predictions the review reads
+ * The rating a game review is made for: the rating at which the review reads Maia's predictions
  * (difficulty, how likely the best move was to be found). Pure, and never asks Lichess: the review
  * uses what the game and Settings already hold.
  *
@@ -9,7 +9,9 @@
  *    engine game's tag is written from its clock settings), or the speed of a Lichess game. A game
  *    without a time control counts as rapid.
  */
+import { MAIA3_DEFAULT_RATING, nearestMaia3Rating } from "../engine/maia3";
 import type { GameHeaders, GameSource } from "../types/chess";
+import type { ReviewSideRating } from "../types/engine";
 import type { LichessSpeed } from "../types/lichess";
 import { isOneOf } from "../types/guards";
 import type { PlayerRatings, RatingMode } from "../types/ratings";
@@ -134,11 +136,17 @@ export function nearestMaiaModel(rating: number, installed?: readonly number[]):
   return Math.max(min, Math.min(max, Math.round(rating / step) * step));
 }
 
+/** The game's mode: Lichess's speed for it, else its TimeControl's; rapid without either. */
+function reviewMode(
+  speed: LichessSpeed | null | undefined,
+  timeControl: string | null | undefined
+): RatingMode {
+  return speed ? ratingModeForSpeed(speed) : (ratingModeForTimeControl(timeControl) ?? "rapid");
+}
+
 /** The rating a review uses, and where it came from (see the file comment). */
 export function resolveReviewRating(input: ReviewRatingInput): ReviewRating {
-  const mode = input.speed
-    ? ratingModeForSpeed(input.speed)
-    : (ratingModeForTimeControl(input.timeControl) ?? "rapid");
+  const mode = reviewMode(input.speed, input.timeControl);
   const own = parseGameRating(input.gameRatings?.[input.side]);
   const rating = own ?? input.ratings[mode].rating;
   return {
@@ -205,4 +213,32 @@ export function resolveGameReviewRating(input: {
     ratings: input.ratings,
     installedMaiaModels: input.installedMaiaModels
   });
+}
+
+type ReviewSideRatingsInput = Pick<ReviewRatingInput, "gameRatings" | "timeControl" | "speed"> & {
+  /** The user's ratings per mode (Settings → Ratings); omitted: 1500. */
+  ratings?: PlayerRatings | null;
+  /** The Review-settings rating (`reviewMaiaRating`): both sides are read at it. Null: none. */
+  override?: number | null;
+};
+
+/**
+ * The rating Maia 3 reads each side's moves at (eloSelf = eloOppo = it), snapped to its 100-point
+ * grid within 600–2600: the Review-settings override when set, else the side's own game rating
+ * (PGN WhiteElo / BlackElo), else the user's Settings rating for the game's mode (a side without a
+ * rating is taken to play at the user's level), else 1500.
+ */
+export function resolveReviewSideRatings(input: ReviewSideRatingsInput): {
+  white: ReviewSideRating;
+  black: ReviewSideRating;
+} {
+  const fallback = input.ratings?.[reviewMode(input.speed, input.timeControl)].rating;
+  const side = (color: "white" | "black"): ReviewSideRating => {
+    if (typeof input.override === "number" && Number.isFinite(input.override))
+      return { rating: nearestMaia3Rating(input.override), source: "override" };
+    const own = parseGameRating(input.gameRatings?.[color]);
+    if (own !== null) return { rating: nearestMaia3Rating(own), source: "game" };
+    return { rating: nearestMaia3Rating(fallback ?? MAIA3_DEFAULT_RATING), source: "settings" };
+  };
+  return { white: side("white"), black: side("black") };
 }

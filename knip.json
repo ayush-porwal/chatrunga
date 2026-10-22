@@ -13,17 +13,32 @@
         "src/main/repertoire/*-worker.ts",
         "src/main/engine/__fixtures__/*.mjs",
         "src/preload/index.ts",
+        "src/preload/maia-host.ts",
+        "src/maia-host/main.ts",
         "src/renderer/src/main.tsx",
         "src/renderer/vite.config.ts",
         "build/*.cjs",
         "e2e/**/*.spec.ts"
       ],
-      "project": ["src/**/*.{ts,tsx,mjs,css}", "e2e/**/*.ts", "build/*.cjs", "*.config.ts"],
+      "project": [
+        "src/**/*.{ts,tsx,mjs,css}",
+        "e2e/**/*.ts",
+        "build/*.cjs",
+        "*.config.ts",
+        "vendor/csslab-maia/src/**/*.ts"
+      ],
       "vite": false,
       "vitest": {
         "config": ["vitest.config.ts"]
       },
-      "electron-vite": false
+      "electron-vite": false,
+      "paths": {
+        "src/types": ["src/maia-host/upstream-types.ts"]
+      },
+      // CSSLab's Maia 3 code, vendored byte for byte (vendor/csslab-maia/PROVENANCE.md): analysed
+      // for the packages it imports (and CSSLab's `src/types` import mapped as the host build maps
+      // it), but its own unused exports are upstream's, not issues to fix here.
+      "ignore": ["vendor/**"]
     },
     "apps/marketing": {
       "project": ["src/**/*.ts"]

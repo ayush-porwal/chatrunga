@@ -3,12 +3,14 @@ import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
+import type { PlayerRatings } from "@chaturanga/shared/types/ratings";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
 import {
   liveAnalysisSubject,
   type AnalysisSubject,
   type AnalysisTarget
 } from "../features/analysis/live-analysis";
+import { maiaGameRatings } from "../features/play/engine-game";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useAnalysisStore } from "../stores/analysis-store";
 import {
@@ -210,8 +212,22 @@ export type AnalysisOptions = {
   resources: string;
 };
 
-export function useEngineDriver(analysis: AnalysisOptions): void {
+/**
+ * What an engine game's move needs besides the game: your ratings per mode (the rating Maia plays
+ * against when the game has none).
+ */
+type EngineGameContext = { ratings: PlayerRatings | undefined };
+
+export function useEngineDriver(
+  analysis: AnalysisOptions,
+  gameContext: EngineGameContext = { ratings: undefined }
+): void {
   const { engineId: analysisEngineId, multipv, depth, moveTimeMs, resources } = analysis;
+  // Read when the engine's move is asked for; never a reason to restart a search.
+  const gameContextRef = useRef(gameContext);
+  useEffect(() => {
+    gameContextRef.current = gameContext;
+  });
   // Read by the driver below when it starts a search. Kept out of its dependencies: changing an
   // analysis setting must not tear down an engine game's search (and pause its clock); it only
   // restarts live analysis, through restartSearch.
@@ -418,6 +434,10 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       game.resumeEngineClock();
       const clock = useGameStore.getState().getClockForEngineGo();
       useAnalysisStore.getState().setStatus("thinking");
+      // Maia plays at the rating the game names it with, against yours. Sent with every engine
+      // game (main reads it only for the Maia row), so it never depends on the engine list having
+      // loaded: without it Maia would play at its default rating.
+      const maia = maiaGameRatings(game.headers, engineSide, gameContextRef.current.ratings);
       engines
         .startGame({
           engineId,
@@ -428,7 +448,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
           moves: currentLineUcis(game.moveTree, game.currentNodeId),
           moveTimeMs: clock ? null : game.moveTimeMs,
           depth: clock ? null : game.depth,
-          clock
+          clock,
+          maia
         })
         .catch((error: unknown) => {
           if (engineSearches.move !== searchId) return;

@@ -11,7 +11,7 @@
  *
  * ENGINE_MANIFEST is the offline FALLBACK: last known-good direct URLs, used
  * only when the GitHub API is unreachable or rate-limited and nothing is cached.
- * Maia weights and Lc0's own network are not versioned releases, so they always
+ * The Maia 3 model and Lc0's own network are not versioned releases, so they always
  * use their fixed URLs from this manifest.
  */
 
@@ -24,23 +24,16 @@ export const SUPPORTED_PLATFORMS: readonly PlatformKey[] = [
   "win32-x64"
 ];
 
-export type MaiaAssetId = "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";
-
-export const MAIA_ASSET_IDS: readonly MaiaAssetId[] = [
-  "maia-1100",
-  "maia-1300",
-  "maia-1500",
-  "maia-1700",
-  "maia-1900"
-];
-
 export type ReleaseAssetId = "stockfish" | "lc0";
 
-/** The network Lc0 plays with as an engine of its own (Maia brings its own weights). */
+/** The network Lc0 plays with as an engine of its own. */
 export const LC0_NETWORK_ID = "lc0-network";
 
-/** Weight files: fixed downloads, nothing to extract or execute. */
-export type WeightAssetId = MaiaAssetId | typeof LC0_NETWORK_ID;
+/** Maia 3: one ONNX model for every rating, run in a hidden window (maia/maia-host.ts), not by Lc0. */
+export const MAIA3_ID = "maia3";
+
+/** Weight / model files: fixed downloads, nothing to extract or execute. */
+export type WeightAssetId = typeof MAIA3_ID | typeof LC0_NETWORK_ID;
 
 export type ArchiveKind = "tar" | "tar.gz" | "tar.xz" | "zip";
 
@@ -48,7 +41,10 @@ export type ManifestPlatformEntry = {
   url: string;
   /** Approximate size; only a progress hint until the server reports the real length. */
   sizeBytes: number;
-  /** Optional sha256 (hex). Fallback entries carry none; release assets use GitHub's digest. */
+  /**
+   * Optional sha256 (hex), only for a URL whose content can't change (Maia 3's names a commit).
+   * Fallback entries carry none; release assets use GitHub's digest.
+   */
   sha256?: string;
   extract?: ArchiveKind;
   /**
@@ -69,7 +65,12 @@ export type EngineManifest = {
     installInstructions: Record<PlatformKey, string>;
     homepageUrl: string;
   };
-  maiaWeights: { version: string; files: Record<MaiaAssetId, ManifestPlatformEntry> };
+  /** The Maia 3 model (the same file on every platform). */
+  maia3: {
+    /** Label plus the upstream commit the file is pinned to, recorded as the installed version. */
+    version: string;
+    file: ManifestPlatformEntry;
+  };
   /** The network the managed Lc0 engine plays with, unless the user picks their own file. */
   lc0Network: {
     /** The network's name, recorded as the installed version. */
@@ -77,7 +78,8 @@ export type EngineManifest = {
     file: ManifestPlatformEntry;
   };
   licenses: {
-    maia: { noticeUrl: string; authors: string; paperUrl: string; sourceUrl: string };
+    /** The app ships the same licence (GPL-3.0) text, so no copy is downloaded next to the model. */
+    maia3: { authors: string; sourceUrl: string; license: string; noticeUrl: string };
     /** The networks page states no licence; only the source and its authors are recorded. */
     lc0Network: { authors: string; sourceUrl: string };
   };
@@ -196,19 +198,15 @@ const SF_BASE = "https://github.com/official-stockfish/Stockfish/releases/downlo
 // Lc0 0.32.1 — https://github.com/LeelaChessZero/lc0/releases/tag/v0.32.1 (Windows builds only).
 const LC0_BASE = "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1";
 
-// Maia weights — https://github.com/CSSLab/maia-chess/tree/master/maia_weights.
-// The .pb.gz is the weight file Lc0 reads directly; nothing to extract.
-const MAIA_BASE = "https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights";
+// Maia 3 — CSSLab's own platform model (https://github.com/CSSLab/maia-platform-frontend),
+// pinned to a commit so the file (and its sha256) can't change under us. Nothing to extract.
+const MAIA3_COMMIT = "0013cc8e6ec52c88f5b3d694781d4cc8427cb91a";
+const MAIA3_REPO_RAW = `https://raw.githubusercontent.com/CSSLab/maia-platform-frontend/${MAIA3_COMMIT}`;
 
 // Lc0's network — LCZero's recommended small net (https://lczero.org/play/networks/bestnets/):
 // T1-256x10-distilled-swa-2432500, a plain .pb.gz Lc0 reads directly. Runs on CPU or GPU.
 const LC0_NETWORK_URL =
   "https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz";
-
-const maiaWeight = (id: MaiaAssetId, sizeBytes: number): ManifestPlatformEntry => ({
-  url: `${MAIA_BASE}/${id}.pb.gz`,
-  sizeBytes
-});
 
 export const ENGINE_MANIFEST = {
   schemaVersion: 2,
@@ -260,15 +258,14 @@ export const ENGINE_MANIFEST = {
     },
     homepageUrl: "https://lczero.org/play/download/"
   },
-  maiaWeights: {
-    version: "v1.0",
-    files: {
-      // Exact sizes from the raw URLs' Content-Length.
-      "maia-1100": maiaWeight("maia-1100", 1_313_193),
-      "maia-1300": maiaWeight("maia-1300", 1_244_431),
-      "maia-1500": maiaWeight("maia-1500", 1_258_199),
-      "maia-1700": maiaWeight("maia-1700", 1_313_415),
-      "maia-1900": maiaWeight("maia-1900", 1_262_607)
+  maia3: {
+    version: `maia3_simplified@${MAIA3_COMMIT.slice(0, 7)}`,
+    file: {
+      url: `${MAIA3_REPO_RAW}/public/maia3/maia3_simplified.onnx`,
+      // Exact size from the URL's Content-Length. The URL names a commit, so the content is
+      // fixed and its hash is pinned (unlike the fallback entries, which follow releases).
+      sizeBytes: 45_683_686,
+      sha256: "405bf76c15727dad8728b352c06a8f3c1b80fb2760e8d666b32485c63d75b856"
     }
   },
   lc0Network: {
@@ -277,11 +274,11 @@ export const ENGINE_MANIFEST = {
     file: { url: LC0_NETWORK_URL, sizeBytes: 37_118_673 }
   },
   licenses: {
-    maia: {
-      noticeUrl: "https://raw.githubusercontent.com/CSSLab/maia-chess/master/LICENSE",
-      authors: "CSSLab (McGill / U.Toronto)",
-      paperUrl: "https://www.cs.cornell.edu/~shmat/shmat_kdd20.pdf",
-      sourceUrl: "https://github.com/CSSLab/maia-chess"
+    maia3: {
+      authors: "CSSLab (University of Toronto / McGill)",
+      sourceUrl: "https://github.com/CSSLab/maia-platform-frontend",
+      license: "GPL-3.0",
+      noticeUrl: `${MAIA3_REPO_RAW}/LICENSE`
     },
     lc0Network: {
       authors: "Leela Chess Zero project",
@@ -312,12 +309,15 @@ export function resolveManifestEntry(
   return weightEntry(manifest, id);
 }
 
-/** A weight file's download (the same on every platform). */
+/** A weight / model file's download (the same on every platform). */
 export function weightEntry(manifest: EngineManifest, id: WeightAssetId): ManifestPlatformEntry {
-  return id === LC0_NETWORK_ID ? manifest.lc0Network.file : manifest.maiaWeights.files[id];
+  return id === LC0_NETWORK_ID ? manifest.lc0Network.file : manifest.maia3.file;
 }
 
-/** Version string of the fallback entry (a release tag for engines, the network's name for Lc0's). */
+/**
+ * Version string of the fallback entry: a release tag for engines, the network's name for Lc0's,
+ * the pinned commit for Maia 3.
+ */
 export function manifestVersionFor(
   manifest: EngineManifest,
   id: ReleaseAssetId | WeightAssetId
@@ -325,7 +325,7 @@ export function manifestVersionFor(
   if (id === "stockfish") return manifest.stockfish.version;
   if (id === "lc0") return manifest.lc0.version;
   if (id === LC0_NETWORK_ID) return manifest.lc0Network.version;
-  return manifest.maiaWeights.version;
+  return manifest.maia3.version;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   checkArchive,
   checkDist,
   findArchives,
+  MAIA_HOST,
   missingFiles,
   references,
   relativeImports,
@@ -47,7 +48,17 @@ const completeApp = () => ({
   "out/renderer/assets/Move-Ij5.mp3": "ID3",
   "out/renderer/assets/index-Cd2.css":
     '@font-face{src:url("./Font-Kl6.woff2")}.b{background:url(data:image/png;base64,x)}\n',
-  "out/renderer/assets/Font-Kl6.woff2": "wOF2"
+  "out/renderer/assets/Font-Kl6.woff2": "wOF2",
+  // Maia 3's host page: its script by a root path (the host's scheme serves out/maia-host/), and
+  // the worker and ONNX Runtime files its code loads by name at run time.
+  "out/maia-host/index.html":
+    '<!doctype html><script type="module" crossorigin src="/main.js"></script>',
+  "out/maia-host/main.js": "new Worker('/maia-worker.js');\n",
+  "out/maia-host/maia-worker.js": "importScripts('/ort/ort.wasm.min.js');\n",
+  "out/maia-host/ort/ort.wasm.min.js": "var ort;\n",
+  "out/maia-host/ort/ort-wasm-simd-threaded.mjs": "export default 1;\n",
+  "out/maia-host/ort/ort-wasm-simd-threaded.wasm": "\0asm",
+  "out/preload/maia-host.cjs": 'require("electron");\n'
 });
 
 let packages = 0;
@@ -206,6 +217,13 @@ test("the renderer's scripts, styles, lazy chunks and assets must be packaged", 
     "out/renderer/assets/Move-Ij5.mp3",
     "out/renderer/assets/Font-Kl6.woff2"
   ]) {
+    const { missing } = checkArchive(await pack(without(completeApp(), file)));
+    assert.deepEqual(missing, [file]);
+  }
+});
+
+test("the Maia host's page, preload, worker and ONNX Runtime files are required", async () => {
+  for (const file of MAIA_HOST) {
     const { missing } = checkArchive(await pack(without(completeApp(), file)));
     assert.deepEqual(missing, [file]);
   }

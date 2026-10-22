@@ -25,32 +25,19 @@ type SavedAssets = { records: { id: string; state: string; customPath?: string |
 
 const SF_API = "https://api.github.com/repos/official-stockfish/Stockfish/releases/latest";
 const LC0_API = "https://api.github.com/repos/LeelaChessZero/lc0/releases/latest";
-const WEIGHT_URL = "https://raw.githubusercontent.com/test/maia-1100.pb.gz";
-const LICENSE_URL = "https://raw.githubusercontent.com/test/LICENSE";
+const MODEL_URL = "https://raw.githubusercontent.com/test/model.onnx";
 const SF_ASSET = "stockfish-macos-universal.tar.gz";
 const SF_URL = `https://github.com/official-stockfish/Stockfish/releases/download/sf_19/${SF_ASSET}`;
 const SF_CDN =
   "https://release-assets.githubusercontent.com/github-production-release-asset/20976138/abc?sig=x";
 
 const NETWORK_URL = "https://storage.lczero.org/files/test/t1-test.pb.gz";
-const weightBytes = Buffer.from("fake maia weights");
+const modelBytes = Buffer.from("fake maia 3 model");
 const networkBytes = Buffer.from("fake lc0 network");
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
-function manifestWithWeight(
-  entry: EngineManifest["maiaWeights"]["files"]["maia-1100"]
-): EngineManifest {
-  return {
-    ...ENGINE_MANIFEST,
-    maiaWeights: {
-      ...ENGINE_MANIFEST.maiaWeights,
-      files: { ...ENGINE_MANIFEST.maiaWeights.files, "maia-1100": entry }
-    },
-    licenses: {
-      ...ENGINE_MANIFEST.licenses,
-      maia: { ...ENGINE_MANIFEST.licenses.maia, noticeUrl: LICENSE_URL }
-    }
-  };
+function manifestWithMaia3(file: EngineManifest["maia3"]["file"]): EngineManifest {
+  return { ...ENGINE_MANIFEST, maia3: { version: "maia3-test", file } };
 }
 
 function manifestWithNetwork(url: string): EngineManifest {
@@ -138,10 +125,7 @@ describe("AssetManager", () => {
   beforeEach(() => {
     userDataDir = mkdtempSync(path.join(tmpdir(), "chaturanga-assets-"));
     workDir = mkdtempSync(path.join(tmpdir(), "chaturanga-assets-work-"));
-    routes = {
-      [WEIGHT_URL]: () => new Response(weightBytes),
-      [LICENSE_URL]: () => new Response("license text")
-    };
+    routes = { [MODEL_URL]: () => new Response(modelBytes) };
     fetchMock = vi.fn(
       async (url: string) => routes[url]?.() ?? new Response("not found", { status: 404 })
     );
@@ -156,7 +140,7 @@ describe("AssetManager", () => {
     const manager = makeManager();
     await manager.init();
     expect(Object.values(manager.getInstalled()).map((record) => record.state)).toStrictEqual(
-      Array(8).fill("missing")
+      Array(4).fill("missing")
     );
     const status = await manager.getStatus();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -167,11 +151,14 @@ describe("AssetManager", () => {
       downloadSizeBytes: 82_323_876,
       updateAvailable: false
     });
-    expect(status["maia-1100"]).toMatchObject({
+    expect(status.maia3).toMatchObject({
       latestSource: "fixed",
-      downloadSizeBytes: 1_313_193,
+      latestVersion: "maia3_simplified@0013cc8",
+      downloadSizeBytes: 45_683_686,
       autoDownload: true
     });
+    // Maia 1 is retired: no longer an asset.
+    expect(Object.keys(status)).not.toContain("maia-1100");
     expect(status.lc0).toMatchObject({
       autoDownload: false,
       latestVersion: null,
@@ -239,38 +226,97 @@ describe("AssetManager", () => {
   });
 
   it("refuses Lc0's network from any host but LCZero's storage", async () => {
-    const manager = makeManager(manifestWithNetwork(WEIGHT_URL));
+    const manager = makeManager(manifestWithNetwork(MODEL_URL));
     await manager.init();
     await expect(manager.downloadAsset("lc0-network")).rejects.toThrow(/Refusing to download/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("downloads, verifies and records a Maia weight, fetching only the asset and its license", async () => {
+  it("downloads, verifies and records the Maia 3 model, fetching only the model", async () => {
     const manager = makeManager(
-      manifestWithWeight({
-        url: WEIGHT_URL,
-        sizeBytes: weightBytes.length,
-        sha256: sha256(weightBytes)
+      manifestWithMaia3({
+        url: MODEL_URL,
+        sizeBytes: modelBytes.length,
+        sha256: sha256(modelBytes)
       })
     );
     await manager.init();
     const events: ProgressEvent["type"][] = [];
     manager.on("progress", (event) => events.push(event.type));
 
-    await manager.downloadAsset("maia-1100");
+    await manager.downloadAsset("maia3");
 
-    expect(calledUrls().sort()).toStrictEqual([LICENSE_URL, WEIGHT_URL].sort());
-    const record = manager.getInstalled()["maia-1100"];
+    expect(calledUrls()).toStrictEqual([MODEL_URL]);
+    const record = manager.getInstalled().maia3;
     expect(record).toMatchObject({
       state: "installed",
-      sha256: sha256(weightBytes),
-      manifestVersion: "v1.0",
-      version: "v1.0",
+      installedPath: path.join(userDataDir, "engines", "maia3_simplified.onnx"),
+      sha256: sha256(modelBytes),
+      manifestVersion: "maia3-test",
+      version: "maia3-test",
       source: "fixed"
     });
-    expect(readFileSync(record.installedPath!)).toStrictEqual(weightBytes);
+    expect(readFileSync(record.installedPath!)).toStrictEqual(modelBytes);
+    // A model, not a program: never executable.
+    expect(statSync(record.installedPath!).mode & 0o111).toBe(0);
     expect(events).toContain("verify");
     expect(events.at(-1)).toBe("ready");
+  });
+
+  it("offers the model a later build pins as Maia 3's update, and Update installs it", async () => {
+    const pinned = manifestWithMaia3({
+      url: MODEL_URL,
+      sizeBytes: modelBytes.length,
+      sha256: sha256(modelBytes)
+    });
+    // Not installed: a download, not an update.
+    const fresh = makeManager(pinned);
+    await fresh.init();
+    expect((await fresh.getStatus()).maia3.updateAvailable).toBe(false);
+    await fresh.downloadAsset("maia3");
+    expect((await fresh.getStatus()).maia3.updateAvailable).toBe(false);
+
+    // The next release pins another commit: a new version, file and hash.
+    const nextBytes = Buffer.from("fake maia 3 model, retrained");
+    const nextUrl = "https://raw.githubusercontent.com/test/next/model.onnx";
+    routes[nextUrl] = () => new Response(nextBytes);
+    const later = makeManager({
+      ...ENGINE_MANIFEST,
+      maia3: {
+        version: "maia3-next",
+        file: { url: nextUrl, sizeBytes: nextBytes.length, sha256: sha256(nextBytes) }
+      }
+    });
+    await later.init();
+    expect((await later.getStatus()).maia3).toMatchObject({
+      installedVersion: "maia3-test",
+      latestVersion: "maia3-next",
+      updateAvailable: true
+    });
+    await later.downloadAsset("maia3");
+    const record = later.getInstalled().maia3;
+    expect(record).toMatchObject({ state: "installed", version: "maia3-next" });
+    expect(readFileSync(record.installedPath!)).toStrictEqual(nextBytes);
+    expect((await later.getStatus()).maia3.updateAvailable).toBe(false);
+  });
+
+  it("refuses the Maia 3 model from any host but raw GitHub", async () => {
+    routes[NETWORK_URL] = () => new Response(modelBytes);
+    const manager = makeManager(
+      manifestWithMaia3({ url: NETWORK_URL, sizeBytes: modelBytes.length })
+    );
+    await manager.init();
+    await expect(manager.downloadAsset("maia3")).rejects.toThrow(/Refusing to download/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never points Maia 3 at the user's own file", async () => {
+    const own = path.join(workDir, "maia3_simplified.onnx");
+    writeFileSync(own, "user's model");
+    const manager = makeManager();
+    await manager.init();
+    await expect(manager.setCustomPath("maia3", own)).rejects.toThrow(/managed by the app/);
+    expect(manager.getInstalled().maia3.state).toBe("missing");
   });
 
   it("installs the latest Stockfish from GitHub, verifying the release digest", async () => {
@@ -328,16 +374,15 @@ describe("AssetManager", () => {
     expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toStrictEqual([]);
   });
 
-  it("rejects a Maia weight whose digest does not match", async () => {
+  it("rejects a Maia 3 model whose digest does not match the pinned one", async () => {
     const manager = makeManager(
-      manifestWithWeight({ url: WEIGHT_URL, sizeBytes: weightBytes.length, sha256: "0".repeat(64) })
+      manifestWithMaia3({ url: MODEL_URL, sizeBytes: modelBytes.length, sha256: "0".repeat(64) })
     );
     await manager.init();
-    await expect(manager.downloadAsset("maia-1100")).rejects.toThrow(
-      "sha256 mismatch for maia-1100"
-    );
-    expect(calledUrls().filter((url) => url === WEIGHT_URL)).toHaveLength(2);
-    expect(manager.getInstalled()["maia-1100"].state).toBe("missing");
+    await expect(manager.downloadAsset("maia3")).rejects.toThrow("sha256 mismatch for maia3");
+    expect(calledUrls().filter((url) => url === MODEL_URL)).toHaveLength(2);
+    expect(manager.getInstalled().maia3.state).toBe("missing");
+    expect(existsSync(path.join(userDataDir, "engines", "maia3_simplified.onnx"))).toBe(false);
   });
 
   it("falls back to the bundled manifest when GitHub rate-limits the lookup", async () => {
@@ -506,14 +551,14 @@ describe("AssetManager", () => {
   });
 
   it("restores records whose files were deleted or moved as missing", async () => {
-    const kept = path.join(workDir, "maia-1300.pb.gz");
-    writeFileSync(kept, "weights");
+    const kept = path.join(workDir, "maia3_simplified.onnx");
+    writeFileSync(kept, "model");
     writeFileSync(
       path.join(userDataDir, "engine-assets.json"),
       JSON.stringify({
         records: [
-          storedRecord("maia-1100", "installed", path.join(workDir, "deleted.pb.gz")),
-          storedRecord("maia-1300", "installed", kept),
+          storedRecord("lc0-network", "installed", path.join(workDir, "deleted.pb.gz")),
+          storedRecord("maia3", "installed", kept),
           storedRecord("lc0", "custom", path.join(workDir, "moved-lc0"))
         ]
       })
@@ -521,14 +566,100 @@ describe("AssetManager", () => {
     const manager = makeManager();
     await manager.init();
     const installed = manager.getInstalled();
-    expect(installed["maia-1100"]).toMatchObject({ state: "missing", installedPath: null });
-    expect(installed["maia-1300"]).toMatchObject({ state: "installed", installedPath: kept });
+    expect(installed["lc0-network"]).toMatchObject({ state: "missing", installedPath: null });
+    expect(installed.maia3).toMatchObject({ state: "installed", installedPath: kept });
     expect(installed.lc0).toMatchObject({ state: "missing", customPath: null });
     // The corrected state is persisted.
     const saved = JSON.parse(
       readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")
     ) as SavedAssets;
-    expect(saved.records.find((r) => r.id === "maia-1100")?.state).toBe("missing");
+    expect(saved.records.find((r) => r.id === "lc0-network")?.state).toBe("missing");
+  });
+
+  it("removes Maia 1 on init: its weights, partials, licence copy and records, never a file outside the engines folder", async () => {
+    const engines = path.join(userDataDir, "engines");
+    const downloads = path.join(engines, ".downloads");
+    mkdirSync(downloads, { recursive: true });
+    const inEngines = (name: string) => {
+      const full = path.join(engines, name);
+      writeFileSync(full, "data");
+      return full;
+    };
+    const installedWeight = inEngines("maia-1100.pb.gz");
+    const orphanWeight = inEngines("maia-1500.pb.gz");
+    const license = inEngines("LICENSE_MAIA.txt");
+    const network = inEngines("lc0-network.pb.gz");
+    const maiaPartial = path.join(downloads, "maia-1300--v1.0--maia-1300.pb.gz.partial");
+    const networkPartial = path.join(downloads, "lc0-network--T1--t1.pb.gz.partial");
+    writeFileSync(maiaPartial, "part");
+    writeFileSync(networkPartial, "part");
+    const ownWeight = path.join(workDir, "maia-1700.pb.gz");
+    const outsideWeight = path.join(workDir, "maia-1900.pb.gz");
+    writeFileSync(ownWeight, "user's weights");
+    writeFileSync(outsideWeight, "weights");
+    const statePath = path.join(userDataDir, "engine-assets.json");
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        records: [
+          storedRecord("maia-1100", "installed", installedWeight),
+          storedRecord("maia-1700", "custom", ownWeight),
+          storedRecord("maia-1900", "installed", outsideWeight),
+          storedRecord("lc0-network", "installed", network)
+        ]
+      })
+    );
+
+    const manager = makeManager();
+    await manager.init();
+
+    for (const gone of [installedWeight, orphanWeight, license, maiaPartial])
+      expect(existsSync(gone), gone).toBe(false);
+    for (const kept of [network, networkPartial, ownWeight, outsideWeight])
+      expect(existsSync(kept), kept).toBe(true);
+    const saved = JSON.parse(readFileSync(statePath, "utf-8")) as SavedAssets;
+    expect(saved.records.map((r) => r.id)).toStrictEqual(["lc0-network"]);
+    expect(Object.keys(manager.getInstalled())).not.toContain("maia-1700");
+    expect(manager.getInstalled()["lc0-network"].state).toBe("installed");
+
+    // Idempotent: the next launch finds nothing to do and leaves the state as it is.
+    const savedText = readFileSync(statePath, "utf-8");
+    await makeManager().init();
+    expect(readFileSync(statePath, "utf-8")).toBe(savedText);
+  });
+
+  it("never deletes a Maia 1 file a record marked custom, even at the name of our own download", async () => {
+    const engines = path.join(userDataDir, "engines");
+    mkdirSync(engines, { recursive: true });
+    const usersWeight = path.join(engines, "maia-1500.pb.gz");
+    const ourWeight = path.join(engines, "maia-1100.pb.gz");
+    writeFileSync(usersWeight, "user's weights");
+    writeFileSync(ourWeight, "weights");
+    const statePath = path.join(userDataDir, "engine-assets.json");
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        records: [
+          storedRecord("maia-1500", "custom", usersWeight),
+          storedRecord("maia-1100", "installed", ourWeight)
+        ]
+      })
+    );
+
+    await makeManager().init();
+    expect(existsSync(usersWeight)).toBe(true);
+    expect(existsSync(ourWeight)).toBe(false);
+    // Its record stays (not an asset any more), so a later launch still knows the file is the user's.
+    const saved = JSON.parse(readFileSync(statePath, "utf-8")) as SavedAssets;
+    expect(saved.records.map((r) => r.id)).toStrictEqual(["maia-1500"]);
+    const next = makeManager();
+    await next.init();
+    expect(existsSync(usersWeight)).toBe(true);
+    expect(Object.keys(next.getInstalled())).not.toContain("maia-1500");
+    // Writing the state keeps it too.
+    await next.removeAsset("stockfish");
+    await makeManager().init();
+    expect(existsSync(usersWeight)).toBe(true);
   });
 
   it("serializes concurrent state writes without temp-file collisions", async () => {
@@ -539,8 +670,8 @@ describe("AssetManager", () => {
     // Several completions persisting at once must all succeed and leave one consistent file.
     await Promise.all([
       manager.setCustomPath("lc0", own),
-      manager.removeAsset("maia-1100"),
-      manager.removeAsset("maia-1300")
+      manager.removeAsset("stockfish"),
+      manager.removeAsset("maia3")
     ]);
     const saved = JSON.parse(
       readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")

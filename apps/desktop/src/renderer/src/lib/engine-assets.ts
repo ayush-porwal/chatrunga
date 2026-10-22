@@ -8,42 +8,19 @@ import { MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 
 /**
- * The downloadable engine assets (engines, Lc0's network, Maia networks), in display order.
+ * The downloadable engine assets (engines, Lc0's network, Maia 3's model), in display order, and
+ * the name of the "(managed)" engine the registry sync keeps for each (its label, unless named).
  * Versions and sizes come from `assets.status()` — the latest GitHub release, not hard-coded here.
  */
-export const ENGINE_ASSETS: readonly { id: EngineAssetId; label: string }[] = [
+export const ENGINE_ASSETS: readonly { id: EngineAssetId; label: string; engineName?: string }[] = [
   { id: "stockfish", label: "Stockfish" },
   { id: "lc0", label: "Lc0" },
   { id: "lc0-network", label: "Lc0 network" },
-  { id: "maia-1100", label: "Maia 1100" },
-  { id: "maia-1300", label: "Maia 1300" },
-  { id: "maia-1500", label: "Maia 1500" },
-  { id: "maia-1700", label: "Maia 1700" },
-  { id: "maia-1900", label: "Maia 1900" }
+  { id: "maia3", label: "Maia 3", engineName: "Maia" }
 ];
 
 export function isAssetInstalled(status: Pick<EngineAssetStatus, "state"> | undefined): boolean {
   return status?.state === "installed" || status?.state === "custom";
-}
-
-/**
- * Maia networks are installed but can't run: Maia runs inside Lc0, which isn't set up (macOS and
- * Linux have no Lc0 download, so the user installs it and points the app at it).
- */
-export function maiaNeedsLc0(status: EngineAssetStatusMap | null): boolean {
-  if (!status || isAssetInstalled(status.lc0)) return false;
-  return ENGINE_ASSETS.some(
-    (asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id])
-  );
-}
-
-/**
- * Lc0 isn't set up and this computer has no Lc0 download (macOS, Linux): Maia can only run once
- * the user installs Lc0 and adds it in Settings → Engines, so the setup doesn't offer it.
- */
-export function lc0NeedsManualInstall(status: EngineAssetStatusMap | null): boolean {
-  if (!status) return false;
-  return !isAssetInstalled(status.lc0) && !status.lc0.autoDownload;
 }
 
 /** Installed state + latest known release per asset (no network call); null outside the desktop app. */
@@ -59,9 +36,14 @@ export function missingDownloads(status: EngineAssetStatusMap | null): EngineAss
   );
 }
 
-/** `24 MB` (never below 1 MB); null when the size is unknown. */
+/**
+ * A download's size, the same everywhere: to a tenth below 100 MB (`45.7 MB`, never below
+ * `0.1 MB`), whole above (`105 MB`); null when the size is unknown.
+ */
 export function formatSize(bytes: number | null | undefined): string | null {
-  return bytes ? `${Math.max(1, Math.round(bytes / 1_000_000))} MB` : null;
+  if (!bytes) return null;
+  const megabytes = Math.max(0.1, Math.round(bytes / 100_000) / 10);
+  return megabytes < 100 ? `${megabytes.toFixed(1)} MB` : `${Math.round(megabytes)} MB`;
 }
 
 /* ------------------------------------------------------------------ Settings → Engines list */
@@ -83,8 +65,8 @@ export type EngineListRow =
   | { kind: "engine"; engine: EngineConfig };
 
 /**
- * Settings → Engines, in order: Stockfish, Lc0 and its network (Lc0 also runs Maia), the Maia
- * networks, then the engines the user added. A managed engine joins its download's row by name,
+ * Settings → Engines, in order: Stockfish, Lc0 and its network, Maia 3, then the engines the user
+ * added. A managed engine joins its download's row by name,
  * as the registry sync names it; one with no known download (unexpected) is listed as a plain
  * engine. Without the download status (web preview, still loading) the list is just the engines.
  */
@@ -96,7 +78,7 @@ export function engineListRows(
   const assetRows: EngineListRow[] = [];
   const joined = new Set<string>();
   for (const asset of ENGINE_ASSETS) {
-    const managedName = `${asset.label} ${MANAGED_ENGINE_SUFFIX}`;
+    const managedName = `${asset.engineName ?? asset.label} ${MANAGED_ENGINE_SUFFIX}`;
     const engine =
       asset.id === "lc0-network"
         ? null
@@ -176,19 +158,18 @@ export function progressPercent(progress: AssetProgress | undefined): number {
 
 /**
  * What the welcome recommends, where missing and downloadable here: Stockfish (scores every move),
- * Lc0 with its network (a neural-network engine), and the Maia networks (what players of each
- * rating would play). Lc0's network and Maia only run inside Lc0, so they come along only when Lc0
- * runs or is downloaded too; where Lc0 has no download and isn't set up, they are left out (they
- * would sit unused until the user installs Lc0; Settings → Engines still offers them).
+ * Lc0 with its network (a neural-network engine), and Maia 3 (what players of each rating would
+ * play). Lc0's network only runs inside Lc0, so it comes along only when Lc0 runs or is downloaded
+ * too.
  */
 export function recommendedDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
   if (!status) return [];
   const missing = missingDownloads(status);
   const withLc0 = isAssetInstalled(status.lc0) || missing.some((asset) => asset.id === "lc0");
-  return missing.filter((asset) => asset.id === "stockfish" || asset.id === "lc0" || withLc0);
+  return missing.filter((asset) => asset.id !== "lc0-network" || withLc0);
 }
 
-/** One line of the setup list: Stockfish, Lc0 with its network, the Maia networks. */
+/** One line of the setup list: Stockfish, Lc0 with its network, Maia 3. */
 export type SetupRow = {
   key: "stockfish" | "lc0" | "maia";
   label: string;
@@ -212,7 +193,7 @@ const ROW_STATUS_ORDER: readonly AssetStatus[] = [
 const SETUP_ROW_LABELS: Record<SetupRow["key"], string> = {
   stockfish: "Stockfish",
   lc0: "Lc0",
-  maia: "Maia"
+  maia: "Maia 3"
 };
 
 /** The setup row an asset is listed in. */
@@ -234,14 +215,6 @@ function memberProgress(
   const done = status === "verifying" || status === "installing" || status === "ready";
   const bytesReceived = done ? bytesTotal : status === "error" ? 0 : (entry?.bytesReceived ?? 0);
   return { bytesReceived, bytesTotal, status };
-}
-
-/** "Maia 1100–1900", "Maia 1500": the Maia row's ratings. */
-function maiaRowLabel(ids: readonly EngineAssetId[]): string {
-  const ratings = ids.map((id) => id.replace("maia-", ""));
-  return ratings.length > 1
-    ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`
-    : `Maia ${ratings[0]}`;
 }
 
 /**
@@ -278,9 +251,6 @@ export function setupRows(
     const errorMessage = progress[asset.id]?.errorMessage;
     if (member.status === "error" && errorMessage && !row.errorMessage)
       row.errorMessage = errorMessage;
-  }
-  for (const row of rows) {
-    if (row.key === "maia") row.label = maiaRowLabel(row.ids);
   }
   return rows;
 }

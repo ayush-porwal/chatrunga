@@ -17,8 +17,8 @@ import {
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
 function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
-    schemaVersion: 2,
-    player: { rating: 1500, color: "white", ratingBucket: 1500 },
+    schemaVersion: 3,
+    player: { rating: 1500, color: "white" },
     game: {
       ply: 7,
       moveNumberSan: "4.",
@@ -48,19 +48,28 @@ function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPa
         ],
         replyLineSan: ["Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4+", "Be2", "Nf3#"]
       },
+      maia: {
+        model: "maia3",
+        rating: 1500,
+        playedProb: 0.3,
+        playedRank: 1,
+        playedLikelihood: "most_likely",
+        bestProb: 0.22,
+        bestRank: 2,
+        bestLikelihood: "common",
+        topMoves: [
+          { san: "Nxe5", prob: 0.3 },
+          { san: "Nc3", prob: 0.2 }
+        ],
+        whiteWinPct: 56
+      },
       maiaCurve: {
         ratings: [1100, 1300, 1500, 1700, 1900],
         playedProb: [0.4, 0.35, 0.3, 0.2, 0.1],
         bestProb: [0.2, 0.25, 0.3, 0.35, 0.4],
         interpretation: { label: "neutral" },
-        userRatingBucket: 1500
-      },
-      humanTopMoves: {
-        rating: 1500,
-        moves: [
-          { san: "Nxe5", prob: 0.3 },
-          { san: "Nc3", prob: 0.2 }
-        ]
+        userRatingBucket: 1500,
+        bestLikelyFrom: 1500
       }
     },
     annotation: "blunder",
@@ -121,7 +130,8 @@ describe("review insight payload schema", () => {
     const parsed = payload();
     expect(parsed.context?.recentMoves).toHaveLength(2);
     expect(parsed.engines.stockfish.replyLineSan).toHaveLength(7);
-    expect(parsed.engines.humanTopMoves?.moves[0]?.san).toBe("Nxe5");
+    expect(parsed.engines.maia?.topMoves?.[0]?.san).toBe("Nxe5");
+    expect(parsed.engines.maiaCurve?.bestLikelyFrom).toBe(1500);
   });
 
   it("still accepts a legacy payload without any of the new fields", () => {
@@ -129,7 +139,8 @@ describe("review insight payload schema", () => {
     delete legacy.context;
     delete legacy.clock;
     delete legacy.bestMoveMotifs;
-    delete legacy.engines.humanTopMoves;
+    delete legacy.engines.maia;
+    delete legacy.engines.maiaCurve;
     const stockfish = legacy.engines.stockfish;
     delete stockfish.alternatives;
     delete stockfish.replyLineSan;
@@ -187,6 +198,33 @@ describe("review insight payload schema", () => {
     });
     expect(mate.game.terminal).toBe("checkmate");
   });
+
+  it("takes a Maia 3 curve over 21 ratings and refuses a curve that doesn't line up", () => {
+    const base = payload();
+    const ratings = Array.from({ length: 21 }, (_, index) => 600 + index * 100);
+    const curve = {
+      ratings,
+      playedProb: ratings.map(() => 0.1),
+      bestProb: ratings.map(() => 0.4),
+      interpretation: { label: "neutral" },
+      userRatingBucket: 1500
+    };
+    const withCurve = (maiaCurve: Record<string, unknown>) =>
+      reviewInsightPayloadSchema.safeParse({ ...base, engines: { ...base.engines, maiaCurve } });
+    expect(withCurve(curve).success).toBe(true);
+    expect(withCurve({ ...curve, playedProb: [0.1, 0.2] }).success).toBe(false);
+    expect(withCurve({ ...curve, ratings: [...ratings].reverse() }).success).toBe(false);
+    expect(withCurve({ ...curve, userRatingBucket: 1550 }).success).toBe(false);
+    expect(
+      withCurve({ ...curve, ratings: [...ratings, 2700], playedProb: [], bestProb: [] }).success
+    ).toBe(false);
+  });
+
+  it("rejects payloads of an earlier version", () => {
+    expect(reviewInsightPayloadSchema.safeParse({ ...payload(), schemaVersion: 2 }).success).toBe(
+      false
+    );
+  });
 });
 
 describe("coach prompt", () => {
@@ -226,6 +264,25 @@ describe("coach prompt", () => {
       expect(parts.headline).toBeTruthy();
       expect(Object.keys(parts).sort()).toStrictEqual(["body", "headline"]);
     }
+  });
+
+  it("describes Maia 3 as one rating-conditioned model and its win % as a human forecast", () => {
+    const maiaLines = COACH_SYSTEM_PROMPT.split("\n").filter((line) =>
+      line.startsWith("- engines.maia")
+    );
+    expect(maiaLines).toHaveLength(2);
+    const [maia, curve] = maiaLines;
+    expect(maia).toContain("model maia3 is one model covering ratings 600-2600");
+    expect(maia).toContain("engines.maia.rating (the mover's rating");
+    expect(maia).toContain("model maia1 (older reviews) is five networks for 1100-1900");
+    expect(maia).toContain("whiteWinPct (maia3 only)");
+    expect(maia).toContain("not an evaluation of the position");
+    expect(maia).toContain("not counts of real games");
+    expect(curve).toContain("engines.maiaCurve (only when present)");
+    expect(curve).toContain("bestLikelyFrom");
+    expect(curve).toContain("only with ratings from the curve");
+    // The old per-level fields are gone from the contract.
+    expect(COACH_SYSTEM_PROMPT).not.toMatch(/humanTopMoves|playedAtPlayerLevel/);
   });
 
   it("scales the provider token budget with the requested detail", () => {

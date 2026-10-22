@@ -2,12 +2,16 @@ import { engineRepository } from "../db/repositories";
 import { getAssetManager, type AssetRecord } from "./asset-manager";
 import {
   isManagedEngine,
+  MAIA1_MANAGED_NAME,
   MANAGED_ENGINE_SUFFIX as MANAGED_SUFFIX
 } from "@chaturanga/shared/engine/managed";
+import { basename } from "node:path";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
-import { MAIA_RATINGS, maiaRatingForEngine } from "./review-analysis";
+import { maia3ModelPath } from "../maia/model-path";
 
 const LC0_ENGINE_NAME = `Lc0 ${MANAGED_SUFFIX}`;
+/** The one managed Maia: Maia 3 at every rating, run in its host window (maia/index.ts). */
+const MAIA_ENGINE_NAME = `Maia ${MANAGED_SUFFIX}`;
 
 /**
  * The managed Lc0 this run made the default by itself (nothing else was default), not the user.
@@ -25,7 +29,7 @@ let automaticLc0DefaultId: string | null = null;
  *   - asset manager: JSON file at userData/engine-assets.json — tracks
  *     binary paths + checksums for managed downloads + custom paths.
  *   - engines table: SQLite — the source of truth for what
- *     `reviewGame` and friends spawn. Has name, isDefault, isHumanPrediction.
+ *     `reviewGame` and friends run. Has name, runtime, isDefault, isHumanPrediction.
  *
  * When the asset manager installs (download or custom path), this module
  * upserts the corresponding engine row(s) so reviewGame can find them.
@@ -41,16 +45,19 @@ let automaticLc0DefaultId: string | null = null;
  *     Not human-prediction; isDefault = true only if no existing engine is default, and then
  *     only until a managed Stockfish is installed (see automaticLc0DefaultId).
  *
- *   lc0 + maia-NNNN both installed →
- *     upsert engine "Maia NNNN (managed)" per Maia weight, with
- *     executablePath = lc0 path, weightsPath = maia-NNNN.pb.gz path,
- *     isHumanPrediction = true. One row per rating.
+ *   maia3 installed (or the e2e fixture on, maia/model-path.ts) →
+ *     upsert the one engine "Maia (managed)" with runtime = "maia3", executablePath = the model
+ *     file, isHumanPrediction = true, no rating (Play picks Maia's rating per game).
+ *
+ *   Maia 1's rows ("Maia 1100 (managed)" … "Maia 1900 (managed)", Lc0 on Maia weights) are
+ *   removed: Maia 3 replaced them (their weights are deleted by the asset manager).
  *
  *   Asset removed → remove the corresponding managed engine row. Resolves to the removed rows'
  *   ids, so the caller can delete their picture copies (see engine-images.ts).
  *
  * Idempotent. Safe to call repeatedly. Identifies managed rows by name
- * suffix `(managed)` — never touches user-configured engines.
+ * suffix `(managed)` (the Maia row by its runtime, see isManagedMaiaRow) — never touches
+ * user-configured engines.
  */
 
 export async function syncAssetsToEngineRegistry(): Promise<string[]> {
@@ -83,20 +90,23 @@ export async function syncAssetsToEngineRegistry(): Promise<string[]> {
     removeManagedByName(LC0_ENGINE_NAME);
   }
 
-  // 3. Maia engines — need lc0 AND a Maia weight to be installed.
-  for (const rating of MAIA_RATINGS) {
-    const maiaRecord = assets[`maia-${rating}` as const];
-    const name = `Maia ${rating} ${MANAGED_SUFFIX}`;
-    if (lc0Path && isUsable(maiaRecord)) {
-      upsertManagedMaia(rating, lc0Path, pathFor(maiaRecord), existingEngines);
-    } else {
-      // Either lc0 missing or this weight missing → remove the corresponding
-      // engine row so the user doesn't see a Maia entry that can't actually run.
-      removeManagedByName(name);
+  // 3. Maia 3 — one row for every rating.
+  const modelPath = maia3ModelPath();
+  if (modelPath) {
+    upsertManagedMaia(modelPath, existingEngines);
+  } else {
+    for (const engine of existingEngines.filter(isManagedMaiaRow)) {
+      engineRepository.remove(engine.id);
+      removed.push(engine.id);
     }
   }
 
-  // 4. Self-heal flags on existing user-configured engines. Common drift:
+  // 4. Maia 1's rows, replaced by Maia 3.
+  for (const engine of managedEngines) {
+    if (MAIA1_MANAGED_NAME.test(engine.name)) removeManagedByName(engine.name);
+  }
+
+  // 5. Self-heal flags on existing user-configured engines. Common drift:
   //    - User added Maia via the legacy config form but didn't tick "Human
   //      prediction engine (Maia)". The renderer then says "no Maia configured".
   //    - User deleted whichever engine had isDefault — no engine is default,
@@ -109,8 +119,12 @@ export async function syncAssetsToEngineRegistry(): Promise<string[]> {
 }
 
 /**
- * Idempotent flag repair on the engines table:
- *   - A Maia engine (rating tag, or `maia-NNNN` weights/name) that isn't
+ * Idempotent flag repair on the engines table. The human-prediction flag no longer picks what
+ * Review runs (that is Maia 3 alone); it keeps an engine out of the evaluation roles (the review
+ * engine, live analysis, the default engine, "an engine is ready"). A user's own Maia 1 (Lc0 on
+ * a Maia net) stays an ordinary UCI engine to play against, but it is no evaluator (one node,
+ * human moves, no real eval), so it keeps the flag:
+ *   - A Maia engine (the Maia 3 row, or "maia" in its weights/name) that isn't
  *     flagged as human-prediction → flag it. A weights file alone is NOT a
  *     Maia tell: regular Lc0 nets need one too and must stay usable as the
  *     evaluation engine.
@@ -124,7 +138,7 @@ function autoFixEngineFlags(): void {
   if (all.length === 0) return;
 
   for (const e of all) {
-    const isMaia = Boolean(maiaRatingForEngine(e));
+    const isMaia = isMaiaEngine(e);
     if (isMaia && !e.isHumanPrediction) {
       engineRepository.update(e.id, { isHumanPrediction: true });
     } else if (!isMaia && e.isHumanPrediction && e.weightsPath) {
@@ -143,6 +157,15 @@ function autoFixEngineFlags(): void {
       if (candidate.name === LC0_ENGINE_NAME) automaticLc0DefaultId = candidate.id;
     }
   }
+}
+
+/**
+ * Maia: the Maia 3 row, or a Maia 1 engine ("maia" in its name or its weights file's name; the
+ * asset manager refuses a Maia net as Lc0's own network for this reason).
+ */
+function isMaiaEngine(engine: EngineConfig): boolean {
+  if (engine.runtime === "maia3") return true;
+  return /maia/i.test(engine.name) || /maia/i.test(basename(engine.weightsPath ?? ""));
 }
 
 function isUsable(record: AssetRecord): boolean {
@@ -198,35 +221,33 @@ function upsertManagedLc0(lc0Path: string, weightsPath: string, all: EngineConfi
   if (isDefault) automaticLc0DefaultId = created.id;
 }
 
-function upsertManagedMaia(
-  rating: NonNullable<EngineConfig["maiaRating"]>,
-  lc0Path: string,
-  weightsPath: string,
-  all: EngineConfig[]
-): void {
-  const name = `Maia ${rating} ${MANAGED_SUFFIX}`;
-  const existing = all.find((e) => e.name === name);
+/**
+ * The managed Maia row: the one running Maia 3, or (to repair it) one named as it whose
+ * "executable" is an ONNX model, which no UCI engine is. A user's own engine that happens to
+ * carry the name is never taken over.
+ */
+function isManagedMaiaRow(engine: EngineConfig): boolean {
+  return (
+    engine.runtime === "maia3" ||
+    (engine.name === MAIA_ENGINE_NAME && /\.onnx$/i.test(engine.executablePath))
+  );
+}
+
+function upsertManagedMaia(modelPath: string, all: EngineConfig[]): void {
+  const existing = all.find((e) => e.runtime === "maia3") ?? all.find((e) => isManagedMaiaRow(e));
   if (existing) {
-    const patch: Partial<{
-      executablePath: string;
-      weightsPath: string;
-      maiaRating: NonNullable<EngineConfig["maiaRating"]>;
-    }> = {};
-    if (existing.executablePath !== lc0Path) patch.executablePath = lc0Path;
-    if (existing.weightsPath !== weightsPath) patch.weightsPath = weightsPath;
-    if (existing.maiaRating !== rating) patch.maiaRating = rating;
-    if (Object.keys(patch).length > 0) {
-      engineRepository.update(existing.id, patch);
-    }
+    const patch: { executablePath?: string; runtime?: "maia3" } = {};
+    if (existing.executablePath !== modelPath) patch.executablePath = modelPath;
+    if (existing.runtime !== "maia3") patch.runtime = "maia3";
+    if (Object.keys(patch).length > 0) engineRepository.update(existing.id, patch);
     return;
   }
   engineRepository.create({
-    name,
-    executablePath: lc0Path,
-    weightsPath,
+    name: MAIA_ENGINE_NAME,
+    executablePath: modelPath,
     args: [],
     isDefault: false,
     isHumanPrediction: true,
-    maiaRating: rating
+    runtime: "maia3"
   });
 }

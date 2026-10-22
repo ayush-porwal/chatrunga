@@ -14,6 +14,7 @@ vi.mock("../db/repositories", () => ({
         weightsPath: null,
         isDefault: false,
         isHumanPrediction: false,
+        runtime: "custom-uci",
         isAvailable: true,
         ...input
       } as EngineConfig;
@@ -69,13 +70,9 @@ describe("syncAssetsToEngineRegistry", () => {
   });
 
   it("adds Lc0 on its network once both are installed, after Stockfish, which stays the default", async () => {
-    installed.records = {
-      stockfish: "/engines/stockfish",
-      lc0: "/engines/lc0",
-      "maia-1500": "/engines/maia-1500.pb.gz"
-    };
+    installed.records = { stockfish: "/engines/stockfish", lc0: "/engines/lc0" };
     await syncAssetsToEngineRegistry();
-    // No network yet: only Maia runs in Lc0.
+    // No network yet.
     expect(byName("Lc0 (managed)")).toBeUndefined();
 
     installed.records["lc0-network"] = "/engines/lc0-network.pb.gz";
@@ -87,10 +84,6 @@ describe("syncAssetsToEngineRegistry", () => {
       isHumanPrediction: false
     });
     expect(byName("Stockfish (managed)")?.isDefault).toBe(true);
-    expect(byName("Maia 1500 (managed)")).toMatchObject({
-      weightsPath: "/engines/maia-1500.pb.gz",
-      isHumanPrediction: true
-    });
   });
 
   it("keeps Stockfish the default when Stockfish and Lc0 arrive in the same sync", async () => {
@@ -152,7 +145,7 @@ describe("syncAssetsToEngineRegistry", () => {
       stockfish: "/engines/stockfish",
       lc0: "/engines/lc0",
       "lc0-network": "/engines/lc0-network.pb.gz",
-      "maia-1100": "/engines/maia-1100.pb.gz"
+      maia3: "/engines/maia3_simplified.onnx"
     };
     db.engines.push({
       id: "own",
@@ -172,16 +165,111 @@ describe("syncAssetsToEngineRegistry", () => {
     await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual([lc0Id]);
     expect(db.engines.map((engine) => engine.name).sort()).toStrictEqual([
       "Lc0",
-      "Maia 1100 (managed)",
+      "Maia (managed)",
       "Stockfish (managed)"
     ]);
+  });
 
-    const maiaId = byName("Maia 1100 (managed)")?.id;
-    installed.records["lc0-network"] = "/engines/lc0-network.pb.gz";
-    delete installed.records.lc0;
-    await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual([maiaId]);
-    expect(byName("Lc0 (managed)")).toBeUndefined();
-    expect(byName("Maia 1100 (managed)")).toBeUndefined();
-    expect(byName("Stockfish (managed)")).toBeDefined();
+  it("keeps one Maia 3 row while the model is installed, following its file, and removes it after", async () => {
+    installed.records = {
+      stockfish: "/engines/stockfish",
+      maia3: "/engines/maia3_simplified.onnx"
+    };
+    await syncAssetsToEngineRegistry();
+    await syncAssetsToEngineRegistry();
+    const maia = db.engines.filter((engine) => engine.runtime === "maia3");
+    expect(maia).toHaveLength(1);
+    expect(maia[0]).toMatchObject({
+      name: "Maia (managed)",
+      executablePath: "/engines/maia3_simplified.onnx",
+      isHumanPrediction: true,
+      isDefault: false
+    });
+
+    installed.records.maia3 = "/elsewhere/maia3_simplified.onnx";
+    await syncAssetsToEngineRegistry();
+    expect(byName("Maia (managed)")).toMatchObject({
+      id: maia[0].id,
+      executablePath: "/elsewhere/maia3_simplified.onnx"
+    });
+
+    delete installed.records.maia3;
+    await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual([maia[0].id]);
+    expect(byName("Maia (managed)")).toBeUndefined();
+  });
+
+  it("finds the Maia row by its runtime (repairing one that lost it), never a user's engine of that name", async () => {
+    const row = (id: string, name: string, executablePath: string): EngineConfig =>
+      ({
+        id,
+        name,
+        executablePath,
+        weightsPath: null,
+        isDefault: false,
+        isHumanPrediction: false,
+        runtime: "custom-uci",
+        isAvailable: true
+      }) as EngineConfig;
+    db.engines = [
+      // Renamed by the user, still the Maia row.
+      { ...row("renamed", "My Maia 3", "/engines/maia3_simplified.onnx"), runtime: "maia3" },
+      row("users", "Maia (managed)", "/opt/engines/some-uci")
+    ];
+    installed.records = { maia3: "/engines/maia3_simplified.onnx" };
+    await syncAssetsToEngineRegistry();
+    expect(
+      db.engines.filter((engine) => engine.runtime === "maia3").map((e) => e.id)
+    ).toStrictEqual(["renamed"]);
+    expect(db.engines.find((engine) => engine.id === "users")).toMatchObject({
+      executablePath: "/opt/engines/some-uci",
+      runtime: "custom-uci"
+    });
+
+    // A managed row that lost its runtime (it runs the model file) is repaired, not duplicated.
+    db.engines = [row("lost", "Maia (managed)", "/engines/maia3_simplified.onnx")];
+    await syncAssetsToEngineRegistry();
+    expect(db.engines.map((engine) => [engine.id, engine.runtime])).toStrictEqual([
+      ["lost", "maia3"]
+    ]);
+
+    // Removing the model removes the Maia row, and only it.
+    db.engines.push(row("users", "Maia (managed)", "/opt/engines/some-uci"));
+    delete installed.records.maia3;
+    await expect(syncAssetsToEngineRegistry()).resolves.toStrictEqual(["lost"]);
+    expect(db.engines.map((engine) => engine.id)).toStrictEqual(["users"]);
+  });
+
+  it("removes Maia 1's managed rows, keeping a user's own Maia 1 engine as a flagged UCI engine", async () => {
+    const maia1 = (id: string, name: string, weightsPath: string): EngineConfig =>
+      ({
+        id,
+        name,
+        executablePath: "/engines/lc0",
+        weightsPath,
+        runtime: "custom-uci",
+        isDefault: false,
+        isHumanPrediction: true,
+        isAvailable: true
+      }) as EngineConfig;
+    db.engines.push(
+      maia1("m1100", "Maia 1100 (managed)", "/engines/maia-1100.pb.gz"),
+      maia1("m1900", "Maia 1900 (managed)", "/engines/maia-1900.pb.gz"),
+      // Added by the user, not flagged yet: it is flagged (it's no evaluator), never removed.
+      { ...maia1("own", "My Maia", "/nets/maia-1500.pb.gz"), isHumanPrediction: false }
+    );
+    installed.records = {
+      stockfish: "/engines/stockfish",
+      maia3: "/engines/maia3_simplified.onnx"
+    };
+    const removed = await syncAssetsToEngineRegistry();
+    expect(removed.sort()).toStrictEqual(["m1100", "m1900"]);
+    expect(db.engines.map((engine) => engine.name).sort()).toStrictEqual([
+      "Maia (managed)",
+      "My Maia",
+      "Stockfish (managed)"
+    ]);
+    expect(byName("My Maia")).toMatchObject({ runtime: "custom-uci", isHumanPrediction: true });
+    // Neither Maia becomes the default.
+    expect(defaults()).toStrictEqual(["Stockfish (managed)"]);
   });
 });

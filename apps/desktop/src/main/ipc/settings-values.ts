@@ -13,10 +13,10 @@ import {
   ONBOARDING_HINTS,
   PLAY_OPPONENTS,
   PRACTICE_AUTO_ADVANCE_MS,
-  REVIEW_MAIA_LEVELS,
   SOUND_SETS,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
+import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { isPlayerRatings, RATINGS_ACCOUNTS } from "@chaturanga/shared/types/ratings";
 
@@ -48,6 +48,8 @@ const list =
   <T>(item: Check<T>, maxItems: number): Check<T[]> =>
   (value): value is T[] =>
     Array.isArray(value) && value.length <= maxItems && value.every(item);
+/** A rating on Maia 3's grid (600–2600 in steps of 100). */
+const maia3Rating: Check<number> = (value): value is number => isOneOf(MAIA3_RATINGS, value);
 const hexColor: Check<string> = (value): value is string =>
   typeof value === "string" && normalizeBoardSquareHex(value) !== null;
 
@@ -58,6 +60,7 @@ const hexColor: Check<string> = (value): value is string =>
 const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   playOpponent: nullable(oneOf(...PLAY_OPPONENTS)),
   playEngineId: nullable(text(200)),
+  playMaiaRating: nullable(maia3Rating),
   boardOrientation: oneOf("white", "black"),
   boardTheme: isBoardTheme,
   boardSquareLight: nullable(hexColor),
@@ -85,7 +88,7 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   reviewPlayerColor: oneOf("white", "black"),
   reviewShowTopLines: bool,
   reviewMultiPv: number(1, 5, true),
-  reviewMaiaLevels: nullable(list(oneOf(...REVIEW_MAIA_LEVELS), REVIEW_MAIA_LEVELS.length)),
+  reviewMaiaRating: nullable(maia3Rating),
   analysisEngineId: nullable(text(200)),
   analysisLines: number(ANALYSIS_LINES_RANGE.min, ANALYSIS_LINES_RANGE.max, true),
   analysisLimit: oneOf(...ANALYSIS_LIMITS),

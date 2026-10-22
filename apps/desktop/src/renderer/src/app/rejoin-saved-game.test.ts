@@ -45,6 +45,32 @@ describe("rejoining a saved engine game", () => {
     expect(savedEngineMatch(headers, [stockfish, off])).toBeNull();
   });
 
+  it("plays a game against Maia on against Maia 3, a Maia 1 game's level too", () => {
+    const maia3 = {
+      id: "maia",
+      name: "Maia (managed)",
+      isAvailable: true,
+      runtime: "maia3" as const
+    };
+    // Maia 1's engine row is gone: the game's saved id finds nothing, its name finds Maia 3.
+    const legacy = { white: "Maia 1500 (managed)", black: "You", engineId: "m15" };
+    expect(savedEngineMatch(legacy, [stockfish, maia3])).toStrictEqual({
+      engine: maia3,
+      engineSide: "white",
+      humanSide: "black"
+    });
+    expect(savedEngineMatch({ white: "You", black: "Maia 2100" }, [maia3])?.engine).toBe(maia3);
+    expect(savedEngineSide(legacy, [maia3])).toStrictEqual({ side: "white", engine: maia3 });
+    // An engine of the user's named so is theirs.
+    const own = { id: "own", name: "Maia 1500", isAvailable: true };
+    expect(savedEngineMatch(legacy, [maia3, own])?.engine).toBe(own);
+    // Maia 3 not installed: only opened, offering Maia 3's download.
+    expect(rejoinNotice(legacy, [stockfish])).toStrictEqual({
+      message: "Maia 1500 plays on Maia 3, which isn't installed, so the game opened on the board.",
+      offerMaia3: true
+    });
+  });
+
   it("only opens the game when its engine is missing or unavailable, or the sides are unclear", () => {
     expect(savedEngineMatch({ white: "You", black: "Komodo" }, [stockfish])).toBeNull();
     expect(savedEngineMatch({ white: "Maia 1500", black: "You" }, [maia])).toBeNull();
@@ -54,12 +80,14 @@ describe("rejoining a saved engine game", () => {
   });
 
   it("says why a game only opened", () => {
-    expect(rejoinNotice({ white: "You", black: "Komodo" }, [stockfish])).toBe(
-      "Komodo isn't installed, so the game opened on the board."
-    );
-    expect(rejoinNotice({ white: "Maia 1500 (managed)", black: "You" }, [maia])).toBe(
-      "Maia 1500 isn't available, so the game opened on the board."
-    );
+    expect(rejoinNotice({ white: "You", black: "Komodo" }, [stockfish])).toStrictEqual({
+      message: "Komodo isn't installed, so the game opened on the board.",
+      offerMaia3: false
+    });
+    expect(rejoinNotice({ white: "Maia 1500 (managed)", black: "You" }, [maia])).toStrictEqual({
+      message: "Maia 1500 isn't available, so the game opened on the board.",
+      offerMaia3: false
+    });
     expect(rejoinNotice({ white: "You", black: "Stockfish" }, [stockfish])).toBeNull();
     expect(rejoinNotice({ white: "Alpha", black: "Beta" }, [stockfish])).toBeNull();
   });
@@ -242,11 +270,17 @@ describe("planRejoin", () => {
     const game = { headers: vsStockfish, moveTree: played };
     expect(planRejoin(game, [maia], T)).toStrictEqual({
       kind: "open",
-      notice: "Stockfish isn't installed, so the game opened on the board."
+      notice: {
+        message: "Stockfish isn't installed, so the game opened on the board.",
+        offerMaia3: false
+      }
     });
     expect(planRejoin(game, [{ ...stockfish, isAvailable: false }], T)).toStrictEqual({
       kind: "open",
-      notice: "Stockfish isn't available, so the game opened on the board."
+      notice: {
+        message: "Stockfish isn't available, so the game opened on the board.",
+        offerMaia3: false
+      }
     });
   });
 

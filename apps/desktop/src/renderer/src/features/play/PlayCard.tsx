@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Globe, Loader2, RefreshCw, Settings } from "lucide-react";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { PlayOpponent } from "@chaturanga/shared/types/settings";
@@ -19,7 +19,6 @@ import {
 import { useEngineSetup } from "../onboarding/useEngineSetup";
 import { gameFromInitialSession } from "../repertoire/handoffs";
 import { BoardThumbnail } from "../settings/board-thumbnail";
-import { PlaySettingsDialog } from "./PlaySettingsDialog";
 import { ErrorLine, LiveGameNote, Matchup, WayRow, wayButton } from "./play-card-parts";
 import {
   aiView,
@@ -32,17 +31,16 @@ import {
   type CardView,
   type LichessContext
 } from "./play-card-views";
-import {
-  WIDE_CONTROLS_MAX,
-  WIDE_GAP,
-  resolvePlayMode,
-  savePlaySettings,
-  widePreviewBoardSize
-} from "./play-layout";
+import { WIDE_GAP, resolvePlayMode, savePlaySettings, widePreviewBoardSize } from "./play-layout";
 import { useContentBox } from "./use-content-box";
 import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setup";
 
 const cardShell = "min-w-0 rounded-xl border border-line bg-surface leading-[1.43]";
+
+// Play settings loads when first opened (the cog), not with the page.
+const PlaySettingsDialog = lazy(() =>
+  import("./PlaySettingsDialog").then((module) => ({ default: module.PlaySettingsDialog }))
+);
 
 export type PlayCardProps = {
   /** Room for the preview board, on the left. */
@@ -153,14 +151,13 @@ export const PlayCard = memo(function PlayCard({
         <div
           ref={wideBodyRef}
           // The board never sets the height (it is sized to the body, the row's height). In a wide
-          // card the board and the controls (never wider than WIDE_CONTROLS_MAX) stay together in
-          // the middle, rather than the controls stretching across it.
-          className="grid min-h-0 flex-1 justify-center py-3 pl-3 pr-4"
+          // card the board sits at the left edge and the controls take the rest of the width.
+          className="grid min-h-0 flex-1 py-3 pl-3 pr-4"
           style={{
             columnGap: WIDE_GAP,
             gridTemplateColumns: boardSize
-              ? `${boardSize}px minmax(0, ${WIDE_CONTROLS_MAX}px)`
-              : `minmax(0, 47.7%) minmax(0, ${WIDE_CONTROLS_MAX}px)`
+              ? `${boardSize}px minmax(0, 1fr)`
+              : "minmax(0, 47.7%) minmax(0, 1fr)"
           }}
         >
           <PreviewBoard view={view} size={boardSize} />
@@ -178,19 +175,22 @@ export const PlayCard = memo(function PlayCard({
         </>
       )}
       {settingsOpen ? (
-        <PlaySettingsDialog
-          mode={mode}
-          engines={engine.engines}
-          engineId={engine.selectedEngine?.id ?? null}
-          lichess={lichess.profile}
-          onConnectLichess={desktopApiAvailable ? connect.connect : null}
-          onOpenEngineSettings={onOpenEngineSettings}
-          onClose={() => setSettingsOpen(false)}
-          onSave={(choice) => {
-            setSettingsOpen(false);
-            savePlaySettings(choice, useLichessStore.getState, updateSettings.mutate);
-          }}
-        />
+        <Suspense fallback={null}>
+          <PlaySettingsDialog
+            mode={mode}
+            engines={engine.engines}
+            engineId={engine.selectedEngine?.id ?? null}
+            maiaRating={engine.maiaRatingChoice}
+            lichess={lichess.profile}
+            onConnectLichess={desktopApiAvailable ? connect.connect : null}
+            onOpenEngineSettings={onOpenEngineSettings}
+            onClose={() => setSettingsOpen(false)}
+            onSave={(choice) => {
+              setSettingsOpen(false);
+              savePlaySettings(choice, useLichessStore.getState, updateSettings.mutate);
+            }}
+          />
+        </Suspense>
       ) : null}
     </section>
   );

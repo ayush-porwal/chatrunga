@@ -11,7 +11,7 @@ import {
 const NETWORK_FILE_FILTERS = [{ name: "Lc0 networks", extensions: ["pb", "gz"] }];
 
 /**
- * Settings → Engines' downloads: which engines, Lc0's network + Maia networks are installed (and at which
+ * Settings → Engines' downloads: which engines, Lc0's network and Maia 3 are installed (and at which
  * version), live progress, and the download / update / remove / custom-binary actions. `status`
  * stays null outside the desktop app. The first-run welcome (features/onboarding) handles the
  * initial download.

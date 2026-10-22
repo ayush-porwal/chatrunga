@@ -16,18 +16,25 @@ import {
 
 const MAX_MODEL_LENGTH = 160;
 
+/**
+ * Earlier defaults. Older builds saved the default model with the key, so one of these in a file
+ * they wrote (no `modelChosen`) means "the default" rather than a choice: it follows the current
+ * one. Saved by this build, it is the user's choice and stays.
+ */
+const EARLIER_DEFAULT_MODELS: ReadonlySet<string> = new Set(["anthropic/claude-sonnet-4.6"]);
+
 type StoredConfig = {
-  model: string;
+  /** The user's own model; null follows the default (DEFAULT_COMMENTARY_MODEL). */
+  model: string | null;
   encryptedApiKey: string | null;
 };
 
-function normalizeModel(value: unknown): string {
-  if (typeof value !== "string") return DEFAULT_OPENROUTER_MODEL;
+/** The model to store: null when it is blank, invalid or the current default. */
+function storedModel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
   const model = value.trim();
-  if (!model || model.length > MAX_MODEL_LENGTH || /[\r\n\0]/.test(model)) {
-    return DEFAULT_OPENROUTER_MODEL;
-  }
-  return model;
+  if (!model || model.length > MAX_MODEL_LENGTH || /[\r\n\0]/.test(model)) return null;
+  return model === DEFAULT_OPENROUTER_MODEL ? null : model;
 }
 
 /**
@@ -55,7 +62,7 @@ export class OpenRouterConfigStore {
   async get(): Promise<OpenRouterConfigSummary> {
     const config = await this.read();
     return {
-      model: normalizeModel(config.model),
+      model: config.model ?? DEFAULT_OPENROUTER_MODEL,
       hasApiKey: Boolean(config.encryptedApiKey)
     };
   }
@@ -78,8 +85,7 @@ export class OpenRouterConfigStore {
 
   private async apply(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
     const current = await this.read();
-    const model =
-      input.model === undefined ? normalizeModel(current.model) : normalizeModel(input.model);
+    const model = input.model === undefined ? current.model : storedModel(input.model);
     let encryptedApiKey = current.encryptedApiKey;
 
     if (input.apiKey === null) {
@@ -89,13 +95,15 @@ export class OpenRouterConfigStore {
     }
 
     await this.write({ model, encryptedApiKey });
-    return { model, hasApiKey: Boolean(encryptedApiKey) };
+    return { model: model ?? DEFAULT_OPENROUTER_MODEL, hasApiKey: Boolean(encryptedApiKey) };
   }
 
   private async read(): Promise<StoredConfig> {
     const parsed = await readJsonObject(this.filePath);
+    const model = storedModel(parsed?.model);
     return {
-      model: normalizeModel(parsed?.model),
+      model:
+        model && parsed?.modelChosen !== true && EARLIER_DEFAULT_MODELS.has(model) ? null : model,
       encryptedApiKey:
         typeof parsed?.encryptedApiKey === "string" && parsed.encryptedApiKey.length > 0
           ? parsed.encryptedApiKey
@@ -104,7 +112,8 @@ export class OpenRouterConfigStore {
   }
 
   private write(config: StoredConfig): Promise<void> {
-    return writePrivateJsonFile(this.filePath, config);
+    // `modelChosen` marks a model this build saved as the user's (see EARLIER_DEFAULT_MODELS).
+    return writePrivateJsonFile(this.filePath, { ...config, modelChosen: config.model !== null });
   }
 }
 

@@ -72,7 +72,7 @@ describe("runMigrations", () => {
       "INSERT INTO games (id, source, site, move_tree_json) VALUES ('g2', 'lichess', 'https://lichess.org/abcdEFGH', ?)"
     ).run(JSON.stringify([root]));
     db.exec("PRAGMA user_version = 5");
-    runMigrations(db, MIGRATIONS);
+    runMigrations(db, MIGRATIONS.slice(0, 10));
 
     expect(
       db
@@ -234,12 +234,54 @@ describe("runMigrations", () => {
     db.exec("CREATE TABLE games (id TEXT PRIMARY KEY)");
     db.exec("INSERT INTO games (id) VALUES ('old')");
     db.exec("PRAGMA user_version = 9");
-    runMigrations(db, MIGRATIONS);
+    runMigrations(db, MIGRATIONS.slice(0, 10));
     expect(version(db)).toBe(10);
     expect({
       ...db.prepare("SELECT analysis_board FROM games WHERE id = 'old'").get()
     }).toStrictEqual({
       analysis_board: null
     });
+  });
+
+  it("11: every engine stored so far runs as a UCI process", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE engines (id TEXT PRIMARY KEY)");
+    db.exec("INSERT INTO engines (id) VALUES ('sf')");
+    db.exec("PRAGMA user_version = 10");
+    runMigrations(db, MIGRATIONS.slice(0, 11));
+    expect(version(db)).toBe(11);
+    expect({ ...db.prepare("SELECT runtime FROM engines WHERE id = 'sf'").get() }).toStrictEqual({
+      runtime: "custom-uci"
+    });
+    db.exec("INSERT INTO engines (id) VALUES ('new')");
+    expect({ ...db.prepare("SELECT runtime FROM engines WHERE id = 'new'").get() }).toStrictEqual({
+      runtime: "custom-uci"
+    });
+  });
+
+  it("12: each analysis lists the engine row it ran on, read from its stored review", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`CREATE TABLE game_reviews (review_id TEXT PRIMARY KEY, review_json TEXT NOT NULL)`);
+    const insert = db.prepare("INSERT INTO game_reviews (review_id, review_json) VALUES (?, ?)");
+    insert.run("sf", JSON.stringify({ engineId: " engine-1 ", moves: [] }));
+    insert.run("none", JSON.stringify({ moves: [] }));
+    insert.run("number", JSON.stringify({ engineId: 7 }));
+    insert.run("blank", JSON.stringify({ engineId: "" }));
+    insert.run("broken", "{not json");
+    db.exec("PRAGMA user_version = 11");
+    runMigrations(db, MIGRATIONS.slice(0, 12));
+    expect(version(db)).toBe(12);
+    expect(
+      db
+        .prepare("SELECT review_id, engine_id FROM game_reviews ORDER BY review_id")
+        .all()
+        .map((row) => ({ ...row }))
+    ).toStrictEqual([
+      { review_id: "blank", engine_id: null },
+      { review_id: "broken", engine_id: null },
+      { review_id: "none", engine_id: null },
+      { review_id: "number", engine_id: null },
+      { review_id: "sf", engine_id: "engine-1" }
+    ]);
   });
 });

@@ -15,6 +15,12 @@ import type {
 } from "@chaturanga/shared/types/engine";
 import { parseBestMove, parseInfoLine } from "@chaturanga/shared/engine/uci";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
+import {
+  MAIA3_DEFAULT_RATING,
+  Maia3UnavailableError,
+  type Maia3Evaluator
+} from "@chaturanga/shared/engine/maia3";
+import { START_FEN } from "@chaturanga/shared/chess/position";
 import { logger, errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions } from "./engine-config";
 import {
@@ -50,11 +56,38 @@ type LineWaiter = {
   reject: (error: Error) => void;
 };
 
+/**
+ * Throws for the Maia row: Maia 3 predicts human moves (engine games, reviews' human-move
+ * odds) and gives no engine evaluation, so it can't `use` (live analysis, a draw probe, a
+ * review's or position analysis's evaluation).
+ */
+export function assertUciEngine(config: EngineConfig, use: string): void {
+  if (config.runtime === "maia3")
+    throw new Error(
+      `Maia can't be used for ${use}: it predicts human moves. Choose an engine such as Stockfish.`
+    );
+}
+
 /** Throws when `config` can't be spawned as a native UCI process. */
 function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
   if (!config) throw new Error("Engine not found");
+  assertUciEngine(config, "analysis");
   if (!config.isAvailable) throw new Error("Engine binary is not available.");
 }
+
+/** What the engine test reports for the Maia row once Maia 3 has answered. */
+const MAIA3_IDENTITY = { name: "Maia 3", author: "CSSLab" } as const;
+
+export type EngineManagerOptions = {
+  /** Maia 3, for games against the Maia row and its engine test (maia/index.ts). */
+  maia3?: () => Maia3Evaluator;
+  /** Draws in [0, 1) for Maia's moves and thinking time (Math.random by default). */
+  random?: () => number;
+};
+
+const noMaia3 = (): Maia3Evaluator => {
+  throw new Maia3UnavailableError("Maia 3 isn't available.");
+};
 
 /** How long a stopped process gets to exit by itself (after quit and SIGTERM) before it's killed. */
 const EXIT_WAIT_MS = 2_000;
@@ -179,6 +212,14 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private supersedeListeners = new Set<() => void>();
   /** The exit of the last process shut down: a replacement starts only after it (lc0's network). */
   private lastExit: Promise<void> = Promise.resolve();
+  private readonly maia3: () => Maia3Evaluator;
+  private readonly random: () => number;
+
+  constructor(options: EngineManagerOptions = {}) {
+    super();
+    this.maia3 = options.maia3 ?? noMaia3;
+    this.random = options.random ?? Math.random;
+  }
 
   cancelReview(reviewId: string): void {
     if (this.activeReviewIds.has(reviewId)) {
@@ -212,9 +253,10 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     for (const reviewId of this.activeReviewIds) this.cancelReview(reviewId);
   }
 
-  /** Spawns the engine, waits for `uciok` and reports its id. */
+  /** Spawns the engine, waits for `uciok` and reports its id (Maia: loads it and asks it once). */
   async testEngine(idOrConfig: string | EngineConfig): Promise<EngineTestResult> {
     const config = typeof idOrConfig === "string" ? engineConfigForId(idOrConfig) : idOrConfig;
+    if (config?.runtime === "maia3") return this.testMaia3();
     try {
       assertSpawnable(config);
     } catch (error) {
@@ -266,8 +308,25 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
   }
 
-  /** Searches for the engine's move in an engine game. */
+  /**
+   * Warms Maia 3 (opens its host and loads the model, ~4 s the first time) with one position;
+   * its identity is CSSLab's model, not a UCI handshake.
+   */
+  private async testMaia3(): Promise<EngineTestResult> {
+    try {
+      await this.maia3().evaluate(
+        [{ fen: START_FEN, eloSelf: MAIA3_DEFAULT_RATING, eloOppo: MAIA3_DEFAULT_RATING }],
+        { priority: "game" }
+      );
+      return { ok: true, ...MAIA3_IDENTITY, isHumanPrediction: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  }
+
+  /** Searches for the engine's move in an engine game (Maia's: see `playMaia`). */
   start(input: StartEngineGameInput): Promise<void> {
+    if (engineConfigForId(input.engineId)?.runtime === "maia3") return this.playMaia(input);
     return this.search("game", input.engineId, input.searchId, (session) => {
       // A new game (or a position that doesn't continue the last one) resets the engine's state.
       if (!continuesGame(session.lastGame, input)) this.write("ucinewgame");
@@ -307,6 +366,46 @@ export class EngineManager extends EventEmitter<EngineEvents> {
         else this.write("go infinite");
       };
     });
+  }
+
+  /**
+   * Maia's move in an engine game, in turn with the UCI searches (a running one stops first; its
+   * process stays warm). Reported as a UCI engine's is: a `bestmove` event for the search, or an
+   * `error` event and a rejection. A newer request, a stop or a dispose cancels it (no event).
+   */
+  private playMaia(input: StartEngineGameInput): Promise<void> {
+    this.latestSearchId = input.searchId;
+    this.supersede();
+    this.clearIdleTimer();
+    const job = this.queue.then(() => this.runMaiaMove(input));
+    this.queue = job.catch(() => undefined);
+    return job;
+  }
+
+  private async runMaiaMove(input: StartEngineGameInput): Promise<void> {
+    const { engineId, searchId } = input;
+    const current = () => this.latestSearchId === searchId;
+    if (!current()) return;
+    await this.stopSearch();
+    const controller = new AbortController();
+    const cancel = () => controller.abort(new SupersededError());
+    this.supersedeListeners.add(cancel);
+    try {
+      if (!current()) return;
+      // Loaded with Maia's first move: the main bundle doesn't carry it until Maia is played.
+      const { playMaiaMove } = await import("../maia/game-move");
+      const move = await playMaiaMove(this.maia3(), input, {
+        signal: controller.signal,
+        random: this.random
+      });
+      if (current()) this.emit("bestmove", { engineId, searchId, move });
+    } catch (error) {
+      if (controller.signal.aborted || !current()) return;
+      this.emit("error", { engineId, searchId, message: errorMessage(error) });
+      throw error;
+    } finally {
+      this.supersedeListeners.delete(cancel);
+    }
   }
 
   /** Ends the running search (the process stays warm for the next one). */

@@ -8,6 +8,7 @@ import {
 import { emptyTabCounts } from "@chaturanga/shared/types/library";
 import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
 import { useChesscomStore } from "../../stores/chesscom-store";
+import { useGameStore } from "../../stores/game-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { cn } from "@/lib/utils";
 import { IconButton } from "@/components/ui/icon-button";
@@ -22,6 +23,7 @@ import {
   LoadMoreGamesButton,
   RecentGamesFilter
 } from "../play/recent-games-controls";
+import { engineHolder } from "../analysis/live-analysis";
 import { GAME_SEARCH_DEBOUNCE_MS, userSide } from "../play/recent-games";
 import { useSavedGameActions } from "./saved-game-actions";
 import {
@@ -193,6 +195,10 @@ export function RecentGames({
     { pending: games.isPending, failed: games.isError }
   );
   const actions = useSavedGameActions();
+  // The engine game being played: it can't be deleted until it ends.
+  const playingId = useGameStore((state) =>
+    engineHolder(state, false) === "engine-game" ? state.gameId : null
+  );
   const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
   const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
   const skeletonRows = view.ready && !needle ? Math.min(Math.max(applied.total, 1), 7) : 7;
@@ -270,6 +276,7 @@ export function RecentGames({
                 orientation={userSide(game, [lichessUsername, chesscomUsername])}
                 repertoiresAvailable={actions.repertoiresAvailable}
                 deleting={actions.removing}
+                playing={game.id === playingId}
                 onOpen={onOpenGame}
                 onAddToRepertoire={(id) => void actions.addToRepertoire(id)}
                 onDelete={(id) => void actions.remove(id)}
@@ -309,6 +316,7 @@ function GameRow({
   orientation,
   repertoiresAvailable,
   deleting,
+  playing,
   onOpen,
   onAddToRepertoire,
   onDelete
@@ -317,6 +325,8 @@ function GameRow({
   orientation: Color;
   repertoiresAvailable: boolean;
   deleting: boolean;
+  /** The engine game being played: Delete waits until it ends. */
+  playing: boolean;
   onOpen: (id: string) => void;
   onAddToRepertoire: (id: string) => void;
   onDelete: (id: string) => void;
@@ -353,11 +363,11 @@ function GameRow({
         </span>
         <span className={dimmedUntilRowHover}>
           <IconButton
-            label="Delete saved game"
+            label={playing ? "Finish the game to delete it" : "Delete saved game"}
             icon={<Trash2 />}
             size="icon-xs"
             tooltipSide="left"
-            disabled={!window.chaturanga || deleting}
+            disabled={!window.chaturanga || deleting || playing}
             className="hover:bg-danger-soft hover:text-danger"
             onClick={() => onDelete(game.id)}
           />

@@ -1,0 +1,11 @@
+{
+  // The hidden Maia host page (src/maia-host) and the CSSLab engine code it runs, vendored
+  // unmodified (vendor/csslab-maia): a sandboxed web page, so DOM types and no Node types.
+  // Paths (CSSLab's `src/types` mapped to a local stand-in) come from tsconfig.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/maia-host", "vendor/csslab-maia/src/lib/engine"]
+}

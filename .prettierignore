@@ -11,3 +11,5 @@ scripts/piece-svg-sources
 **/coverage/
 **/test-results/
 **/playwright-report/
+# CSSLab's Maia 3 code, vendored byte for byte (see its PROVENANCE.md): formatting would edit it.
+apps/desktop/vendor/

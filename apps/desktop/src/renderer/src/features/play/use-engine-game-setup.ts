@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { positionStatus } from "@/lib/position-status";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
@@ -15,6 +15,13 @@ import { useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store
 import { ENGINE_MOVE_TIME_MS } from "../../app/rejoin-saved-game";
 import { holdUntilChanged } from "../../app/useGameAutosave";
 import { gameFromInitialSession } from "../repertoire/handoffs";
+import {
+  clockTag,
+  engineGameHeaders,
+  isMaiaEngine,
+  playMaiaRating,
+  yourRating
+} from "./engine-game";
 import { engineClockMs, engineClockPreset, type EngineClockPresetId } from "./time-control";
 
 export type EngineGameSetup = ReturnType<typeof useEngineGameSetup>;
@@ -36,26 +43,21 @@ function pickEngine(
   );
 }
 
-/** A new engine game's headers: a casual game against the engine, at its clock. */
-function engineGameHeaders(
-  engine: EngineConfig,
-  engineColor: Color,
-  clock: ReturnType<typeof engineClockMs>
+/**
+ * The rating Maia plays at (Play settings' choice, else yours for the clock's mode), and with
+ * yours what a game against it is started with when it is the engine (`game`, else null).
+ */
+function maiaSetup(
+  settings: Pick<AppSettings, "playMaiaRating" | "playerRatings"> | undefined,
+  engine: EngineConfig | undefined,
+  timeControl: string
 ) {
-  const name = engineDisplayName(engine.name);
-  return {
-    event: "Casual game",
-    site: "?",
-    result: "*",
-    timeControl: clock
-      ? `${Math.floor(clock.initialMs / 1000)}+${Math.floor(clock.incrementMs / 1000)}`
-      : "-",
-    // Named sides: the titlebar, board labels and saved game keep the engine's name after the game ends.
-    white: engineColor === "white" ? name : "You",
-    black: engineColor === "black" ? name : "You",
-    // Which engine it was, so rejoining finds it again even when two share a name.
-    engineId: engine.id
-  };
+  const ratings = settings?.playerRatings;
+  const choice = playMaiaRating({ saved: settings?.playMaiaRating, ratings, timeControl });
+  const game = isMaiaEngine(engine)
+    ? { rating: choice, yourRating: yourRating(ratings, timeControl) }
+    : null;
+  return { choice, rating: game ? choice : null, game };
 }
 
 /**
@@ -85,6 +87,8 @@ export function useEngineGameSetup({
   const humanColor: Color = initialSession?.playerColor ?? draft.humanColor ?? orientation;
   const clockPreset = engineClockPreset(draft.clockPreset);
   const custom = { minutes: draft.customMinutes, incrementSec: draft.customIncrementSec };
+  const timeControl = clockTag(engineClockMs(clockPreset, custom));
+  const maia = maiaSetup(settings.data, selectedEngine, timeControl);
   // The position on the board, if a game can start from it (not the start position, not over).
   const boardPosition = useGameStore(
     useShallow((state) => {
@@ -125,7 +129,14 @@ export function useEngineGameSetup({
     } else game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");
-    game.patchHeaders(engineGameHeaders(engine, engineColor, clock));
+    game.patchHeaders(
+      engineGameHeaders({
+        engine,
+        engineColor,
+        clock,
+        maia: maia.game
+      })
+    );
     game.setMode("engine");
     game.setEngineSide(engineColor);
     // With a clock the engine plays to it; without one it thinks a fixed time per move.
@@ -160,6 +171,10 @@ export function useEngineGameSetup({
     engines: list,
     enginesLoaded: engines.isSuccess || engines.isError,
     selectedEngine: selectedEngine ?? null,
+    /** Maia's rating when Maia is the engine (its name shows it: "Maia 1500"), else null. */
+    maiaRating: maia.rating,
+    /** The rating Maia would play at (what Play settings' rating shows). */
+    maiaRatingChoice: maia.choice,
     canStart: Boolean(selectedEngine?.isAvailable) && !onlineGameLive,
     humanColor,
     /** Swap: the other colour (locked while a repertoire handoff sets it). */

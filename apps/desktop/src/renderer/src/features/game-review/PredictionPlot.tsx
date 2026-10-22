@@ -1,5 +1,4 @@
 import { useId, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/constants";
 import { cn } from "@/lib/utils";
 import { FigurineSan } from "../analysis/EngineLines";
 import {
@@ -17,7 +16,8 @@ import {
 import { useWidth } from "./use-review-chart-sizing";
 
 /** The chart's height; its width is the box's. */
-const CHART_HEIGHT = 140;
+export const PREDICTION_PLOT_HEIGHT = 140;
+const CHART_HEIGHT = PREDICTION_PLOT_HEIGHT;
 
 /*
  * Inline weights: the panel is a `.cg-wrap` (for figurines), whose board rules set every SVG
@@ -44,27 +44,36 @@ export function LegendMarker({ role, color }: { role: PredictionRole; color: str
 }
 
 /**
- * The lines over the rating levels, sized to the box. Pointing at the plot picks the nearest level
+ * The lines over the ratings, sized to the box. Pointing at the plot picks the nearest rating
  * (its band, a guide and bigger dots) with a tooltip of every line's value there; focused, it is a
- * slider over the levels (← → Home End, Escape hides the tooltip) read out as those values.
+ * slider over the ratings (← → Home End, Escape hides the tooltip) read out as those values.
  * `emphasis`: a line the legend points at, the others dimmed.
  */
 export function PredictionPlot({
   lines,
-  userBucket,
+  ratings,
+  marked,
+  markLabel,
   colors,
   emphasis
 }: {
   lines: readonly PredictionLine[];
-  userBucket: MaiaRatingBucket;
+  /** The ratings the lines' values are at, ascending. */
+  ratings: readonly number[];
+  /** The rating shaded (the mover's, or the user's level). */
+  marked: number;
+  /** The word over the shaded rating ("You"). */
+  markLabel: string;
   colors: Record<PredictionRole, string>;
   emphasis: PredictionRole | null;
 }) {
   const [measure, width] = useWidth();
   const [active, setActive] = useState<number | null>(null);
-  const userIndex = Math.max(0, MAIA_BUCKETS.indexOf(userBucket));
-  const chart = width ? predictionChart(lines, userBucket, { width, height: CHART_HEIGHT }) : null;
-  const value = active ?? userIndex;
+  const markedIndex = Math.max(0, ratings.indexOf(marked));
+  const chart = width
+    ? predictionChart(lines, ratings, marked, { width, height: CHART_HEIGHT })
+    : null;
+  const value = active ?? markedIndex;
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!chart) return;
@@ -73,7 +82,7 @@ export function PredictionPlot({
     setActive(nearestColumn(event.clientX - box.left, xs));
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = columnForKey(event.key, active, MAIA_BUCKETS.length, userIndex);
+    const next = columnForKey(event.key, active, ratings.length, markedIndex);
     // Escape with nothing shown is left to whatever holds the panel.
     if (next === undefined || (next === null && active === null)) return;
     event.preventDefault();
@@ -88,21 +97,27 @@ export function PredictionPlot({
         aria-label="Human prediction by rating"
         aria-orientation="horizontal"
         aria-valuemin={0}
-        aria-valuemax={MAIA_BUCKETS.length - 1}
+        aria-valuemax={ratings.length - 1}
         aria-valuenow={value}
-        aria-valuetext={columnText(lines, value)}
+        aria-valuetext={columnText(lines, ratings, value)}
         onPointerMove={onPointerMove}
         // Focused, the slider keeps its column (the arrow keys go on from it); blur clears it.
         onPointerLeave={(event) => {
           if (document.activeElement !== event.currentTarget) setActive(null);
         }}
-        onFocus={() => setActive((current) => current ?? userIndex)}
+        onFocus={() => setActive((current) => current ?? markedIndex)}
         onBlur={() => setActive(null)}
         onKeyDown={onKeyDown}
         className="h-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         {chart ? (
-          <PlotSvg chart={chart} colors={colors} emphasis={emphasis} active={active} />
+          <PlotSvg
+            chart={chart}
+            markLabel={markLabel}
+            colors={colors}
+            emphasis={emphasis}
+            active={active}
+          />
         ) : null}
       </div>
       {chart && active !== null ? (
@@ -114,11 +129,13 @@ export function PredictionPlot({
 
 function PlotSvg({
   chart,
+  markLabel,
   colors,
   emphasis,
   active
 }: {
   chart: PredictionChart;
+  markLabel: string;
   colors: Record<PredictionRole, string>;
   emphasis: PredictionRole | null;
   active: number | null;
@@ -128,7 +145,7 @@ function PlotSvg({
   const dimmed = (role: PredictionRole) => (emphasis && emphasis !== role ? 0.22 : 1);
   return (
     <svg width={chart.width} height={chart.height} className="block font-mono" aria-hidden>
-      <UserBand chart={chart} />
+      <MarkBand chart={chart} label={markLabel} />
       {active === null ? null : <HoverColumn chart={chart} index={active} />}
       <Grid chart={chart} />
       {chart.series.map((series) => (
@@ -152,11 +169,11 @@ function PlotSvg({
           />
           {series.points.map((point, index) => (
             <Marker
-              key={MAIA_BUCKETS[index]}
+              key={chart.xTicks[index]?.rating ?? index}
               x={point.x}
               y={point.y}
               role={series.role}
-              large={index === active}
+              scale={(index === active ? 1.4 : 1) * (chart.dense ? 0.6 : 1)}
             />
           ))}
         </g>
@@ -178,33 +195,33 @@ function PlotSvg({
   );
 }
 
-/** The user's level: a rounded band labelled "You". */
-function UserBand({ chart }: { chart: PredictionChart }) {
-  if (!chart.userBand) return null;
+/** The marked rating: a rounded band labelled `label` ("You"). */
+function MarkBand({ chart, label }: { chart: PredictionChart; label: string }) {
+  if (!chart.markBand) return null;
   return (
     <g>
       <rect
-        x={chart.userBand.x}
+        x={chart.markBand.x}
         y={chart.plot.top - 6}
-        width={chart.userBand.width}
+        width={chart.markBand.width}
         height={chart.plot.bottom - chart.plot.top + 12}
-        rx={6}
+        rx={Math.min(6, chart.markBand.width / 2)}
         className="fill-fg/[0.06]"
       />
       <text
-        x={chart.userBand.x + chart.userBand.width / 2}
+        x={chart.markBand.x + chart.markBand.width / 2}
         y={chart.plot.top - 9}
         textAnchor="middle"
         className="fill-fg-muted text-[10px]"
         style={TEXT_STYLE}
       >
-        You
+        {label}
       </text>
     </g>
   );
 }
 
-/** The pointed-at level: a faint square band and a guide down its middle. */
+/** The pointed-at rating: a faint square band and a guide down its middle. */
 function HoverColumn({ chart, index }: { chart: PredictionChart; index: number }) {
   const x = chart.xTicks[index]?.x ?? chart.plot.left;
   return (
@@ -228,7 +245,7 @@ function HoverColumn({ chart, index }: { chart: PredictionChart; index: number }
   );
 }
 
-/** The dashed grid, the % axis and the rating levels (the user's in bold). */
+/** The dashed grid, the % axis and the ratings (the marked one in bold; some unwritten when dense). */
 function Grid({ chart }: { chart: PredictionChart }) {
   return (
     <g>
@@ -263,15 +280,17 @@ function Grid({ chart }: { chart: PredictionChart }) {
             strokeDasharray="3 3"
             className="stroke-line"
           />
-          <text
-            x={tick.x}
-            y={chart.height - 6}
-            textAnchor="middle"
-            className={tick.user ? "fill-fg text-[10.5px]" : "fill-fg-subtle text-[10.5px]"}
-            style={tick.user ? LABEL_STYLE : TEXT_STYLE}
-          >
-            {tick.rating}
-          </text>
+          {tick.label ? (
+            <text
+              x={tick.x}
+              y={chart.height - 6}
+              textAnchor="middle"
+              className={tick.marked ? "fill-fg text-[10.5px]" : "fill-fg-subtle text-[10.5px]"}
+              style={tick.marked ? LABEL_STYLE : TEXT_STYLE}
+            >
+              {tick.rating}
+            </text>
+          ) : null}
         </g>
       ))}
     </g>
@@ -281,20 +300,19 @@ function Grid({ chart }: { chart: PredictionChart }) {
 /**
  * A point of a line, ringed in the box's colour so crossing lines stay apart: a diamond for the
  * move played, a dot for the best (drawn last, so it shows inside a diamond it meets), a ring for
- * Maia's pick. `large` at the pointed-at level.
+ * Maia's pick. `scale`: larger at the pointed-at rating, smaller where the points crowd.
  */
 function Marker({
   x,
   y,
   role,
-  large
+  scale
 }: {
   x: number;
   y: number;
   role: PredictionRole;
-  large: boolean;
+  scale: number;
 }) {
-  const scale = large ? 1.4 : 1;
   if (role === "maia")
     return (
       <circle
@@ -323,8 +341,8 @@ function Marker({
 }
 
 /**
- * The pointed-at level's values, most likely first, in the Winning chances tooltip's look: beside
- * the level, flipped to its left in the plot's right half so it stays in the panel.
+ * The pointed-at rating's values, most likely first, in the Winning chances tooltip's look: beside
+ * the rating, flipped to its left in the plot's right half so it stays in the panel.
  */
 function ColumnTooltip({
   chart,
@@ -345,7 +363,7 @@ function ColumnTooltip({
       className="pointer-events-none absolute top-1 z-10 grid gap-0.5 rounded-lg border border-line bg-surface-raised px-2 py-1.5 text-2xs text-fg-muted shadow-popover"
       style={{ left: x, transform: left ? "translateX(calc(-100% - 12px))" : "translateX(12px)" }}
     >
-      <p className="font-mono text-xs text-fg-secondary">{MAIA_BUCKETS[index]}</p>
+      <p className="font-mono text-xs text-fg-secondary">{chart.xTicks[index]?.rating}</p>
       {columnValues(lines, index).map((row) => (
         <p key={row.role} className="flex items-center gap-1.5 whitespace-nowrap">
           <LegendMarker role={row.role} color={colors[row.role]} />
