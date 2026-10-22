@@ -261,7 +261,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await page.mouse.up();
   await expect
     .poll(async () => Number(await splitter(page).getAttribute("aria-valuenow")))
-    .toBeGreaterThanOrEqual(Math.min(initial + 60, max));
+    .toBeGreaterThanOrEqual(Math.min(initial + 60, Math.floor(max)));
   await splitter(page).dblclick();
   await expect(splitter(page)).toHaveAttribute("aria-valuenow", String(initial));
   // ↓ lowers it (↑ may have no room left on a small screen).
