@@ -131,9 +131,45 @@ describe("book service", () => {
       pagesAdded: 0
     });
     await expect(create(books)).resolves.toMatchObject({ id: created.id });
+    expect(created).toMatchObject({ sha256: SHA, missingPageIndexes: [0, 1, 2, 3] });
     await expect(
       books.create({ sourceName: "x.pdf", pageCount: 9, metadataTitle: "Own title", sha256: SHA })
     ).resolves.toMatchObject({ title: "Own title", pageCount: 9 });
+  });
+
+  it("names the pages still missing, so an interrupted upload sends only those", async () => {
+    const { books } = service();
+    const { id } = await create(books);
+    await books.addPage({ bookId: id, pageIndex: 0, bytes: page(0) });
+    await books.addPage({ bookId: id, pageIndex: 2, bytes: page(2) });
+    await expect(create(books)).resolves.toMatchObject({
+      id,
+      status: "adding-pages",
+      pagesAdded: 2,
+      missingPageIndexes: [1, 3]
+    });
+  });
+
+  it("keeps a title the user chose, on a continued import and after the pages are read", async () => {
+    const { books } = service();
+    const { id } = await create(books);
+    await expect(
+      books.create({
+        sourceName: "Synthetic.pdf",
+        pageCount: 4,
+        metadataTitle: null,
+        sha256: SHA,
+        title: "My openings book"
+      })
+    ).resolves.toMatchObject({ id, title: "My openings book" });
+    await addAllPages(books, id);
+    await books.start(id);
+    await vi.waitFor(() => expect(books.get(id)?.status).toBe("done"));
+    // The outline read "Synthetic Openings"; the chosen title names the book and its repertoire.
+    expect(books.get(id)).toMatchObject({ title: "My openings book", author: "A. Writer" });
+    expect(getDb().prepare("SELECT name FROM repertoires").get()).toMatchObject({
+      name: "My openings book"
+    });
   });
 
   it("stores the pages, is ready with all of them, and refuses bytes that aren't an image", async () => {
@@ -167,6 +203,12 @@ describe("book service", () => {
 
     const pages = books.pages(book.repertoireId!)!;
     expect(pages).toMatchObject({ bookId: id, title: "Synthetic Openings" });
+    expect(pages.chapters).toStrictEqual(book.chapters);
+    expect(pages.chapters[0]).toMatchObject({
+      title: "Chapter A",
+      repertoireChapterId: expect.any(String),
+      report: expect.objectContaining({ moves: expect.any(Number) })
+    });
     expect(pages.pages.map(({ pageIndex, printedPage }) => [pageIndex, printedPage])).toStrictEqual(
       [
         [0, 1],

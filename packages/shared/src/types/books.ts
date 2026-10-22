@@ -72,9 +72,13 @@ export type BookSummary = {
   /** The side the book's repertoire is for (null until read). */
   color: RepertoireColor | null;
   sourceName: string;
+  /** SHA-256 of the PDF (hex): continuing an import checks the file picked again against it. */
+  sha256: string;
   pageCount: number;
   /** Pages stored so far. */
   pagesAdded: number;
+  /** The 0-based pages not stored yet (what continuing an interrupted `adding-pages` sends). */
+  missingPageIndexes: number[];
   status: BookStatus;
   /** The stage running, or the one it stopped at. */
   stage: BookStage | null;
@@ -126,6 +130,11 @@ export type CreateBookInput = {
   metadataTitle: string | null;
   /** SHA-256 of the PDF (hex): the same file again continues its import. */
   sha256: string;
+  /**
+   * The title the user chose (kept: reading the book's pages never replaces it); null or absent
+   * takes the one read from the pages.
+   */
+  title?: string | null;
 };
 
 /** One rendered page (WebP, PNG or JPEG bytes), 0-based. */
@@ -145,6 +154,8 @@ export type BookPages = {
   bookId: string;
   title: string;
   pages: BookPage[];
+  /** The book's chapters, with the repertoire chapter each became and how well it was rebuilt. */
+  chapters: BookChapterSummary[];
 };
 
 /** Most pages a book may have. */

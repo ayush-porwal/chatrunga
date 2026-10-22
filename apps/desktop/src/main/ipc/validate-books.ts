@@ -49,7 +49,8 @@ export function parseCreateBookInput(value: unknown): CreateBookInput {
         const text = asString(title, "metadata title", MAX_TITLE).trim();
         return text && !CONTROL_CHARS.test(text) ? text : null;
       }) ?? null,
-    sha256
+    sha256,
+    title: nullable(input.title, (title) => asLine(title, "title", MAX_TITLE)) ?? null
   };
 }
 

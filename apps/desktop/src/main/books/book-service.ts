@@ -52,15 +52,26 @@ export function createBookService(deps: BookServiceDeps) {
   const now = deps.now ?? Date.now;
   const running = new Map<string, { controller: AbortController; finished: Promise<unknown> }>();
 
+  /** The pages not stored yet (0-based). */
+  function missingPages(book: BookRecord): number[] {
+    const stored = new Set(deps.store.pageIndexes(book.id));
+    return Array.from({ length: book.pageCount }, (_, index) => index).filter(
+      (index) => !stored.has(index)
+    );
+  }
+
   function summary(book: BookRecord): BookSummary {
+    const missing = missingPages(book);
     return {
       id: book.id,
       title: book.title,
       author: book.author,
       color: book.color,
       sourceName: book.sourceName,
+      sha256: book.sha256,
       pageCount: book.pageCount,
-      pagesAdded: deps.store.pageCount(book.id),
+      pagesAdded: book.pageCount - missing.length,
+      missingPageIndexes: missing,
       status: book.status,
       stage: book.stage,
       error: book.error,
@@ -141,17 +152,25 @@ export function createBookService(deps: BookServiceDeps) {
 
     /**
      * A new book waiting for its pages, or the unfinished import of the same file (same contents
-     * and page count), which then continues where it stopped.
+     * and page count), which then continues where it stopped. A title the user chose is kept
+     * (the one read from the pages never replaces it), on a continued import too.
      */
     async create(input: CreateBookInput): Promise<BookSummary> {
+      const title = input.title ?? null;
       const existing = deps.store.unfinishedBySha256(input.sha256);
-      if (existing && existing.pageCount === input.pageCount) return summary(existing);
+      if (existing && existing.pageCount === input.pageCount) {
+        if (title !== null && (title !== existing.title || !existing.titleChosen)) {
+          deps.store.update(existing.id, { title, titleChosen: true }, now());
+        }
+        return summary(requireBook(existing.id));
+      }
       const models = await deps.models();
       const at = now();
       const id = nanoid();
       deps.store.insert({
         id,
-        title: input.metadataTitle ?? input.sourceName.replace(/\.pdf$/i, ""),
+        title: title ?? input.metadataTitle ?? input.sourceName.replace(/\.pdf$/i, ""),
+        titleChosen: title !== null,
         author: null,
         color: null,
         pageCount: input.pageCount,
@@ -217,7 +236,8 @@ export function createBookService(deps: BookServiceDeps) {
           printedPage: page.printedPage,
           src: deps.imageSrc(page.imageFile),
           ocrText: page.ocrText
-        }))
+        })),
+        chapters: deps.store.chapters(book.id)
       };
     },
 

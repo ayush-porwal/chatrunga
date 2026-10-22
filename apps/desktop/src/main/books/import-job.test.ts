@@ -32,6 +32,7 @@ function addBook(): void {
   store.insert({
     id: BOOK,
     title: "synthetic.pdf",
+    titleChosen: false,
     author: null,
     color: null,
     pageCount: PAGE_TEXT.length,

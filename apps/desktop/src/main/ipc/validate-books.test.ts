@@ -17,7 +17,16 @@ describe("books IPC inputs", () => {
         metadataTitle: "  ",
         sha256: SHA
       })
-    ).toStrictEqual({ sourceName: "book.pdf", pageCount: 3, metadataTitle: null, sha256: SHA });
+    ).toStrictEqual({
+      sourceName: "book.pdf",
+      pageCount: 3,
+      metadataTitle: null,
+      sha256: SHA,
+      title: null
+    });
+    expect(
+      parseCreateBookInput({ sourceName: "b.pdf", pageCount: 1, sha256: SHA, title: " Mine " })
+    ).toMatchObject({ title: "Mine" });
     const bytes = new Uint8Array([1, 2, 3]);
     expect(parseAddBookPageInput({ bookId: "b", pageIndex: 0, bytes })).toStrictEqual({
       bookId: "b",
@@ -31,6 +40,10 @@ describe("books IPC inputs", () => {
     [() => parseBookEstimateInput({ pageCount: 2.5 }), /page count/],
     [() => parseCreateBookInput({ sourceName: "a\nb", pageCount: 1, sha256: SHA }), /source name/],
     [() => parseCreateBookInput({ sourceName: "a", pageCount: 1, sha256: "xyz" }), /sha256/],
+    [
+      () => parseCreateBookInput({ sourceName: "a", pageCount: 1, sha256: SHA, title: " " }),
+      /title/
+    ],
     [() => parseAddBookPageInput({ bookId: "b", pageIndex: 0, bytes: [1, 2] }), /page bytes/],
     [
       () => parseAddBookPageInput({ bookId: "b", pageIndex: 0, bytes: new Uint8Array() }),

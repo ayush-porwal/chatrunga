@@ -317,6 +317,11 @@ describe("runMigrations", () => {
     expect({
       ...db.prepare("SELECT ocr_status, lines_status, lines_json FROM book_pages").get()
     }).toStrictEqual({ ocr_status: "pending", lines_status: "pending", lines_json: null });
+    // A title is the one read from the pages until the user chooses one.
+    expect({ ...db.prepare("SELECT title_chosen FROM books WHERE id = 'b'").get() }).toStrictEqual({
+      title_chosen: 0
+    });
+    expect(() => db.exec("UPDATE books SET title_chosen = 2")).toThrow(/CHECK constraint failed/);
     expect(() => db.exec("UPDATE books SET status = 'lost'")).toThrow(/CHECK constraint failed/);
 
     db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");

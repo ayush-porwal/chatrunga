@@ -25,6 +25,8 @@ import { parseStoredJson } from "../stored-json";
 export type BookRecord = {
   id: string;
   title: string;
+  /** The user chose the title: reading the book's pages keeps it. */
+  titleChosen: boolean;
   author: string | null;
   color: RepertoireColor | null;
   pageCount: number;
@@ -66,6 +68,7 @@ export type BookChapterRecord = {
 type BookRow = {
   id: string;
   title: string;
+  title_chosen: number;
   author: string | null;
   color: string | null;
   page_count: number;
@@ -118,6 +121,7 @@ function toBook(row: BookRow): BookRecord {
   return {
     id: row.id,
     title: row.title,
+    titleChosen: row.title_chosen === 1,
     author: row.author,
     color: row.color === "white" || row.color === "black" ? row.color : null,
     pageCount: row.page_count,
@@ -173,6 +177,7 @@ export type BookPatch = Partial<
   Pick<
     BookRecord,
     | "title"
+    | "titleChosen"
     | "author"
     | "color"
     | "printedPageOffset"
@@ -193,6 +198,7 @@ function patchColumns(patch: BookPatch): [string, SQLInputValue][] {
     patch.outline === undefined ? undefined : patch.outline && JSON.stringify(patch.outline);
   const columns: [string, SQLInputValue | undefined][] = [
     ["title", patch.title],
+    ["title_chosen", patch.titleChosen === undefined ? undefined : Number(patch.titleChosen)],
     ["author", patch.author],
     ["color", patch.color],
     ["printed_page_offset", patch.printedPageOffset],
@@ -216,11 +222,13 @@ export function createBookStore(db: () => DatabaseSync) {
   return {
     insert(book: Omit<BookRecord, "outline" | "repertoireId" | "costUsd" | "error" | "stage">) {
       sql.run(
-        `INSERT INTO books (id, title, author, color, page_count, printed_page_offset, source_name,
-          metadata_title, sha256, status, ocr_model, structure_model, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO books (id, title, title_chosen, author, color, page_count, printed_page_offset,
+          source_name, metadata_title, sha256, status, ocr_model, structure_model, created_at,
+          updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         book.id,
         book.title,
+        Number(book.titleChosen),
         book.author,
         book.color,
         book.pageCount,
@@ -293,6 +301,16 @@ export function createBookStore(db: () => DatabaseSync) {
         pageIndex,
         imageFile
       );
+    },
+
+    /** The 0-based pages stored so far, in order. */
+    pageIndexes(bookId: string): number[] {
+      return sql
+        .all<{ page_index: number }>(
+          "SELECT page_index FROM book_pages WHERE book_id = ? ORDER BY page_index",
+          bookId
+        )
+        .map((row) => row.page_index);
     },
 
     pageCount(bookId: string): number {

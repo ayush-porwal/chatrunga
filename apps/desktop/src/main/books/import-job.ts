@@ -235,7 +235,8 @@ class BookRun {
     const ranges = bookChapterRanges(outline, pages, this.book.pageCount);
     this.deps.store.setChapters(this.id, ranges);
     const patch = {
-      title: outline.title,
+      // A title the user chose stays.
+      title: this.book.titleChosen ? this.book.title : outline.title,
       author: outline.author,
       color: outline.color,
       printedPageOffset: outline.printedPageOffset,

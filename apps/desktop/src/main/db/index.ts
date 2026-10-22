@@ -446,13 +446,15 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       SET engine_id = NULLIF(trim(json_extract(review_json, '$.engineId')), '')
       WHERE json_valid(review_json) AND json_type(review_json, '$.engineId') = 'text'`);
   },
-  // 13: imported chess books (main/books): the book and its import's state, each page's image
-  // file, text as read and lines (kept so a resumed import pays for nothing twice), and its
-  // chapters with the repertoire chapter each became. A book goes with its repertoire.
+  // 13: imported chess books (main/books): the book and its import's state (a title the user
+  // chose is kept over the one read from its pages), each page's image file, text as read and
+  // lines (kept so a resumed import pays for nothing twice), and its chapters with the repertoire
+  // chapter each became. A book goes with its repertoire.
   (database) => {
     database.exec(`CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      title_chosen INTEGER NOT NULL DEFAULT 0 CHECK (title_chosen IN (0, 1)),
       author TEXT,
       color TEXT CHECK (color IN ('white', 'black')),
       page_count INTEGER NOT NULL,
