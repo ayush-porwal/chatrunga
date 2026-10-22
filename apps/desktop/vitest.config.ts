@@ -36,6 +36,7 @@ export default defineConfig({
         "src/main/engine/probe-eval.ts",
         "src/main/lichess/index.ts",
         "src/main/chesscom/index.ts",
+        "src/main/books/index.ts",
         "src/main/accounts.ts",
         "src/renderer/src/**/use*.ts",
         "src/renderer/src/**/use-*.ts",

@@ -42,6 +42,7 @@ import {
 } from "../repertoire/service";
 import { IMPORT_CANCELLED_REPLY } from "@chaturanga/shared/types/repertoire";
 import { ImportCancelledError } from "../repertoire/import-job";
+import { logger } from "../logger";
 import { asId } from "./fields";
 import {
   parseAddFromGameInput,
@@ -73,6 +74,16 @@ import {
   parseUpdateDecisionInput,
   parseUpdateRepertoireMetadataInput
 } from "./validate-repertoire";
+
+/**
+ * Deletes, in the background, the page images of books whose rows went with their repertoire (a
+ * removal, or a backup restore replacing it); run after the write committed.
+ */
+function sweepBookPages(): void {
+  import("../books")
+    .then((books) => books.sweepBookFiles())
+    .catch((error: unknown) => logger.error("books", "sweeping book pages failed:", error));
+}
 
 /**
  * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it.
@@ -154,9 +165,11 @@ export function registerRepertoireIpc(): void {
     const parsed = parseArchiveRepertoireInput(input);
     return withRepertoireWriteGate(() => archiveRepertoire(parsed));
   });
-  ipcMain.handle("repertoires:remove", (_event, input: unknown) => {
+  ipcMain.handle("repertoires:remove", async (_event, input: unknown) => {
     const parsed = parseRemoveRepertoireInput(input);
-    return withRepertoireWriteGate(() => removeRepertoire(parsed));
+    const removed = await withRepertoireWriteGate(() => removeRepertoire(parsed));
+    sweepBookPages();
+    return removed;
   });
   // A cancelled preview resolves with a marker the preload turns back into the rejection, so a
   // cancel (an expected outcome) isn't logged as a failed handler.
@@ -186,9 +199,12 @@ export function registerRepertoireIpc(): void {
       BrowserWindow.fromWebContents(event.sender)
     )
   );
-  ipcMain.handle("repertoires:restoreBackup", (_event, input: unknown) => {
+  ipcMain.handle("repertoires:restoreBackup", async (_event, input: unknown) => {
     const parsed = parseRestoreBackupInput(input);
-    return withRepertoireWriteGate(() => restoreBackup(parsed));
+    const restored = await withRepertoireWriteGate(() => restoreBackup(parsed));
+    // A replaced repertoire is deleted and inserted again: a book of it went with the delete.
+    if (parsed.selections.some((selection) => selection.mode === "replace")) sweepBookPages();
+    return restored;
   });
   ipcMain.handle("repertoires:refreshBackupPreview", (_event, jobId: unknown) =>
     refreshBackupPreview(asId(jobId, "jobId"))

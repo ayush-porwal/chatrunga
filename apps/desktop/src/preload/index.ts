@@ -4,6 +4,7 @@ import type {
   Unsubscribe,
   WindowGlassState
 } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { BookProgressEvent } from "@chaturanga/shared/types/books";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   IMPORT_CANCELLED_MESSAGE,
@@ -192,6 +193,20 @@ const api: ChaturangaApi = {
     choosePicture: () => ipcRenderer.invoke("profile:choosePicture"),
     removePicture: () => ipcRenderer.invoke("profile:removePicture"),
     onPictureChanged: subscribe<void>("profile:pictureChanged")
+  },
+  // Chess book import (main/books): page bytes go to main, the OpenRouter key never comes back.
+  books: {
+    estimate: (input) => ipcRenderer.invoke("books:estimate", input),
+    create: (input) => ipcRenderer.invoke("books:create", input),
+    addPage: (input) => ipcRenderer.invoke("books:addPage", input),
+    start: (bookId) => ipcRenderer.invoke("books:start", bookId),
+    resume: (bookId) => ipcRenderer.invoke("books:resume", bookId),
+    cancel: (bookId) => ipcRenderer.invoke("books:cancel", bookId),
+    get: (bookId) => ipcRenderer.invoke("books:get", bookId),
+    list: () => ipcRenderer.invoke("books:list"),
+    remove: (bookId) => ipcRenderer.invoke("books:remove", bookId),
+    getPages: (repertoireId) => ipcRenderer.invoke("books:getPages", repertoireId),
+    onProgress: subscribe<BookProgressEvent>("books:progress")
   },
   // Chess.com account and import (main/chesscom).
   chesscom: {

@@ -13,7 +13,7 @@ export function useOpenRouterSave() {
   const [saveState, setSaveState] = useState<OpenRouterSaveState>({ kind: "idle" });
 
   async function run(
-    input: { model?: string; apiKey?: string | null },
+    input: { model?: string; bookOcrModel?: string; apiKey?: string | null },
     savedMessage: string,
     failMessage: string
   ): Promise<boolean> {
@@ -43,11 +43,20 @@ export function useOpenRouterSave() {
     config,
     hasApiKey: Boolean(config.data?.hasApiKey),
     saveState,
-    /** Saves the model and, when non-blank, a new key. Resolves true on success. */
-    save: ({ model, apiKey }: { model?: string; apiKey?: string }) =>
+    /** Saves the models and, when non-blank, a new key. Resolves true on success. */
+    save: ({
+      model,
+      bookOcrModel,
+      apiKey
+    }: {
+      model?: string;
+      bookOcrModel?: string;
+      apiKey?: string;
+    }) =>
       run(
         {
           ...(model !== undefined ? { model } : {}),
+          ...(bookOcrModel !== undefined ? { bookOcrModel } : {}),
           ...(apiKey?.trim() ? { apiKey: apiKey.trim() } : {})
         },
         "Saved.",

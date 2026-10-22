@@ -3,9 +3,9 @@ import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
 import {
   analyticsRedactor,
-  generateOpenRouterCommentary,
-  parseUsage
+  generateOpenRouterCommentary
 } from "../commentary/openrouter-commentary";
+import { parseUsage } from "../commentary/openrouter-http";
 import { commentaryReporter } from "./commentary";
 import { makeService, telemetryDatabase } from "./__fixtures__/telemetry-fixtures";
 

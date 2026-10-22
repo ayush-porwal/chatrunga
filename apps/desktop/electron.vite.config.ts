@@ -1,9 +1,9 @@
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "electron-vite";
-import { build as viteBuild } from "vite";
+import { build as viteBuild, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -88,6 +88,38 @@ function buildMaiaHost() {
   };
 }
 
+/** PDF.js's JavaScript image decoders (JBIG2/CCITT and JPEG 2000; WebAssembly is off). */
+const PDFJS_DECODERS = ["jbig2_nowasm_fallback.js", "openjpeg_nowasm_fallback.js"];
+const pdfjsWasmDir = resolve(rootDir, "node_modules/pdfjs-dist/wasm");
+
+/**
+ * PDF.js loads its decoders by fixed name from the `wasmUrl` it is given
+ * (renderer features/books/pdfjs-loader.ts: `pdfjs/` beside the page). A build emits them there
+ * unhashed; the dev server serves them from the package.
+ */
+function pdfjsDecoders(): Plugin {
+  return {
+    name: "pdfjs-decoders",
+    configureServer(server) {
+      server.middlewares.use("/pdfjs", (request, response, next) => {
+        const name = (request.url ?? "").replace(/^\//, "").split("?")[0];
+        if (!PDFJS_DECODERS.includes(name)) return next();
+        response.setHeader("Content-Type", "text/javascript");
+        response.end(readFileSync(resolve(pdfjsWasmDir, name)));
+      });
+    },
+    generateBundle() {
+      for (const name of PDFJS_DECODERS) {
+        this.emitFile({
+          type: "asset",
+          fileName: `pdfjs/${name}`,
+          source: readFileSync(resolve(pdfjsWasmDir, name))
+        });
+      }
+    }
+  };
+}
+
 // Main and preload are fully self-contained bundles (only Node built-ins and
 // `electron` stay external), so the packaged app ships no node_modules and
 // every package lives in devDependencies.
@@ -144,7 +176,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(rootDir, "src/renderer"),
-    plugins: [react(), tailwindcss(), minifyIndexHtml()],
+    plugins: [react(), tailwindcss(), minifyIndexHtml(), pdfjsDecoders()],
     assetsInclude: ["**/*.css.gz"],
     build: {
       // electron-vite's renderer preset sets minify: false, so the shipped JS is the

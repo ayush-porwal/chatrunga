@@ -37,14 +37,6 @@ import { withMaia3Fixture } from "../maia/model-path";
 import { gameFingerprint, lichessGameId } from "../db/game-fingerprint";
 import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
-import {
-  UNREADABLE_API_KEY_ERROR,
-  explainPuzzleWithOpenRouter,
-  generateOpenRouterCommentary,
-  parseCommentaryPayloads,
-  parsePuzzleExplanationPayload,
-  reportUnsent
-} from "../commentary/openrouter-commentary";
 import { getLichessService } from "../lichess";
 import { registerBroadcastIpc } from "../broadcasts";
 import { getChesscomService } from "../chesscom";
@@ -161,6 +153,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerLichessIpc();
   registerChesscomIpc();
   registerProfileIpc();
+  registerBooksIpc();
   registerBroadcastIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
@@ -508,25 +501,32 @@ function registerLibraryIpc(): void {
 
 /**
  * OpenRouter BYOK bridge. The key is accepted once from the settings form,
- * encrypted by the main process, and never returned to the renderer.
+ * encrypted by the main process, and never returned to the renderer. The coach (its prompts,
+ * checks and payload schemas) loads with the first request, so the main bundle doesn't carry it.
  */
 function registerCommentaryIpc(): void {
+  const coach = () => import("../commentary/openrouter-commentary");
   ipcMain.handle("commentary:getOpenRouterConfig", () => getOpenRouterConfigStore().get());
   ipcMain.handle("commentary:setOpenRouterConfig", (_event, value: unknown) => {
     const input = asObject(value, "OpenRouter configuration");
     if (input.apiKey !== undefined && input.apiKey !== null && typeof input.apiKey !== "string") {
       throw new Error("Invalid OpenRouter API key");
     }
-    if (input.model !== undefined && typeof input.model !== "string")
-      throw new Error("Invalid OpenRouter model");
+    const model = (value: unknown) => {
+      if (value !== undefined && typeof value !== "string")
+        throw new Error("Invalid OpenRouter model");
+      return value;
+    };
     return getOpenRouterConfigStore().set({
-      model: input.model,
+      model: model(input.model),
+      bookOcrModel: model(input.bookOcrModel),
       apiKey: input.apiKey
     });
   });
   ipcMain.handle("commentary:generate", async (_event, input: unknown) => {
     const fields = isRecord(input) ? input : undefined;
-    const payloads = parseCommentaryPayloads(fields?.payloads);
+    const commentary = await coach();
+    const payloads = commentary.parseCommentaryPayloads(fields?.payloads);
     const store = getOpenRouterConfigStore();
     const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
     const telemetry = getTelemetry();
@@ -538,26 +538,33 @@ function registerCommentaryIpc(): void {
       : undefined;
     if (config.hasApiKey && !apiKey) {
       if (report)
-        for (const payload of payloads) reportUnsent(report, payload.game.ply, "unreadable_key");
-      return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
+        for (const payload of payloads)
+          commentary.reportUnsent(report, payload.game.ply, "unreadable_key");
+      return { commentary: [], error: commentary.UNREADABLE_API_KEY_ERROR };
     }
-    return generateOpenRouterCommentary(payloads, { apiKey, model: config.model, report });
+    return commentary.generateOpenRouterCommentary(payloads, {
+      apiKey,
+      model: config.model,
+      report
+    });
   });
   // A finished puzzle's explanation; the renderer cancels it when the user moves to another puzzle.
   const puzzleRequests = new Map<string, AbortController>();
   ipcMain.handle("commentary:explainPuzzle", async (_event, input: unknown) => {
     const fields = asObject(input, "puzzle explanation");
     const requestId = asId(fields.requestId, "request id");
-    const payload = parsePuzzleExplanationPayload(fields.payload);
+    // Registered before the coach loads, so a cancel sent meanwhile still reaches this request.
     const controller = new AbortController();
     puzzleRequests.get(requestId)?.abort();
     puzzleRequests.set(requestId, controller);
     try {
+      const commentary = await coach();
+      const payload = commentary.parsePuzzleExplanationPayload(fields.payload);
       const store = getOpenRouterConfigStore();
       const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
       if (config.hasApiKey && !apiKey)
-        return { explanation: null, error: UNREADABLE_API_KEY_ERROR };
-      return await explainPuzzleWithOpenRouter(payload, {
+        return { explanation: null, error: commentary.UNREADABLE_API_KEY_ERROR };
+      return await commentary.explainPuzzleWithOpenRouter(payload, {
         apiKey,
         model: config.model,
         signal: controller.signal
@@ -624,6 +631,26 @@ function registerProfileIpc(): void {
   ipcMain.handle("profile:removePicture", () =>
     profile().then((pictures) => pictures.removeProfilePicture())
   );
+}
+
+/**
+ * Chess book import (main/books), loaded with the first request: the renderer renders the PDF and
+ * sends its pages; main reads them with OpenRouter (the key stays here) and writes the repertoire.
+ */
+function registerBooksIpc(): void {
+  const books = () => import("../books");
+  ipcMain.handle("books:estimate", async (_e, input: unknown) =>
+    (await books()).estimateBook(input)
+  );
+  ipcMain.handle("books:create", async (_e, input: unknown) => (await books()).createBook(input));
+  ipcMain.handle("books:addPage", async (_e, input: unknown) => (await books()).addBookPage(input));
+  ipcMain.handle("books:start", async (_e, id: unknown) => (await books()).startBook(id));
+  ipcMain.handle("books:resume", async (_e, id: unknown) => (await books()).resumeBook(id));
+  ipcMain.handle("books:cancel", async (_e, id: unknown) => (await books()).cancelBook(id));
+  ipcMain.handle("books:get", async (_e, id: unknown) => (await books()).getBook(id));
+  ipcMain.handle("books:list", async () => (await books()).listBooks());
+  ipcMain.handle("books:remove", async (_e, id: unknown) => (await books()).removeBook(id));
+  ipcMain.handle("books:getPages", async (_e, id: unknown) => (await books()).bookPages(id));
 }
 
 /**

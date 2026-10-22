@@ -437,6 +437,20 @@ Merging matches root FEN/position identity and UCI paths, not SAN text. Existing
 
 Keep export consistent with a captured revision so edits during serialization cannot produce half-old content. Use a native save dialog, and do not overwrite a destination through an arbitrary renderer-supplied filesystem path.
 
+### Book import
+
+A chess book's PDF becomes a new repertoire, one opening chapter per chapter of the book, linked to its book (the link, not a tag, gives it the Book badge and tab; a copy of it has neither).
+
+**Pipeline.** The hub's New → Import book (PDF)… opens the PDF in the renderer (PDF.js, loaded only then), shows its title (editable), page count, the expected cost and time, and the two models that will read it; without an OpenRouter key it explains why one is needed and links to Settings → AI instead of starting. Start creates the book and sends each page, rendered at 300 dpi in grayscale as WebP, to main; then main runs the import on the user's key: each page is read by the vision model (the book OCR model, Claude Haiku 5.5 by default, thinking as it does by default), the first pages give the title, author, side and chapters, each chapter's pages are turned into lines by the structuring model (the AI model), illegal lines are repaired from the page image (twice at most) by root error (lines failing on the same move in the same position, as when a misread on a main line is copied into every sub-variation below it: one is repaired, shallowest error first, and its correction carried over to the others), and the merged chapters are written in one transaction. Sending pages runs outside the dialog and the hub, so leaving them never stops it; Cancel pauses (what was read is kept), Resume continues, Remove deletes the book and its pages. A quit while pages are being sent leaves the book waiting for them: Continue asks for the same file again (checked by its SHA-256) and sends only the missing pages. A quit during the import pauses it.
+
+**Progress.** Books not finished are rows above the repertoires: the stage (Saving pages, Reading pages, Finding chapters, Building chapter k of n, Repairing n errors (m lines), Creating repertoire), its progress, the cost so far and the actions. A failure shows its reason and Retry. A finished book is a normal repertoire row with a Book badge and a "… is ready" notice with Open.
+
+**Data.** Books, their pages (image file, text as read, lines) and chapters (pages, the repertoire chapter each became, a report of how it was rebuilt) are stored apart from the repertoire and go with it when it is deleted. A title the user chose is kept over the one read from the pages. Every move keeps the PDF page that first printed it as `[%page N]` in its comment, which survives PGN export and import but is never shown as text, and practice never shows it.
+
+**Study.** A repertoire from a book has a Book tab: the page of the selected move (the nearest page link on its path), turned page by page, labelled with the number printed on it, or the page's text as read. Moves that start a page carry a "p. N" chip that opens that page. Chapters shows the open chapter's report in one line (moves, lines that need a look, pages unread), unfolding to each issue with its page.
+
+**Cost.** Every request's charge (as OpenRouter reports it) is added up and shown while the import runs. The estimate before starting comes from the models' current prices (built-in prices when OpenRouter can't be reached) and measured token counts per page; anything already read is never paid for again when an import resumes. With Claude Haiku 5.5 reading and structuring, a scanned 350-page opening book costs about $2 (measured on one chapter: $0.12 for 22 pages).
+
 ## 11. Performance, resilience, and visual behavior
 
 The following are engineering targets to validate on a documented reference desktop and packaged build, not measured claims about the current application:

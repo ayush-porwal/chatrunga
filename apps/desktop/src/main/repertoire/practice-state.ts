@@ -8,6 +8,7 @@ import {
   type PracticeSessionSnapshot,
   type PracticeTotals
 } from "@chaturanga/shared/types/repertoire";
+import { stripBookPage } from "@chaturanga/shared/books/book-page";
 import { type ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import {
   scheduleAfterOutcome,
@@ -104,7 +105,8 @@ export function acceptedMoveComments(
   const comments: Record<string, string> = {};
   for (const id of lookup.childrenById.get(nodeId) ?? []) {
     const child = lookup.nodesById.get(id);
-    const comment = child?.comment?.trim();
+    // A book's page link isn't shown as text.
+    const comment = stripBookPage(child?.comment);
     if (!child?.uci || !comment) continue;
     const uci = normalizeUci(child.fenBefore, child.uci);
     if (accepted.includes(uci)) comments[uci] = comment;

@@ -400,6 +400,7 @@ export function useUpdateSettingMutation() {
 export function useOpenRouterConfigQuery() {
   return useQuery({
     queryKey: queryKeys.openRouter,
-    queryFn: () => api()?.commentary.getOpenRouterConfig() ?? { model: "", hasApiKey: false }
+    queryFn: () =>
+      api()?.commentary.getOpenRouterConfig() ?? { model: "", bookOcrModel: "", hasApiKey: false }
   });
 }

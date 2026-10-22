@@ -78,6 +78,20 @@ describe("repertoire repository (SQLite)", () => {
     expect(repertoireRepository.summary("r1", 10)?.firstChapterFen).toBe(e4);
   });
 
+  it("names the book a repertoire was imported from, by the book's link (not a tag)", () => {
+    repertoireRepository.insert({ ...record, tags: ["book"] });
+    expect(repertoireRepository.summary("r1", 10)?.bookId).toBeNull();
+    getDb()
+      .prepare(
+        `INSERT INTO books (id, title, page_count, source_name, sha256, status, ocr_model,
+          structure_model, repertoire_id, created_at, updated_at)
+        VALUES ('b1', 'Book', 1, 'b.pdf', '', 'done', 'm', 'm', 'r1', 1, 1)`
+      )
+      .run();
+    expect(repertoireRepository.list({}, 10).map((item) => item.bookId)).toStrictEqual(["b1"]);
+    expect(repertoireRepository.summary("r1", 10)?.bookId).toBe("b1");
+  });
+
   it("round-trips repertoires, chapters, decisions, progress, sessions and workspace", () => {
     repertoireRepository.insert(record);
     chapterRepository.upsert("r1", chapter, 5);

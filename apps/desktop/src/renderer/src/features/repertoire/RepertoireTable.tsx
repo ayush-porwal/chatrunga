@@ -138,6 +138,8 @@ const RepertoireRow = memo(function RepertoireRow({
 }) {
   const archived = item.archivedAt !== null;
   const actions = useMemo(() => actionsFor(item), [actionsFor, item]);
+  // Imported from a book (linked to it in main; a copy isn't): its badge says so.
+  const fromBook = item.bookId !== null;
   return (
     <li
       className={cn(
@@ -163,6 +165,7 @@ const RepertoireRow = memo(function RepertoireRow({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{item.name}</span>
+          {fromBook ? <Badge>Book</Badge> : null}
           {archived ? <Badge>Archived</Badge> : null}
         </span>
         {item.tags.length ? (

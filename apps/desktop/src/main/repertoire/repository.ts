@@ -54,6 +54,7 @@ type RepertoireSummaryRow = RepertoireRow & {
   due_count: number;
   last_studied_at: number | null;
   first_chapter_fen: string | null;
+  book_id: string | null;
 };
 
 type ChapterSummaryRow = {
@@ -106,7 +107,7 @@ type ProgressRow = {
 /** A repertoire's own columns (no aggregates). */
 export type RepertoireRecord = Omit<
   RepertoireSummary,
-  "chapterCount" | "decisionCount" | "dueCount" | "lastStudiedAt" | "firstChapterFen"
+  "chapterCount" | "decisionCount" | "dueCount" | "lastStudiedAt" | "firstChapterFen" | "bookId"
 >;
 
 /** A decision as stored, with the fingerprint of its effective set at the last reindex. */
@@ -188,7 +189,8 @@ function toSummary(row: RepertoireSummaryRow): RepertoireSummary {
     // Archived repertoires contribute no due cards (design §8.3).
     dueCount: row.archived_at === null ? row.due_count : 0,
     lastStudiedAt: row.last_studied_at || null,
-    firstChapterFen: row.first_chapter_fen
+    firstChapterFen: row.first_chapter_fen,
+    bookId: row.book_id
   };
 }
 
@@ -308,7 +310,9 @@ const SUMMARY_SELECT = `SELECT r.*,
     AS due_count,
   ${LAST_STUDIED_AT} AS last_studied_at,
   (SELECT c.root_fen FROM repertoire_chapters c WHERE c.repertoire_id = r.id
-    ORDER BY c.sort_order, c.created_at, c.id LIMIT 1) AS first_chapter_fen
+    ORDER BY c.sort_order, c.created_at, c.id LIMIT 1) AS first_chapter_fen,
+  (SELECT b.id FROM books b WHERE b.repertoire_id = r.id ORDER BY b.created_at DESC LIMIT 1)
+    AS book_id
   FROM repertoires r`;
 
 const CHAPTER_SUMMARY_COLUMNS = `c.id, c.repertoire_id, c.title, c.sort_order, c.kind, c.enabled,

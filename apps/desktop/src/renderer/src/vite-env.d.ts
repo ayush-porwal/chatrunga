@@ -10,6 +10,11 @@ declare module "*.webp" {
   export default src;
 }
 
+declare module "*.mjs?url" {
+  const src: string;
+  export default src;
+}
+
 declare module "*.css.gz?url" {
   const src: string;
   export default src;

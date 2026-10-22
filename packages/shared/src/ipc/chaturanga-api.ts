@@ -4,6 +4,15 @@ import type {
   TelemetryStatus
 } from "../types/telemetry";
 import type {
+  AddBookPageInput,
+  BookEstimate,
+  BookEstimateInput,
+  BookPages,
+  BookProgressEvent,
+  BookSummary,
+  CreateBookInput
+} from "../types/books";
+import type {
   GameLibraryFacets,
   GameListPage,
   GameListQuery,
@@ -142,12 +151,16 @@ export type DialogFileFilter = { name: string; extensions: string[] };
 
 export type OpenRouterConfigSummary = {
   model: string;
+  /** The model that reads book pages (book import); the default when none was chosen. */
+  bookOcrModel: string;
   /** The renderer can display configuration state, but never receives the key. */
   hasApiKey: boolean;
 };
 
 export type SetOpenRouterConfigInput = {
   model?: string;
+  /** Blank or the default: follow the default. */
+  bookOcrModel?: string;
   /** `undefined` keeps the current key; `null` removes it. */
   apiKey?: string | null;
 };
@@ -465,6 +478,35 @@ export type ChaturangaApi = {
     removePicture(): Promise<YourPicture>;
     /** Your picture changed (chosen, removed, or an account's picture came or went). */
     onPictureChanged(callback: () => void): Unsubscribe;
+  };
+
+  /**
+   * Chess book import (main/books, types/books.ts). The renderer renders the PDF's pages and sends
+   * them (`create`, then `addPage` for each, then `start`); main reads them with OpenRouter (the
+   * key never crosses IPC) and writes a repertoire named after the book. Failures reject with a
+   * message to show.
+   */
+  books: {
+    /** Expected cost and time for a book of `pageCount` pages with the models in Settings. */
+    estimate(input: BookEstimateInput): Promise<BookEstimate>;
+    /** A new book waiting for its pages, or the unfinished import of the same PDF. */
+    create(input: CreateBookInput): Promise<BookSummary>;
+    /** Stores one rendered page (WebP, PNG or JPEG); the book is `ready` once all are in. */
+    addPage(input: AddBookPageInput): Promise<BookSummary>;
+    /** Starts reading a `ready` book; progress follows on `onProgress`. */
+    start(bookId: string): Promise<BookSummary>;
+    /** Continues a paused or failed import where it stopped (nothing read is paid for again). */
+    resume(bookId: string): Promise<BookSummary>;
+    /** Stops a running import (it pauses); resolves once it has stopped. */
+    cancel(bookId: string): Promise<BookSummary>;
+    get(bookId: string): Promise<BookSummary | null>;
+    /** Every book, newest first. */
+    list(): Promise<BookSummary[]>;
+    /** Deletes a book and its page images (its repertoire stays). */
+    remove(bookId: string): Promise<void>;
+    /** The book pages behind a repertoire imported from a book; null for any other. */
+    getPages(repertoireId: string): Promise<BookPages | null>;
+    onProgress(callback: (event: BookProgressEvent) => void): Unsubscribe;
   };
 
   /**

@@ -103,6 +103,7 @@ export function detailOf(overrides: Partial<RepertoireDetail> = {}): RepertoireD
     dueCount: 0,
     lastStudiedAt: null,
     firstChapterFen: null,
+    bookId: null,
     chapters: [],
     workspace: null,
     ...overrides

@@ -27,6 +27,38 @@ export function writePgn(dir: string, name: string, pgn: string): string {
   return file;
 }
 
+/**
+ * A two-page PDF titled `title` (its Info dictionary), each page a few filled rectangles (no
+ * fonts): enough for PDF.js to open, count and render it, and nothing a model could read.
+ */
+export function writeBookPdf(dir: string, title: string): string {
+  const content = (shade: number) =>
+    `${shade} g 40 300 220 30 re f 40 240 160 20 re f 40 200 190 20 re f`;
+  const streams = [content(0), content(0.3)];
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 5 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 6 0 R >>",
+    ...streams.map((stream) => `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`),
+    `<< /Title (${title}) >>`
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${objects.length} 0 R >>\n`;
+  pdf += `startxref\n${xref}\n%%EOF\n`;
+  const file = join(dir, "e2e-book.pdf");
+  writeFileSync(file, pdf, "latin1");
+  return file;
+}
+
 export const LICHESS_PUZZLES_URL = "https://database.lichess.org/lichess_db_puzzle.csv.zst";
 
 /** How many matches the app's quick scan reads from a puzzle file's start (QUICK_MATCHES). */

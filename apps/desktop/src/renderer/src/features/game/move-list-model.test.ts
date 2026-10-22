@@ -182,7 +182,7 @@ describe("mainlineItems", () => {
       case "variation":
         return `variation ${item.row.depth}: ${variationText(item.row.moves)}`;
       case "comment":
-        return `comment ${item.depth}${item.move ? ` ${item.move}` : ""}: ${item.node.comment}`;
+        return `comment ${item.depth}${item.move ? ` ${item.move}` : ""}:${item.page === null ? "" : ` [p. ${item.page}]`}${item.text === null ? "" : ` ${item.text}`}`;
     }
   };
 
@@ -207,6 +207,31 @@ describe("mainlineItems", () => {
       "variation 0: 2… d6 3. d4",
       "comment 0 2… d6: Philidor",
       "3: Bc4"
+    ]);
+  });
+
+  it("never shows a book page command as text; with book pages, a move starting a page gets its page", () => {
+    const { game: book } = importPgnText(
+      "1. e4 {[%page 3] Best by test} e5 2. Nf3 {[%page 4]} Nc6 (2… d6 {[%page 5] Philidor}) *"
+    );
+    const model = buildTreeModel(book.moveTree);
+    expect(mainlineItems(model, { showComments: true }).map(describeItem)).toStrictEqual([
+      "1: e4 e5",
+      "comment 0: Best by test",
+      // A page and nothing else: no row without pages.
+      "2: Nf3 Nc6",
+      "variation 0: 2… d6",
+      "comment 0 2… d6: Philidor"
+    ]);
+    expect(
+      mainlineItems(model, { showComments: true, bookPages: true }).map(describeItem)
+    ).toStrictEqual([
+      "1: e4 e5",
+      "comment 0: [p. 3] Best by test",
+      "2: Nf3 Nc6",
+      "comment 0: [p. 4]",
+      "variation 0: 2… d6",
+      "comment 0 2… d6: [p. 5] Philidor"
     ]);
   });
 

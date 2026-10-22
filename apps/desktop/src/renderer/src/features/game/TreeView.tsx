@@ -85,6 +85,17 @@ type TreeViewProps = {
   onMoveContextMenu?: (nodeId: string) => void;
   /** A class for a move's SAN by node id (Study: the kind of move), unless it carries a mark. */
   moveTones?: ReadonlyMap<string, string>;
+  /**
+   * With `showComments`: each move that starts a book page (`[%page N]`, a repertoire imported
+   * from a book) gets a chip with the page's label, which opens it.
+   */
+  bookPages?: BookPageLinks;
+};
+
+/** How book page chips read (`label`: "p. 41", `title`: the PDF page) and what they open. */
+export type BookPageLinks = {
+  label: (page: number) => { text: string; title: string };
+  onOpen: (nodeId: string, page: number) => void;
 };
 
 /**
@@ -116,7 +127,8 @@ export function TreeView({
   showComments = false,
   selectedActions,
   onMoveContextMenu,
-  moveTones
+  moveTones,
+  bookPages
 }: TreeViewProps) {
   const model = useMemo(() => buildTreeModel(nodes, ROOT_ID), [nodes]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -222,7 +234,12 @@ export function TreeView({
   const cell = (node: MoveNode | undefined) =>
     node ? <MoveCell {...cellProps(node)} /> : <span aria-hidden="true" />;
 
-  const items = mainlineItems(model, { bookEndNodeId, showsBestLine, showComments });
+  const items = mainlineItems(model, {
+    bookEndNodeId,
+    showsBestLine,
+    showComments,
+    bookPages: Boolean(bookPages)
+  });
 
   return (
     <div
@@ -309,9 +326,14 @@ export function TreeView({
               return (
                 <CommentRow
                   key={`comment-${item.node.id}`}
-                  text={item.node.comment ?? ""}
+                  text={item.text}
                   move={item.move}
                   depth={item.depth}
+                  page={
+                    item.page !== null && bookPages ? (
+                      <BookPageChip nodeId={item.node.id} page={item.page} links={bookPages} />
+                    ) : null
+                  }
                 />
               );
           }
@@ -348,8 +370,21 @@ function OpeningRow({ opening, gridClassName }: { opening: GameOpening; gridClas
 /** Comments indent as their variation rows do (LineRow), up to as many levels. */
 const MAX_COMMENT_INDENT = 4;
 
-/** A move's comment under its row, in the secondary text (named by its move where needed). */
-function CommentRow({ text, move, depth }: { text: string; move: string | null; depth: number }) {
+/**
+ * A move's comment under its row, in the secondary text (named by its move where needed), after
+ * the chip of the book page the move starts, if any.
+ */
+function CommentRow({
+  text,
+  move,
+  depth,
+  page
+}: {
+  text: string | null;
+  move: string | null;
+  depth: number;
+  page: ReactNode;
+}) {
   const indent = Math.min(depth, MAX_COMMENT_INDENT) * 0.875;
   return (
     <div className={cn("grid", ROW_GRID)}>
@@ -358,9 +393,34 @@ function CommentRow({ text, move, depth }: { text: string; move: string | null; 
         style={indent ? { marginInlineStart: `${indent}rem` } : undefined}
       >
         {move ? <span className="mr-1.5 font-mono text-fg-subtle">{move}</span> : null}
-        {text.trim()}
+        {page}
+        {text}
       </p>
     </div>
+  );
+}
+
+/** "p. 41": the book page a move starts; selects the move and shows the page. */
+function BookPageChip({
+  nodeId,
+  page,
+  links
+}: {
+  nodeId: string;
+  page: number;
+  links: BookPageLinks;
+}) {
+  const { text, title } = links.label(page);
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={`Show ${text} of the book`}
+      className="mr-1.5 inline-flex h-4.5 cursor-pointer items-center rounded-full border border-line px-1.5 align-[1px] font-mono text-2xs text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:border-line-strong hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+      onClick={() => links.onOpen(nodeId, page)}
+    >
+      {text}
+    </button>
   );
 }
 
