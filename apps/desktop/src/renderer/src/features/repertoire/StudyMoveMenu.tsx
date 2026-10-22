@@ -27,6 +27,7 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import {
   decisionDraftKey,
   deriveChoices,
+  moveKindPatch,
   type DecisionTextDraft,
   type MoveKind
 } from "./repertoire-model";
@@ -115,7 +116,7 @@ function moveItems(props: MoveMenuProps, preferAt: string | null): (MenuItem | f
     label,
     icon: checked ? CHECK : NO_CHECK,
     disabled: busy,
-    onSelect: () => onSetMeta(node.id, { edge })
+    onSelect: () => onSetMeta(node.id, moveKindPatch(meta, edge))
   });
   return [
     own

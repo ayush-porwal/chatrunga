@@ -189,6 +189,18 @@ export function moveKinds(
   return kinds;
 }
 
+/**
+ * The marks that make a move `edge` (the move menu's choice of kind): one of the practised kinds
+ * (your move, a covered reply) also includes the move's branch again where it was left out of
+ * practice, which would otherwise keep it study-only.
+ */
+export function moveKindPatch(
+  meta: Pick<RepertoireNodeMeta, "disabled">,
+  edge: RepertoireNodeMeta["edge"]
+): Partial<RepertoireNodeMeta> {
+  return edge !== "reference" && meta.disabled ? { edge, disabled: false } : { edge };
+}
+
 /* ------------------------------------------------------------------ positions and labels */
 
 /**

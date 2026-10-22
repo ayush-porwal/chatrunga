@@ -39,6 +39,7 @@ import {
   resumedHintText,
   revealText,
   sanOf,
+  moveKindPatch,
   moveKinds
 } from "./repertoire-model";
 
@@ -71,6 +72,24 @@ describe("moveKinds", () => {
     ).toStrictEqual(new Set(["reference"]));
     // As Black, White's moves are the covered replies.
     expect(moveKinds(chapter, buildChapterLookup(chapter), "black").get("w0")).toBe("covered");
+  });
+
+  it("makes a branch left out of practice yours or covered again when chosen as such", () => {
+    const disabled = { edge: "included", disabled: true } as const;
+    const kindAfter = (edge: "included" | "covered" | "reference", color: "white" | "black") => {
+      const chapter = chapterOf(sampleChapter(), {
+        w0: { ...disabled, ...moveKindPatch(disabled, edge) }
+      });
+      return moveKinds(chapter, buildChapterLookup(chapter), color).get("w0");
+    };
+    const left = chapterOf(sampleChapter(), { w0: disabled });
+    expect(moveKinds(left, buildChapterLookup(left), "white").get("w0")).toBe("reference");
+    expect(kindAfter("included", "white")).toBe("yours");
+    expect(kindAfter("covered", "black")).toBe("covered");
+    // Study only keeps it out of practice; a move not left out gets only its edge.
+    expect(kindAfter("reference", "white")).toBe("reference");
+    expect(moveKindPatch(disabled, "reference")).toStrictEqual({ edge: "reference" });
+    expect(moveKindPatch({}, "included")).toStrictEqual({ edge: "included" });
   });
 });
 
