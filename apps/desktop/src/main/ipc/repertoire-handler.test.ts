@@ -428,7 +428,19 @@ describe("registerRepertoireIpc", () => {
     await vi.waitFor(() => expect(sweepBookFiles).toHaveBeenCalledTimes(1));
   });
 
-  it("parses backup inputs and never accepts a filesystem path", () => {
+  it("deletes the page images of a book whose repertoire a backup restore replaced", async () => {
+    const restore = (mode: string) =>
+      invoke("restoreBackup", {
+        jobId: "j",
+        selections: [{ sourceId: "r1", mode, includeProgress: true, expectedRevision: 1 }]
+      });
+    sweepBookFiles.mockClear();
+    await expect(restore("new-copy")).resolves.toBe("restoreBackup");
+    await expect(restore("replace")).resolves.toBe("restoreBackup");
+    await vi.waitFor(() => expect(sweepBookFiles).toHaveBeenCalledTimes(1));
+  });
+
+  it("parses backup inputs and never accepts a filesystem path", async () => {
     calls.length = 0;
     expect(invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe("exportBackup");
     expect(calls.at(-1)?.[1][0]).toStrictEqual({ repertoireIds: undefined, includeProgress: true });
@@ -445,7 +457,7 @@ describe("registerRepertoireIpc", () => {
         { sourceId: "r2", mode: "new-copy", includeProgress: false, newName: "Copy" }
       ]
     };
-    expect(invoke("restoreBackup", restore)).toBe("restoreBackup");
+    await expect(invoke("restoreBackup", restore)).resolves.toBe("restoreBackup");
     // Every selection is rebuilt with all its fields; the ones not given are undefined.
     expect(calls.at(-1)?.[1][0]).toStrictEqual({
       jobId: "j",
@@ -471,21 +483,23 @@ describe("registerRepertoireIpc", () => {
     expect(() => invoke("previewBackupImport", { json: "x".repeat(32 * 1024 * 1024 + 1) })).toThrow(
       /larger than 32 MiB/
     );
-    expect(() =>
+    await expect(
       invoke("restoreBackup", {
         jobId: "j",
         selections: [{ sourceId: "r1", mode: "merge", includeProgress: true }]
       })
-    ).toThrow(/expected new-copy or replace/);
-    expect(() =>
+    ).rejects.toThrow(/expected new-copy or replace/);
+    await expect(
       invoke("restoreBackup", {
         jobId: "j",
         selections: [
           { sourceId: "r1", mode: "replace", includeProgress: true, expectedRevision: -1 }
         ]
       })
-    ).toThrow(/expectedRevision/);
-    expect(() => invoke("restoreBackup", { jobId: "j", selections: {} })).toThrow(/selections/);
+    ).rejects.toThrow(/expectedRevision/);
+    await expect(invoke("restoreBackup", { jobId: "j", selections: {} })).rejects.toThrow(
+      /selections/
+    );
     expect(() => invoke("cancelBackupImport", "")).toThrow(/jobId/);
     expect(() => invoke("refreshBackupPreview", 7)).toThrow(/jobId/);
   });

@@ -76,6 +76,16 @@ import {
 } from "./validate-repertoire";
 
 /**
+ * Deletes, in the background, the page images of books whose rows went with their repertoire (a
+ * removal, or a backup restore replacing it); run after the write committed.
+ */
+function sweepBookPages(): void {
+  import("../books")
+    .then((books) => books.sweepBookFiles())
+    .catch((error: unknown) => logger.error("books", "sweeping book pages failed:", error));
+}
+
+/**
  * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it.
  * Every write passes the service's write gate (`withRepertoireWriteGate`; `commitImport` takes it
  * itself), so it waits for a running import commit without blocking the main process.
@@ -158,10 +168,7 @@ export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:remove", async (_event, input: unknown) => {
     const parsed = parseRemoveRepertoireInput(input);
     const removed = await withRepertoireWriteGate(() => removeRepertoire(parsed));
-    // A book's rows went with its repertoire; its page images go now (in the background).
-    import("../books")
-      .then((books) => books.sweepBookFiles())
-      .catch((error: unknown) => logger.error("books", "sweeping book pages failed:", error));
+    sweepBookPages();
     return removed;
   });
   // A cancelled preview resolves with a marker the preload turns back into the rejection, so a
@@ -192,9 +199,12 @@ export function registerRepertoireIpc(): void {
       BrowserWindow.fromWebContents(event.sender)
     )
   );
-  ipcMain.handle("repertoires:restoreBackup", (_event, input: unknown) => {
+  ipcMain.handle("repertoires:restoreBackup", async (_event, input: unknown) => {
     const parsed = parseRestoreBackupInput(input);
-    return withRepertoireWriteGate(() => restoreBackup(parsed));
+    const restored = await withRepertoireWriteGate(() => restoreBackup(parsed));
+    // A replaced repertoire is deleted and inserted again: a book of it went with the delete.
+    if (parsed.selections.some((selection) => selection.mode === "replace")) sweepBookPages();
+    return restored;
   });
   ipcMain.handle("repertoires:refreshBackupPreview", (_event, jobId: unknown) =>
     refreshBackupPreview(asId(jobId, "jobId"))
