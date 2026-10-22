@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { GraduationCap, Play, RotateCcw } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { START_FEN } from "@chaturanga/shared/chess/position";
@@ -11,27 +11,25 @@ import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cn } from "@/lib/utils";
-import { useRepertoireQuery } from "../../queries/repertoire";
 import { BoardThumbnail } from "../settings/board-thumbnail";
-import { COLOR_LABELS, relativeDay, sortedChapters } from "./repertoire-chapters";
+import { COLOR_LABELS, relativeDay, type ResumePracticeTarget } from "./repertoire-chapters";
 
 /** One grid for the header and the rows: thumbnail, name, five facts, then the row's actions. */
 const columns =
   "grid grid-cols-[5.5rem_minmax(0,1.8fr)_repeat(5,minmax(0,1fr))_minmax(9.5rem,auto)] gap-x-4 pr-3 [&>*:nth-child(n+3)]:justify-self-start";
 
-/** How a row's Practice starts: a new session, or the unfinished one it resumes. */
-export type RowPractice = { kind: "practice" } | { kind: "resume"; description: string };
-
 /**
- * The hub's table (laid out as Play's Recent games): a board thumbnail, the name, colour,
+ * The hub's table (laid out as Play's Recent games): a board thumbnail (the first chapter's
+ * starting position, facing the repertoire's side), the name, colour,
  * chapters, positions (trainable decisions), due count and last studied. The whole row opens
- * Study; Practice (with the due count) and the ⋯ menu sit at its end, always visible.
+ * Study; Practice (with the due count) and the ⋯ menu sit at its end, always visible. Rows are
+ * memoised: give them stable `actionsFor`, `onStudy` and `onPractice`.
  */
 export function RepertoireTable({
   list,
   now,
   labelledBy,
-  practiceFor,
+  resume,
   actionsFor,
   onStudy,
   onPractice,
@@ -42,7 +40,9 @@ export function RepertoireTable({
   now: number;
   /** The card title's id (the list is named by it). */
   labelledBy: string;
-  practiceFor: (item: RepertoireSummary) => RowPractice;
+  /** The unfinished session its row's Practice resumes instead of starting a new one. */
+  resume: ResumePracticeTarget | null;
+  /** A row's ⋯ menu (a builder: each row asks for its own items). */
   actionsFor: (item: RepertoireSummary) => (MenuItem | false)[];
   onStudy: (repertoireId: string) => void;
   onPractice: (item: RepertoireSummary) => void;
@@ -94,8 +94,8 @@ export function RepertoireTable({
               key={item.id}
               item={item}
               now={now}
-              practice={practiceFor(item)}
-              actions={actionsFor(item)}
+              resumeDescription={resume?.repertoireId === item.id ? resume.description : null}
+              actionsFor={actionsFor}
               onStudy={onStudy}
               onPractice={onPractice}
             />
@@ -123,19 +123,21 @@ function SkeletonRow() {
 const RepertoireRow = memo(function RepertoireRow({
   item,
   now,
-  practice,
-  actions,
+  resumeDescription,
+  actionsFor,
   onStudy,
   onPractice
 }: {
   item: RepertoireSummary;
   now: number;
-  practice: RowPractice;
-  actions: (MenuItem | false)[];
+  /** Practice resumes the unfinished session this describes (null: it starts one). */
+  resumeDescription: string | null;
+  actionsFor: (item: RepertoireSummary) => (MenuItem | false)[];
   onStudy: (repertoireId: string) => void;
   onPractice: (item: RepertoireSummary) => void;
 }) {
   const archived = item.archivedAt !== null;
+  const actions = useMemo(() => actionsFor(item), [actionsFor, item]);
   return (
     <li
       className={cn(
@@ -146,7 +148,11 @@ const RepertoireRow = memo(function RepertoireRow({
       )}
     >
       <div className="relative h-full overflow-hidden group-last/row:rounded-bl-[11px]">
-        <RepertoireThumbnail id={item.id} color={item.color} />
+        <BoardThumbnail
+          fen={item.firstChapterFen ?? START_FEN}
+          orientation={item.color}
+          className="h-full w-auto [&>div]:rounded-none"
+        />
       </div>
       {/* The row's own action: the button covers the whole row (other controls sit above it). */}
       <button
@@ -179,7 +185,11 @@ const RepertoireRow = memo(function RepertoireRow({
       <span className="truncate text-xs text-fg-muted">{relativeDay(item.lastStudiedAt, now)}</span>
       <span className="relative z-10 flex items-center justify-end gap-1 justify-self-end">
         {archived ? null : (
-          <PracticeButton item={item} practice={practice} onPractice={onPractice} />
+          <PracticeButton
+            item={item}
+            resumeDescription={resumeDescription}
+            onPractice={onPractice}
+          />
         )}
         <OverflowMenu label={`${item.name} actions`} size="icon-xs" items={actions} />
       </span>
@@ -194,14 +204,14 @@ function Fact({ value }: { value: number }) {
 /** Practice (due cards first, then new ones), with the due count; Resume for an unfinished session. */
 function PracticeButton({
   item,
-  practice,
+  resumeDescription,
   onPractice
 }: {
   item: RepertoireSummary;
-  practice: RowPractice;
+  resumeDescription: string | null;
   onPractice: (item: RepertoireSummary) => void;
 }) {
-  const resuming = practice.kind === "resume";
+  const resuming = resumeDescription !== null;
   return (
     <Button
       type="button"
@@ -212,7 +222,7 @@ function PracticeButton({
           ? `Resume practising ${item.name}`
           : `Practice ${item.name}${item.dueCount ? `, ${item.dueCount} due` : ""}`
       }
-      title={resuming ? practice.description : "Due positions first, then new ones"}
+      title={resumeDescription ?? "Due positions first, then new ones"}
       onClick={() => onPractice(item)}
     >
       {resuming ? <Play /> : <GraduationCap />}
@@ -223,15 +233,5 @@ function PracticeButton({
         </span>
       ) : null}
     </Button>
-  );
-}
-
-/** The first chapter's starting position, facing the repertoire's side. */
-function RepertoireThumbnail({ id, color }: { id: string; color: RepertoireSummary["color"] }) {
-  const detail = useRepertoireQuery(id);
-  if (detail.isPending) return <Skeleton className="size-full rounded-none" />;
-  const fen = sortedChapters(detail.data?.chapters ?? []).at(0)?.rootFen ?? START_FEN;
-  return (
-    <BoardThumbnail fen={fen} orientation={color} className="h-full w-auto [&>div]:rounded-none" />
   );
 }

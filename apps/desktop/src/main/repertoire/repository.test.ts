@@ -62,6 +62,22 @@ describe("repertoire repository (SQLite)", () => {
     rmSync(userData, { recursive: true, force: true });
   });
 
+  it("summarises a repertoire with its first chapter's starting position, for the hub", () => {
+    repertoireRepository.insert(record);
+    expect(repertoireRepository.summary("r1", 10)?.firstChapterFen).toBeNull();
+    chapterRepository.upsert("r1", chapter, 5);
+    expect(repertoireRepository.list({}, 10).map((item) => item.firstChapterFen)).toStrictEqual([
+      START_FEN
+    ]);
+    const e4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    chapterRepository.upsert(
+      "r1",
+      { ...chapter, id: "c0", sortOrder: -1, rootFen: e4, tree: [rootNode(e4)] },
+      6
+    );
+    expect(repertoireRepository.summary("r1", 10)?.firstChapterFen).toBe(e4);
+  });
+
   it("round-trips repertoires, chapters, decisions, progress, sessions and workspace", () => {
     repertoireRepository.insert(record);
     chapterRepository.upsert("r1", chapter, 5);

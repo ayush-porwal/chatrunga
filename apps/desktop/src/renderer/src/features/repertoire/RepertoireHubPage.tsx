@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { useEventCallback } from "@/lib/use-event-callback";
 import { pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -41,7 +42,7 @@ import {
   type ResumePracticeTarget,
   type StudyTarget
 } from "./repertoire-chapters";
-import { RepertoireTable, type RowPractice } from "./RepertoireTable";
+import { RepertoireTable } from "./RepertoireTable";
 import { useHubFilters, useHubResume, useStudyFromHub } from "./useRepertoireHub";
 
 const TITLE_ID = "repertoire-hub-title";
@@ -70,8 +71,8 @@ export function RepertoireHubPage({
   const [now] = useState(() => Date.now());
   const list = useRepertoiresQuery(filters.listFilters);
   const resume = useHubResume();
-  const duplicate = useDuplicateRepertoireMutation();
-  const archive = useArchiveRepertoireMutation();
+  const { mutate: duplicateRepertoire } = useDuplicateRepertoireMutation();
+  const { mutate: archiveRepertoire } = useArchiveRepertoireMutation();
   const remove = useRemoveRepertoireMutation();
   const exportMutation = useExportRepertoireMutation();
   const [creating, setCreating] = useState<CreateIntent | null>(null);
@@ -85,7 +86,7 @@ export function RepertoireHubPage({
 
   const study = useStudyFromHub(onStudy, setNotice);
 
-  function exportPgn(item: RepertoireSummary) {
+  const exportPgn = useEventCallback((item: RepertoireSummary) => {
     setNotice(null);
     exportMutation.mutate(
       { repertoireId: item.id },
@@ -103,35 +104,34 @@ export function RepertoireHubPage({
         onError: (error) => fail(error, "Couldn't export the PGN.")
       }
     );
-  }
+  });
+  const duplicate = useEventCallback((item: RepertoireSummary) =>
+    duplicateRepertoire(
+      { id: item.id },
+      {
+        onSuccess: (copy) => setNotice({ tone: "success", text: `Created “${copy.name}”.` }),
+        onError: (error) => fail(error, "Couldn't duplicate it.")
+      }
+    )
+  );
+  const archive = useEventCallback((item: RepertoireSummary) =>
+    archiveRepertoire(
+      { id: item.id, archived: !item.archivedAt, expectedRevision: item.revision },
+      { onError: (error) => fail(error, "Couldn't change it.") }
+    )
+  );
 
-  /** A row's ⋯ menu: edit, import/export, duplicate, archive, delete. */
-  function actionsFor(item: RepertoireSummary): (MenuItem | false)[] {
-    return [
+  /** A row's ⋯ menu: edit, import/export, duplicate, archive, delete (stable, for the rows' memo). */
+  const actionsFor = useCallback(
+    (item: RepertoireSummary): (MenuItem | false)[] => [
       { label: "Edit repertoire", icon: <Pencil />, onSelect: () => setEditing(item) },
       { label: "Import PGN", icon: <Upload />, onSelect: () => setImportTarget(item.id) },
       { label: "Export PGN", icon: <Download />, onSelect: () => exportPgn(item) },
-      {
-        label: "Duplicate",
-        icon: <Copy />,
-        divided: true,
-        onSelect: () =>
-          duplicate.mutate(
-            { id: item.id },
-            {
-              onSuccess: (copy) => setNotice({ tone: "success", text: `Created “${copy.name}”.` }),
-              onError: (error) => fail(error, "Couldn't duplicate it.")
-            }
-          )
-      },
+      { label: "Duplicate", icon: <Copy />, divided: true, onSelect: () => duplicate(item) },
       {
         label: item.archivedAt ? "Unarchive" : "Archive",
         icon: item.archivedAt ? <ArchiveRestore /> : <Archive />,
-        onSelect: () =>
-          archive.mutate(
-            { id: item.id, archived: !item.archivedAt, expectedRevision: item.revision },
-            { onError: (error) => fail(error, "Couldn't change it.") }
-          )
+        onSelect: () => archive(item)
       },
       {
         label: "Delete",
@@ -140,19 +140,20 @@ export function RepertoireHubPage({
         divided: true,
         onSelect: () => setDeleting(item)
       }
-    ];
-  }
+    ],
+    [exportPgn, duplicate, archive]
+  );
+  const studyRow = useEventCallback((id: string) => void study(id));
+  const practiceRow = useEventCallback((item: RepertoireSummary) => {
+    if (resume?.repertoireId === item.id) onResume(resume);
+    else onPractice(item.id);
+  });
 
   /** The title bar's New menu: a blank repertoire, or one from a PGN. */
   const newItems: MenuItem[] = [
     { label: "Blank repertoire", icon: <Plus />, onSelect: () => setCreating("blank") },
     { label: "Import PGN", icon: <FilePlus2 />, onSelect: () => setCreating("import") }
   ];
-
-  const practiceFor = (item: RepertoireSummary): RowPractice =>
-    resume?.repertoireId === item.id
-      ? { kind: "resume", description: resume.description }
-      : { kind: "practice" };
 
   function confirmDelete(repertoire: RepertoireSummary) {
     remove.mutate(
@@ -182,13 +183,10 @@ export function RepertoireHubPage({
             list={list}
             now={now}
             labelledBy={TITLE_ID}
-            practiceFor={practiceFor}
+            resume={resume}
             actionsFor={actionsFor}
-            onStudy={(id) => void study(id)}
-            onPractice={(item) => {
-              if (resume?.repertoireId === item.id) onResume(resume);
-              else onPractice(item.id);
-            }}
+            onStudy={studyRow}
+            onPractice={practiceRow}
             empty={
               <HubEmptyState
                 archived={filters.archived}
