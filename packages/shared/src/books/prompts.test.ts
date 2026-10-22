@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { estimateBookImport, FALLBACK_MODEL_PRICES } from "./estimate";
-import { bookPageOf, stripBookPage, withBookPage } from "./book-page";
+import {
+  bookCommentProse,
+  bookPageOf,
+  editedBookComment,
+  stripBookPage,
+  withBookPage
+} from "./book-page";
 import {
   bookLinesMessages,
   bookOcrMessages,
@@ -99,5 +105,18 @@ describe("book page commands", () => {
     expect(withBookPage("[%page 3] A note.", 7)).toBe("[%page 7] A note.");
     expect(withBookPage(null, 7)).toBe("[%page 7]");
     expect(withBookPage("A note.", null)).toBe("A note.");
+  });
+
+  it("edits a comment's text as typed, keeping its page in front", () => {
+    expect(bookCommentProse("[%page 12] A note, ")).toBe("A note, ");
+    expect(bookCommentProse("[%page 12]")).toBe("");
+    expect(bookCommentProse(null)).toBe("");
+    expect(editedBookComment("[%page 12] A note.", "A note, then ")).toBe(
+      "[%page 12] A note, then "
+    );
+    // Cleared: the page stays (the move keeps its link to the book).
+    expect(editedBookComment("[%page 12] A note.", "  ")).toBe("[%page 12]");
+    expect(editedBookComment("Plain.", "Plain, ")).toBe("Plain, ");
+    expect(editedBookComment(null, "")).toBe("");
   });
 });

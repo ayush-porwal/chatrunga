@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { bookCommentProse, editedBookComment } from "@chaturanga/shared/books/book-page";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { RepertoireDecision } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,10 @@ export function StudyCommentDialog({
   onClose: () => void;
 }) {
   const id = useId();
-  const comment = node.comment ?? "";
+  // A book's page link stays on the move, out of the text (the tree shows it as a chip).
+  const comment = bookCommentProse(node.comment);
+  // The page link counts towards the saved comment's length.
+  const limit = MAX_COMMENT_LENGTH - (editedBookComment(node.comment, "x").length - 1);
   return (
     <Dialog
       size="sm"
@@ -50,8 +54,8 @@ export function StudyCommentDialog({
         label={node.san ? `Comment on ${node.san}` : "Comment on the starting position"}
         htmlFor={id}
         hint={
-          comment.length >= MAX_COMMENT_LENGTH
-            ? `Limit reached: a comment keeps up to ${MAX_COMMENT_LENGTH.toLocaleString()} characters`
+          comment.length >= limit
+            ? `Limit reached: a comment keeps up to ${limit.toLocaleString()} characters`
             : "Saved as you type"
         }
       >
@@ -60,9 +64,9 @@ export function StudyCommentDialog({
           autoFocus
           className="min-h-32 font-sans"
           placeholder="Plans, ideas, typical mistakes…"
-          maxLength={MAX_COMMENT_LENGTH}
+          maxLength={limit}
           value={comment}
-          onChange={(event) => onComment(event.target.value)}
+          onChange={(event) => onComment(editedBookComment(node.comment, event.target.value))}
         />
       </Field>
     </Dialog>

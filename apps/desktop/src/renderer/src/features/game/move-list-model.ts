@@ -1,3 +1,4 @@
+import { bookPageOf, stripBookPage } from "@chaturanga/shared/books/book-page";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { ERROR_MARKS, type MoveReview } from "@chaturanga/shared/types/engine";
 import { uciLineSteps, type LineStep } from "../game-review/review-utils";
@@ -155,8 +156,17 @@ export type MoveListItem =
   /**
    * A move's comment under the row holding the move (`showComments`). `move` names the move
    * ("4… Qg5") where the row holds others; null for the only commented move of a main-line pair.
+   * `text` is the comment without its book page command; `page` is that page (1-based PDF page)
+   * where the move starts a book page and pages are shown (`bookPages`), else null.
    */
-  | { kind: "comment"; node: MoveNode; depth: number; move: string | null };
+  | {
+      kind: "comment";
+      node: MoveNode;
+      depth: number;
+      move: string | null;
+      text: string | null;
+      page: number | null;
+    };
 
 /**
  * The main line's rows: each move pair (then its moves' comments, with `showComments`), then the
@@ -169,71 +179,98 @@ export function mainlineItems(
   {
     bookEndNodeId = null,
     showsBestLine = () => false,
-    showComments = false
+    showComments = false,
+    bookPages = false
   }: {
     bookEndNodeId?: string | null;
     /** Whether the move's BEST line is drawn (it has one and it is unfolded). */
     showsBestLine?: (node: MoveNode) => boolean;
     /** Each move's comment under the row holding the move. */
     showComments?: boolean;
+    /** With `showComments`: a move that starts a book page (`[%page N]`) gets a row for its page. */
+    bookPages?: boolean;
   } = {}
 ): MoveListItem[] {
   const items: MoveListItem[] = [];
+  const noteOf = (node: MoveNode | undefined) => commentNote(node, bookPages);
   for (const row of model.mainline) {
     items.push({ kind: "moves", number: row.number, white: row.white, black: row.black });
     const moves = [row.white, row.black].filter((node): node is MoveNode => Boolean(node));
-    if (showComments) items.push(...pairComments(row.number, row.white, row.black));
+    if (showComments) items.push(...pairComments(row.number, row.white, row.black, noteOf));
     const bookEnd = moves.find((node) => node.id === bookEndNodeId);
     if (bookEnd) items.push({ kind: "opening", afterNodeId: bookEnd.id });
     for (const node of moves) if (showsBestLine(node)) items.push({ kind: "best", node });
     for (const node of moves)
       for (const variation of model.variationsByMove.get(node.id) ?? []) {
         items.push({ kind: "variation", row: variation });
-        if (showComments) items.push(...variationComments(variation));
+        if (showComments) items.push(...variationComments(variation, noteOf));
       }
   }
   return items;
 }
 
-function hasComment(node: MoveNode | undefined): node is MoveNode {
-  return Boolean(node?.comment?.trim());
+type CommentNote = { text: string | null; page: number | null };
+
+/**
+ * What a move's comment row shows: its text without the book page command (which is never shown
+ * as text), and the page it starts where pages are shown. Null when there is nothing to show.
+ */
+function commentNote(node: MoveNode | undefined, bookPages: boolean): CommentNote | null {
+  const comment = node?.comment;
+  if (!comment) return null;
+  const text = stripBookPage(comment);
+  const page = bookPages ? bookPageOf(comment) : null;
+  return text || page !== null ? { text, page } : null;
 }
 
 /** A main-line pair's comments, White's then Black's (each named when both have one). */
 function pairComments(
   number: number,
   white: MoveNode | undefined,
-  black: MoveNode | undefined
+  black: MoveNode | undefined,
+  noteOf: (node: MoveNode | undefined) => CommentNote | null
 ): MoveListItem[] {
-  const both = hasComment(white) && hasComment(black);
+  const whiteNote = noteOf(white);
+  const blackNote = noteOf(black);
+  const both = Boolean(whiteNote && blackNote);
   const items: MoveListItem[] = [];
-  if (hasComment(white)) {
+  if (white && whiteNote) {
     items.push({
       kind: "comment",
       node: white,
       depth: 0,
-      move: both ? `${number}. ${white.san}` : null
+      move: both ? `${number}. ${white.san}` : null,
+      ...whiteNote
     });
   }
-  if (hasComment(black)) {
+  if (black && blackNote) {
     items.push({
       kind: "comment",
       node: black,
       depth: 0,
-      move: both ? `${number}… ${black.san}` : null
+      move: both ? `${number}… ${black.san}` : null,
+      ...blackNote
     });
   }
   return items;
 }
 
 /** A variation's comments, each named by its move (the line holds several). */
-function variationComments(row: VariationRow): MoveListItem[] {
-  return row.moves
-    .filter(({ node }) => hasComment(node))
-    .map(({ node, number }) => ({
-      kind: "comment" as const,
-      node,
-      depth: row.depth,
-      move: [number, node.san].filter(Boolean).join(" ")
-    }));
+function variationComments(
+  row: VariationRow,
+  noteOf: (node: MoveNode | undefined) => CommentNote | null
+): MoveListItem[] {
+  return row.moves.flatMap(({ node, number }) => {
+    const note = noteOf(node);
+    if (!note) return [];
+    return [
+      {
+        kind: "comment" as const,
+        node,
+        depth: row.depth,
+        move: [number, node.san].filter(Boolean).join(" "),
+        ...note
+      }
+    ];
+  });
 }

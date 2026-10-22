@@ -26,3 +26,18 @@ export function withBookPage(text: string | null, page: number | null): string |
   if (page === null) return prose;
   return prose ? `[%page ${page}] ${prose}` : `[%page ${page}]`;
 }
+
+/** The comment as the user edits it: everything but its page command, as typed. */
+export function bookCommentProse(comment: string | null | undefined): string {
+  return comment ? comment.replace(PAGE_COMMAND, "") : "";
+}
+
+/**
+ * The comment after the user edited its text to `edited` (as typed: never trimmed, so typing
+ * isn't disturbed): the page command `previous` had stays in front.
+ */
+export function editedBookComment(previous: string | null | undefined, edited: string): string {
+  const page = bookPageOf(previous);
+  if (page === null) return edited;
+  return edited.trim() ? `[%page ${page}] ${edited}` : `[%page ${page}]`;
+}

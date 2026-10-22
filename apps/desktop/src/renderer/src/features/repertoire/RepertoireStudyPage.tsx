@@ -1,7 +1,9 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { CircleAlert, GraduationCap, Loader2, Redo2, Settings, Undo2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { stripBookPage } from "@chaturanga/shared/books/book-page";
 import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import type { BookPages } from "@chaturanga/shared/types/books";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -16,6 +18,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { tabPanelProps } from "@/components/ui/segmented-control";
 import { isElectronMac } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { useBookPagesQuery } from "../../queries/books";
 import {
   useExportRepertoireMutation,
   useRepertoireChapterQuery,
@@ -26,6 +29,10 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import { useStudyEngineStore } from "../../stores/study-engine-store";
 import { DESTINATION_ICONS } from "../../app/destination-icons";
 import { BoardWorkspace } from "../board/BoardWorkspace";
+import { BookChapterReport } from "../books/BookChapterReport";
+import { bookPageAt, bookPageLabel, chapterFirstPage, shownBookPage } from "../books/book-model";
+import { StudyBookTab } from "../books/StudyBookTab";
+import type { BookPageLinks } from "../game/TreeView";
 import { WorkspaceTabBar, type WorkspaceTab } from "../board/WorkspaceTabBar";
 import { nextSortOrder, plural, sortedChapters, type StudyStage } from "./repertoire-chapters";
 import { moveKinds, type MoveKind } from "./repertoire-model";
@@ -57,13 +64,14 @@ import { useStudyCommands } from "./useStudyCommands";
 import { useStudyPosition } from "./useStudyPosition";
 import { useStudyTraining } from "./useStudyTraining";
 
-export type StudyTab = "moves" | "chapters";
+export type StudyTab = "moves" | "chapters" | "book";
 
-/** The panel's tabs, in order (a list, so another panel can join it). */
-function studyTabs(chapterCount: number): WorkspaceTab<StudyTab>[] {
+/** The panel's tabs, in order: Moves, Chapters, and Book for a repertoire imported from a book. */
+function studyTabs(chapterCount: number, book: boolean): WorkspaceTab<StudyTab>[] {
   return [
     { value: "moves", label: "Moves" },
-    { value: "chapters", label: "Chapters", count: chapterCount }
+    { value: "chapters", label: "Chapters", count: chapterCount },
+    ...(book ? [{ value: "book" as const, label: "Book" }] : [])
   ];
 }
 
@@ -74,7 +82,9 @@ const ExportIcon = DESTINATION_ICONS.exportPgn;
  * Repertoire study (design §5.2), laid out as Analysis: the chapter on a store-free board (both
  * sides playable while authoring; drawing on) and the panel's title-bar tabs, Moves (the engine
  * when Analyze is on, then the tree with its comments; the selected move's actions in one menu)
- * and Chapters (with the open chapter's linked games). Edits go to the workspace draft and
+ * and Chapters (with the open chapter's linked games), and Book for a repertoire imported from
+ * a book (the selected move's page; its moves' comments carry a chip for the page each starts,
+ * which opens it). Edits go to the workspace draft and
  * autosave against the repertoire revision; nothing passes through the game store. A chapter or
  * repertoire that no longer exists hands back to the hub (`onMissing`); any other failure to read
  * them keeps the page (and the draft) with the cause and Retry. The footer steps through the
@@ -217,6 +227,18 @@ export function RepertoireStudyPage({
   }, [detail.data, draft]);
 
   const decisionDrafts = useDecisionDraftCommands({ repertoireId, positionKey, decision });
+  const showBook = useCallback(() => onTabChange("book"), [onTabChange]);
+  const book = useStudyBook({
+    repertoireId,
+    chapterId,
+    detail: detail.data,
+    lookup,
+    node,
+    tab,
+    onSelectNode: selectNode,
+    onShowBook: showBook
+  });
+  const shownTab = book.shownTab;
 
   if (!desktop) {
     return (
@@ -266,7 +288,7 @@ export function RepertoireStudyPage({
   return (
     <BoardWorkspace
       panelLabel="Repertoire study"
-      tabPanel={tabPanelProps(panelId, tab)}
+      tabPanel={tabPanelProps(panelId, shownTab)}
       board={
         <StudyBoardStage
           chapterTitle={draft.title}
@@ -281,8 +303,9 @@ export function RepertoireStudyPage({
         <StudyTabBar
           panelId={panelId}
           repertoireId={repertoireId}
-          tab={tab}
+          tab={shownTab}
           chapterCount={chapters.length}
+          hasBook={book.available}
           onChange={onTabChange}
           onSettings={() => setDialog("settings")}
         />
@@ -327,7 +350,9 @@ export function RepertoireStudyPage({
         </>
       }
     >
-      {tab === "chapters" ? (
+      {shownTab === "book" ? (
+        <StudyBookTab pages={book.pages} page={book.page} onPage={book.turnTo} />
+      ) : shownTab === "chapters" ? (
         <div className="h-full p-3">
           <StudyChaptersPanel
             chapters={chapters}
@@ -346,11 +371,18 @@ export function RepertoireStudyPage({
             }
             onRemove={(id) => void removeChapter(id)}
             footer={
-              <StudySourcesSection
-                repertoireId={repertoireId}
-                chapterId={chapterId}
-                onOpenGame={onOpenGame}
-              />
+              <>
+                <BookChapterReport
+                  pages={book.pages}
+                  chapterId={chapterId}
+                  onOpenPage={book.openPage}
+                />
+                <StudySourcesSection
+                  repertoireId={repertoireId}
+                  chapterId={chapterId}
+                  onOpenGame={onOpenGame}
+                />
+              </>
             }
           />
         </div>
@@ -363,6 +395,7 @@ export function RepertoireStudyPage({
           kinds={kinds}
           engineOpen={engineOpen}
           menu={menu}
+          bookPages={book.links}
           onSelectNode={selectNode}
           onOpenMenu={() => setMenuOpen(true)}
           onOpenEngineSettings={onOpenEngineSettings}
@@ -453,6 +486,7 @@ function StudyMovesTab({
   kinds,
   engineOpen,
   menu,
+  bookPages,
   onSelectNode,
   onOpenMenu,
   onOpenEngineSettings
@@ -464,6 +498,8 @@ function StudyMovesTab({
   kinds: ReadonlyMap<string, MoveKind>;
   engineOpen: boolean;
   menu: ReactNode;
+  /** The book page chips (a repertoire imported from a book). */
+  bookPages?: BookPageLinks;
   onSelectNode: (nodeId: string) => void;
   onOpenMenu: () => void;
   onOpenEngineSettings?: () => void;
@@ -482,7 +518,7 @@ function StudyMovesTab({
       ) : null}
       <StartRow
         selected={atRoot}
-        comment={lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.comment ?? null}
+        comment={stripBookPage(lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.comment)}
         menu={atRoot ? menu : null}
         onSelect={() => onSelectNode(REPERTOIRE_ROOT_NODE_ID)}
         onContextMenu={() => {
@@ -498,6 +534,7 @@ function StudyMovesTab({
         selectedNodeId={node.id}
         onSelectNode={onSelectNode}
         showComments
+        bookPages={bookPages}
         selectedActions={atRoot ? undefined : menu}
         onMoveContextMenu={onOpenMenu}
         emptyLabel="No moves yet — play the first move on the board."
@@ -551,9 +588,9 @@ function StartRow({
         </button>
         {menu ? <span className="absolute right-0.5 flex">{menu}</span> : null}
       </div>
-      {comment?.trim() ? (
+      {comment ? (
         <p className="px-2 pt-1 text-xs leading-relaxed whitespace-pre-line text-fg-muted">
-          {comment.trim()}
+          {comment}
         </p>
       ) : null}
     </div>
@@ -561,7 +598,7 @@ function StartRow({
 }
 
 /**
- * The panel's title bar: Moves · Chapters (their count), then Undo and Redo on Moves, Export PGN
+ * The panel's title bar: Moves · Chapters (their count) · Book (from a book), then Undo and Redo on Moves, Export PGN
  * (the whole repertoire) and the repertoire settings, last.
  */
 function StudyTabBar({
@@ -569,6 +606,7 @@ function StudyTabBar({
   repertoireId,
   tab,
   chapterCount,
+  hasBook,
   onChange,
   onSettings
 }: {
@@ -576,6 +614,7 @@ function StudyTabBar({
   repertoireId: string;
   tab: StudyTab;
   chapterCount: number;
+  hasBook: boolean;
   onChange: (tab: StudyTab) => void;
   onSettings: () => void;
 }) {
@@ -588,7 +627,7 @@ function StudyTabBar({
     <WorkspaceTabBar
       panelId={panelId}
       ariaLabel="Study panels"
-      tabs={studyTabs(chapterCount)}
+      tabs={studyTabs(chapterCount, hasBook)}
       value={tab}
       onChange={onChange}
       actions={
@@ -646,6 +685,85 @@ function StudyTabBar({
       }
     />
   );
+}
+
+/**
+ * The book behind a repertoire imported from one (tagged `book`): its pages, the page the Book tab
+ * shows (the selected move's, or one turned to since), the chips' labels, and showing a page.
+ * The Book tab is `available` once the pages are read (a repertoire without them never has it);
+ * `tab` asking for it without one (an old history entry, say) shows the moves (`shownTab`).
+ */
+function useStudyBook({
+  repertoireId,
+  chapterId,
+  detail,
+  lookup,
+  node,
+  tab,
+  onSelectNode,
+  onShowBook
+}: {
+  repertoireId: string;
+  chapterId: string;
+  detail: RepertoireDetail | undefined;
+  lookup: ChapterLookup | null;
+  node: MoveNode | null;
+  tab: StudyTab;
+  onSelectNode: (nodeId: string) => void;
+  onShowBook: () => void;
+}): {
+  available: boolean;
+  shownTab: StudyTab;
+  pages: BookPages | null;
+  page: number | null;
+  links: BookPageLinks | undefined;
+  turnTo: (page: number) => void;
+  openPage: (page: number) => void;
+} {
+  const isBook = detail?.tags.includes("book") ?? false;
+  const selectedNodeId = node?.id ?? null;
+  const query = useBookPagesQuery(repertoireId, isBook);
+  const pages = query.data ?? null;
+  /** A page turned to while a move was selected (`anchor`: chapter and move). */
+  const [view, setView] = useState<{ nodeId: string; page: number } | null>(null);
+  const anchor = `${chapterId}/${selectedNodeId ?? ""}`;
+  const movePage =
+    pages && lookup && selectedNodeId
+      ? bookPageAt(lookup, selectedNodeId, chapterFirstPage(pages, chapterId))
+      : null;
+  const page = pages ? shownBookPage(movePage, view, anchor, pages.pages.length) : null;
+  const turnTo = useCallback((next: number) => setView({ nodeId: anchor, page: next }), [anchor]);
+  const openPage = useCallback(
+    (next: number) => {
+      setView({ nodeId: anchor, page: next });
+      onShowBook();
+    },
+    [anchor, onShowBook]
+  );
+  const links = useMemo<BookPageLinks | undefined>(
+    () =>
+      pages
+        ? {
+            label: (target) => bookPageLabel(pages, target),
+            onOpen: (nodeId, target) => {
+              onSelectNode(nodeId);
+              setView({ nodeId: `${chapterId}/${nodeId}`, page: target });
+              onShowBook();
+            }
+          }
+        : undefined,
+    [pages, chapterId, onSelectNode, onShowBook]
+  );
+  const available = isBook && (pages !== null || query.isPending);
+  return {
+    available,
+    shownTab: tab === "book" && !available ? "moves" : tab,
+    pages,
+    page,
+    links,
+    turnTo,
+    openPage
+  };
 }
 
 /** Before the chapter is in the draft: why it couldn't be read (Retry, Back), or loading. */
