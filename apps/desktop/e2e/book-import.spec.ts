@@ -34,7 +34,7 @@ async function openHub(page: Page) {
 }
 
 async function openImportDialog(page: Page) {
-  await page.getByRole("button", { name: "New repertoire", exact: true }).click();
+  await page.getByRole("button", { name: "New", exact: true }).click();
   await page.getByRole("menuitem", { name: "Import book (PDF)…", exact: true }).click();
   return page.getByRole("dialog", { name: "Import a book" });
 }
