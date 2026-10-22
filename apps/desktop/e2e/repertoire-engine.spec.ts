@@ -21,18 +21,22 @@ const ACTIONS_SCREENSHOT = process.env.CHATURANGA_E2E_STUDY_ACTIONS_SCREENSHOT;
  * Resizes the page to `width`×`height` (the window's content) and waits for it to lay out again.
  * Returns the size it got. On a screen too small for that (e.g. a CI display) the window stays a
  * few pixels inside the work area: Chromium on X11 shrinks a window that would fill the screen
- * exactly by a pixel, so a window sized to the screen never reaches the size asked for.
+ * exactly by a pixel, so a window sized to the screen never reaches the size asked for. It never
+ * goes below the window's minimum size either, which macOS enforces even when the work area is
+ * smaller (the macOS runner's screen leaves 676 px; the app's minimum is 680).
  */
 async function resizeWindow(app: ElectronApplication, page: Page, width: number, height: number) {
   const size = await app.evaluate(
     ({ BrowserWindow, screen }, [width, height]) => {
       const area = screen.getPrimaryDisplay().workAreaSize;
       const margin = 8;
+      const window = BrowserWindow.getAllWindows()[0];
+      const [minWidth, minHeight] = window.getMinimumSize();
       const fitted = [
-        Math.min(width, area.width - margin),
-        Math.min(height, area.height - margin)
+        Math.max(minWidth, Math.min(width, area.width - margin)),
+        Math.max(minHeight, Math.min(height, area.height - margin))
       ] as const;
-      BrowserWindow.getAllWindows()[0].setContentSize(...fitted);
+      window.setContentSize(...fitted);
       return fitted;
     },
     [width, height] as const
