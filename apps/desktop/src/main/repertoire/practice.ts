@@ -1,5 +1,6 @@
 /** Practice sessions (design §8.3): starting, answering, resuming and ending them. */
 import { nanoid } from "nanoid";
+import { stripBookPage } from "@chaturanga/shared/books/book-page";
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type AttemptResult,
@@ -267,7 +268,7 @@ function frozenQueue(
       fingerprint: acceptanceFingerprint(candidate.effective),
       hint: candidate.decision.hint,
       wrongMoveFeedback: candidate.decision.wrongMoveFeedback,
-      explanation: node.comment ?? null,
+      explanation: stripBookPage(node.comment),
       moveComments: acceptedMoveComments(lookup, nodeId, candidate.effective),
       progressAt: progress.get(candidate.entry.positionKey)?.lastAttemptAt ?? null
     };

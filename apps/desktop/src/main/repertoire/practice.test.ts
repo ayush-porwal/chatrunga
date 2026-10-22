@@ -454,8 +454,9 @@ describe("repertoire service: practice", () => {
 
   it("gives out the explanation and the accepted moves' comments only with the answer", () => {
     const { id } = create();
+    // A book's page links (`[%page N]`) are not part of what practice shows.
     save(id, [["e2e4"], ["d2d4"]], {
-      comments: { "": "Choose your centre pawn.", e2e4: "Open games.", d2d4: "  " }
+      comments: { "": "[%page 3] Choose your centre pawn.", e2e4: "Open games.", d2d4: "  " }
     });
     service.updateDecision({
       repertoireId: id,
@@ -501,7 +502,7 @@ describe("repertoire service: practice", () => {
 
   it("a correct first answer comes with the explanation, the hint standing in for none", () => {
     const { id } = create();
-    save(id, [["e2e4"]], { comments: { e2e4: "Open games." } });
+    save(id, [["e2e4"]], { comments: { "": "[%page 2]", e2e4: "[%page 2] Open games." } });
     service.updateDecision({
       repertoireId: id,
       positionKey: START_KEY,
