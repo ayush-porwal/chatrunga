@@ -1,11 +1,11 @@
 name: e2e
 
 # Electron smoke journeys (apps/desktop/e2e): launch the real app and drive it — boot, PGN import,
-# persistence across a restart, positions, puzzles (scan worker), offline analysis — on Linux and
-# Windows, from out/ and as the packaged app. On every pull request to main (so a Windows-only
-# failure shows before the merge, not in the release), nightly, on demand, and (release.yml)
-# against every packaged release build. The timing benchmarks (tagged @perf) run nightly and on a
-# full dispatch, last, in a step of their own that reports but doesn't fail the run.
+# persistence across a restart, positions, puzzles (scan worker), offline analysis — on Linux,
+# Windows and macOS, from out/ and as the packaged app. On every pull request to main (so an
+# OS-only failure shows before the merge; releases don't run them again), nightly and on demand.
+# The timing benchmarks (tagged @perf) run nightly and on a full dispatch, last, in a step of their
+# own that reports but doesn't fail the run.
 #
 # A dispatch can chase a flaky journey: `spec` narrows the run to the spec files it matches and
 # `repeat` runs each of their tests that many times, and `load` busy processes slow the runner down
@@ -55,6 +55,10 @@ jobs:
           - name: Windows
             os: windows-latest
             target: --win
+          # Packaged for the runner's own CPU only (releases build arm64 and x64).
+          - name: macOS
+            os: macos-14
+            target: --mac --arm64
     env:
       CI: "true"
       E2E_SPEC: ${{ inputs.spec }}

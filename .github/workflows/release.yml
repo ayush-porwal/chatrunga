@@ -3,6 +3,9 @@ name: release
 # Manual release: Actions → release → Run workflow.
 # Builds the latest commit on main for macOS, Windows and Linux, then publishes a
 # GitHub release (tag vX.Y.Z) with generated notes and all installers attached.
+# The Electron smoke journeys don't run here: every pull request runs them against the built and
+# the packaged app on Linux, Windows and macOS (e2e.yml) before it can merge. Lint, typecheck and
+# tests run beside the builds (not before them) and still gate the publish.
 on:
   workflow_dispatch:
     inputs:
@@ -97,7 +100,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: [plan, verify]
+    needs: plan
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -150,36 +153,6 @@ jobs:
       - name: Check packaged app contents
         run: node scripts/check-packaged-app.mjs
 
-      # The Electron smoke journeys (apps/desktop/e2e) against the unpacked app just packaged for
-      # this runner's OS and CPU: a build that installs but can't start, import, save or scan
-      # puzzles stops here, on every OS. Throwaway profiles, no network, no analytics or update
-      # checks. The timing benchmarks (tagged @perf) are left out: they are slow and machine-bound,
-      # and run nightly instead. The same journeys run nightly on Linux and Windows (e2e.yml).
-      - name: Smoke-test the packaged app
-        id: smoke
-        timeout-minutes: 15
-        working-directory: apps/desktop
-        shell: bash
-        env:
-          CI: "true"
-          CHATURANGA_E2E_PACKAGED: "1"
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            # Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs; no display either.
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
-          else
-            pnpm test:e2e:run --grep-invert @perf
-          fi
-
-      - name: Upload smoke-test results
-        if: always() && steps.smoke.outcome == 'failure'
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-results-${{ runner.os }}
-          path: apps/desktop/test-results/
-          if-no-files-found: ignore
-
       # latest*.yml, the .blockmap files and the macOS .zip are what in-app updates (electron-updater)
       # read from the release; keep them in the upload.
       - name: Upload installers
@@ -197,7 +170,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [plan, build]
+    needs: [plan, verify, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
