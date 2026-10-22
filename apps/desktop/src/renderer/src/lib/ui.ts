@@ -109,8 +109,6 @@ export const pageShell =
 export const pageContainer =
   "mx-auto grid w-full max-w-[calc(var(--page-content)+2*var(--page-gutter))] content-start gap-6 px-(--page-gutter) py-(--page-gutter-y)";
 
-export const pageDescription = "max-w-2xl text-sm leading-6 text-fg-muted";
-
 /* ------------------------------------------------------------------ typography */
 
 /** Heading of a card or page section. */

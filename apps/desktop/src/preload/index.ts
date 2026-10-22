@@ -190,7 +190,9 @@ const api: ChaturangaApi = {
   },
   profile: {
     picture: () => ipcRenderer.invoke("profile:picture"),
-    choosePicture: () => ipcRenderer.invoke("profile:choosePicture"),
+    openPicture: () => ipcRenderer.invoke("profile:openPicture"),
+    originalPicture: () => ipcRenderer.invoke("profile:originalPicture"),
+    savePicture: (input) => ipcRenderer.invoke("profile:savePicture", input),
     removePicture: () => ipcRenderer.invoke("profile:removePicture"),
     onPictureChanged: subscribe<void>("profile:pictureChanged")
   },

@@ -81,7 +81,7 @@ import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
 import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
-import { PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
+import { RASTER_PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -611,7 +611,8 @@ function registerUpdateIpc(): void {
 /**
  * Your picture (main/profile-picture), loaded in the background now (nothing waits for it): it
  * starts following the accounts right away, as an account's picture may need downloading. The
- * file dialog runs here; the module copies the picture picked.
+ * file dialog runs here; the module reads the picture picked for the renderer to crop, and stores
+ * the crop.
  */
 function registerProfileIpc(): void {
   const profile = () => import("../profile-picture");
@@ -620,14 +621,21 @@ function registerProfileIpc(): void {
     (error: unknown) => logger.error("profile-picture", "loading failed:", error)
   );
   ipcMain.handle("profile:picture", () => profile().then((pictures) => pictures.profilePicture()));
-  ipcMain.handle("profile:choosePicture", async (event) => {
+  ipcMain.handle("profile:openPicture", async (event) => {
     const result = await showOpenDialog(event, {
       properties: ["openFile"],
-      filters: [{ name: "Pictures", extensions: PICTURE_FILE_EXTENSIONS }]
+      filters: [{ name: "Pictures", extensions: RASTER_PICTURE_FILE_EXTENSIONS }]
     });
     const path = result.canceled ? null : (result.filePaths[0] ?? null);
-    return (await profile()).chooseProfilePicture(path);
+    return (await profile()).openProfilePicture(path);
   });
+  ipcMain.handle("profile:originalPicture", () =>
+    profile().then((pictures) => pictures.originalProfilePicture())
+  );
+  // The payload is checked by the module (saveProfilePicture), off the main bundle.
+  ipcMain.handle("profile:savePicture", (_event, input: unknown) =>
+    profile().then((pictures) => pictures.saveProfilePicture(input))
+  );
   ipcMain.handle("profile:removePicture", () =>
     profile().then((pictures) => pictures.removeProfilePicture())
   );

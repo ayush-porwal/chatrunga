@@ -6,7 +6,8 @@
  * says it is. The request goes through the fetch it is given: the app's is Chromium's, on a session
  * of its own (profile-picture/index.ts).
  */
-import { rasterType, type RasterType } from "../picture-bytes";
+import type { RasterType } from "@chaturanga/shared/types/pictures";
+import { RASTER_EXTENSIONS, rasterType } from "../picture-bytes";
 
 /** Where account pictures come from: Chess.com's image host and Lichess's asset host. */
 const PICTURE_HOSTS = new Set(["images.chesscomfiles.com", "lichess1.org"]);
@@ -15,12 +16,8 @@ const REMOTE_PICTURE_MAX_BYTES = 1024 * 1024;
 const REMOTE_PICTURE_TIMEOUT_MS = 15_000;
 
 /** The image types accepted, by content type, and the extension each is stored with. */
-const PICTURE_EXTENSIONS: Partial<Record<string, string>> & Record<RasterType, string> = {
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/gif": ".gif",
-  "image/webp": ".webp"
-};
+const PICTURE_EXTENSIONS: Partial<Record<string, string>> & Record<RasterType, string> =
+  RASTER_EXTENSIONS;
 
 /**
  * A Lichess flair's image: the asset host's unversioned flair path (lila's `flairSrc` adds an asset

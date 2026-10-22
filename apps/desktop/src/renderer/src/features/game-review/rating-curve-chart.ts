@@ -325,42 +325,6 @@ export function spreadLabels(ys: readonly number[], gap: number, lowest: number)
 
 /* ---------------------------------------------------------------- interaction */
 
-/** The column (rating) nearest to `x`, of columns at `xs`. */
-export function nearestColumn(x: number, xs: readonly number[]): number {
-  let nearest = 0;
-  xs.forEach((columnX, index) => {
-    if (Math.abs(columnX - x) < Math.abs(xs[nearest] - x)) nearest = index;
-  });
-  return nearest;
-}
-
-/**
- * The column a key moves to from `current` (of `count`): ← → one step (from `start` when none is
- * shown), Home and End the ends; Escape clears (null); undefined for any other key.
- */
-export function columnForKey(
-  key: string,
-  current: number | null,
-  count: number,
-  start: number
-): number | null | undefined {
-  const last = count - 1;
-  switch (key) {
-    case "ArrowLeft":
-      return current === null ? start : Math.max(0, current - 1);
-    case "ArrowRight":
-      return current === null ? start : Math.min(last, current + 1);
-    case "Home":
-      return 0;
-    case "End":
-      return last;
-    case "Escape":
-      return null;
-    default:
-      return undefined;
-  }
-}
-
 /** Each line's value at a rating, the most likely first (the tooltip's rows). */
 export function columnValues(
   lines: readonly PredictionLine[],

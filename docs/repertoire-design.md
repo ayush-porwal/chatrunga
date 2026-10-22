@@ -137,6 +137,8 @@ Repertoire > My White repertoire > Italian Game       Saved · Practice
 └─────────────────────────┴───────────────────────────────────────────┘
 ```
 
+No movetext under the board: moves live in the Moves tab. The rows above and below the board carry only the repertoire, chapter, and player context.
+
 Chapter navigation offers ordered titles, opening/reference type, enabled state, and due count. The selected tree occurrence remains the source of the displayed move path and annotations.
 
 At a player-to-move position, the choices panel distinguishes **Preferred**, **Accepted alternative**, and **Reference only**. At an opponent-to-move position it distinguishes **Covered response** and **Reference only**. PGN mainline order is a presentation choice; it does not by itself define correctness after import confirmation.

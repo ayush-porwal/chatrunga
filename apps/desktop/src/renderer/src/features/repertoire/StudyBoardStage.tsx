@@ -1,4 +1,3 @@
-import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import { SideDot } from "@/components/ui/side-dot";
@@ -7,27 +6,26 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import { BoardStage } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { COLOR_LABELS } from "./repertoire-chapters";
-import { lastMoveOf, pathLabel } from "./repertoire-model";
+import { lastMoveOf } from "./repertoire-model";
 import { StudyEvalBar } from "./StudyEnginePanel";
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
 /**
  * Study's board at the selected node, both sides playable (a move adds to the chapter) and
- * drawing on; the repertoire and chapter above it, the route below, and the eval bar while the
- * engine panel is open.
+ * drawing on; the repertoire and chapter above it, and the eval bar while the engine panel is
+ * open. No movetext under the board: moves live in the Moves tab (the row below stays empty so
+ * the board keeps the shared stage geometry).
  */
 export function StudyBoardStage({
   chapterTitle,
   color,
-  lookup,
   node,
   orientation,
   engineOpen
 }: {
   chapterTitle: string;
   color: RepertoireColor;
-  lookup: ChapterLookup;
   node: MoveNode;
   orientation: Color;
   engineOpen: boolean;
@@ -52,14 +50,7 @@ export function StudyBoardStage({
           </span>
         </p>
       }
-      bottom={
-        <p
-          className="flex h-8 min-w-0 items-center truncate font-mono text-xs text-fg-muted"
-          title={pathLabel(lookup, node.id)}
-        >
-          {pathLabel(lookup, node.id)}
-        </p>
-      }
+      bottom={<span className="block h-8" />}
     >
       <ControlledBoard
         fen={node.fenAfter}

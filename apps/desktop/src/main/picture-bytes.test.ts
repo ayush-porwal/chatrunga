@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pngBytes } from "./__fixtures__/picture-bytes";
-import { rasterType } from "./picture-bytes";
+import { pngBytes, pngOfSize } from "./__fixtures__/picture-bytes";
+import { pngSize, rasterType } from "./picture-bytes";
 
 describe("rasterType", () => {
   it("tells PNG, JPEG, GIF and WebP pictures by their signature", () => {
@@ -21,5 +21,16 @@ describe("rasterType", () => {
       Buffer.from("RIFF\0\0\0\0WAVEfmt ")
     ])
       expect(rasterType(bytes)).toBeNull();
+  });
+});
+
+describe("pngSize", () => {
+  it("reads a PNG's width and height from its header", () => {
+    expect(pngSize(pngOfSize(512, 384))).toStrictEqual({ width: 512, height: 384 });
+  });
+
+  it("has none for another type, or a PNG cut off before its header", () => {
+    expect(pngSize(Buffer.from("GIF89a..."))).toBeNull();
+    expect(pngSize(pngBytes("short"))).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -21,15 +21,13 @@ import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
-import { pageShell } from "@/lib/ui";
-import { cn } from "@/lib/utils";
+import { card, pageShell } from "@/lib/ui";
 import {
   useArchiveRepertoireMutation,
   useDuplicateRepertoireMutation,
   useExportRepertoireMutation,
   useRemoveChapterMutation,
-  useRemoveRepertoireMutation,
-  useRepertoiresQuery
+  useRemoveRepertoireMutation
 } from "../../queries/repertoire";
 import { useBooksQuery } from "../../queries/books";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
@@ -51,12 +49,14 @@ import {
   type StudyTarget
 } from "./repertoire-chapters";
 import { RepertoireTable } from "./RepertoireTable";
-import { useHubFilters, useHubResume, useStudyFromHub } from "./useRepertoireHub";
+import { useHubFilters, useHubList, useHubResume, useStudyFromHub } from "./useRepertoireHub";
 
 const TITLE_ID = "repertoire-hub-title";
 
 /**
- * The repertoire hub (§5.1), laid out as Play: one card of the repertoires, as a table. A row
+ * The repertoire hub (§5.1), laid out as Play: one card of the repertoires, as a table. With no
+ * repertoire at all (and no book being imported) the page shows its empty state alone, no card
+ * (hub-view.ts). A row
  * opens Study at the chapter last studied; Practice starts a session (due positions first, then
  * new ones) or resumes the unfinished one; the ⋯ menu edits, imports and exports, duplicates,
  * archives and deletes. The title bar searches, shows the archived ones instead, and starts a new
@@ -77,7 +77,6 @@ export function RepertoireHubPage({
   const filters = useHubFilters();
   // "Last studied" is relative to when the hub opened (render stays pure).
   const [now] = useState(() => Date.now());
-  const list = useRepertoiresQuery(filters.listFilters);
   const resume = useHubResume();
   const { mutate: duplicateRepertoire } = useDuplicateRepertoireMutation();
   const { mutate: archiveRepertoire } = useArchiveRepertoireMutation();
@@ -91,6 +90,7 @@ export function RepertoireHubPage({
   /** The Import book dialog: a new book, or continuing one whose pages weren't all sent. */
   const [bookDialog, setBookDialog] = useState<{ book: BookSummary | null } | null>(null);
   const books = useHubBooks();
+  const { list, view } = useHubList(filters, desktop, books.length);
   const openSettings = useOpenSettings();
 
   const fail = (error: unknown, fallback: string) =>
@@ -196,27 +196,36 @@ export function RepertoireHubPage({
         <h1 className="sr-only">Repertoire</h1>
         {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
         <BookReadyNotices onOpen={(repertoireId) => void study(repertoireId)} />
-        <RepertoiresCard desktop={desktop} filters={filters} list={list} actions={newItems}>
-          {filters.archived ? null : (
-            <BookImportRows books={books} onContinue={(book) => setBookDialog({ book })} />
-          )}
-          <RepertoireTable
-            list={list}
-            now={now}
-            labelledBy={TITLE_ID}
-            resume={resume}
-            actionsFor={actionsFor}
-            onStudy={studyRow}
-            onPractice={practiceRow}
-            empty={
-              <HubEmptyState
-                archived={filters.archived}
-                query={filters.query.trim()}
-                onCreate={() => setCreating("blank")}
-              />
-            }
-          />
-        </RepertoiresCard>
+        {view === "card" ? (
+          <section aria-labelledby={TITLE_ID} className={card}>
+            <CardTitleBar
+              id={TITLE_ID}
+              title={filters.archived ? "Archived repertoires" : "Repertoires"}
+              count={list.isSuccess && !filters.query.trim() ? list.data.length : null}
+              actions={<HubTitleActions filters={filters} newItems={newItems} />}
+            />
+            {filters.archived ? null : (
+              <BookImportRows books={books} onContinue={(book) => setBookDialog({ book })} />
+            )}
+            <RepertoireTable
+              list={list}
+              now={now}
+              labelledBy={TITLE_ID}
+              resume={resume}
+              actionsFor={actionsFor}
+              onStudy={studyRow}
+              onPractice={practiceRow}
+              empty={
+                // Book rows above it: the books being imported are what's listed for now.
+                books.length && !filters.archived ? null : (
+                  <NoMatches archived={filters.archived} query={filters.query.trim()} />
+                )
+              }
+            />
+          </section>
+        ) : view === "none" ? (
+          <HubEmptyState desktop={desktop} newItems={newItems} />
+        ) : null}
       </div>
 
       <HubCreateImport
@@ -287,56 +296,6 @@ function BookReadyNotices({ onOpen }: { onOpen: (repertoireId: string) => void }
       onChange={() => dismiss(notice.bookId)}
     />
   ));
-}
-
-/**
- * The hub's one card (as Play's Recent games): the title bar with the count and its tools, then
- * `children` (the table), or why repertoires need the desktop app. An empty, unfiltered list
- * stretches it down the page.
- */
-function RepertoiresCard({
-  desktop,
-  filters,
-  list,
-  actions,
-  children
-}: {
-  desktop: boolean;
-  filters: ReturnType<typeof useHubFilters>;
-  list: ReturnType<typeof useRepertoiresQuery>;
-  /** The New menu's items. */
-  actions: MenuItem[];
-  children: ReactNode;
-}) {
-  const shown = list.data?.length ?? 0;
-  const searching = Boolean(filters.query.trim());
-  const fill = !desktop || (list.isSuccess && !shown && !filters.archived && !searching);
-  return (
-    <section
-      aria-labelledby={TITLE_ID}
-      className={cn(
-        "min-w-0 rounded-xl border border-line bg-surface",
-        fill ? "flex flex-1 flex-col" : null
-      )}
-    >
-      <CardTitleBar
-        id={TITLE_ID}
-        title={filters.archived ? "Archived repertoires" : "Repertoires"}
-        count={list.isSuccess && !searching ? shown : null}
-        actions={desktop ? <HubTitleActions filters={filters} newItems={actions} /> : null}
-      />
-      {desktop ? (
-        children
-      ) : (
-        <EmptyState
-          className="m-auto"
-          icon={<Library />}
-          title="Repertoires need the desktop app"
-          description="Your repertoires, practice schedule and progress are stored by the app."
-        />
-      )}
-    </section>
-  );
 }
 
 /** The card title bar's tools: search, archived instead of active ones, and New (last). */
@@ -448,28 +407,32 @@ function HubCreateImport({
   );
 }
 
-/** No repertoire listed: none matches the search, none is archived, or none exists yet. */
-function HubEmptyState({
-  archived,
-  query,
-  onCreate
-}: {
-  archived: boolean;
-  query: string;
-  onCreate: () => void;
-}) {
-  if (query) {
+/** The card's quiet row when its list is empty: no search match, or none archived or active. */
+function NoMatches({ archived, query }: { archived: boolean; query: string }) {
+  return (
+    <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+      {query
+        ? `No repertoires match “${query}”`
+        : archived
+          ? "No archived repertoires"
+          : "No active repertoires"}
+    </p>
+  );
+}
+
+/**
+ * No repertoire at all: the empty state sits in the page itself (no card), centred, with the New
+ * menu (blank, from a PGN, from a book); or why repertoires need the desktop app.
+ */
+function HubEmptyState({ desktop, newItems }: { desktop: boolean; newItems: MenuItem[] }) {
+  if (!desktop) {
     return (
-      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-        No repertoires match “{query}”
-      </p>
-    );
-  }
-  if (archived) {
-    return (
-      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-        No archived repertoires
-      </p>
+      <EmptyState
+        className="m-auto"
+        icon={<Library />}
+        title="Repertoires need the desktop app"
+        description="Your repertoires, practice schedule and progress are stored by the app."
+      />
     );
   }
   return (
@@ -479,10 +442,11 @@ function HubEmptyState({
       title="No repertoires yet"
       description="Start one for each side you play — for example “My 1.e4 repertoire” or “Black against 1.e4”."
       action={
-        <Button type="button" variant="primary" onClick={onCreate}>
-          <Plus />
-          Create repertoire
-        </Button>
+        <OverflowMenu
+          label="New repertoire"
+          trigger={{ text: "New", icon: <Plus />, variant: "primary" }}
+          items={newItems}
+        />
       }
     />
   );

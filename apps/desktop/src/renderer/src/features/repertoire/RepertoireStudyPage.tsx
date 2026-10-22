@@ -293,7 +293,6 @@ export function RepertoireStudyPage({
         <StudyBoardStage
           chapterTitle={draft.title}
           color={color}
-          lookup={lookup}
           node={node}
           orientation={orientation}
           engineOpen={engineOpen}

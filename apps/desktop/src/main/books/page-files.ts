@@ -8,7 +8,8 @@ import { constants } from "node:fs";
 import { access, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pictureStore } from "../picture-store";
-import { rasterType, type RasterType } from "../picture-bytes";
+import type { RasterType } from "@chaturanga/shared/types/pictures";
+import { rasterType } from "../picture-bytes";
 
 const SAFE_BOOK_ID = /^[\w-]{1,64}$/;
 const EXTENSIONS: Partial<Record<RasterType, string>> = {

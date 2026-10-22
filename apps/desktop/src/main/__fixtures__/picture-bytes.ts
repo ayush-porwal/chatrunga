@@ -5,3 +5,13 @@ export function pngBytes(text = ""): Buffer {
     Buffer.from(text)
   ]);
 }
+
+/** A PNG's signature and header (IHDR) for a `width` × `height` picture, then `text`. */
+export function pngOfSize(width: number, height: number, text = ""): Buffer {
+  const header = Buffer.alloc(25);
+  header.writeUInt32BE(13, 0);
+  header.write("IHDR", 4, "latin1");
+  header.writeUInt32BE(width, 8);
+  header.writeUInt32BE(height, 12);
+  return Buffer.concat([pngBytes(), header, Buffer.from(text)]);
+}

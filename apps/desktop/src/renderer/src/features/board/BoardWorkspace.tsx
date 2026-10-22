@@ -31,6 +31,10 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
  *   │                                      │ footer (graph + move nav)  │
  *   └──────────────────────────────────────┴────────────────────────────┘
  *
+ * The rows above and below the board (BoardStage's `top`/`bottom`) hold players, clocks, or a
+ * short context line, never movetext: moves live in the panel (Moves tab, move list). A mode with
+ * nothing to show there passes an empty 2rem row, so the board keeps its geometry.
+ *
  * The titlebar above it (App's drag region) uses <WorkspaceTitlebar> for the same anatomy in
  * every mode: game title · result … mode actions. Board commands (Focus board, Flip board) live in
  * the sidebar, shown only on board views.

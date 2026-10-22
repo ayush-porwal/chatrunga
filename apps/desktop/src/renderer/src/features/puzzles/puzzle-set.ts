@@ -1,8 +1,4 @@
-import {
-  PUZZLE_DIFFICULTIES,
-  ratingRangeFor,
-  type PuzzleDifficulty
-} from "@chaturanga/shared/chess/puzzle-rating";
+import { ratingRangeFor } from "@chaturanga/shared/chess/puzzle-rating";
 import { externalDatabaseSources, type InstalledDatabase } from "@chaturanga/shared/types/database";
 import type { PuzzleDraft } from "../../stores/puzzle-draft-store";
 import type { PuzzleSessionConfig } from "./PuzzlePage";
@@ -60,11 +56,6 @@ export function drawnRatingRange(
   };
 }
 
-/** "Normal", or "Custom range" without a difficulty. */
-function difficultyLabel(difficulty: PuzzleDifficulty | null): string {
-  return PUZZLE_DIFFICULTIES.find((item) => item.id === difficulty)?.label ?? "Custom range";
-}
-
 /**
  * Whether the draft's filters for the set's kind differ from the defaults (Reset filters shows).
  */
@@ -87,27 +78,19 @@ export function puzzleFiltersChanged(draft: PuzzleDraft, isLichess: boolean): bo
   );
 }
 
-/** The set's filters as chips: every one that applies, "Any theme" / "Any tag" for none chosen. */
-export function activeFilterLabels(
-  draft: PuzzleDraft,
-  isLichess: boolean,
-  range: ReturnType<typeof drawnRatingRange>
-): string[] {
-  if (!isLichess)
-    return [
-      `Difficulty ${draft.difficultyMin}–${draft.difficultyMax}`,
-      ...(draft.positionTags.length ? draft.positionTags.map(formatPuzzleTag) : ["Any tag"])
-    ];
-  const { side, popularityMin, themes } = draft;
-  return [
-    `Rated ${range.ratingMin}–${range.ratingMax}`,
-    ...(range.aroundRating ? [`${difficultyLabel(draft.difficulty)}, around your rating`] : []),
-    side === "any" ? "Either side to move" : `${side === "white" ? "White" : "Black"} to move`,
-    ...(popularityMin !== 0 ? [`Popularity ${popularityMin}+`] : []),
-    ...(themes.length ? themes.map(formatPuzzleTag) : ["Any theme"]),
-    ...draft.lengths.map(formatPuzzleTag),
-    ...draft.openings.map(formatPuzzleTag)
-  ];
+/** More filters' summary while folded: the ones set ("Italian Game · popularity 20+"), else null. */
+export function moreFiltersSummary(
+  openings: readonly string[],
+  popularityMin: number
+): string | null {
+  const openingsPart =
+    openings.length === 1
+      ? [formatPuzzleTag(openings[0])]
+      : openings.length
+        ? [`${openings.length} openings`]
+        : [];
+  const parts = [...openingsPart, ...(popularityMin !== 0 ? [`popularity ${popularityMin}+`] : [])];
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /**

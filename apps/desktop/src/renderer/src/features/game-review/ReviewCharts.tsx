@@ -35,13 +35,8 @@ import {
   type ChartsLayout,
   type ViewHeights
 } from "./review-chart-layout";
-import {
-  useChartsHeight,
-  useFold,
-  useViewHeights,
-  useWidth,
-  type Fold
-} from "./use-review-chart-sizing";
+import { useChartsHeight, useFold, useViewHeights, type Fold } from "./use-review-chart-sizing";
+import { useWidth } from "@/lib/use-width";
 import {
   AxisLayer,
   ChartTooltip,

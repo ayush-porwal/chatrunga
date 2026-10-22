@@ -45,10 +45,7 @@ export const DatabasePage = memo(function DatabasePage({
 
   return (
     <Page>
-      <PageHeader
-        title="Databases"
-        description="Optional datasets for puzzle training, stored on this computer."
-      />
+      <PageHeader title="Databases" />
       {!desktopApiAvailable ? (
         <Notice tone="warn">
           Database downloads and local file management require the desktop app.
@@ -78,7 +75,9 @@ export const DatabasePage = memo(function DatabasePage({
 
       {/* Without the list, a card can't tell whether its database is downloaded: none are shown. */}
       {databases.isError ? null : (
-        <div className="grid gap-4 xl:grid-cols-2">
+        // As many columns of at least 28rem as fit (one on a narrow window, up to three on a wide
+        // one); every row as tall as the tallest card, so the cards line up.
+        <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(min(100%,28rem),1fr))] gap-4">
           {databases.isPending && desktopApiAvailable
             ? externalDatabaseSources.map((source) => <DatabaseCardSkeleton key={source.id} />)
             : externalDatabaseSources.map((source) => (

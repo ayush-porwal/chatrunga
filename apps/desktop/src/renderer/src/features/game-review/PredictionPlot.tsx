@@ -3,17 +3,16 @@ import { cn } from "@/lib/utils";
 import { FigurineSan } from "../analysis/EngineLines";
 import {
   PREDICTION_ROLE_NAMES,
-  columnForKey,
   columnText,
   columnValues,
-  nearestColumn,
   percent,
   predictionChart,
   type PredictionChart,
   type PredictionLine,
   type PredictionRole
 } from "./rating-curve-chart";
-import { useWidth } from "./use-review-chart-sizing";
+import { columnForKey, nearestColumn } from "@/lib/chart";
+import { useWidth } from "@/lib/use-width";
 
 /** The chart's height; its width is the box's. */
 export const PREDICTION_PLOT_HEIGHT = 140;

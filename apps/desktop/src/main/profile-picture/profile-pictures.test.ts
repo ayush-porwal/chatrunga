@@ -2,10 +2,10 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { pngBytes } from "../__fixtures__/picture-bytes";
+import { pngBytes, pngOfSize } from "../__fixtures__/picture-bytes";
 import { pictureStore } from "../picture-store";
 import { writePrivateJsonFile } from "../secure-json-file";
-import { pictureSrc, ProfilePictures } from "./profile-pictures";
+import { parseSavePictureInput, pictureSrc, ProfilePictures } from "./profile-pictures";
 import type { RemotePicture } from "./remote-picture";
 import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
 
@@ -17,6 +17,8 @@ vi.mock("../secure-json-file", async (importOriginal) => {
 
 const AVATAR = "https://images.chesscomfiles.com/uploads/v1/user/1.png";
 const FLAIR = "https://lichess1.org/assets/flair/img/objects.crown.webp";
+const NONE: YourPicture = { src: null, source: null, adjustable: false };
+const CROP = { x: 0.5, y: 0.5, zoom: 1 };
 
 describe("ProfilePictures", () => {
   let root: string;
@@ -33,6 +35,16 @@ describe("ProfilePictures", () => {
     const path = join(root, "Pictures", name);
     writeFileSync(path, pngBytes(contents));
     return path;
+  }
+
+  /** Your photo from `path` as Settings saves it: opened, cut to a square (`cut`), and kept. */
+  async function choose(path: string, cut = "cut") {
+    const file = await pictures.open(path);
+    return pictures.save({
+      cropped: pngOfSize(512, 512, cut),
+      original: Buffer.from(file.bytes),
+      crop: CROP
+    });
   }
 
   /** The copy a picture's src names. */
@@ -64,46 +76,119 @@ describe("ProfilePictures", () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   it("has no picture at first", async () => {
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
     await pictures.refresh();
     expect(download).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("copies a chosen photo, replaces it with the next, and forgets it on Remove", async () => {
+  it("keeps a chosen photo's crop and original, replaces both with the next, and forgets them on Remove", async () => {
     const original = photo("me.png", "first");
-    const first = await pictures.choose(original);
+    const first = await choose(original, "first cut");
     expect(first.source).toBe("upload");
+    expect(first.adjustable).toBe(true);
     expect(first.src).toBe(pictureSrc(pathOf(first)));
-    expect(readFileSync(pathOf(first))).toStrictEqual(pngBytes("first"));
+    expect(readFileSync(pathOf(first))).toStrictEqual(pngOfSize(512, 512, "first cut"));
     expect(basename(pathOf(first))).toMatch(/^upload-[0-9a-f]{16}\.png$/);
+    expect(copies().map((name) => name.split("-")[0])).toStrictEqual(["original", "upload"]);
     expect(onChange).toHaveBeenCalledTimes(1);
 
-    const second = await pictures.choose(photo("me-again.jpg", "second"));
+    const second = await choose(photo("me-again.jpg", "second"), "second cut");
     expect(second.src).not.toBe(first.src);
-    // Only the current photo is kept; the original file is left where it was.
-    expect(copies()).toStrictEqual([basename(pathOf(second))]);
+    // Only the current photo and its original are kept; the picked file is left where it was.
+    expect(copies()).toHaveLength(2);
+    expect(copies()).toContain(basename(pathOf(second)));
     expect(readFileSync(original)).toStrictEqual(pngBytes("first"));
     await expect(pictures.picture()).resolves.toStrictEqual(second);
+    await expect(pictures.original()).resolves.toMatchObject({
+      bytes: pngBytes("second"),
+      type: "image/png",
+      crop: CROP
+    });
 
-    await expect(pictures.remove()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.remove()).resolves.toStrictEqual(NONE);
     expect(copies()).toStrictEqual([]);
+    await expect(pictures.original()).resolves.toBeNull();
     expect(onChange).toHaveBeenCalledTimes(3);
   });
 
+  it("re-cuts your photo from the original it keeps (Adjust)", async () => {
+    await choose(photo("me.png", "photo"));
+    const kept = copies().find((name) => name.startsWith("original-"));
+    const recut = { x: 0.4, y: 0.5, zoom: 2 };
+    const adjusted = await pictures.save({
+      cropped: pngOfSize(512, 512, "recut"),
+      original: null,
+      crop: recut
+    });
+    expect(readFileSync(pathOf(adjusted))).toStrictEqual(pngOfSize(512, 512, "recut"));
+    expect(copies()).toContain(kept);
+    await expect(pictures.original()).resolves.toMatchObject({
+      bytes: pngBytes("photo"),
+      crop: recut
+    });
+  });
+
+  it("won't re-cut without an original, and a photo kept without one can't be adjusted", async () => {
+    await expect(
+      pictures.save({ cropped: pngOfSize(512, 512), original: null, crop: CROP })
+    ).rejects.toThrow("Choose the picture again");
+    const upload = pathOf(await choose(photo("me.png")));
+    // A photo from before originals were kept: the state names no original.
+    writeFileSync(stateFile, JSON.stringify({ upload: { path: upload, url: null } }));
+    await expect(pictures.picture()).resolves.toMatchObject({
+      source: "upload",
+      adjustable: false
+    });
+    await expect(pictures.original()).resolves.toBeNull();
+  });
+
   it("keeps the photo it had, and its copy, when the change can't be stored", async () => {
-    const kept = await pictures.choose(photo("me.png", "first"));
+    const kept = await choose(photo("me.png", "first"));
+    const keptCopies = copies();
     const state = readFileSync(stateFile, "utf8");
     vi.mocked(writePrivateJsonFile).mockRejectedValueOnce(new Error("disk full"));
-    await expect(pictures.choose(photo("new.png", "second"))).rejects.toThrow("disk full");
-    // The new copy is gone; the old one, which the state still names, is there.
-    expect(copies()).toStrictEqual([basename(pathOf(kept))]);
+    await expect(choose(photo("new.png", "second"))).rejects.toThrow("disk full");
+    // The new copies are gone; the old ones, which the state still names, are there.
+    expect(copies()).toStrictEqual(keptCopies);
     expect(readFileSync(stateFile, "utf8")).toBe(state);
     await expect(pictures.picture()).resolves.toStrictEqual(kept);
     vi.mocked(writePrivateJsonFile).mockRejectedValueOnce(new Error("disk full"));
     await expect(pictures.remove()).rejects.toThrow("disk full");
     await expect(pictures.picture()).resolves.toStrictEqual(kept);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves no new original behind when its crop can't be written", async () => {
+    const kept = await choose(photo("me.png", "first"));
+    const keptCopies = copies();
+    const store = pictureStore(dir, { noun: "picture", warn: log });
+    // The original is written first, then the crop: the second write fails.
+    const write = store.write.bind(store);
+    const writes = vi
+      .spyOn(store, "write")
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error("disk full"));
+    const failing = new ProfilePictures({
+      store,
+      stateFile,
+      accountPictures: async () => ({ ...accounts }),
+      download,
+      onChange,
+      log
+    });
+    const file = await failing.open(photo("new.png", "second"));
+    await expect(
+      failing.save({
+        cropped: pngOfSize(512, 512, "second cut"),
+        original: Buffer.from(file.bytes),
+        crop: CROP
+      })
+    ).rejects.toThrow("disk full");
+    expect(writes.mock.calls.map(([owner]) => owner)).toStrictEqual(["original", "upload"]);
+    // The original written before the crop failed is gone; the kept photo's copies stay.
+    expect(copies()).toStrictEqual(keptCopies);
+    await expect(failing.picture()).resolves.toStrictEqual(kept);
   });
 
   it("keeps the account's copy it had when a refresh can't be stored", async () => {
@@ -135,15 +220,20 @@ describe("ProfilePictures", () => {
   });
 
   it("refuses a file that isn't a picture, and keeps the photo it had", async () => {
-    const kept = await pictures.choose(photo("me.png"));
-    await expect(pictures.choose(photo("notes.txt"))).rejects.toThrow(/PNG, JPG/);
+    const kept = await choose(photo("me.png"));
+    const notes = join(root, "Pictures", "notes.txt");
+    writeFileSync(notes, "just some text");
+    await expect(pictures.open(notes)).rejects.toThrow(
+      "The picture notes.txt isn't a PNG, JPG, WebP or GIF file."
+    );
     // Renamed to look like one: its bytes say otherwise.
     const renamed = join(root, "Pictures", "renamed.png");
     writeFileSync(renamed, "just some text");
-    await expect(pictures.choose(renamed)).rejects.toThrow(
-      "The picture renamed.png isn't really a PNG, JPG, WebP or GIF file."
-    );
-    await expect(pictures.choose(join(root, "gone.png"))).rejects.toThrow(/wasn't found/);
+    await expect(pictures.open(renamed)).rejects.toThrow(/renamed.png isn't a PNG/);
+    await expect(pictures.open(join(root, "gone.png"))).rejects.toThrow(/wasn't found/);
+    const large = join(root, "Pictures", "large.png");
+    writeFileSync(large, Buffer.concat([pngBytes(), Buffer.alloc(5 * 1024 * 1024)]));
+    await expect(pictures.open(large)).rejects.toThrow("larger than 5 MB");
     await expect(pictures.picture()).resolves.toStrictEqual(kept);
   });
 
@@ -152,14 +242,14 @@ describe("ProfilePictures", () => {
     await pictures.refresh();
     expect(download.mock.calls.map(([url]) => url)).toStrictEqual([AVATAR, FLAIR]);
     expect((await pictures.picture()).source).toBe("chesscom");
-    const upload = await pictures.choose(photo("me.png"));
+    const upload = await choose(photo("me.png"));
     expect(upload.source).toBe("upload");
     // Each source keeps its own copy, apart from the others.
     expect(
       copies()
         .map((name) => name.split("-")[0])
         .sort()
-    ).toStrictEqual(["chesscom", "lichess", "upload"]);
+    ).toStrictEqual(["chesscom", "lichess", "original", "upload"]);
     await pictures.remove();
     expect((await pictures.picture()).source).toBe("chesscom");
     accounts.chesscom = null;
@@ -188,7 +278,7 @@ describe("ProfilePictures", () => {
     // Disconnected: its copy is deleted, and the side's colour shows again.
     accounts.chesscom = null;
     await pictures.refresh();
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
     expect(copies()).toStrictEqual([]);
     expect(onChange).toHaveBeenCalledTimes(3);
   });
@@ -242,7 +332,7 @@ describe("ProfilePictures", () => {
     accounts.lichess = FLAIR;
     await pictures.refresh();
     rmSync(dir, { recursive: true });
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
     await pictures.refresh();
     expect(download).toHaveBeenCalledTimes(2);
     expect((await pictures.picture()).source).toBe("lichess");
@@ -250,7 +340,7 @@ describe("ProfilePictures", () => {
 
   it("joins account changes that arrive while a refresh waits its turn", async () => {
     accounts.chesscom = AVATAR;
-    const choosing = pictures.choose(photo("me.png"));
+    const choosing = choose(photo("me.png"));
     const refreshes = [pictures.refresh(), pictures.refresh(), pictures.refresh()];
     await Promise.all([choosing, ...refreshes]);
     expect(download).toHaveBeenCalledTimes(1);
@@ -262,15 +352,15 @@ describe("ProfilePictures", () => {
       stateFile,
       JSON.stringify({ upload: { path: outside, url: null }, chesscom: "nonsense" })
     );
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
     // A copy of the folder, but another source's: not taken as your photo.
     accounts.chesscom = AVATAR;
     await pictures.refresh();
     const avatar = pathOf(await pictures.picture());
     writeFileSync(stateFile, JSON.stringify({ upload: { path: avatar, url: null } }));
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
     writeFileSync(stateFile, "not json");
-    await expect(pictures.picture()).resolves.toStrictEqual({ src: null, source: null });
+    await expect(pictures.picture()).resolves.toStrictEqual(NONE);
   });
 
   it("reports a refresh that failed, and never rejects", async () => {
@@ -284,5 +374,36 @@ describe("ProfilePictures", () => {
     });
     await expect(failing.refresh()).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith("refreshing your picture failed", expect.any(Error));
+  });
+});
+
+describe("parseSavePictureInput", () => {
+  const input = { cropped: pngOfSize(512, 512), original: pngBytes("photo"), crop: CROP };
+
+  it("takes a square PNG crop, its original and the crop", () => {
+    const parsed = parseSavePictureInput({ ...input, cropped: new Uint8Array(input.cropped) });
+    expect(parsed.cropped).toStrictEqual(input.cropped);
+    expect(parsed.original).toStrictEqual(input.original);
+    expect(parsed.crop).toStrictEqual(CROP);
+    expect(parseSavePictureInput({ ...input, original: null }).original).toBeNull();
+  });
+
+  it("refuses a crop that isn't a square PNG of at most 512 pixels", () => {
+    for (const cropped of [pngOfSize(512, 384), pngOfSize(1024, 1024), pngBytes("no header")])
+      expect(() => parseSavePictureInput({ ...input, cropped })).toThrow("square PNG");
+  });
+
+  it("refuses an original that isn't a picture, and anything malformed", () => {
+    expect(() => parseSavePictureInput({ ...input, original: Buffer.from("text") })).toThrow(
+      "isn't a PNG"
+    );
+    for (const value of [
+      null,
+      { ...input, cropped: "bytes" },
+      { ...input, original: "bytes" },
+      { ...input, crop: { x: 2, y: 0.5, zoom: 1 } },
+      { ...input, crop: { x: 0.5, y: 0.5, zoom: 9 } }
+    ])
+      expect(() => parseSavePictureInput(value)).toThrow("Invalid picture.");
   });
 });
