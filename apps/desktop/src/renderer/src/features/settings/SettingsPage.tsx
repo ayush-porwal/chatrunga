@@ -113,7 +113,7 @@ export const SettingsPage = memo(function SettingsPage({
             <SectionAnchor id="chesscom">
               <ChesscomAccountSection />
             </SectionAnchor>
-            <SectionAnchor id="picture">
+            <SectionAnchor id="picture" wide>
               <YourPictureSection />
             </SectionAnchor>
           </SettingsGroup>
