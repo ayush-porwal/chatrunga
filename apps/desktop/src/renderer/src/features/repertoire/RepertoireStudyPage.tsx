@@ -146,7 +146,8 @@ export function RepertoireStudyPage({
   // The engine panel (the titlebar's Analyze) is open for this chapter only: another chapter, or
   // leaving Study, closes it, which stops its search.
   const engineOpen = useStudyEngineStore((state) => state.chapterId === chapterId);
-  useEffect(() => () => useStudyEngineStore.getState().close(), []);
+  // Keyed on the chapter: its cleanup runs on a chapter change as well as on leaving Study.
+  useEffect(() => () => useStudyEngineStore.getState().close(), [chapterId]);
 
   useChapterDraftLoad({
     repertoireId,
