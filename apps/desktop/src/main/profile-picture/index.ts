@@ -8,13 +8,14 @@
 import { app, session } from "electron";
 import { join } from "node:path";
 import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { PictureFile } from "@chaturanga/shared/types/pictures";
 import { getChesscomAccountStore, getChesscomService } from "../chesscom";
 import { allowImageFolder } from "../image-access";
 import { broadcast } from "../ipc/broadcast";
 import { getLichessAccountStore, getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
 import { pictureStore } from "../picture-store";
-import { ProfilePictures } from "./profile-pictures";
+import { parseSavePictureInput, ProfilePictures } from "./profile-pictures";
 import { downloadPicture, lichessFlairUrl } from "./remote-picture";
 
 /**
@@ -73,9 +74,18 @@ export function profilePicture(): Promise<YourPicture> {
   return profilePictures().picture();
 }
 
-/** `path` (picked in the open-file dialog; null when cancelled) becomes your picture. */
-export function chooseProfilePicture(path: string | null): Promise<YourPicture> {
-  return path ? profilePictures().choose(path) : profilePictures().picture();
+/** The picture at `path` (picked in the open-file dialog; null when cancelled), to crop. */
+export async function openProfilePicture(path: string | null): Promise<PictureFile | null> {
+  return path ? profilePictures().open(path) : null;
+}
+
+export function originalProfilePicture(): Promise<PictureFile | null> {
+  return profilePictures().original();
+}
+
+/** The renderer's crop (`input`, checked here) becomes your picture. */
+export function saveProfilePicture(input: unknown): Promise<YourPicture> {
+  return profilePictures().save(parseSavePictureInput(input));
 }
 
 export function removeProfilePicture(): Promise<YourPicture> {

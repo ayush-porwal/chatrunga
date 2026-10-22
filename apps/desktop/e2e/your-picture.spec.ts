@@ -1,6 +1,7 @@
-// Settings → Your picture, through the built app: a photo chosen in the file dialog is copied into
-// the app's data and shows wherever "You" plays (the Play card's You tile, your side's player row
-// on the board), and Remove brings the side's colour back. How to run it: playwright.config.ts.
+// Settings → Your picture, through the built app: a photo chosen in the file dialog is cropped,
+// copied into the app's data (with its original, for Adjust) and shows wherever "You" plays (the
+// Play card's You tile, your side's player row on the board), and Remove brings the side's colour
+// back. How to run it: playwright.config.ts.
 import type { Locator, Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -61,8 +62,24 @@ test("a picture chosen in Settings shows on the Play card and on your side of th
   await expect(yourPicture(card)).toHaveCount(0);
   await stubOpenFile(app, photo);
   await card.getByRole("button", { name: "Choose picture…" }).click();
+  // The crop step: the picture under the avatar's frame, positioned by keys, zoomed, then saved.
+  const crop = page.getByRole("dialog", { name: "Crop your picture" });
+  const area = crop.getByRole("application", { name: /^Picture position/ });
+  await expectLoaded(area.locator("img"));
+  await crop.getByRole("slider", { name: "Zoom" }).fill("2");
+  await area.press("ArrowRight");
+  await crop.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(crop).toHaveCount(0);
   await expect(card).toContainText("Your photo");
   await expectLoaded(yourPicture(card));
+
+  // Adjust crops it again from the original kept beside it; Cancel leaves it as it was.
+  const saved = await yourPicture(card).getAttribute("src");
+  await card.getByRole("button", { name: "Adjust", exact: true }).click();
+  await expect(crop.getByRole("slider", { name: "Zoom" })).toHaveValue("2");
+  await crop.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(crop).toHaveCount(0);
+  await expect(yourPicture(card)).toHaveAttribute("src", saved ?? "");
 
   // The Play card's You tile.
   await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();

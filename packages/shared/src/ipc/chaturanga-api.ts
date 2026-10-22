@@ -46,6 +46,7 @@ import type {
   StartEngineGameInput,
   UpdateEngineInput
 } from "../types/engine";
+import type { PictureFile, SavePictureInput } from "../types/pictures";
 import type { AppSettings } from "../types/settings";
 import type {
   BroadcastAlert,
@@ -213,6 +214,8 @@ export type WindowGlassState = {
 export type YourPicture = {
   src: string | null;
   source: "upload" | "chesscom" | "lichess" | null;
+  /** Your photo's original is kept: it can be cropped again (Adjust). */
+  adjustable: boolean;
 };
 
 /** `process.platform`, spelled out so the renderer (which has no Node types) can use it. */
@@ -470,10 +473,14 @@ export type ChaturangaApi = {
   profile: {
     picture(): Promise<YourPicture>;
     /**
-     * Opens a picture file dialog; the picture chosen (a copy of it) becomes yours. Resolves with
-     * your picture after (unchanged when cancelled); rejects when the file can't be used.
+     * Opens a picture file dialog: the chosen file's bytes, to crop (null when cancelled). Rejects
+     * when the file can't be used (not a PNG, JPG, WebP or GIF, or over 5 MB).
      */
-    choosePicture(): Promise<YourPicture>;
+    openPicture(): Promise<PictureFile | null>;
+    /** Your photo's original and its crop, to crop again; null when none is kept. */
+    originalPicture(): Promise<PictureFile | null>;
+    /** The cropped square becomes your picture, its original kept beside it for Adjust. */
+    savePicture(input: SavePictureInput): Promise<YourPicture>;
     /** Forgets the chosen photo: an account's picture, if any, shows again. */
     removePicture(): Promise<YourPicture>;
     /** Your picture changed (chosen, removed, or an account's picture came or went). */

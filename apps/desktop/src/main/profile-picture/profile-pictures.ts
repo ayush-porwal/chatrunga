@@ -2,13 +2,25 @@
  * Your picture (YourPicture): the photo you chose in Settings, else the connected Chess.com
  * account's picture, else the connected Lichess account's flair, else none. Each is a copy in the
  * app's picture folder (picture-store.ts), owned by its source ("upload", "chesscom", "lichess"),
- * so the renderer only ever loads local files. The accounts' pictures are downloaded when an
+ * so the renderer only ever loads local files. Your photo is the square the renderer cropped; the
+ * original it was cut from is kept beside it ("original") with the crop, so Adjust re-cuts from
+ * the original rather than from a copy of a copy. The accounts' pictures are downloaded when an
  * account connects or its picture's address changes, and deleted when it disconnects; a download
  * that fails leaves that source out (logged) and is tried again on the next change.
  */
+import { readFile, stat } from "node:fs/promises";
+import { basename, isAbsolute } from "node:path";
 import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
 import { isRecord } from "@chaturanga/shared/types/guards";
-import { isFile, type PictureStore } from "../picture-store";
+import {
+  isPictureCrop,
+  PICTURE_OUTPUT_SIZE,
+  type PictureCrop,
+  type PictureFile,
+  type SavePictureInput
+} from "@chaturanga/shared/types/pictures";
+import { pngSize, RASTER_EXTENSIONS, rasterType } from "../picture-bytes";
+import { isFile, PICTURE_MAX_BYTES, type PictureStore } from "../picture-store";
 import { createSerialQueue, readJsonObject, writePrivateJsonFile } from "../secure-json-file";
 import type { RemotePicture } from "./remote-picture";
 
@@ -21,9 +33,50 @@ const REMOTE_SOURCES: readonly RemoteSource[] = ["chesscom", "lichess"];
 
 /** A source's copy: its file, and (an account's) the address it was downloaded from. */
 type Copy = { path: string; url: string | null };
-type State = Record<Source, Copy | null>;
+/** Every source's copy, and your photo's original (owned by "original") with its crop. */
+type State = Record<Source | "original", Copy | null> & { crop: PictureCrop | null };
+type Owner = Source | "original";
 
-const NO_PICTURE: YourPicture = { src: null, source: null };
+const NO_PICTURE: YourPicture = { src: null, source: null, adjustable: false };
+const NOT_A_PICTURE = "isn't a PNG, JPG, WebP or GIF file";
+
+/** The renderer's crop (an IPC payload), checked: a square PNG, its original, the crop. */
+export function parseSavePictureInput(value: unknown): {
+  cropped: Buffer;
+  original: Buffer | null;
+  crop: PictureCrop;
+} {
+  const input: Partial<Record<keyof SavePictureInput, unknown>> = isRecord(value) ? value : {};
+  const { cropped, original, crop } = input;
+  if (!(cropped instanceof Uint8Array) || !isPictureCrop(crop)) throw new Error("Invalid picture.");
+  if (original !== null && !(original instanceof Uint8Array)) throw new Error("Invalid picture.");
+  return { cropped: squarePng(asBuffer(cropped)), original: originalPicture(original), crop };
+}
+
+/** The renderer's cropped square: a PNG at most PICTURE_OUTPUT_SIZE square, and 5 MB. */
+function squarePng(bytes: Buffer): Buffer {
+  const size = pngSize(bytes);
+  if (!size || size.width !== size.height || !size.width || size.width > PICTURE_OUTPUT_SIZE)
+    throw new Error("The cropped picture must be a square PNG.");
+  return withinSize(bytes);
+}
+
+/** The original sent with a crop: a raster picture of at most 5 MB (null: the kept one). */
+function originalPicture(bytes: Uint8Array | null): Buffer | null {
+  if (!bytes) return null;
+  const buffer = asBuffer(bytes);
+  if (!rasterType(buffer)) throw new Error(`The picture ${NOT_A_PICTURE}.`);
+  return withinSize(buffer);
+}
+
+function withinSize(bytes: Buffer): Buffer {
+  if (bytes.length > PICTURE_MAX_BYTES) throw new Error("The picture is larger than 5 MB.");
+  return bytes;
+}
+
+function asBuffer(bytes: Uint8Array): Buffer {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
 
 export type ProfilePicturesOptions = {
   store: PictureStore;
@@ -58,17 +111,68 @@ export class ProfilePictures {
     return this.serialize(async () => this.resolve(await this.read()));
   }
 
-  /** `path` (a file the user picked) becomes your picture; rejects when it can't be used. */
-  choose(path: string): Promise<YourPicture> {
-    return this.change(async (state) => {
-      state.upload = { path: await this.options.store.adopt("upload", path), url: null };
+  /**
+   * The picture at `path` (a file the user picked), to crop: a PNG, JPG, WebP or GIF of at most
+   * 5 MB, by its bytes. Nothing is stored until the crop is saved.
+   */
+  async open(path: string): Promise<PictureFile> {
+    if (!isAbsolute(path)) throw new Error("The picture must be a file on this computer.");
+    const info = await stat(path).catch(() => null);
+    if (!info?.isFile()) throw new Error(`The picture ${basename(path)} wasn't found.`);
+    if (info.size > PICTURE_MAX_BYTES) throw new Error("The picture is larger than 5 MB.");
+    const bytes = await readFile(path);
+    const type = rasterType(bytes);
+    if (!type) throw new Error(`The picture ${basename(path)} ${NOT_A_PICTURE}.`);
+    return { bytes, type, crop: null };
+  }
+
+  /** Your photo's original and the crop it was cut with; null when none is kept. */
+  original(): Promise<PictureFile | null> {
+    return this.serialize(async () => {
+      const state = await this.read();
+      if (!(await this.adjustable(state)) || !state.original) return null;
+      const bytes = await readFile(state.original.path);
+      const type = rasterType(bytes);
+      return type ? { bytes, type, crop: state.crop } : null;
     });
   }
 
-  /** Forgets the chosen photo. */
+  /**
+   * `cropped` becomes your picture, cut with `crop` from `original` (null: the original already
+   * kept, re-cut), which is kept beside it.
+   */
+  save({
+    cropped,
+    original,
+    crop
+  }: {
+    cropped: Buffer;
+    original: Buffer | null;
+    crop: PictureCrop;
+  }): Promise<YourPicture> {
+    return this.change(async (state) => {
+      const { store } = this.options;
+      if (original) {
+        const type = rasterType(original);
+        if (!type) throw new Error(`The picture ${NOT_A_PICTURE}.`);
+        state.original = {
+          path: await store.write("original", original, RASTER_EXTENSIONS[type]),
+          url: null
+        };
+      } else if (!state.original || !(await isFile(state.original.path))) {
+        throw new Error("Choose the picture again: its original isn't kept.");
+      }
+      state.upload = { path: await store.write("upload", cropped, ".png"), url: null };
+      state.crop = crop;
+    });
+  }
+
+  /** Forgets the chosen photo, and its original. */
   remove(): Promise<YourPicture> {
     return this.change((state) => {
       state.upload = null;
+      state.original = null;
+      state.crop = null;
     });
   }
 
@@ -88,7 +192,7 @@ export class ProfilePictures {
       let changed = false;
       for (const source of REMOTE_SOURCES)
         changed = (await this.follow(state, source, urls[source])) || changed;
-      if (changed) await this.save(state, saved, REMOTE_SOURCES);
+      if (changed) await this.commit(state, saved, REMOTE_SOURCES);
       if ((await this.resolve(state)).src !== before.src) this.options.onChange();
     }).catch((error: unknown) => this.options.log("refreshing your picture failed", error));
     return this.queuedRefresh;
@@ -127,7 +231,7 @@ export class ProfilePictures {
       const state = await this.read();
       const saved = { ...state };
       await apply(state);
-      await this.save(state, saved, ["upload"]);
+      await this.commit(state, saved, ["upload", "original"]);
       this.options.onChange();
       return this.resolve(state);
     });
@@ -139,10 +243,10 @@ export class ProfilePictures {
    * state naming a file that's gone. When it can't be stored, the new copies go instead, and the
    * state and copies there were stay.
    */
-  private async save(state: State, saved: State, sources: readonly Source[]): Promise<void> {
+  private async commit(state: State, saved: State, owners: readonly Owner[]): Promise<void> {
     const prune = (from: State) =>
       Promise.all(
-        sources.map((source) => this.options.store.prune(source, from[source]?.path ?? null))
+        owners.map((owner) => this.options.store.prune(owner, from[owner]?.path ?? null))
       );
     try {
       await this.write(state);
@@ -157,21 +261,37 @@ export class ProfilePictures {
   private async resolve(state: State): Promise<YourPicture> {
     for (const source of SOURCES) {
       const copy = state[source];
-      if (copy && (await isFile(copy.path))) return { src: pictureSrc(copy.path), source };
+      if (copy && (await isFile(copy.path)))
+        return {
+          src: pictureSrc(copy.path),
+          source,
+          adjustable: source === "upload" && (await this.adjustable(state))
+        };
     }
     return NO_PICTURE;
+  }
+
+  /** Whether your photo's original is there to crop again. */
+  private async adjustable(state: State): Promise<boolean> {
+    return Boolean(state.upload && state.original && (await isFile(state.original.path)));
   }
 
   /** The state file, checked: only copies in the folder, each its source's. */
   private async read(): Promise<State> {
     const parsed = await readJsonObject(this.options.stateFile);
-    const copy = (source: Source): Copy | null => {
-      const value = parsed?.[source];
+    const copy = (owner: Owner): Copy | null => {
+      const value = parsed?.[owner];
       if (!isRecord(value) || typeof value.path !== "string") return null;
-      if (this.options.store.ownerOf(value.path) !== source) return null;
+      if (this.options.store.ownerOf(value.path) !== owner) return null;
       return { path: value.path, url: typeof value.url === "string" ? value.url : null };
     };
-    return { upload: copy("upload"), chesscom: copy("chesscom"), lichess: copy("lichess") };
+    return {
+      upload: copy("upload"),
+      chesscom: copy("chesscom"),
+      lichess: copy("lichess"),
+      original: copy("original"),
+      crop: isPictureCrop(parsed?.crop) ? parsed.crop : null
+    };
   }
 
   private write(state: State): Promise<void> {

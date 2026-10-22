@@ -19,6 +19,7 @@ import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/ty
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import type { YourPicture } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { SavePictureInput } from "@chaturanga/shared/types/pictures";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
@@ -79,7 +80,7 @@ export function useYourPictureSubscription() {
   );
 }
 
-const NO_PICTURE: YourPicture = { src: null, source: null };
+const NO_PICTURE: YourPicture = { src: null, source: null, adjustable: false };
 
 /**
  * Your picture and where it comes from (main/profile-picture). Read again when it changes: a photo
@@ -93,15 +94,26 @@ export function useYourPictureQuery() {
   });
 }
 
-/** Settings → Your picture: Choose picture… (the file dialog) and Remove. */
+/** Settings → Your picture: a crop saved (SavePictureInput), or Remove (null). */
 export function useYourPictureMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (action: "choose" | "remove") =>
-      action === "choose"
-        ? requireApi().profile.choosePicture()
-        : requireApi().profile.removePicture(),
+    mutationFn: (save: SavePictureInput | null) =>
+      save ? requireApi().profile.savePicture(save) : requireApi().profile.removePicture(),
     onSuccess: (picture) => queryClient.setQueryData(queryKeys.yourPicture, picture)
+  });
+}
+
+/**
+ * Settings → Your picture's file to crop: Choose picture… (the file dialog; null when cancelled)
+ * or Adjust (your photo's original; null when none is kept).
+ */
+export function usePictureFileMutation() {
+  return useMutation({
+    mutationFn: (from: "choose" | "adjust") =>
+      from === "choose"
+        ? requireApi().profile.openPicture()
+        : requireApi().profile.originalPicture()
   });
 }
 
