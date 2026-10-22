@@ -17,7 +17,7 @@ export const PAGE_TEXT = [
   "**2...e6 3 Nc3**\n[PAGE 4]"
 ];
 
-export const OUTLINE = {
+const OUTLINE = {
   title: "Synthetic Openings",
   author: "A. Writer",
   color: "white",
@@ -31,7 +31,7 @@ export const OUTLINE = {
 export const ILLEGAL_LINE = "1. e4 e5 2. Nf3 Nc6 3. Bb9";
 export const REPAIRED_LINE = "1. e4 e5 2. Nf3 Nc6 3. Bb5";
 
-export const PAGE_LINES = [
+const PAGE_LINES = [
   {
     game: { white: "Alpha", black: "Beta", event: "Test Open", year: "2000" },
     lines: [

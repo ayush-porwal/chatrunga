@@ -25,7 +25,7 @@ export type BookChatRequest = {
   signal: AbortSignal;
 };
 
-export type BookChatAnswer = { text: string; costUsd: number };
+type BookChatAnswer = { text: string; costUsd: number };
 
 export type BookChat = (request: BookChatRequest) => Promise<BookChatAnswer>;
 

@@ -24,7 +24,7 @@ import { detail, reindex, requireRepertoire } from "../repertoire/core";
 import { chapterRepository, repertoireRepository, transaction } from "../repertoire/repository";
 import { changed, clock, withRepertoireWriteGate } from "../repertoire/service-runtime";
 
-export type BookRepertoireChapter = {
+type BookRepertoireChapter = {
   title: string;
   headers: Record<string, string>;
   tree: MoveNode[];
