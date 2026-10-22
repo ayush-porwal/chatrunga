@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
 import type { PuzzleInsightPayload } from "@chaturanga/shared/schemas/puzzle-insight";
+import { COMMENTARY_LIMITS, COMMENTARY_REASONING_TOKENS } from "@chaturanga/shared/llm/commentary";
 import {
   NO_API_KEY_ERROR,
+  type CommentaryReport,
   explainPuzzleWithOpenRouter,
   generateOpenRouterCommentary,
   parseCommentaryPayloads,
@@ -67,6 +69,42 @@ function completion(text: string): Response {
   });
 }
 
+/** The body settings that decide how much a request may think and answer. */
+type SentBudget = { max_tokens: number; reasoning: unknown };
+
+function sentBudget(init?: RequestInit): SentBudget {
+  const { max_tokens, reasoning } = JSON.parse(bodyText(init)) as SentBudget;
+  return { max_tokens, reasoning };
+}
+
+/** What a thinking model returns when its reasoning used all of `max_tokens`: no answer. */
+function thoughtOut(): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        {
+          finish_reason: "length",
+          message: {
+            role: "assistant",
+            content: null,
+            reasoning_details: [{ type: "reasoning.text", text: "Let me weigh e4 against d4..." }]
+          }
+        }
+      ],
+      usage: {
+        prompt_tokens: 900,
+        completion_tokens: 2598,
+        completion_tokens_details: { reasoning_tokens: 2598 },
+        cost: 0.013
+      }
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+const THOUGHT_OUT_ERROR =
+  "The model used its whole budget thinking and gave no answer. Try again, or pick another model.";
+
 const GOOD_ANSWER = JSON.stringify({
   headline: "Claiming the center at once",
   body: "e4 grabs central space right away and opens lines for your queen and bishop."
@@ -129,6 +167,94 @@ describe("generateOpenRouterCommentary", () => {
     );
     expect(result.commentary[0]?.headline).toBe("Claiming the center at once");
     expect(result.error).toBeNull();
+  });
+
+  it("lets the model think on a budget of its own, on top of the answer's allowance", async () => {
+    const fetchImpl = vi.fn<FetchLike>().mockResolvedValue(completion(GOOD_ANSWER));
+    await generateOpenRouterCommentary([{ ...payload(), commentaryDetail: "detailed" }], {
+      apiKey: "unit-test-key",
+      fetchImpl
+    });
+
+    expect(sentBudget(fetchImpl.mock.calls[0][1])).toStrictEqual({
+      max_tokens: COMMENTARY_LIMITS.detailed.answerTokens + COMMENTARY_REASONING_TOKENS,
+      reasoning: { max_tokens: COMMENTARY_REASONING_TOKENS, exclude: true }
+    });
+  });
+
+  it("asks again with twice the thinking room when the model thought until it ran out", async () => {
+    const fetchImpl = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(thoughtOut())
+      .mockResolvedValueOnce(completion(GOOD_ANSWER));
+    const events: CommentaryReport[] = [];
+    const result = await generateOpenRouterCommentary([payload()], {
+      apiKey: "unit-test-key",
+      fetchImpl,
+      report: (event) => events.push(event)
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [first, second] = fetchImpl.mock.calls.map(([, init]) => init);
+    const answerTokens = COMMENTARY_LIMITS.balanced.answerTokens;
+    expect(sentBudget(second)).toStrictEqual({
+      max_tokens: answerTokens + 2 * COMMENTARY_REASONING_TOKENS,
+      reasoning: { max_tokens: 2 * COMMENTARY_REASONING_TOKENS, exclude: true }
+    });
+    // The same question, not a correction.
+    const messages = (init?: RequestInit) =>
+      (JSON.parse(bodyText(init)) as { messages: unknown }).messages;
+    expect(messages(second)).toStrictEqual(messages(first));
+    expect(result.commentary[0]?.headline).toBe("Claiming the center at once");
+    expect(result.error).toBeNull();
+    expect(events).toMatchObject([
+      { type: "request" },
+      {
+        type: "attempt",
+        reason: "initial",
+        result: "reasoning_exhausted",
+        usage: { costUsd: 0.013 }
+      },
+      { type: "attempt", reason: "reasoning_retry", result: "accepted" },
+      { type: "outcome", ok: true, attempts: 2 }
+    ]);
+  });
+
+  it("says the model only thought when it runs out a second time", async () => {
+    const fetchImpl = vi.fn(async () => thoughtOut());
+    const events: CommentaryReport[] = [];
+    const result = await generateOpenRouterCommentary([payload()], {
+      apiKey: "unit-test-key",
+      fetchImpl,
+      report: (event) => events.push(event)
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result).toStrictEqual({ commentary: [], error: THOUGHT_OUT_ERROR });
+    expect(events.at(-1)).toMatchObject({
+      type: "outcome",
+      ok: false,
+      code: "reasoning_exhausted"
+    });
+  });
+
+  it("keeps the plain empty-answer error when the model stopped without running out", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: null } }] }),
+          { status: 200 }
+        )
+    );
+    const result = await generateOpenRouterCommentary([payload()], {
+      apiKey: "unit-test-key",
+      fetchImpl
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.error).toBe(
+      "The model returned an empty answer. Try again, or pick another model."
+    );
   });
 
   it("returns an error, not substitute prose, when the answer fails validation twice", async () => {
@@ -247,13 +373,13 @@ describe("explainPuzzleWithOpenRouter", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const init = fetchImpl.mock.calls[0][1];
-    const body = JSON.parse(bodyText(init)) as {
-      messages: { content: string }[];
-      max_tokens: number;
-    };
+    const body = JSON.parse(bodyText(init)) as { messages: { content: string }[] };
     expect(body.messages[0].content).toContain("tactics puzzle");
     expect(body.messages[1].content).toContain('"solutionSan"');
-    expect(body.max_tokens).toBe(350);
+    expect(sentBudget(init)).toStrictEqual({
+      max_tokens: COMMENTARY_LIMITS.concise.answerTokens + COMMENTARY_REASONING_TOKENS,
+      reasoning: { max_tokens: COMMENTARY_REASONING_TOKENS, exclude: true }
+    });
     expect(result).toStrictEqual({
       explanation: {
         headline: "The f7 pawn had one defender",
@@ -288,6 +414,30 @@ describe("explainPuzzleWithOpenRouter", () => {
       explanation: null,
       error: expect.stringContaining("didn't match the engine facts")
     });
+  });
+
+  it("asks again with more thinking room, then says the model only thought", async () => {
+    const fetchImpl = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(thoughtOut())
+      .mockResolvedValueOnce(completion(PUZZLE_ANSWER));
+    const retried = await explainPuzzleWithOpenRouter(puzzlePayload(), {
+      apiKey: "unit-test-key",
+      fetchImpl
+    });
+    expect(sentBudget(fetchImpl.mock.calls[1][1]).max_tokens).toBe(
+      COMMENTARY_LIMITS.concise.answerTokens + 2 * COMMENTARY_REASONING_TOKENS
+    );
+    expect(retried.explanation?.headline).toBe("The f7 pawn had one defender");
+
+    const always = vi.fn(async () => thoughtOut());
+    expect(
+      await explainPuzzleWithOpenRouter(puzzlePayload(), {
+        apiKey: "unit-test-key",
+        fetchImpl: always
+      })
+    ).toStrictEqual({ explanation: null, error: THOUGHT_OUT_ERROR });
+    expect(always).toHaveBeenCalledTimes(2);
   });
 
   it("is cancelled by its signal, without an error to show", async () => {

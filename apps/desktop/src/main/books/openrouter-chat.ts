@@ -1,13 +1,15 @@
 /**
  * The book import's OpenRouter client: one chat request with text and image parts, a JSON-object
  * answer when asked, a reasoning effort, a time limit, cancellation, and the charge OpenRouter
- * reports (`usage.cost`, USD). Errors carry a message safe to show and whether trying again may
- * help. The key is the caller's (main process only).
+ * reports (`usage.cost`, USD). A model that thinks until it runs out of tokens is asked once more
+ * with twice the room. Errors carry a message safe to show and whether trying again may help. The
+ * key is the caller's (main process only).
  */
 import type { BookChatMessage } from "@chaturanga/shared/books/prompts";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   OPENROUTER_ENDPOINT,
+  completionHitTokenLimit,
   completionText,
   openRouterHeaders,
   openRouterHttpFailure,
@@ -42,6 +44,8 @@ export class BookChatError extends Error {
 const UNREACHABLE = "OpenRouter couldn't be reached. Check your connection and try again.";
 const TIMEOUT = "OpenRouter took too long to answer.";
 const EMPTY = "The model returned an empty answer.";
+const THOUGHT_OUT =
+  "The model used its whole budget thinking and gave no answer. Try again, or pick another model.";
 /** A page image and a long answer (with reasoning) can take a while. */
 const DEFAULT_TIMEOUT_MS = 180_000;
 
@@ -55,7 +59,10 @@ export function openRouterChat(options: {
 }): BookChat {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  return async (request) => {
+  /** One request; `text` is null when the model thought until it ran out, with no answer. */
+  const send = async (
+    request: BookChatRequest
+  ): Promise<{ text: string | null; costUsd: number }> => {
     request.signal.throwIfAborted();
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = AbortSignal.any([request.signal, timeout]);
@@ -72,7 +79,7 @@ export function openRouterChat(options: {
       }
       const body: unknown = await response.json();
       const text = completionText(body);
-      if (!text) throw new BookChatError(EMPTY, true);
+      if (!text && !completionHitTokenLimit(body)) throw new BookChatError(EMPTY, true);
       const usage = parseUsage(isRecord(body) ? body.usage : undefined);
       return { text, costUsd: usage?.costUsd ?? 0 };
     } catch (error) {
@@ -82,6 +89,15 @@ export function openRouterChat(options: {
       if (error instanceof BookChatError) throw error;
       throw new BookChatError(UNREACHABLE, true);
     }
+  };
+  return async (request) => {
+    const first = await send(request);
+    if (first.text) return { text: first.text, costUsd: first.costUsd };
+    // Thinking took all of `max_tokens`: twice the room (a reasoning effort is a share of it, so
+    // the answer's room doubles too). The same request again would only run out again.
+    const second = await send({ ...request, maxTokens: request.maxTokens * 2 });
+    if (!second.text) throw new BookChatError(THOUGHT_OUT, false);
+    return { text: second.text, costUsd: first.costUsd + second.costUsd };
   };
 }
 

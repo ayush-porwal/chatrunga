@@ -179,6 +179,44 @@ describe("commentary analytics", () => {
     expect(of("commentary_failed")).toStrictEqual([]);
   });
 
+  it("a retry with more thinking room is its own attempt, and the billed thinking counts", async () => {
+    const thoughtOut = new Response(
+      JSON.stringify({
+        choices: [{ finish_reason: "length", message: { content: null } }],
+        usage: { prompt_tokens: 900, completion_tokens: 2598, cost: 0.013 }
+      }),
+      { status: 200 }
+    );
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(thoughtOut)
+      .mockResolvedValueOnce(
+        completion(GOOD_ANSWER, { prompt_tokens: 900, completion_tokens: 700, cost: 0.004 })
+      );
+    const { of } = await run(fetchImpl, [payload(1)]);
+
+    expect(
+      of("$ai_generation").map((generation) => [
+        generation.reason,
+        generation.result,
+        generation.$ai_span_name,
+        generation.$ai_error
+      ])
+    ).toStrictEqual([
+      ["initial", "reasoning_exhausted", "commentary", "reasoning_exhausted"],
+      ["reasoning_retry", "accepted", "commentary reasoning retry", undefined]
+    ]);
+    expect(of("commentary_completed")).toStrictEqual([
+      expect.objectContaining({
+        attempts: 2,
+        validation_retried: false,
+        prompt_tokens_total: 1800,
+        completion_tokens_total: 3298,
+        cost_usd_total: 0.017
+      })
+    ]);
+  });
+
   it("a batch with one success and one failure counts each move once", async () => {
     const payloads = [payload(1), payload(2)];
     // The first move's request succeeds; the second is refused (out of credits).
