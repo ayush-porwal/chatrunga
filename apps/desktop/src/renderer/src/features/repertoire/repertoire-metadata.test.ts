@@ -31,6 +31,7 @@ function stored(patch: Partial<RepertoireDetail> = {}): RepertoireDetail {
     dueCount: 0,
     lastStudiedAt: null,
     firstChapterFen: null,
+    bookId: null,
     chapters: [],
     workspace: null,
     ...opened,

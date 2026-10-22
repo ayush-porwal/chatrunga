@@ -439,7 +439,7 @@ Keep export consistent with a captured revision so edits during serialization ca
 
 ### Book import
 
-A chess book's PDF becomes a new repertoire, one opening chapter per chapter of the book, tagged `book`.
+A chess book's PDF becomes a new repertoire, one opening chapter per chapter of the book, linked to its book (the link, not a tag, gives it the Book badge and tab; a copy of it has neither).
 
 **Pipeline.** The hub's New → Import book (PDF)… opens the PDF in the renderer (PDF.js, loaded only then), shows its title (editable), page count, the expected cost and time, and the two models that will read it; without an OpenRouter key it explains why one is needed and links to Settings → AI instead of starting. Start creates the book and sends each page, rendered at 150 dpi in grayscale as WebP, to main; then main runs the import on the user's key: each page is read by the vision model (the book OCR model), the first pages give the title, author, side and chapters, each chapter's pages are turned into lines by the structuring model (the AI model), illegal lines are repaired from the page image (twice at most), and the merged chapters are written in one transaction. Sending pages runs outside the dialog and the hub, so leaving them never stops it; Cancel pauses (what was read is kept), Resume continues, Remove deletes the book and its pages. A quit while pages are being sent leaves the book waiting for them: Continue asks for the same file again (checked by its SHA-256) and sends only the missing pages. A quit during the import pauses it.
 

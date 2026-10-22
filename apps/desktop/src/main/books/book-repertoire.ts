@@ -2,7 +2,8 @@
  * Writes an imported book as a new repertoire: named after the book, its colour, one chapter per
  * book chapter (in book order), in one transaction with the full reconciliation every repertoire
  * write runs (decisions, position index, progress) and through the repertoire write gate. The
- * chapters pass the same checks as a chapter the renderer saves (sanitizeChapter).
+ * chapters pass the same checks as a chapter the renderer saves (sanitizeChapter). No tag marks it:
+ * the books row linked to it does (`bookId` on its summary).
  */
 import { nanoid } from "nanoid";
 import { START_FEN } from "@chaturanga/shared/chess/position";
@@ -72,7 +73,7 @@ export function writeBookRepertoire(input: BookRepertoireInput): Promise<BookRep
         name: cleanName(input.name),
         color: input.color,
         description: cleanText(input.description, MAX_DESCRIPTION) ?? "",
-        tags: ["book"],
+        tags: [],
         revision: 1,
         archivedAt: null,
         createdAt: now,

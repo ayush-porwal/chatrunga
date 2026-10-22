@@ -37,6 +37,11 @@ export type RepertoireSummary = {
   lastStudiedAt: number | null;
   /** The first chapter's starting position (the hub's thumbnail); null without chapters. */
   firstChapterFen: string | null;
+  /**
+   * The book it was imported from (main/books links it; not editable, and a copy has none), null
+   * for any other repertoire.
+   */
+  bookId: string | null;
 };
 
 export type RepertoireChapterSummary = {

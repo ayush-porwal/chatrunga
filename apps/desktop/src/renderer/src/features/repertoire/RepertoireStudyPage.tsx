@@ -720,7 +720,8 @@ function useStudyBook({
   turnTo: (page: number) => void;
   openPage: (page: number) => void;
 } {
-  const isBook = detail?.tags.includes("book") ?? false;
+  // The book's link (main/books), not an editable tag: a copy of the repertoire has none.
+  const isBook = Boolean(detail?.bookId);
   const selectedNodeId = node?.id ?? null;
   const query = useBookPagesQuery(repertoireId, isBook);
   const pages = query.data ?? null;
