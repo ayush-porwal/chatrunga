@@ -250,10 +250,13 @@ describe("explainPuzzleWithOpenRouter", () => {
     const body = JSON.parse(bodyText(init)) as {
       messages: { content: string }[];
       max_tokens: number;
+      reasoning: unknown;
     };
     expect(body.messages[0].content).toContain("tactics puzzle");
     expect(body.messages[1].content).toContain('"solutionSan"');
     expect(body.max_tokens).toBe(350);
+    // Reasoning off, or a thinking-by-default model spends max_tokens before writing anything.
+    expect(body.reasoning).toStrictEqual({ enabled: false });
     expect(result).toStrictEqual({
       explanation: {
         headline: "The f7 pawn had one defender",

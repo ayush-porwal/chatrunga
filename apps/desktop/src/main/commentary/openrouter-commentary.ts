@@ -414,6 +414,9 @@ async function requestCompletion(
         model,
         temperature: request.temperature,
         max_tokens: request.maxTokens,
+        // A coach note is a few sentences: models that think by default (Claude Haiku 5.5)
+        // would spend max_tokens on reasoning and return no text at all.
+        reasoning: { enabled: false },
         messages: request.messages
       }),
       signal: controller.signal
