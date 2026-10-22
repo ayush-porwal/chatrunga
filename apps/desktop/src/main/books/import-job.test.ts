@@ -9,7 +9,9 @@ import {
   ILLEGAL_LINE,
   imageFile,
   PAGE_TEXT,
+  pageLinesAnswer,
   promptKind,
+  repairLineOf,
   REPAIRED_LINE,
   userText
 } from "./__fixtures__/fake-book";
@@ -267,6 +269,126 @@ describe("runBookImport", () => {
       lines: { game: null, lines: [] }
     });
     expect(store.chapters(BOOK)[1].report).toMatchObject({ unreadablePages: [3], moves: 3 });
+  });
+
+  /** Page 2's lines are `moves`; a repair is answered by `repair` (the line it is asked about). */
+  function chapterA(
+    moves: string[],
+    repair: (line: string) => string = () => JSON.stringify({ moves: REPAIRED_LINE })
+  ) {
+    return fakeChat((request) => {
+      if (promptKind(request) === "repair") return repair(repairLineOf(request));
+      return linesAnswer(1, pageLinesAnswer(...moves))(request);
+    });
+  }
+
+  const repairLines = (requests: readonly BookChatRequest[]) =>
+    requests.filter((request) => promptKind(request) === "repair").map(repairLineOf);
+
+  it.each([
+    ["can't read it", () => JSON.stringify({ moves: null }), undefined],
+    [
+      "answers a line still illegal",
+      () => JSON.stringify({ moves: "1. e4 e5 2. Nf3 Nc6 3. Bz6 a6" }),
+      "1. e4 e5 2. Nf3 Nc6 3. Bz5 a6"
+    ]
+  ])(
+    "keeps a variation's legal start when the repair %s twice, and reports it",
+    async (_case, answer, repairedFrom) => {
+      const variation = "1. e4 e5 2. Nf3 Nc6 3. Bz5 a6";
+      const { chat, requests } = chapterA(["1. e4 e5 2. Nf3 Nc6 3. Bb5", variation], answer);
+      await expect(runBookImport(BOOK, deps(chat), new AbortController().signal)).resolves.toBe(
+        "done"
+      );
+      expect(repairLines(requests)).toHaveLength(2);
+      const stored = store.pages(BOOK)[1].lines?.lines[1];
+      expect(stored).toMatchObject({ repairAttempts: 2 });
+      expect(stored?.repairedFrom).toBe(repairedFrom);
+      const [first] = store.chapters(BOOK);
+      expect(first.report?.illegalLines).toStrictEqual([
+        expect.objectContaining({ pageIndex: 1, printedPage: 2, label: "a" })
+      ]);
+      const { tree } = getChapter({
+        repertoireId: store.get(BOOK)!.repertoireId!,
+        chapterId: first.repertoireChapterId!
+      });
+      expect(tree.filter((node) => node.san === "Bb5")).toHaveLength(1);
+      expect(tree.some((node) => node.san === "a6")).toBe(false);
+    }
+  );
+
+  it("repairs lines sharing a misread move with one request, counted as one error", async () => {
+    const copied = `${ILLEGAL_LINE} a6 4. Ba4 Nf6`;
+    const { chat, requests } = chapterA([ILLEGAL_LINE, copied]);
+    const events: BookProgressEvent[] = [];
+    await expect(
+      runBookImport(BOOK, deps(chat, events), new AbortController().signal)
+    ).resolves.toBe("done");
+    expect(repairLines(requests)).toStrictEqual([ILLEGAL_LINE]);
+    expect(events.find((event) => event.stage === "repair")).toMatchObject({
+      done: 0,
+      total: 1,
+      lines: 2
+    });
+    expect(events.filter((event) => event.stage === "repair").at(-1)).toMatchObject({
+      done: 1,
+      total: 1
+    });
+    expect(store.pages(BOOK)[1].lines?.lines[1]).toMatchObject({
+      moves: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6",
+      repairedFrom: copied,
+      repairAttempts: 1
+    });
+    expect(store.chapters(BOOK)[0].report).toMatchObject({
+      legalLines: 3,
+      repairedLines: 2,
+      illegalLines: []
+    });
+  });
+
+  it("repairs a line the shared correction didn't fix on its own", async () => {
+    const copied = `${ILLEGAL_LINE} a6 4. Bz4`;
+    const fixed = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4";
+    const answers: Record<string, string> = {
+      [ILLEGAL_LINE]: REPAIRED_LINE,
+      "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bz4": fixed
+    };
+    const { chat, requests } = chapterA([ILLEGAL_LINE, copied], (line) =>
+      JSON.stringify({ moves: answers[line] })
+    );
+    await expect(runBookImport(BOOK, deps(chat), new AbortController().signal)).resolves.toBe(
+      "done"
+    );
+    // The second request asks about the line as the shared correction left it.
+    expect(repairLines(requests)).toStrictEqual([
+      ILLEGAL_LINE,
+      "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bz4"
+    ]);
+    expect(store.pages(BOOK)[1].lines?.lines[1]).toMatchObject({
+      moves: fixed,
+      repairedFrom: copied,
+      repairAttempts: 2
+    });
+    expect(store.chapters(BOOK)[0].report).toMatchObject({ legalLines: 3, illegalLines: [] });
+  });
+
+  it("repairs the shallowest error first, whose correction heals a deeper line too", async () => {
+    // The main line has two misreads; the variation only the deeper one (it reads 3. Bb5).
+    const main = `${ILLEGAL_LINE} a6 4. Ba4 Nf6 5. Qz9`;
+    const deeper = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. Qz9 Be7";
+    const { chat, requests } = chapterA([main, deeper], () =>
+      JSON.stringify({ moves: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O" })
+    );
+    await expect(runBookImport(BOOK, deps(chat), new AbortController().signal)).resolves.toBe(
+      "done"
+    );
+    expect(repairLines(requests)).toStrictEqual([main]);
+    expect(store.pages(BOOK)[1].lines?.lines[1]).toMatchObject({
+      moves: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7",
+      repairedFrom: deeper,
+      repairAttempts: 1
+    });
+    expect(store.chapters(BOOK)[0].report).toMatchObject({ legalLines: 3, illegalLines: [] });
   });
 
   it("writes nothing when cancelled while its write waits for the repertoire write gate", async () => {

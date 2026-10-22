@@ -188,6 +188,8 @@ describe("mergeBookChapter: hard cases", () => {
         moves: "1. e4 c5 2. Nf3 d6 3. Bxh7 Nf6",
         fenBefore: "rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3",
         token: "Bxh7",
+        ply: 4,
+        kind: "variation",
         repairAttempts: 1
       }
     ]);

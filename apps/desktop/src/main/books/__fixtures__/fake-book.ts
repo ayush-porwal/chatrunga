@@ -99,6 +99,24 @@ function imagePage(request: BookChatRequest): number {
   return Number(/p(\d+)\.webp$/.exec(path)?.[1]);
 }
 
+/** The line a repair request asks about (its movetext as sent). */
+export function repairLineOf(request: BookChatRequest): string {
+  return /\nLINE \([^)]*\):\n(.*)\n/.exec(userText(request))?.[1] ?? "";
+}
+
+/** A lines answer for one page: `moves` of each line, the first a main line. */
+export const pageLinesAnswer = (...moves: string[]) =>
+  JSON.stringify({
+    game: null,
+    lines: moves.map((line, index) => ({
+      label: index ? String.fromCharCode(96 + index) : null,
+      kind: index ? "variation" : "main",
+      role: "own-recommended",
+      moves: line,
+      notes: []
+    }))
+  });
+
 /** The scripted answer to a request (the right one for its prompt and page). */
 export function bookAnswer(request: BookChatRequest): string {
   switch (promptKind(request)) {

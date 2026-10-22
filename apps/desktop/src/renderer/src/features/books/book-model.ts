@@ -30,7 +30,7 @@ export type BookAction = "cancel" | "start" | "resume" | "retry" | "continue" | 
 /** What a book's hub row shows. */
 export type BookRowState = {
   status: BookStatus;
-  /** "Reading pages", "Building chapter 2 of 9", "Paused · Reading pages"… */
+  /** "Reading pages", "Building chapter 2 of 9", "Repairing 3 errors (9 lines)", "Paused · Reading pages"… */
   label: string;
   /** Work done and to do in the stage; null when not known (no bar, or an indeterminate one). */
   progress: { done: number; total: number } | null;
@@ -47,15 +47,25 @@ const STAGE_LABELS: Record<BookStage, string> = {
   write: "Creating repertoire"
 };
 
-/** The stage's label; the chapter being read during `lines` ("Building chapter 2 of 9"). */
+const count = (n: number, noun: string) =>
+  `${n.toLocaleString("en-US")} ${noun}${n === 1 ? "" : "s"}`;
+
+/**
+ * The stage's label: the chapter being read during `lines` ("Building chapter 2 of 9"); during
+ * `repair`, the root errors and the lines they cover ("Repairing 140 errors (538 lines)").
+ */
 export function bookStageLabel(
   stage: BookStage | null,
   chapter: { index: number } | null = null,
-  chapterCount = 0
+  chapterCount = 0,
+  repair: { errors: number; lines: number } | null = null
 ): string {
   if (stage === null) return "Starting";
   if (stage === "lines" && chapter && chapterCount > 0) {
     return `Building chapter ${Math.min(chapter.index + 1, chapterCount)} of ${chapterCount}`;
+  }
+  if (stage === "repair" && repair && repair.errors > 0) {
+    return `Repairing ${count(repair.errors, "error")} (${count(repair.lines, "line")})`;
   }
   return STAGE_LABELS[stage];
 }
@@ -96,6 +106,7 @@ function currentState(book: BookSummary, event: BookProgressEvent | null) {
       chapter: null,
       costUsd: book.costUsd,
       progress: null,
+      repair: null,
       error: book.error
     };
   }
@@ -105,6 +116,7 @@ function currentState(book: BookSummary, event: BookProgressEvent | null) {
     chapter: event.chapter,
     costUsd: Math.max(book.costUsd, event.costUsd),
     progress: event.total > 0 ? { done: event.done, total: event.total } : null,
+    repair: event.lines === null ? null : { errors: event.total, lines: event.lines },
     error: event.error ?? book.error
   };
 }
@@ -141,7 +153,7 @@ export function bookRowState(
   const now = currentState(book, event);
   const failure = actionError ?? upload?.error ?? null;
   if (now.status === "adding-pages") return savingRow(book, upload, now.costUsd, failure);
-  const stage = bookStageLabel(now.stage, now.chapter, book.chapters.length);
+  const stage = bookStageLabel(now.stage, now.chapter, book.chapters.length, now.repair);
   const stopped = now.status === "failed" ? (now.error ?? "The import stopped.") : null;
   return {
     status: now.status,

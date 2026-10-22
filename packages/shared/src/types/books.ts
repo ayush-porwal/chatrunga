@@ -99,9 +99,14 @@ export type BookProgressEvent = {
   bookId: string;
   status: BookStatus;
   stage: BookStage | null;
-  /** Work done and to do in this stage (pages, lines, chapters). */
+  /**
+   * Work done and to do in this stage (pages; pages of the chapters; during `repair`, root errors:
+   * lines failing on the same move in the same position count once).
+   */
   done: number;
   total: number;
+  /** During `repair`: the failing lines the `total` errors cover; null otherwise. */
+  lines: number | null;
   costUsd: number;
   /** The chapter being read, during `lines`. */
   chapter: { index: number; title: string } | null;

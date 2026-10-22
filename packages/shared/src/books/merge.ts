@@ -51,6 +51,9 @@ export type BookLineFailure = BookLineProblem & {
   fenBefore: string;
   /** The failing move as printed. */
   token: string;
+  /** Its index in the line's moves (= plies played before it: every line starts at move 1). */
+  ply: number;
+  kind: BookLine["kind"];
   repairAttempts: number;
 };
 
@@ -263,6 +266,8 @@ function playLine(builder: Builder, context: LineContext, tokens: MoveToken[]): 
         moves: line.moves,
         fenBefore: makeFen(position.toSetup()),
         token: token.raw,
+        ply: index,
+        kind: line.kind,
         repairAttempts: line.repairAttempts ?? 0
       });
       break;

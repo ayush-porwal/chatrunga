@@ -59,6 +59,7 @@ function event(patch: Partial<BookProgressEvent> = {}): BookProgressEvent {
     total: 10,
     costUsd: 0.25,
     chapter: null,
+    lines: null,
     error: null,
     ...patch
   };
@@ -82,6 +83,16 @@ describe("bookStageLabel", () => {
     expect(bookStageLabel("repair")).toBe("Repairing lines");
     expect(bookStageLabel("write")).toBe("Creating repertoire");
     expect(bookStageLabel(null)).toBe("Starting");
+  });
+
+  it("counts the repair's root errors and the lines they cover", () => {
+    expect(bookStageLabel("repair", null, 0, { errors: 140, lines: 538 })).toBe(
+      "Repairing 140 errors (538 lines)"
+    );
+    expect(bookStageLabel("repair", null, 0, { errors: 1, lines: 1 })).toBe(
+      "Repairing 1 error (1 line)"
+    );
+    expect(bookStageLabel("repair", null, 0, { errors: 0, lines: 0 })).toBe("Repairing lines");
   });
 });
 
@@ -108,6 +119,19 @@ describe("bookRowState", () => {
       progress: null,
       costUsd: 0.1
     });
+  });
+
+  it("counts a repair in root errors, naming the lines they cover", () => {
+    expect(
+      bookRowState(book(), event({ stage: "repair", done: 2, total: 140, lines: 538 }), null)
+    ).toMatchObject({
+      label: "Repairing 140 errors (538 lines)",
+      progress: { done: 2, total: 140 }
+    });
+    // Paused, the counts are gone with the stage's last event.
+    expect(
+      bookRowState(book(), event({ status: "paused", stage: "repair", total: 0 }), null)
+    ).toMatchObject({ label: "Paused · Repairing lines", progress: null });
   });
 
   it("takes the event's status over the listed one (the list is read again after it)", () => {

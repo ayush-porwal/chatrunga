@@ -5,7 +5,9 @@
  * 2. outline — the first pages' text gives the title, author, side and chapters;
  * 3. lines — each chapter's pages, in order (a page's prompt carries where the book is), four
  *    chapters at a time;
- * 4. repair — lines with an illegal move are fixed from the page image (two tries each);
+ * 4. repair — lines with an illegal move are fixed from the page image (two tries each), by root
+ *    error: one line of the lines failing on the same move in the same position is repaired and
+ *    its correction carried over to the others (repair-groups.ts);
  * 5. write — the merged chapters become a repertoire.
  *
  * Everything read is stored as it arrives, so a cancelled, failed or interrupted import resumes
@@ -28,6 +30,14 @@ import {
   type BookLineFailure,
   type BookMergeResult
 } from "@chaturanga/shared/books/merge";
+import {
+  applyBookRepairEdits,
+  bookLineId,
+  bookRepairEdits,
+  groupBookFailures,
+  type BookRepairEdit,
+  type BookRepairGroup
+} from "@chaturanga/shared/books/repair-groups";
 import {
   bookLinesMessages,
   bookOcrMessages,
@@ -111,6 +121,36 @@ function dataUrl(image: { bytes: Buffer; type: string }): string {
 
 type ChapterMerge = { chapter: BookChapterRecord; result: BookMergeResult };
 
+/**
+ * One chapter's repair progress: the root errors seen failing (`total`), those no longer failing
+ * (`done`), and the lines they cover. Repairs can uncover errors further down a line, so the
+ * totals may grow.
+ */
+class RepairTally {
+  private readonly errors = new Set<string>();
+  private readonly failingLines = new Set<string>();
+  private open = 0;
+
+  see(failures: readonly BookLineFailure[]): void {
+    const groups = groupBookFailures(failures);
+    for (const group of groups) this.errors.add(group.key);
+    for (const failure of failures) this.failingLines.add(bookLineId(failure));
+    this.open = groups.length;
+  }
+
+  get total(): number {
+    return this.errors.size;
+  }
+
+  get done(): number {
+    return this.errors.size - this.open;
+  }
+
+  get lines(): number {
+    return this.failingLines.size;
+  }
+}
+
 class BookRun {
   private book: BookRecord;
   private readonly now: () => number;
@@ -143,13 +183,19 @@ class BookRun {
     this.deps.store.update(this.id, { stage }, this.now());
   }
 
-  private emit(done: number, total: number, chapter: BookChapterRecord | null = null): void {
+  private emit(
+    done: number,
+    total: number,
+    chapter: BookChapterRecord | null = null,
+    lines: number | null = null
+  ): void {
     this.deps.progress({
       bookId: this.id,
       status: this.book.status,
       stage: this.stage,
       done,
       total,
+      lines,
       costUsd: this.book.costUsd,
       chapter: chapter && { index: chapter.index, title: chapter.title },
       error: this.book.error
@@ -321,36 +367,96 @@ class BookRun {
     });
   }
 
+  /** The chapter's failing lines that may still be repaired. */
+  private openFailures(
+    chapter: BookChapterRecord,
+    pages: Map<number, BookPageRecord>
+  ): BookLineFailure[] {
+    return this.merge(chapter, pages).failures.filter(
+      (failure) => failure.repairAttempts < MAX_REPAIRS
+    );
+  }
+
+  /**
+   * Repairs each chapter's failing lines by root error (repair-groups.ts), four chapters at a
+   * time: the shallowest error first, one line of it repaired by the model and its correction
+   * carried over to every failing line that copied it; a line the correction doesn't fix is
+   * grouped again on the next round (and repaired itself when it leads its group).
+   */
   async repair(pages: Map<number, BookPageRecord>): Promise<ChapterMerge[]> {
     this.enter("repair");
     const chapters = this.deps.store.chapters(this.id);
-    const failures = chapters.flatMap((chapter) =>
-      this.merge(chapter, pages).failures.filter((failure) => failure.repairAttempts < MAX_REPAIRS)
-    );
-    let done = 0;
-    this.emit(done, failures.length);
-    await eachLimited(failures, this.deps.concurrency?.repair ?? 4, async (failure) => {
-      await this.repairLine(failure, pages);
-      done += 1;
-      this.emit(done, failures.length);
+    const tallies = chapters.map(() => new RepairTally());
+    const report = () => {
+      const [done, total, lines] = tallies.reduce(
+        (sum, tally) => [sum[0] + tally.done, sum[1] + tally.total, sum[2] + tally.lines],
+        [0, 0, 0]
+      );
+      this.emit(done, total, null, lines);
+    };
+    chapters.forEach((chapter, index) => tallies[index].see(this.openFailures(chapter, pages)));
+    report();
+    const work = chapters.map((chapter, index) => ({ chapter, tally: tallies[index] }));
+    await eachLimited(work, this.deps.concurrency?.repair ?? 4, async ({ chapter, tally }) => {
+      for (;;) {
+        const failures = this.openFailures(chapter, pages);
+        tally.see(failures);
+        report();
+        const group = groupBookFailures(failures).at(0);
+        if (!group) return;
+        await this.repairGroup(group, failures, pages);
+      }
     });
     return chapters.map((chapter) => ({ chapter, result: this.merge(chapter, pages) }));
   }
 
-  /** Up to two repairs of one line, each checked by playing the line again. */
-  private async repairLine(
-    first: BookLineFailure,
+  /**
+   * One root error: its representative is repaired (up to two tries, each checked by playing the
+   * line again), then its correction is carried over to the chapter's other failing lines that
+   * reach it. Every line rewritten counts the repair and keeps its movetext from before.
+   */
+  private async repairGroup(
+    group: BookRepairGroup,
+    failures: readonly BookLineFailure[],
     pages: Map<number, BookPageRecord>
   ): Promise<void> {
+    const first = group.representative;
     const page = pages.get(first.pageIndex);
     const line = page?.lines?.lines[first.lineIndex];
-    if (!page || !line) return;
+    if (!page || !line) throw new BookImportError("A line to repair is missing. Try again.");
     const images = [await this.image(page)];
     const before = pages.get(first.pageIndex - 1);
     if (before) images.push(await this.image(before));
+    const original = line.moves;
     let failure: BookLineFailure | undefined = first;
     while (failure && (line.repairAttempts ?? 0) < MAX_REPAIRS) {
       failure = await this.repairOnce({ failure, page, line, images });
+    }
+    const edits = bookRepairEdits(original, line.moves, first.ply);
+    if (edits) this.carryOver(edits, first, failures, pages);
+  }
+
+  /** Applies a representative's corrections to the other failing lines (stored as rewritten). */
+  private carryOver(
+    edits: readonly BookRepairEdit[],
+    representative: BookLineFailure,
+    failures: readonly BookLineFailure[],
+    pages: Map<number, BookPageRecord>
+  ): void {
+    const rewritten = new Set<number>();
+    for (const other of failures) {
+      if (bookLineId(other) === bookLineId(representative)) continue;
+      const target = pages.get(other.pageIndex)?.lines?.lines[other.lineIndex];
+      const moves = target && applyBookRepairEdits(target.moves, edits);
+      if (!target || !moves) continue;
+      target.repairedFrom ??= target.moves;
+      target.moves = moves;
+      target.repairAttempts = (target.repairAttempts ?? 0) + 1;
+      rewritten.add(other.pageIndex);
+    }
+    for (const pageIndex of rewritten) {
+      const lines = pages.get(pageIndex)?.lines;
+      if (lines) this.deps.store.saveLines(this.id, pageIndex, { lines, status: "done" });
     }
   }
 
