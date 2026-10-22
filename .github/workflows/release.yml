@@ -3,12 +3,24 @@ name: release
 # Manual release: Actions → release → Run workflow.
 # Builds the latest commit on main for macOS, Windows and Linux, then publishes a
 # GitHub release (tag vX.Y.Z) with generated notes and all installers attached.
+#
+# Nightly: every night (and on demand, channel "nightly") the same build is published as a
+# prerelease vX.Y.Z-nightly.YYYYMMDD, the patch after the latest release. Only nightly builds
+# update to nightlies (updater-state.ts); the production app never sees them. A night with no new
+# commits on main publishes nothing, and only the newest nightlies are kept (NIGHTLIES_KEPT).
 # The Electron smoke journeys don't run here: every pull request runs them against the built and
 # the packaged app on Linux, Windows and macOS (e2e.yml) before it can merge. Lint, typecheck and
 # tests run beside the builds (not before them) and still gate the publish.
 on:
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
+      channel:
+        description: Stable release, or a nightly prerelease of main
+        type: choice
+        options: [stable, nightly]
+        default: stable
       bump:
         description: Version bump from the latest vX.Y.Z tag (ignored when "version" is set)
         type: choice
@@ -19,7 +31,7 @@ on:
         type: string
         required: false
       draft:
-        description: Create the release as a draft (review before publishing)
+        description: Create the release as a draft (review before publishing; stable only)
         type: boolean
         default: false
 
@@ -33,6 +45,10 @@ concurrency:
 env:
   NODE_VERSION: 24.15.0
   PNPM_VERSION: 11.0.9
+  # The scheduled run is a nightly; a dispatch is whatever channel it picked.
+  CHANNEL: ${{ github.event_name == 'schedule' && 'nightly' || inputs.channel || 'stable' }}
+  # Nightly prereleases kept on GitHub (older ones and their tags are deleted after a publish).
+  NIGHTLIES_KEPT: 7
 
 jobs:
   plan:
@@ -45,6 +61,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       previous_tag: ${{ steps.plan.outputs.previous_tag }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - name: Checkout main (with tags)
         uses: actions/checkout@v6
@@ -59,15 +76,21 @@ jobs:
       - name: Compute version and release notes
         id: plan
         env:
-          BUMP: ${{ inputs.bump }}
+          BUMP: ${{ inputs.bump || 'patch' }}
           VERSION: ${{ inputs.version }}
         run: |
           node scripts/release-plan.mjs \
+            --channel "$CHANNEL" \
             --bump "$BUMP" \
             --version "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --notes release-notes.md >> "$GITHUB_OUTPUT"
-          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+            --notes release-notes.md > plan.txt
+          cat plan.txt >> "$GITHUB_OUTPUT"
+          if grep -q '^skip=true$' plan.txt; then
+            echo "Nothing new on main since the last tag, or tonight's nightly exists: skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload release notes
         uses: actions/upload-artifact@v7
@@ -79,6 +102,7 @@ jobs:
   verify:
     name: Lint, typecheck, test
     needs: plan
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -101,6 +125,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: plan
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -136,6 +161,8 @@ jobs:
           # and its region's host, from repository variables. Unset: the build can't send anything.
           MAIN_VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
           MAIN_VITE_POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+          # Marks a nightly build as one (its analytics channel); unset for a release.
+          MAIN_VITE_RELEASE_CHANNEL: ${{ env.CHANNEL == 'nightly' && 'nightly' || '' }}
 
       - name: Package installers
         working-directory: apps/desktop
@@ -171,6 +198,7 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: [plan, verify, build]
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -194,7 +222,7 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
           SHA: ${{ needs.plan.outputs.sha }}
           PRERELEASE: ${{ needs.plan.outputs.prerelease }}
-          DRAFT: ${{ inputs.draft }}
+          DRAFT: ${{ env.CHANNEL == 'stable' && inputs.draft }}
         run: |
           # Production releases are marked latest: in-app updates follow /releases/latest
           # (prereleases only reach a build that is one, i.e. a nightly). Drafts are invisible to
@@ -216,3 +244,19 @@ jobs:
             --title "Chaturanga v$VERSION" \
             --notes-file notes.md \
             "${flags[@]}"
+
+      # Only the newest nightlies stay: older nightly prereleases are deleted with their tags.
+      # Stable releases and other prereleases (e.g. a hand-made -rc) are never touched.
+      - name: Prune old nightlies
+        if: env.CHANNEL == 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-nightly\\.[0-9]{8}$"))) | .tagName' \
+            | sort -t . -k 4 -n -r \
+            | tail -n +$((NIGHTLIES_KEPT + 1)) \
+            | while read -r tag; do
+                echo "Deleting old nightly $tag"
+                gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+              done

@@ -3,18 +3,31 @@
 //
 //   node scripts/release-plan.mjs --bump patch|minor|major [--version X.Y.Z[-pre]] \
 //     [--repo owner/name] [--notes release-notes.md]
+//   node scripts/release-plan.mjs --channel nightly [--date YYYYMMDD] [--repo …] [--notes …]
 //
 // Version source of truth is the latest `vX.Y.Z` tag (other tags, e.g. the old
 // `alpha-v*`, are ignored). With no tags yet, the desktop package.json version is
-// released as-is. Prints `version=…`, `tag=…`, `previous_tag=…` lines (GitHub
-// Actions output format) and writes the notes file.
+// released as-is. Prints `version=…`, `tag=…`, `previous_tag=…`, `prerelease=…` and
+// `skip=…` lines (GitHub Actions output format) and writes the notes file.
+//
+// A nightly is the next patch after the latest stable release, as a dated prerelease
+// (0.2.9-nightly.20261023): it sorts after the previous nightly and before that patch's
+// release. Its notes cover the commits since the latest tag of either kind. `skip=true`
+// when there's nothing new since that tag, or tonight's nightly already exists.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 
 function parseArgs(argv) {
-  const args = { bump: "patch", version: "", repo: "", notes: "release-notes.md" };
+  const args = {
+    bump: "patch",
+    version: "",
+    repo: "",
+    notes: "release-notes.md",
+    channel: "stable",
+    date: ""
+  };
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.replace(/^--/, "");
     if (!(key in args)) throw new Error(`Unknown argument: ${argv[i]}`);
@@ -22,6 +35,9 @@ function parseArgs(argv) {
   }
   if (!["patch", "minor", "major"].includes(args.bump))
     throw new Error(`Invalid bump: ${args.bump}`);
+  if (!["stable", "nightly"].includes(args.channel))
+    throw new Error(`Invalid channel: ${args.channel}`);
+  if (args.date && !/^\d{8}$/.test(args.date)) throw new Error(`Invalid date: ${args.date}`);
   return args;
 }
 
@@ -56,12 +72,28 @@ export function bumpVersion(current, bump) {
   return v.pre ? `${v.major}.${v.minor}.${v.patch}` : `${v.major}.${v.minor}.${v.patch + 1}`;
 }
 
-function latestVersionTag() {
+/** The latest `vX.Y.Z[-pre]` tag; only stable ones (no prerelease) when `stableOnly`. */
+function latestVersionTag({ stableOnly = false } = {}) {
   const tags = git("tag", "--list", "v*")
     .split("\n")
-    .filter((tag) => SEMVER.test(tag.slice(1)));
+    .filter((tag) => SEMVER.test(tag.slice(1)))
+    .filter((tag) => !stableOnly || !parse(tag.slice(1)).pre);
   tags.sort((a, b) => compare(parse(a.slice(1)), parse(b.slice(1))));
   return tags.at(-1) ?? "";
+}
+
+/**
+ * Tonight's nightly: the patch after the latest stable release (or the package version when there
+ * is none), as `-nightly.<date>`. 0.2.8 on 2026-10-23 → 0.2.9-nightly.20261023.
+ */
+export function nightlyVersion(latestStable, packageVersion, date) {
+  const base = latestStable ? bumpVersion(latestStable, "patch") : packageVersion.split("-")[0];
+  return `${base}-nightly.${date}`;
+}
+
+/** Today's date in UTC as YYYYMMDD. */
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10).replaceAll("-", "");
 }
 
 const SECTIONS = [
@@ -122,26 +154,38 @@ function commitsSince(previousTag) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const previousTag = latestVersionTag();
+  const nightly = args.channel === "nightly";
+  // A release's notes and version follow the last release (nightlies in between don't count); a
+  // nightly's follow the last tag of either kind.
+  const previousTag = latestVersionTag({ stableOnly: !nightly });
   const packageVersion = JSON.parse(
     readFileSync(new URL("../apps/desktop/package.json", import.meta.url))
   ).version;
 
   let version = args.version.replace(/^v/, "");
-  if (version) parse(version);
+  if (nightly) {
+    const stable = latestVersionTag({ stableOnly: true });
+    version = nightlyVersion(
+      stable ? stable.slice(1) : "",
+      packageVersion,
+      args.date || todayUtc()
+    );
+  } else if (version) parse(version);
   else version = previousTag ? bumpVersion(previousTag.slice(1), args.bump) : packageVersion;
 
-  if (previousTag && compare(parse(version), parse(previousTag.slice(1))) <= 0) {
-    throw new Error(`Version ${version} must be greater than the latest release ${previousTag}.`);
+  const commits = commitsSince(previousTag);
+  // A nightly with nothing new, or one already made tonight, is skipped rather than failed.
+  const skip = nightly && (!commits.length || Boolean(git("tag", "--list", `v${version}`)));
+  if (!skip) {
+    if (previousTag && compare(parse(version), parse(previousTag.slice(1))) <= 0) {
+      throw new Error(`Version ${version} must be greater than the latest release ${previousTag}.`);
+    }
+    if (git("tag", "--list", `v${version}`)) throw new Error(`Tag v${version} already exists.`);
   }
-  if (git("tag", "--list", `v${version}`)) throw new Error(`Tag v${version} already exists.`);
 
-  writeFileSync(
-    args.notes,
-    releaseNotes({ commits: commitsSince(previousTag), version, previousTag, repo: args.repo })
-  );
+  writeFileSync(args.notes, releaseNotes({ commits, version, previousTag, repo: args.repo }));
   process.stdout.write(
-    `version=${version}\ntag=v${version}\nprevious_tag=${previousTag}\nprerelease=${parse(version).pre ? "true" : "false"}\n`
+    `version=${version}\ntag=v${version}\nprevious_tag=${previousTag}\nprerelease=${parse(version).pre ? "true" : "false"}\nskip=${skip}\n`
   );
 }
 

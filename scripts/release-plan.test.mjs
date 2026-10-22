@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bumpVersion, releaseNotes } from "./release-plan.mjs";
+import { bumpVersion, nightlyVersion, releaseNotes } from "./release-plan.mjs";
 
 test("bumps stable versions", () => {
   assert.equal(bumpVersion("1.2.3", "patch"), "1.2.4");
@@ -32,4 +32,18 @@ test("groups commits by Conventional Commit type", () => {
   assert.match(notes, /### Fixes\n\n- clock/);
   assert.match(notes, /### Other changes\n\n- Tidy things/);
   assert.match(notes, /compare\/v1\.0\.0\.\.\.v1\.1\.0/);
+});
+
+test("a nightly is the next patch after the latest release, dated as a prerelease", () => {
+  assert.equal(nightlyVersion("0.2.8", "0.2.8", "20261023"), "0.2.9-nightly.20261023");
+  // No release yet: the package version, without its own prerelease part.
+  assert.equal(nightlyVersion("", "0.1.0-alpha.3", "20261023"), "0.1.0-nightly.20261023");
+  // After that patch is released, nightlies move on to the next one.
+  assert.equal(nightlyVersion("0.2.9", "0.2.9", "20261024"), "0.2.10-nightly.20261024");
+});
+
+test("a nightly sorts after the previous one and before its patch's release", () => {
+  // The release after nightlies of 0.2.9 is 0.2.9 itself (bumped from the stable 0.2.8).
+  assert.equal(bumpVersion("0.2.8", "patch"), "0.2.9");
+  assert.equal(bumpVersion("0.2.9-nightly.20261023", "patch"), "0.2.9");
 });
