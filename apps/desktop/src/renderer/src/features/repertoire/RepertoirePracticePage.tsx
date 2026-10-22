@@ -8,7 +8,7 @@ import { useRepertoireQuery } from "../../queries/repertoire";
 import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
 import { PracticeEmptyState } from "./PracticeEmptyState";
 import { PracticeSession } from "./PracticeSession";
-import { explainedChapterIds, type PracticePreset } from "./practice-setup";
+import { explainedChapterIds, presetPracticeInput, type PracticePreset } from "./practice-setup";
 import { isEmptyTargetedStart, type PracticeStart } from "./practice-start";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import { RepertoireSettingsDialog } from "./RepertoireSettingsDialog";
@@ -65,7 +65,7 @@ export function RepertoirePracticePage({
     summary
   });
   const { startState, startSession } = usePracticeStart({ onSessionStarted });
-  const autoStartPending = useAutoStart({
+  const autoStart = useAutoStart({
     detail: detail.data,
     sessionId,
     preset,
@@ -92,7 +92,14 @@ export function RepertoirePracticePage({
 
   const openSettings = () => setSettingsOpen(true);
   const settingsDialog = settingsOpen ? (
-    <RepertoireSettingsDialog detail={detail.data} onClose={() => setSettingsOpen(false)} />
+    <RepertoireSettingsDialog
+      detail={detail.data}
+      onClose={() => setSettingsOpen(false)}
+      onSaved={(saved) => {
+        const input = restartInput(startState, preset, saved);
+        if (input) startSession(input);
+      }}
+    />
   ) : null;
   const withSettings = (page: ReactNode) => (
     <>
@@ -135,6 +142,7 @@ export function RepertoirePracticePage({
       <StartFeedback
         detail={detail.data}
         startState={startState}
+        currentInput={autoStart.input}
         onStart={startSession}
         onStudy={onStudy}
         onSettings={openSettings}
@@ -142,19 +150,38 @@ export function RepertoirePracticePage({
     );
   }
 
-  return <Spinner label={autoStartPending ? "Starting practice" : "Loading practice"} />;
+  return <Spinner label={autoStart.pending ? "Starting practice" : "Loading practice"} />;
 }
 
-/** A start that failed (why, Try again) or found nothing to ask (why, and the ways on). */
+/**
+ * After the settings are saved: a start that failed or found nothing starts again with them,
+ * when they decide what it starts (not a preset's own session). Null: nothing to restart.
+ */
+function restartInput(
+  startState: PracticeStart,
+  preset: PracticePreset | null,
+  saved: RepertoireDetail
+): StartPracticeInput | null {
+  if (!preset || (startState.status !== "failed" && startState.status !== "empty")) return null;
+  const next = presetPracticeInput(saved, preset);
+  return next.followsSettings ? next.input : null;
+}
+
+/**
+ * A start that failed (why, Try again: what the navigation starts with the settings now,
+ * `currentInput`) or found nothing to ask (why, and the ways on).
+ */
 function StartFeedback({
   detail,
   startState,
+  currentInput,
   onStart,
   onStudy,
   onSettings
 }: {
   detail: RepertoireDetail;
   startState: Extract<PracticeStart, { status: "failed" | "empty" }>;
+  currentInput: StartPracticeInput | null;
   onStart: (input: StartPracticeInput) => void;
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
   onSettings: () => void;
@@ -168,7 +195,11 @@ function StartFeedback({
         description={startState.message}
         action={
           <div className="flex gap-2">
-            <Button type="button" variant="primary" onClick={() => onStart(startState.input)}>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => onStart(currentInput ?? startState.input)}
+            >
               <RotateCcw />
               Try again
             </Button>

@@ -7,7 +7,7 @@ import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
 import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
-import { autoStartPracticeInput, practiceStartInput, type PracticePreset } from "./practice-setup";
+import { presetPracticeInput, type PracticePreset } from "./practice-setup";
 import {
   beginStart,
   IDLE_START,
@@ -88,8 +88,9 @@ export function usePracticeStart({
  * Practice starts as soon as the repertoire is known (`detail` loaded) and no session is named:
  * the preset's session (a targeted queue, a rehearsal), else what the practice settings start
  * (from the preset's chapter, for a rehearsal). Once per preset: each navigation carries its
- * own (its history entry too), so Back to it shows that start's answer, never a new start. True
- * while that start is still to be made.
+ * own (its history entry too), so Back to it shows that start's answer, never a new start.
+ * `pending` while that start is still to be made; `input`: what the navigation starts with the
+ * settings as they are now (Try again), null with a session named.
  */
 export function useAutoStart({
   detail,
@@ -101,15 +102,11 @@ export function useAutoStart({
   sessionId: string | null;
   preset: PracticePreset | null;
   startSession: (input: StartPracticeInput, navigation?: PracticePreset | null) => void;
-}): boolean {
+}): { pending: boolean; input: StartPracticeInput | null } {
   /** The preset already started (once per preset; Back to it never restarts it). */
   const [autoStarted, setAutoStarted] = useState<PracticePreset | null>(null);
   const input = useMemo(
-    () =>
-      detail && !sessionId && preset
-        ? (autoStartPracticeInput(detail.id, preset) ??
-          practiceStartInput(detail, preset.chapterId ?? null))
-        : null,
+    () => (detail && !sessionId && preset ? presetPracticeInput(detail, preset).input : null),
     [detail, sessionId, preset]
   );
   /** Set before starting, so StrictMode's repeated effect can't start a second session. */
@@ -120,5 +117,5 @@ export function useAutoStart({
     setAutoStarted(preset);
     startSession(input, preset);
   }, [input, autoStarted, preset, startSession]);
-  return Boolean(input && autoStarted !== preset);
+  return { pending: Boolean(input && autoStarted !== preset), input };
 }

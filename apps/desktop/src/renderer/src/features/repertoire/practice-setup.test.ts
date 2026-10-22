@@ -19,6 +19,7 @@ import {
   practiceSettingsForm,
   practiceSettingsFromForm,
   practiceStartInput,
+  presetPracticeInput,
   rehearsePreset,
   retryMissedPreset,
   summaryPresets,
@@ -195,6 +196,24 @@ describe("practiceStartInput", () => {
     expect(practiceStartInput(lines("C"), "R").rehearse).toStrictEqual({ chapterId: "C" });
     expect(practiceStartInput(lines(null, ["C"])).rehearse).toStrictEqual({ chapterId: "C" });
     expect(practiceStartInput(lines(null)).rehearse).toStrictEqual({ chapterId: "A" });
+  });
+
+  it("is what a plain preset starts, so newly saved settings change it; a named session doesn't", () => {
+    const saved = (cardLimit: number) =>
+      detailOf({
+        chapters,
+        workspace: workspace({ repertoireId: "r1", mode: "review-due", cardLimit })
+      });
+    expect(presetPracticeInput(saved(7), {})).toStrictEqual({
+      input: { repertoireId: "r1", mode: "review-due", cardLimit: 7 },
+      followsSettings: true
+    });
+    expect(presetPracticeInput(saved(3), {}).input.cardLimit).toBe(3);
+    const targeted = { mode: "review-due" as const, positionKeys: ["k1"] };
+    expect(presetPracticeInput(saved(7), targeted)).toStrictEqual({
+      input: autoStartPracticeInput("r1", targeted),
+      followsSettings: false
+    });
   });
 
   it("falls back to the review when no chapter can be rehearsed", () => {

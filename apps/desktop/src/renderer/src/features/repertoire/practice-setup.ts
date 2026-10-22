@@ -202,6 +202,21 @@ export function practiceStartInput(
   };
 }
 
+/**
+ * What a practice navigation starts with `detail`'s settings: its preset's own session (a line
+ * rehearsal, a targeted queue), else what the practice settings start (from the preset's
+ * chapter, for a rehearsal). `followsSettings`: the latter, so newly saved settings change it.
+ */
+export function presetPracticeInput(
+  detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">,
+  preset: PracticePreset
+): { input: StartPracticeInput; followsSettings: boolean } {
+  const own = autoStartPracticeInput(detail.id, preset);
+  return own
+    ? { input: own, followsSettings: false }
+    : { input: practiceStartInput(detail, preset.chapterId ?? null), followsSettings: true };
+}
+
 /** The limits `input` sets, clamped to the main process's bounds (unset ones stay unset). */
 function withinLimits(
   input: Pick<StartPracticeInput, "cardLimit" | "newCardLimit" | "maxDepthPlies">
