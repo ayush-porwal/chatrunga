@@ -8,11 +8,14 @@ import {
   useRepertoiresQuery
 } from "../../queries/repertoire";
 import { discardDeletedRepertoireTexts } from "./decision-text-drafts";
+import { hubView } from "./hub-view";
 import type { HubMessage } from "./HubNotice";
 import { resumePracticeTarget, sortedChapters, type StudyTarget } from "./repertoire-chapters";
 
 /** Unfiltered, unarchived repertoires (the same list Home reads). */
 const ACTIVE: RepertoireListFilters = {};
+
+const ARCHIVED: RepertoireListFilters = { archived: true };
 
 /** The hub's list filters: a name or tag search, and archived instead of active ones. */
 export function useHubFilters() {
@@ -20,6 +23,31 @@ export function useHubFilters() {
   const [archived, setArchived] = useState(false);
   const filters: RepertoireListFilters = { query: query.trim() || undefined, archived };
   return { query, setQuery, archived, setArchived, listFilters: filters };
+}
+
+/**
+ * The hub's list (as filtered) and what the page shows (hub-view.ts) with `importing` books being
+ * imported: only an empty, unfiltered list asks whether archived ones exist (the archived view's
+ * own list, so it is shared).
+ */
+export function useHubList(
+  filters: ReturnType<typeof useHubFilters>,
+  desktop: boolean,
+  importing: number
+) {
+  const list = useRepertoiresQuery(filters.listFilters);
+  const filtered = filters.archived || Boolean(filters.query.trim());
+  const archived = useRepertoiresQuery(ARCHIVED, {
+    enabled: desktop && !filtered && list.isSuccess && !list.data.length
+  });
+  const view = hubView({
+    desktop,
+    filtered,
+    listed: list.isSuccess ? list.data.length : undefined,
+    importing,
+    archivedCount: archived.data?.length
+  });
+  return { list, view };
 }
 
 /**

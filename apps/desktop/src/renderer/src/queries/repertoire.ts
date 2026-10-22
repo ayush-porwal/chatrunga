@@ -194,11 +194,12 @@ export function useRepertoireChangedSubscription() {
 /** Due counts change as time passes, with no write to announce it, so they're polled. */
 const DUE_REFRESH_MS = 60_000;
 
-export function useRepertoiresQuery(filters: RepertoireListFilters) {
+export function useRepertoiresQuery(filters: RepertoireListFilters, { enabled = true } = {}) {
   return useQuery({
     queryKey: repertoireKeys.list(filters),
     queryFn: () => repertoires()?.list(filters) ?? [],
-    refetchInterval: DUE_REFRESH_MS
+    refetchInterval: DUE_REFRESH_MS,
+    enabled
   });
 }
 
