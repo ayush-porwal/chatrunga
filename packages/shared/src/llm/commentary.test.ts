@@ -3,10 +3,10 @@ import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "../schema
 import {
   COACH_SYSTEM_PROMPT,
   COMMENTARY_LIMITS,
+  answerTokensForDetail,
   buildRetryMessage,
   buildUserMessage,
   groundedSanTokens,
-  maxTokensForDetail,
   parseCoachResponse,
   validateCommentary,
   validateProse,
@@ -285,10 +285,10 @@ describe("coach prompt", () => {
     expect(COACH_SYSTEM_PROMPT).not.toMatch(/humanTopMoves|playedAtPlayerLevel/);
   });
 
-  it("scales the provider token budget with the requested detail", () => {
-    expect(maxTokensForDetail("concise")).toBeLessThan(maxTokensForDetail("balanced"));
-    expect(maxTokensForDetail("balanced")).toBeLessThan(maxTokensForDetail("detailed"));
-    expect(maxTokensForDetail(undefined)).toBe(maxTokensForDetail("balanced"));
+  it("scales the answer's token allowance with the requested detail", () => {
+    expect(answerTokensForDetail("concise")).toBeLessThan(answerTokensForDetail("balanced"));
+    expect(answerTokensForDetail("balanced")).toBeLessThan(answerTokensForDetail("detailed"));
+    expect(answerTokensForDetail(undefined)).toBe(answerTokensForDetail("balanced"));
   });
 
   it("sends the facts, the move and the requested length in the user message", () => {

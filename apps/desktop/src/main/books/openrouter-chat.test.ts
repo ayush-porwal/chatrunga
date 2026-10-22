@@ -83,6 +83,37 @@ describe("openRouterChat", () => {
     await expect(slow(request())).rejects.toThrow("took too long");
   });
 
+  it("asks once more with twice the room when the model thought until it ran out", async () => {
+    const thoughtOut = {
+      choices: [{ finish_reason: "length", message: { content: null, reasoning_details: [] } }],
+      usage: { completion_tokens: 100, completion_tokens_details: { reasoning_tokens: 100 } }
+    };
+    const fetchImpl = vi
+      .fn(async () => new Response(JSON.stringify(thoughtOut)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...thoughtOut, usage: { cost: 0.01 } })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: "1. e4 e5" } }], usage: { cost: 0.02 } })
+        )
+      );
+    const chat = openRouterChat({ apiKey: "k", fetchImpl });
+    const read = await chat(request({ reasoning: "low" }));
+    expect(read.text).toBe("1. e4 e5");
+    expect(read.costUsd).toBeCloseTo(0.03);
+    const sent = (fetchImpl.mock.calls as unknown as [string, RequestInit][]).map(
+      ([, init]) => JSON.parse(init.body as string) as { max_tokens: number; reasoning: unknown }
+    );
+    expect(sent.map((body) => body.max_tokens)).toStrictEqual([100, 200]);
+    expect(sent[1].reasoning).toStrictEqual({ effort: "low" });
+
+    // Out of room twice: a message that says so, not worth the same request again.
+    const failure = await chat(request()).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BookChatError);
+    expect(failure).toMatchObject({ retryable: false });
+    expect((failure as Error).message).toContain("whole budget thinking");
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
   it("passes the caller's cancel through as it is, before and during a request", async () => {
     const controller = new AbortController();
     controller.abort(new Error("cancelled"));

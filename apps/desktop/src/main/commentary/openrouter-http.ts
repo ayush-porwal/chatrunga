@@ -55,13 +55,26 @@ export function openRouterHttpFailure(status: number): {
   };
 }
 
-/** The first choice's answer, trimmed; null when the response has none or it is blank. */
-export function completionText(body: unknown): string | null {
+function firstChoice(body: unknown): Record<string, unknown> | null {
   const choices: unknown = isRecord(body) ? body.choices : undefined;
   const choice: unknown = Array.isArray(choices) ? choices[0] : undefined;
-  const message = isRecord(choice) ? choice.message : undefined;
+  return isRecord(choice) ? choice : null;
+}
+
+/** The first choice's answer, trimmed; null when the response has none or it is blank. */
+export function completionText(body: unknown): string | null {
+  const message = firstChoice(body)?.message;
   const content = isRecord(message) ? message.content : undefined;
   return typeof content === "string" ? content.trim() || null : null;
+}
+
+/**
+ * The model stopped at `max_tokens` (`finish_reason: "length"`). With no answer text, a thinking
+ * model spent the whole budget reasoning: OpenRouter then returns `content: null` and only the
+ * reasoning (or nothing, with `reasoning.exclude`).
+ */
+export function completionHitTokenLimit(body: unknown): boolean {
+  return firstChoice(body)?.finish_reason === "length";
 }
 
 /** Token counts and cost as OpenRouter reported them; a field it didn't report stays unknown. */
@@ -73,7 +86,9 @@ export type OpenRouterUsage = {
 
 /**
  * OpenRouter's usage block (`prompt_tokens`, `completion_tokens`, `cost` in USD), kept only as
- * numbers; anything missing or malformed stays unknown — never zero.
+ * numbers; anything missing or malformed stays unknown — never zero. `completion_tokens` includes
+ * a thinking model's reasoning (also given as `completion_tokens_details.reasoning_tokens`, not
+ * kept); other fields are ignored.
  */
 export function parseUsage(value: unknown): OpenRouterUsage | null {
   if (!isRecord(value)) return null;

@@ -5,9 +5,10 @@ import {
 } from "@chaturanga/shared/schemas/puzzle-insight";
 import {
   COACH_SYSTEM_PROMPT,
+  COMMENTARY_REASONING_TOKENS,
+  answerTokensForDetail,
   buildRetryMessage,
   buildUserMessage,
-  maxTokensForDetail,
   validateProse,
   type CommentaryValidationFailure,
   type CommentaryValidationResult
@@ -22,6 +23,7 @@ import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   OPENROUTER_ENDPOINT,
+  completionHitTokenLimit,
   completionText,
   openRouterHeaders,
   openRouterHttpFailure,
@@ -57,14 +59,16 @@ export type CommentaryFailureCode =
   | "network"
   | "timeout"
   | "empty_response"
+  | "reasoning_exhausted"
   | "validation_failed";
 
 /** Token counts and cost as OpenRouter reported them; a field it didn't report stays unknown. */
 export type CommentaryUsage = OpenRouterUsage;
 
 /**
- * One logical request per move (`request`), each HTTP attempt it took (`attempt`: the first, and
- * the corrective retry after a failed validation), and its single terminal `outcome`.
+ * One logical request per move (`request`), each HTTP attempt it took (`attempt`: the first, the
+ * corrective retry after a failed validation, and the retry with more thinking room after the
+ * model thought until it ran out of tokens), and its single terminal `outcome`.
  */
 export type CommentaryReport =
   | { type: "request"; ply: number }
@@ -72,11 +76,12 @@ export type CommentaryReport =
       type: "attempt";
       ply: number;
       attempt: number;
-      reason: "initial" | "validation_retry";
+      reason: AttemptReason;
       /** `accepted` / `validation_failed` for an answer that arrived; otherwise why it didn't. */
       result: "accepted" | "validation_failed" | CommentaryFailureCode;
       httpStatus: number | null;
       latencyMs: number;
+      /** Reported for an answer, and for an attempt that thought until it ran out (billed). */
       usage: CommentaryUsage | null;
       /**
        * The request for usage analytics: the messages with player and engine names replaced
@@ -112,6 +117,8 @@ export const UNREADABLE_API_KEY_ERROR =
 const UNREACHABLE_ERROR = "OpenRouter couldn't be reached. Check your connection and try again.";
 const TIMEOUT_ERROR = "OpenRouter took too long to answer. Try again in a moment.";
 const EMPTY_ANSWER_ERROR = "The model returned an empty answer. Try again, or pick another model.";
+const REASONING_EXHAUSTED_ERROR =
+  "The model used its whole budget thinking and gave no answer. Try again, or pick another model.";
 const INVALID_ANSWER_ERROR =
   "The model's answer didn't match the engine facts, even after a retry.";
 
@@ -123,7 +130,9 @@ class CommentaryFailure extends Error {
   constructor(
     message: string,
     readonly code: CommentaryFailureCode,
-    readonly httpStatus: number | null = null
+    readonly httpStatus: number | null = null,
+    /** What a request that got no usable answer was still charged (thinking is billed). */
+    readonly usage: CommentaryUsage | null = null
   ) {
     super(message);
   }
@@ -267,6 +276,16 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 
 type AttemptTrace = { attempts: number; firstAttemptValid: boolean };
 
+type AttemptReason = "initial" | "validation_retry" | "reasoning_retry";
+
+/** One HTTP request's body settings: `maxTokens` covers the thinking budget and the answer. */
+type CompletionRequest = {
+  messages: readonly ChatMessage[];
+  temperature: number;
+  maxTokens: number;
+  reasoningTokens: number;
+};
+
 /** Where and how one coach request goes: the account, the model, and its time limit. */
 type Connection = {
   apiKey: string;
@@ -303,7 +322,8 @@ function accepted(
 type CoachTask = {
   ply: number;
   messages: ChatMessage[];
-  maxTokens: number;
+  /** The visible answer's allowance; the thinking budget is added per request. */
+  answerTokens: number;
   validate: (raw: string) => CommentaryValidationResult;
   retryMessage: (failure: CommentaryValidationFailure) => string;
   redact: (text: string) => string;
@@ -316,7 +336,7 @@ function reviewTask(payload: ReviewInsightPayload): CoachTask {
       { role: "system", content: COACH_SYSTEM_PROMPT },
       { role: "user", content: buildUserMessage(payload) }
     ],
-    maxTokens: maxTokensForDetail(payload.commentaryDetail),
+    answerTokens: answerTokensForDetail(payload.commentaryDetail),
     validate: (raw) => validateProse(raw, payload),
     retryMessage: (failure) => buildRetryMessage(failure, payload),
     redact: analyticsRedactor(payload)
@@ -330,21 +350,25 @@ async function generateOne(
 ): Promise<Extract<CommentaryValidationResult, { ok: true }>> {
   const { trace, monotonic, report } = instrumentation;
   const { ply, redact } = task;
+  /** Doubled, for this attempt and the rest, once the model thinks until it runs out. */
+  let reasoningTokens = COMMENTARY_REASONING_TOKENS;
   /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
-  const attempt = async (
-    reason: "initial" | "validation_retry",
-    messages: ChatMessage[],
-    temperature: number
-  ) => {
+  const attempt = async (reason: AttemptReason, messages: ChatMessage[], temperature: number) => {
     trace.attempts += 1;
     const startedAt = monotonic();
-    const request = { messages, temperature, maxTokens: task.maxTokens };
+    const request: CompletionRequest = {
+      messages,
+      temperature,
+      maxTokens: task.answerTokens + reasoningTokens,
+      reasoningTokens
+    };
     const reported = {
-      ...request,
       messages: messages.map((message) => ({
         role: message.role,
         content: redact(message.content)
-      }))
+      })),
+      temperature,
+      maxTokens: request.maxTokens
     };
     const base = {
       type: "attempt" as const,
@@ -373,14 +397,32 @@ async function generateOne(
         result: known?.code ?? "network",
         httpStatus: known?.httpStatus ?? null,
         latencyMs: monotonic() - startedAt,
-        usage: null,
+        usage: known?.usage ?? null,
         output: null
       });
       throw error;
     }
   };
+  /**
+   * An attempt, asked once more with twice the thinking room (the answer's allowance unchanged)
+   * when the model thought until it ran out; once per request, so a second time fails it.
+   */
+  const answer = async (
+    reason: "initial" | "validation_retry",
+    messages: ChatMessage[],
+    temperature: number
+  ) => {
+    try {
+      return await attempt(reason, messages, temperature);
+    } catch (error) {
+      const exhausted = error instanceof CommentaryFailure && error.code === "reasoning_exhausted";
+      if (!exhausted || reasoningTokens !== COMMENTARY_REASONING_TOKENS) throw error;
+      reasoningTokens *= 2;
+      return attempt("reasoning_retry", messages, temperature);
+    }
+  };
 
-  const first = await attempt("initial", task.messages, 0.7);
+  const first = await answer("initial", task.messages, 0.7);
   if (first.check.ok) {
     trace.firstAttemptValid = true;
     return first.check;
@@ -392,14 +434,14 @@ async function generateOne(
     { role: "assistant", content: first.content },
     { role: "user", content: task.retryMessage(first.check) }
   ];
-  const second = await attempt("validation_retry", retry, 0.3);
+  const second = await answer("validation_retry", retry, 0.3);
   if (second.check.ok) return second.check;
   throw new CommentaryFailure(INVALID_ANSWER_ERROR, "validation_failed");
 }
 
 async function requestCompletion(
   { apiKey, model, fetchImpl, timeoutMs, signal }: Connection,
-  request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number }
+  request: CompletionRequest
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
   if (signal?.aborted) throw new CommentaryCancelled();
   const controller = new AbortController();
@@ -414,6 +456,12 @@ async function requestCompletion(
         model,
         temperature: request.temperature,
         max_tokens: request.maxTokens,
+        // A thinking budget separate from the answer's allowance (`max_tokens` covers both), so
+        // a model that thinks by default (Claude Haiku 5.5) still has room to answer. Its text
+        // is left out of the response (it is still billed). Models that don't reason ignore it
+        // (OpenRouter drops parameters a provider doesn't support); for models that only take an
+        // effort, OpenRouter derives one.
+        reasoning: { max_tokens: request.reasoningTokens, exclude: true },
         messages: request.messages
       }),
       signal: controller.signal
@@ -421,10 +469,16 @@ async function requestCompletion(
     if (!response.ok) throw httpFailure(response.status);
     const body: unknown = await response.json();
     const content = completionText(body);
+    const usage = parseUsage(isRecord(body) ? body.usage : undefined);
+    if (!content && completionHitTokenLimit(body)) {
+      // Thinking took all of `max_tokens` before any answer.
+      const status = response.status;
+      throw new CommentaryFailure(REASONING_EXHAUSTED_ERROR, "reasoning_exhausted", status, usage);
+    }
     if (!content) {
       throw new CommentaryFailure(EMPTY_ANSWER_ERROR, "empty_response", response.status);
     }
-    return { content, usage: parseUsage(isRecord(body) ? body.usage : undefined) };
+    return { content, usage };
   } catch (error) {
     if (signal?.aborted) throw new CommentaryCancelled();
     // Not the caller's cancel, so the controller's other abort: the timeout.
@@ -486,7 +540,7 @@ export async function explainPuzzleWithOpenRouter(
       { role: "system", content: PUZZLE_COACH_SYSTEM_PROMPT },
       { role: "user", content: buildPuzzleUserMessage(payload) }
     ],
-    maxTokens: maxTokensForDetail(payload.commentaryDetail),
+    answerTokens: answerTokensForDetail(payload.commentaryDetail),
     validate: (raw) => validatePuzzleProse(raw, payload),
     retryMessage: (failure) => buildRetryMessage(failure, payload),
     redact: (text) => text

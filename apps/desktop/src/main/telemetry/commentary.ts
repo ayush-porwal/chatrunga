@@ -18,6 +18,15 @@ type Totals = {
   /** Every answered attempt reported its token counts (or cost). */
   tokensComplete: boolean;
   costComplete: boolean;
+  /** An attempt was the corrective retry after a failed validation. */
+  validationRetried: boolean;
+};
+
+/** PostHog's span name for each kind of attempt. */
+const SPAN_NAMES: Record<AttemptReport["reason"], string> = {
+  initial: "commentary",
+  validation_retry: "commentary validation retry",
+  reasoning_retry: "commentary reasoning retry"
 };
 
 /**
@@ -26,8 +35,9 @@ type Totals = {
  * answer, model, tokens, cost, latency), and at the end one `$ai_trace` plus one terminal
  * `commentary_completed` / `commentary_failed` — so a batch with mixed results counts each move
  * once. The move's `request_id` is the trace id. Usage is summed over every answered attempt
- * (including the corrective retry); totals nobody reported stay unknown, and `*_complete` says
- * whether they cover every attempt. The API key is never part of a report.
+ * (including the corrective retry) and every attempt that thought until it ran out (billed with no
+ * answer); totals nobody reported stay unknown, and `*_complete` says whether they cover every
+ * answered attempt. The API key is never part of a report.
  */
 export function commentaryReporter(
   telemetry: TelemetryService,
@@ -50,7 +60,9 @@ export function commentaryReporter(
   const recordAttempt = (totals: Totals, event: AttemptReport) => {
     const answered = event.result === "accepted" || event.result === "validation_failed";
     totals.input ??= event.request.messages;
-    if (answered) addUsage(totals, event.usage);
+    if (event.reason === "validation_retry") totals.validationRetried = true;
+    // An attempt that thought until it ran out has no answer but was billed.
+    if (answered || event.usage) addUsage(totals, event.usage);
     telemetry.record("$ai_generation", {
       ...common,
       request_id: totals.requestId,
@@ -60,7 +72,7 @@ export function commentaryReporter(
       result: event.result,
       $ai_trace_id: totals.requestId,
       $ai_span_id: randomUUID(),
-      $ai_span_name: event.reason === "initial" ? "commentary" : "commentary validation retry",
+      $ai_span_name: SPAN_NAMES[event.reason],
       $ai_provider: AI_PROVIDER,
       $ai_base_url: AI_BASE_URL,
       $ai_model: model.model,
@@ -103,7 +115,7 @@ export function commentaryReporter(
       ply: event.ply,
       error_code: event.code ?? undefined,
       attempts: event.attempts,
-      validation_retried: event.attempts > 1,
+      validation_retried: totals.validationRetried,
       first_attempt_valid: event.firstAttemptValid,
       latency_ms: Math.round(event.latencyMs),
       prompt_tokens_total: totals.promptTokens,
@@ -118,7 +130,12 @@ export function commentaryReporter(
 
   return (event) => {
     if (event.type === "request") {
-      const totals: Totals = { requestId: randomUUID(), tokensComplete: true, costComplete: true };
+      const totals: Totals = {
+        requestId: randomUUID(),
+        tokensComplete: true,
+        costComplete: true,
+        validationRetried: false
+      };
       requests.set(event.ply, totals);
       telemetry.record("commentary_requested", {
         ...common,
