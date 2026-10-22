@@ -28,7 +28,8 @@ export const PuzzleThemeChart = memo(function PuzzleThemeChart({
   const stats = usePuzzleThemeStatsQuery();
   const rows = useMemo(() => themeRows(stats.data ?? []), [stats.data]);
   const [all, setAll] = useState(false);
-  if (stats.isSuccess && !rows.length) return null;
+  // No themes yet, or they couldn't be read: no card (an empty table would read as "no themes").
+  if (stats.isError || (stats.isSuccess && !rows.length)) return null;
   const shown = all ? rows : rows.slice(0, ROWS_SHOWN);
   return (
     <section className={card} aria-labelledby={TITLE_ID}>
