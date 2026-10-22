@@ -148,6 +148,16 @@ export function RepertoireStudyPage({
   const engineOpen = useStudyEngineStore((state) => state.chapterId === chapterId);
   // Keyed on the chapter: its cleanup runs on a chapter change as well as on leaving Study.
   useEffect(() => () => useStudyEngineStore.getState().close(), [chapterId]);
+  // The engine panel is atop the Moves tab: turning Analyze on (the titlebar's, from any tab)
+  // shows that tab, so it never opens unseen.
+  useEffect(
+    () =>
+      useStudyEngineStore.subscribe((state, previous) => {
+        const opened = state.chapterId === chapterId && previous.chapterId !== chapterId;
+        if (opened && tab !== "moves") onTabChange("moves");
+      }),
+    [chapterId, tab, onTabChange]
+  );
 
   useChapterDraftLoad({
     repertoireId,
