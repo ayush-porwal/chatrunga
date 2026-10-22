@@ -1,7 +1,8 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
+  BookOpen,
   Copy,
   Download,
   FilePlus2,
@@ -11,6 +12,7 @@ import {
   Trash2,
   Upload
 } from "lucide-react";
+import type { BookSummary } from "@chaturanga/shared/types/books";
 import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -29,7 +31,13 @@ import {
   useRemoveRepertoireMutation,
   useRepertoiresQuery
 } from "../../queries/repertoire";
+import { useBooksQuery } from "../../queries/books";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { useBookImportStore, useBookProgress } from "../books/book-imports";
+import { importingBooks } from "../books/book-model";
+import { BookImportDialog } from "../books/BookImportDialog";
+import { BookImportRows } from "../books/BookImportRows";
+import { useOpenSettings } from "../settings/settings-link";
 import { CardTitleBar } from "../play/card-title";
 import { RecentGamesSearch } from "../play/recent-games-controls";
 import { CreateRepertoireDialog, type CreateIntent } from "./CreateRepertoireDialog";
@@ -80,6 +88,10 @@ export function RepertoireHubPage({
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
   const [editing, setEditing] = useState<RepertoireSummary | null>(null);
   const [notice, setNotice] = useState<HubMessage | null>(null);
+  /** The Import book dialog: a new book, or continuing one whose pages weren't all sent. */
+  const [bookDialog, setBookDialog] = useState<{ book: BookSummary | null } | null>(null);
+  const books = useHubBooks();
+  const openSettings = useOpenSettings();
 
   const fail = (error: unknown, fallback: string) =>
     setNotice({ tone: "danger", text: ipcErrorMessage(error) || fallback });
@@ -149,10 +161,15 @@ export function RepertoireHubPage({
     else onPractice(item.id);
   });
 
-  /** The title bar's New menu: a blank repertoire, or one from a PGN. */
+  /** The title bar's New menu: a blank repertoire, one from a PGN, or one from a book's PDF. */
   const newItems: MenuItem[] = [
     { label: "Blank repertoire", icon: <Plus />, onSelect: () => setCreating("blank") },
-    { label: "Import PGN", icon: <FilePlus2 />, onSelect: () => setCreating("import") }
+    { label: "Import PGN", icon: <FilePlus2 />, onSelect: () => setCreating("import") },
+    {
+      label: "Import book (PDF)…",
+      icon: <BookOpen />,
+      onSelect: () => setBookDialog({ book: null })
+    }
   ];
 
   function confirmDelete(repertoire: RepertoireSummary) {
@@ -178,7 +195,11 @@ export function RepertoireHubPage({
       <div className="flex min-h-full flex-col gap-4 p-6">
         <h1 className="sr-only">Repertoire</h1>
         {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
+        <BookReadyNotices onOpen={(repertoireId) => void study(repertoireId)} />
         <RepertoiresCard desktop={desktop} filters={filters} list={list} actions={newItems}>
+          {filters.archived ? null : (
+            <BookImportRows books={books} onContinue={(book) => setBookDialog({ book })} />
+          )}
           <RepertoireTable
             list={list}
             now={now}
@@ -206,6 +227,16 @@ export function RepertoireHubPage({
         onStudy={onStudy}
         onNotice={setNotice}
       />
+      {bookDialog ? (
+        <BookImportDialog
+          book={bookDialog.book}
+          onClose={() => setBookDialog(null)}
+          onOpenSettings={() => {
+            setBookDialog(null);
+            openSettings?.("ai");
+          }}
+        />
+      ) : null}
       {editing ? (
         <EditRepertoireDialog
           repertoire={editing}
@@ -226,6 +257,36 @@ export function RepertoireHubPage({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The books being imported (the hub's rows for them), following their progress while the hub is
+ * open; a book that finished since it was last listed gets its "… is ready" notice.
+ */
+function useHubBooks(): BookSummary[] {
+  useBookProgress();
+  const list = useBooksQuery();
+  useEffect(() => {
+    if (list.data) useBookImportStore.getState().observe(list.data);
+  }, [list.data]);
+  return list.data ? importingBooks(list.data) : [];
+}
+
+/** "<title> is ready": a book that finished importing, with Open (its repertoire in Study). */
+function BookReadyNotices({ onOpen }: { onOpen: (repertoireId: string) => void }) {
+  const ready = useBookImportStore((state) => state.ready);
+  const dismiss = (bookId: string) => useBookImportStore.getState().dismissReady(bookId);
+  return ready.map((notice) => (
+    <HubNotice
+      key={notice.bookId}
+      notice={{
+        tone: "success",
+        text: `“${notice.title}” is ready.`,
+        action: { label: "Open", onSelect: () => onOpen(notice.repertoireId) }
+      }}
+      onChange={() => dismiss(notice.bookId)}
+    />
+  ));
 }
 
 /**

@@ -138,18 +138,21 @@ export async function openPdfBook(
 }
 
 /**
- * Renders the pages from `firstPageIndex` on, one at a time, handing each to `onPage` (which
- * sends it) before the next is drawn. `signal` stops it between pages (rejecting with its reason).
+ * Renders the pages `pageIndexes` (by default all of them) in order, one at a time, handing each
+ * to `onPage` (which sends it) before the next is drawn. `signal` stops it between pages
+ * (rejecting with its reason).
  */
 export async function renderPdfPages(
   book: Pick<PdfBook, "pageCount" | "renderPage">,
   options: {
     onPage: (page: { pageIndex: number; bytes: Uint8Array }) => Promise<void>;
     signal?: AbortSignal;
-    firstPageIndex?: number;
+    pageIndexes?: readonly number[];
   }
 ): Promise<void> {
-  for (let pageIndex = options.firstPageIndex ?? 0; pageIndex < book.pageCount; pageIndex += 1) {
+  const pageIndexes =
+    options.pageIndexes ?? Array.from({ length: book.pageCount }, (_, index) => index);
+  for (const pageIndex of pageIndexes) {
     options.signal?.throwIfAborted();
     await options.onPage({ pageIndex, bytes: await book.renderPage(pageIndex) });
   }

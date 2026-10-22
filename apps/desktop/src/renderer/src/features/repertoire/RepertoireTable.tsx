@@ -138,6 +138,9 @@ const RepertoireRow = memo(function RepertoireRow({
 }) {
   const archived = item.archivedAt !== null;
   const actions = useMemo(() => actionsFor(item), [actionsFor, item]);
+  // Imported from a book (tagged `book`): its badge says so, the tag line needn't.
+  const fromBook = item.tags.includes("book");
+  const tags = fromBook ? item.tags.filter((tag) => tag !== "book") : item.tags;
   return (
     <li
       className={cn(
@@ -163,10 +166,11 @@ const RepertoireRow = memo(function RepertoireRow({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{item.name}</span>
+          {fromBook ? <Badge>Book</Badge> : null}
           {archived ? <Badge>Archived</Badge> : null}
         </span>
-        {item.tags.length ? (
-          <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
+        {tags.length ? (
+          <span className="truncate text-xs text-fg-subtle">{tags.join(" · ")}</span>
         ) : null}
       </button>
       <span className="flex items-center gap-1.5 text-xs text-fg-secondary">

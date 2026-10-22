@@ -122,15 +122,16 @@ describe("renderPdfPages", () => {
     renderPage: async (pageIndex: number) => new Uint8Array([pageIndex])
   };
 
-  it("hands each page on in order, from the first one asked for", async () => {
+  it("hands each page on in order: all of them, or the ones asked for", async () => {
     const sent: number[] = [];
-    await renderPdfPages(book, {
-      firstPageIndex: 1,
-      onPage: async ({ pageIndex, bytes }) => {
-        sent.push(pageIndex, bytes[0]);
-      }
-    });
-    expect(sent).toStrictEqual([1, 1, 2, 2]);
+    const onPage = async ({ pageIndex, bytes }: { pageIndex: number; bytes: Uint8Array }) => {
+      sent.push(pageIndex, bytes[0]);
+    };
+    await renderPdfPages(book, { onPage });
+    expect(sent).toStrictEqual([0, 0, 1, 1, 2, 2]);
+    sent.length = 0;
+    await renderPdfPages(book, { pageIndexes: [0, 2], onPage });
+    expect(sent).toStrictEqual([0, 0, 2, 2]);
   });
 
   it("stops between pages when cancelled", async () => {
