@@ -201,9 +201,9 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     );
   }
 
-  /** The session started: same screen, now naming the session. */
+  /** The session started: same screen, now naming the session (never one already named). */
   function practiceSessionStarted(sessionId: string) {
-    if (screen?.view !== "repertoire-practice") return;
+    if (screen?.view !== "repertoire-practice" || screen.sessionId !== null) return;
     const { repertoireId } = screen;
     void nav.navigate(practicePath(repertoireId, sessionId), { replace: true });
     record("replace", { view: "repertoire-practice", repertoireId, sessionId });

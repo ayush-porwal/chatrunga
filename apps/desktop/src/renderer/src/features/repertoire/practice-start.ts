@@ -43,6 +43,18 @@ export function settleStart(
   return outcome.snapshot.cards.length ? IDLE_START : { status: "empty", input: state.input };
 }
 
+/** What the practice page shows: the session its route names, or the navigation (preset) it starts. */
+export type PracticeShowing = { sessionId: string | null; preset: PracticePreset | null };
+
+/**
+ * Whether a start's answer may still rename the page to its session: the page still shows the
+ * session-less navigation that asked for it. Back / Forward reuse the page for another history
+ * entry, so being mounted isn't enough.
+ */
+export function answerStillShown(asked: PracticeShowing, shown: PracticeShowing): boolean {
+  return shown.sessionId === null && asked.sessionId === null && shown.preset === asked.preset;
+}
+
 /** A targeted queue ("Refresh this decision", "Retry missed") that came back empty. */
 export function isEmptyTargetedStart(state: PracticeStart): boolean {
   return state.status === "empty" && Boolean(state.input.positionKeys?.length);

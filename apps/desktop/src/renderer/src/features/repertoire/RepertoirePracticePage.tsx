@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CircleAlert, GraduationCap, Loader2, RotateCcw, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import type { RepertoireDetail, StartPracticeInput } from "@chaturanga/shared/types/repertoire";
@@ -64,7 +64,8 @@ export function RepertoirePracticePage({
     shownSession,
     summary
   });
-  const { startState, startSession } = usePracticeStart({ onSessionStarted });
+  const showing = useMemo(() => ({ sessionId, preset }), [sessionId, preset]);
+  const { startState, startSession } = usePracticeStart({ showing, onSessionStarted });
   const autoStart = useAutoStart({
     detail: detail.data,
     sessionId,

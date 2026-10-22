@@ -5,6 +5,7 @@ import type {
 } from "@chaturanga/shared/types/repertoire";
 import { cardOf } from "./__fixtures__/repertoire";
 import {
+  answerStillShown,
   beginStart,
   IDLE_START,
   isEmptyTargetedStart,
@@ -67,6 +68,22 @@ describe("practice start", () => {
     expect(isEmptyTargetedStart({ status: "empty", input: targeted })).toBe(true);
     expect(isEmptyTargetedStart({ status: "empty", input: REVIEW })).toBe(false);
     expect(isEmptyTargetedStart(beginStart(1, targeted))).toBe(false);
+  });
+});
+
+describe("a start's answer", () => {
+  it("renames only the session-less navigation that asked for it", () => {
+    const again = {};
+    const asked = { sessionId: null, preset: again };
+    expect(answerStillShown(asked, { sessionId: null, preset: again })).toBe(true);
+    // Back during "Starting practice" restores the session it came from on the same page.
+    expect(answerStillShown(asked, { sessionId: "sA", preset: null })).toBe(false);
+    // Back / Forward to another session-less entry (its own navigation).
+    expect(answerStillShown(asked, { sessionId: null, preset: {} })).toBe(false);
+    // A start asked while a session was named never renames it.
+    expect(
+      answerStillShown({ sessionId: "sA", preset: null }, { sessionId: "sA", preset: null })
+    ).toBe(false);
   });
 });
 

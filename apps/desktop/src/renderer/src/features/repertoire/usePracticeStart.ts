@@ -9,10 +9,12 @@ import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-sto
 import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
 import { presetPracticeInput, type PracticePreset } from "./practice-setup";
 import {
+  answerStillShown,
   beginStart,
   IDLE_START,
   practiceAutoStarts,
   settleStart,
+  type PracticeShowing,
   type PracticeStart
 } from "./practice-start";
 
@@ -24,8 +26,11 @@ const practice = () => useRepertoirePracticeStore.getState();
  * navigation again takes the first start's answer.
  */
 export function usePracticeStart({
+  showing,
   onSessionStarted
 }: {
+  /** What the page shows now (its route): an answer only renames the navigation that asked. */
+  showing: PracticeShowing;
   onSessionStarted: (sessionId: string) => void;
 }): {
   startState: PracticeStart;
@@ -43,6 +48,11 @@ export function usePracticeStart({
       mounted.current = false;
     };
   }, []);
+  /** The page's route as of its last render (Back / Forward reuse this page for another entry). */
+  const shown = useRef(showing);
+  useEffect(() => {
+    shown.current = showing;
+  }, [showing]);
 
   /**
    * Starts a session. The answer is taken from the promise, never from per-call callbacks or the
@@ -56,6 +66,7 @@ export function usePracticeStart({
         return;
       }
       const request = ++startRequest.current;
+      const asked = shown.current;
       setStartState(beginStart(request, input));
       const run = () => start.mutateAsync(input);
       const { answer, reused } = navigation
@@ -64,7 +75,12 @@ export function usePracticeStart({
       answer.then(
         (snapshot) => {
           setStartState((state) => settleStart(state, request, { kind: "answered", snapshot }));
-          if (request !== startRequest.current || !mounted.current || !snapshot.cards.length)
+          if (
+            request !== startRequest.current ||
+            !mounted.current ||
+            !answerStillShown(asked, shown.current) ||
+            !snapshot.cards.length
+          )
             return;
           // An earlier showing's session may have moved on since: the route resumes it from main.
           if (!reused) practice().setSession(snapshot);
