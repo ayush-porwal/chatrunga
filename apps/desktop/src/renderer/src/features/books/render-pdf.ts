@@ -127,7 +127,14 @@ export async function openPdfBook(
   // Hashed first: PDF.js may take the bytes over (transfer them to its worker).
   const sha256 = await sha256Hex(buffer);
   const task = pdfjs.open(new Uint8Array(buffer));
-  const document = await task.promise;
+  let document: PdfDocumentLike;
+  try {
+    document = await task.promise;
+  } catch (error) {
+    // A corrupt or password-protected file: its worker is freed before the rejection goes on.
+    await task.destroy().catch(() => undefined);
+    throw error;
+  }
   return {
     pageCount: document.numPages,
     metadataTitle: await metadataTitleOf(document),

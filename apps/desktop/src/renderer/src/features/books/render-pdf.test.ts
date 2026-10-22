@@ -109,6 +109,15 @@ describe("openPdfBook", () => {
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 
+  it("frees the loading task when PDF.js can't open the file, and rejects", async () => {
+    const destroy = vi.fn(async () => undefined);
+    const pdfjs: PdfjsLike = {
+      open: () => ({ promise: Promise.reject(new Error("Invalid PDF structure.")), destroy })
+    };
+    await expect(openPdfBook(file, { pdfjs })).rejects.toThrow("Invalid PDF structure.");
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
   it("frees the document when closed", async () => {
     const { pdfjs, destroy } = fakePdfjs(noMetadata);
     await (await openPdfBook(file, { pdfjs })).close();
