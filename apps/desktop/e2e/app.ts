@@ -387,6 +387,59 @@ export function stubOpenFile(app: ElectronApplication, file: string) {
   }, file);
 }
 
+/** What the fake OpenRouter answers a book import, by the prompt a request is. */
+export type FakeBookAnswers = { ocr: string; outline: string; lines: string; repair: string };
+
+/**
+ * Stands in for OpenRouter in the main process, for this launch only: its chat endpoint answers
+ * from `answers`, telling the import's prompts apart by how they start (`prompts`); every other
+ * request still meets the network guard. An API key can then be saved without the OS keychain
+ * (safeStorage's encryption is a plain copy in this throwaway profile).
+ */
+export function fakeOpenRouter(
+  app: ElectronApplication,
+  prompts: { ocr: string; outline: string; lines: string },
+  answers: FakeBookAnswers
+) {
+  return app.evaluate(
+    ({ safeStorage }, [prompts, answers]) => {
+      const state = (globalThis as unknown as { __e2e: { fetches: string[] } }).__e2e;
+      const guarded = globalThis.fetch;
+      type Part = { type: string; text?: string };
+      globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url !== "https://openrouter.ai/api/v1/chat/completions") return guarded(input, init);
+        state.fetches.push(url);
+        const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
+          messages?: { content: string | Part[] }[];
+        };
+        const first = body.messages?.[0]?.content ?? "";
+        const text =
+          typeof first === "string" ? first : first.map((part) => part.text ?? "").join("");
+        const kind = text.startsWith(prompts.ocr)
+          ? "ocr"
+          : text === prompts.outline
+            ? "outline"
+            : text.startsWith(prompts.lines)
+              ? "lines"
+              : "repair";
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: answers[kind] } }],
+            usage: { cost: 0.001 }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      };
+      safeStorage.isEncryptionAvailable = () => true;
+      safeStorage.encryptString = (text: string) => Buffer.from(text, "utf8");
+      safeStorage.decryptString = (data: Buffer) => data.toString("utf8");
+    },
+    [prompts, answers] as const
+  );
+}
+
 /** The repo's scripted UCI engine (streams `info` lines on `go infinite`), run by this Node. */
 const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
 
