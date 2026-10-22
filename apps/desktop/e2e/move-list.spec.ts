@@ -98,6 +98,9 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   const second = line.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" });
   await first.click();
   await expect(first).toHaveAttribute("aria-current", "step");
+  // The keys below are the subject: the pointer leaves the line, so no hover preview opens on the
+  // clicked move while they step (its timer would fire mid-way; hovering is covered above).
+  await page.mouse.move(0, 0);
   await expect(variations(tree)).toHaveCount(0);
   await expect(tree.locator('[data-tree-node-id][aria-current="step"]')).toHaveCount(0);
   // → steps along the line and stays on its last move; ← steps back, then before its first move
