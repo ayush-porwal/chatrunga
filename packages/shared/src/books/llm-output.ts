@@ -133,7 +133,8 @@ function parseRole(value: unknown, kind: BookLine["kind"]): BookLineRole {
   return kind === "main" ? "own-recommended" : "opponent";
 }
 
-function parseLine(value: unknown): BookLine | null {
+/** A line; its repair history only when `stored` (a model's answer never sets it). */
+function parseLine(value: unknown, stored: boolean): BookLine | null {
   if (!isRecord(value)) return null;
   const moves = text(value.moves, MAX_MOVETEXT);
   if (!moves) return null;
@@ -151,6 +152,7 @@ function parseLine(value: unknown): BookLine | null {
     moves,
     notes
   };
+  if (!stored) return line;
   const repairedFrom = text(value.repairedFrom, MAX_MOVETEXT);
   if (repairedFrom) line.repairedFrom = repairedFrom;
   const attempts = wholeNumber(value.repairAttempts, 1, 10);
@@ -158,8 +160,7 @@ function parseLine(value: unknown): BookLine | null {
   return line;
 }
 
-/** One page's lines (the lines prompt's answer, or one stored before). */
-export function parsePageLines(value: unknown): BookPageLines {
+function parseLines(value: unknown, stored: boolean): BookPageLines {
   if (!isRecord(value) || !Array.isArray(value.lines)) {
     throw new BookOutputError("The answer has no list of lines.");
   }
@@ -167,9 +168,22 @@ export function parsePageLines(value: unknown): BookPageLines {
     game: parseGame(value.game),
     lines: value.lines
       .slice(0, MAX_LINES)
-      .map(parseLine)
+      .map((line) => parseLine(line, stored))
       .filter((line) => line !== null)
   };
+}
+
+/**
+ * The lines prompt's answer for one page. A repair history in it is ignored: only the repair
+ * stage (import-job.ts) records one.
+ */
+export function parsePageLines(value: unknown): BookPageLines {
+  return parseLines(value, false);
+}
+
+/** One page's lines as the import stored them, with each line's repair history. */
+export function parseStoredPageLines(value: unknown): BookPageLines {
+  return parseLines(value, true);
 }
 
 function parseOutlineChapter(value: unknown): BookOutlineChapter | null {

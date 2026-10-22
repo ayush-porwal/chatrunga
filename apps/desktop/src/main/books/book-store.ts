@@ -7,7 +7,7 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   parseBookOutline,
-  parsePageLines,
+  parseStoredPageLines,
   type BookOutline,
   type BookPageLines
 } from "@chaturanga/shared/books/llm-output";
@@ -143,7 +143,7 @@ function toBook(row: BookRow): BookRecord {
 }
 
 function toPage(row: PageRow): BookPageRecord {
-  const lines = readJson(row.lines_json, parsePageLines);
+  const lines = readJson(row.lines_json, parseStoredPageLines);
   return {
     pageIndex: row.page_index,
     printedPage: row.printed_page,

@@ -4,7 +4,8 @@ import {
   extractJsonObject,
   parseBookOutline,
   parseBookRepair,
-  parsePageLines
+  parsePageLines,
+  parseStoredPageLines
 } from "./llm-output";
 
 describe("extractJsonObject", () => {
@@ -75,11 +76,13 @@ describe("parsePageLines", () => {
     ]);
   });
 
-  it("keeps a stored line's repair history", () => {
-    const [line] = parsePageLines({
-      lines: [{ moves: "1. e4", repairedFrom: "1. e5", repairAttempts: 2 }]
-    }).lines;
-    expect(line).toMatchObject({ repairedFrom: "1. e5", repairAttempts: 2 });
+  it("ignores a repair history in the model's answer, and keeps a stored line's", () => {
+    const page = { lines: [{ moves: "1. e4", repairedFrom: "1. e5", repairAttempts: 2 }] };
+    const [answered] = parsePageLines(page).lines;
+    expect(answered).not.toHaveProperty("repairedFrom");
+    expect(answered).not.toHaveProperty("repairAttempts");
+    const [stored] = parseStoredPageLines(page).lines;
+    expect(stored).toMatchObject({ repairedFrom: "1. e5", repairAttempts: 2 });
   });
 
   it.each([null, [], { lines: "none" }, { game: null }])("refuses %j", (value) => {
