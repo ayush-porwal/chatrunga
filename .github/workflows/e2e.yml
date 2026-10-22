@@ -143,9 +143,11 @@ jobs:
       # passed: nightly and on a full dispatch (not on pull requests, nor on a narrowed dispatch).
       # Their bounds depend on the runner, so a miss is reported (the step shows as failed and its
       # results are uploaded) without failing the run. The timings are in the step's log.
+      # Linux and Windows only: the bounds are absolute numbers calibrated on those runners, so
+      # the macOS row runs the journeys but not the benchmarks.
       - name: Timing benchmarks (packaged app, non-blocking)
         id: perf
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.spec == '')
+        if: runner.os != 'macOS' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.spec == ''))
         continue-on-error: true
         timeout-minutes: 20
         working-directory: apps/desktop
