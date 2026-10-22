@@ -9,7 +9,7 @@ import type {
 import { Button } from "@/components/ui/button";
 import { tabPanelProps } from "@/components/ui/segmented-control";
 import { Stat, StatGroup } from "@/components/ui/stat";
-import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
+import { lastShownCard, useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { isExtraPractice, summaryPresets, type PracticePreset } from "./practice-setup";
@@ -19,9 +19,9 @@ import { missedPositions, type MissedPosition } from "./repertoire-model";
 const noMove = () => false;
 
 /**
- * Session summary (§5.3), in the board workspace as Review's: the last position on the board, the
- * recall counts in the panel's summary strip, then the chapters practised and every missed
- * decision with a link to study it; the ways on in the footer. Counts describe decision recall —
+ * Session summary (§5.3), in the board workspace as Review's: the last position shown on the
+ * board, the recall counts in the panel's summary strip, then the chapters practised and every
+ * missed decision with a link to study it; the ways on in the footer. Counts describe decision recall —
  * no "mastered" score. "Retry missed" practises the misses again as ungraded extra practice (a new
  * targeted session: this one's answers stay as they were, and no schedule changes). A line
  * rehearsal also counts lines started and completed and answers that belonged to another line,
@@ -53,7 +53,7 @@ export function PracticeSummaryView({
   const orientation = useRepertoirePracticeStore((state) => state.orientation);
   const rehearsal = summary.rehearsal ?? null;
   const { retryMissed, rehearseAgain } = summaryPresets(session, summary);
-  const lastFen = session?.cards.at(-1)?.fen ?? START_FEN;
+  const lastFen = lastShownCard(session)?.fen ?? START_FEN;
   return (
     <BoardWorkspace
       panelLabel="Practice summary"
