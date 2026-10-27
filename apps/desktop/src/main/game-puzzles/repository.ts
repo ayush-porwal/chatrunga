@@ -70,8 +70,11 @@ export type QueueEntry = {
   source: GamePuzzleQueueSource;
   settings: QueuedSettings;
   /** The finished review's evaluations (the review hook), else null: the generator scans. */
-  scan: (PuzzleScanEntry | null)[] | null;
+  scan: SavedScan | null;
 };
+
+/** A review's evaluations, with the main line they are of (the game may be edited afterwards). */
+export type SavedScan = { moves: string[]; entries: (PuzzleScanEntry | null)[] };
 
 /** A game as the generator reads it. */
 export type GenerationGame = {
@@ -177,12 +180,14 @@ function scoreOf(value: unknown): EngineScore | null {
     : null;
 }
 
-/** A stored scan, entry by entry; null (scan again) when any entry can't be read. */
-function scanIn(text: string | null): (PuzzleScanEntry | null)[] | null {
+/** A stored scan, entry by entry; null (scan again) when its moves or any entry can't be read. */
+function scanIn(text: string | null): SavedScan | null {
   const value = readJson(text);
-  if (!Array.isArray(value)) return null;
+  if (!isRecord(value) || !Array.isArray(value.moves) || !Array.isArray(value.entries)) return null;
+  const moves = value.moves.filter((move): move is string => typeof move === "string");
+  if (moves.length !== value.moves.length) return null;
   const entries: (PuzzleScanEntry | null)[] = [];
-  for (const item of value) {
+  for (const item of value.entries) {
     if (item === null) {
       entries.push(null);
       continue;
@@ -192,7 +197,7 @@ function scanIn(text: string | null): (PuzzleScanEntry | null)[] | null {
     if (!score || (bestMove !== null && typeof bestMove !== "string")) return null;
     entries.push({ score, bestMove });
   }
-  return entries;
+  return { moves, entries };
 }
 
 function queuedSettingsIn(text: string): QueuedSettings {

@@ -11,6 +11,7 @@ import {
   type GeneratePuzzlesInput
 } from "@chaturanga/shared/chess/puzzle-generator";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import type { SavedScan } from "./repository";
 import {
   DEFAULT_GAME_PUZZLE_SETTINGS,
   GAME_PUZZLE_DEPTHS,
@@ -139,16 +140,27 @@ const queues: InstanceType<typeof GamePuzzleQueue>[] = [];
 
 const pausedBetweenGames = (event: GamePuzzleGenerationEvent) =>
   event.status.paused && event.status.current === null;
-/** A game that searches until it is stopped. */
+/** A game that searches until it is stopped (at once if it was stopped before it began). */
 function searchesUntilStopped(input: GeneratePuzzlesInput): Promise<GeneratedPuzzle[]> {
   return new Promise((_resolve, reject) => {
-    input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+    const stopped = () => reject(input.signal?.reason);
+    if (input.signal?.aborted) stopped();
+    else input.signal?.addEventListener("abort", stopped, { once: true });
   });
 }
 async function solve(input: GeneratePuzzlesInput): Promise<GeneratedPuzzle[]> {
   await input.beforeSearch?.();
   return [foundPuzzle(input)];
 }
+/** The trap game's review as the review hook saves it: its moves and evaluations. */
+function trapScan(): SavedScan {
+  const review = { moves: trapReviewMoves() };
+  const moves = review.moves.map((move) => move.playedMove);
+  const entries = scanFromReview(review, moves);
+  if (!entries) throw new Error("The trap review doesn't match its own moves.");
+  return { moves, entries };
+}
+
 /** Queues games straight into the repository (as a persisted queue from the last run). */
 function persistedQueue(...gameIds: string[]): void {
   repository.enqueue(
@@ -299,6 +311,30 @@ describe("GamePuzzleQueue", () => {
     // A failed game isn't processed: "Skip games already processed" tries it again.
     expect(repository.summary(["me"]).sources.lichess.processed).toBe(1);
     expect(repository.matchingGames(settings(), ["me"]).ids).toStrictEqual(["broken"]);
+  });
+
+  it("a busy database doesn't end the queue: the game goes back in line and runs again", async () => {
+    saveGame("busy", T0);
+    const busy = Object.assign(new Error("database is locked"), { errcode: 5 });
+    // Both tries of finishing the first run find the database busy.
+    const finish = vi
+      .spyOn(repository, "finish")
+      .mockImplementationOnce(() => {
+        throw busy;
+      })
+      .mockImplementationOnce(() => {
+        throw busy;
+      });
+    const done = finished("busy");
+    await newQueue().enqueueMatching(settings());
+    // The queue waits before trying again; then the game runs from the start.
+    (await nextPoll())();
+    await done;
+    expect(generated).toHaveLength(2);
+    expect(results()).toStrictEqual([
+      { gameId: "busy", status: "done", puzzlesFound: 1, error: null }
+    ]);
+    finish.mockRestore();
   });
 
   it("a missing engine stops the queue without failing its games; it tries again once the engines change", async () => {
@@ -512,5 +548,28 @@ describe("GamePuzzleQueue", () => {
     expect(input.scan).toStrictEqual(scanFromReview(review, input.moves));
     expect(input.scan).toHaveLength(15);
     expect(events.find((event) => event.status.current)?.status.current?.source).toBe("review");
+  });
+
+  it("searches a reviewed game again when its main line changed since the review", async () => {
+    saveGame("edited", T0);
+    const { moves, entries } = trapScan();
+    // Another line of the same length (the review hook's scan is of the old one).
+    const other = ["d2d4", ...moves.slice(1)];
+    repository.enqueue(
+      [
+        {
+          gameId: "edited",
+          source: "review",
+          settings: { kinds: ["mistake"], depth: "quick" },
+          scan: { moves: other, entries }
+        }
+      ],
+      clock
+    );
+    const done = finished("edited");
+    newQueue().start();
+    await done;
+    expect(generated).toHaveLength(1);
+    expect(generated[0].scan).toBeNull();
   });
 });

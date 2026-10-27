@@ -14,7 +14,7 @@ import {
   type GeneratePuzzlesInput,
   type PuzzleEngine
 } from "./puzzle-generator";
-import type { PuzzleEngineLine, PuzzleEngineSearch } from "./puzzle-solution";
+import { isClearCut, type PuzzleEngineLine, type PuzzleEngineSearch } from "./puzzle-solution";
 import { positionKey } from "./repertoire-position";
 import { invertScore } from "./review";
 
@@ -462,6 +462,18 @@ describe("generateGamePuzzles: clear-cut mates", () => {
     );
     const puzzles = await generateGamePuzzles(input(BACK_RANK, engine));
     expect(puzzles).toMatchObject([{ solution: ["a1a8"] }]);
+  });
+
+  it("drops a longer mate with another mate: the trainer only takes another mate at once", async () => {
+    const fen = BACK_RANK.fens[0];
+    const lines = (score: EngineScore): PuzzleEngineLine[] => [
+      { multipv: 1, score, pv: ["a1a7"] },
+      { multipv: 2, score, pv: ["b1b7"] }
+    ];
+    const search = () => Promise.resolve([{ multipv: 1, score: cp(300), pv: ["g1f1"] }]);
+    const at = { fen, legal: 20, depth: VERIFY, first: true };
+    await expect(isClearCut(search, at, lines(mate(2)))).resolves.toBe(false);
+    await expect(isClearCut(search, at, lines(mate(1)))).resolves.toBe(true);
   });
 
   it("drops a mate with another mate when a move that doesn't mate still wins big", async () => {

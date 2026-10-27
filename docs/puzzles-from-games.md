@@ -58,8 +58,9 @@ A game's user side is the side whose player name matches a connected Lichess or 
 - Saves no game reviews.
 - **Review hook**: when a game review the user ran finishes (`reviewCompleted`), and the game has a
   user side, the game is queued with that review's evaluations used instead of the quick scan
-  (only the deep check runs). Its puzzle kinds and depth are the last ones used in the dialog
-  (defaults if never opened). The review code itself is not changed.
+  (only the deep check runs). The evaluations are kept with the moves they are of: if the game's
+  main line changes before it runs, it is scanned again. Its puzzle kinds and depth are the last
+  ones used in the dialog (defaults if never opened). The review code itself is not changed.
 - Re-processing a game (skip unchecked) replaces its puzzles of the kinds that ran, keeping the
   progress of puzzles whose position and solution are unchanged.
 
@@ -67,9 +68,9 @@ A game's user side is the side whose player name matches a connected Lichess or 
 
 All scores use the win-% scale of `chess/move-assessment.ts` (`winPercent`, 0–100, from the side to
 move). "Clear-cut" below means: the best move is at least `ONLY_MOVE_GAP` = 35 win-% points ahead of
-the second best, or the best move mates and either no second move mates or the best non-mating move
-leaves the side to move under 80 win-% (a mate in one with an alternative mate in one counts when
-every non-mating move is clearly worse), or there is only one legal move (never the first move of a
+the second best, or the best move mates and either no second move mates or it mates at once and the
+best non-mating move leaves the side to move under 80 win-% (the trainer accepts any mating move,
+but only one line of a longer mate), or there is only one legal move (never the first move of a
 puzzle).
 
 1. **Quick scan** — every position before a move, score at the scan depth, one line (MultiPV 1).

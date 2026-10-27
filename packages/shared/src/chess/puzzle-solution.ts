@@ -102,9 +102,9 @@ type ClearCutPosition = {
 /**
  * Whether the best of `lines` (MultiPV 2 at `at.fen`, best first) is clear-cut: it is at least
  * {@link ONLY_MOVE_GAP} win-% ahead of the second best; or it mates and either the second best
- * doesn't, or the best move that doesn't mate leaves the side to move under 80 win-% (so a mate
- * with an alternative mate counts when every other move is clearly worse); or it is the only legal
- * move (never the first move of a puzzle).
+ * doesn't, or it mates at once and the best move that doesn't mate leaves the side to move under
+ * 80 win-% (the trainer takes any mating move, but only one line of a longer mate); or it is the
+ * only legal move (never the first move of a puzzle).
  */
 export async function isClearCut(
   search: PuzzleSearch,
@@ -118,6 +118,7 @@ export async function isClearCut(
   if (!mates(best.score))
     return sideToMoveWin(best.score) - sideToMoveWin(second.score) >= ONLY_MOVE_GAP;
   if (!mates(second.score)) return true;
+  if (best.score.value !== 1) return false;
   const mating = new Set(lines.filter((line) => mates(line.score)).map((line) => line.pv.at(0)));
   return (await bestNonMatingWin(search, at, mating)) < NON_MATING_WIN_CEILING;
 }
@@ -187,11 +188,19 @@ export async function buildSolution(
     pos = next.pos;
   }
   if (mates(first.score) && !pos.isCheckmate()) return null;
+  if (!pos.isCheckmate()) dropForcedTail(moves, forced);
+  return forced.length >= rules.minMoves ? moves : null;
+}
+
+/**
+ * Drops the solver's trailing only moves (and the replies before them), keeping the first move. A
+ * line that ends in mate keeps them: the mate is the point.
+ */
+function dropForcedTail(moves: string[], forced: boolean[]): void {
   while (forced.length > 1 && forced.at(-1)) {
     forced.pop();
     moves.splice(-2);
   }
-  return forced.length >= rules.minMoves ? moves : null;
 }
 
 /** The opponent's best reply at `pos` and the solver's move after it, if the line goes on. */

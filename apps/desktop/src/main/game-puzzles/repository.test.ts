@@ -360,7 +360,12 @@ describe("gamePuzzleRepository (SQLite)", () => {
     repository.savePuzzles("g1", ["mistake"], [puzzle(3)]);
     repository.recordAttempt({ puzzleId: idAt("g1", 3)!, outcome: "wrong" }, T0);
     repository.enqueue([
-      { gameId: "g1", source: "review", settings: { kinds: ["mistake"], depth: "deep" }, scan: [] }
+      {
+        gameId: "g1",
+        source: "review",
+        settings: { kinds: ["mistake"], depth: "deep" },
+        scan: null
+      }
     ]);
     gameRepository.remove("g1");
     const count = (table: string) =>

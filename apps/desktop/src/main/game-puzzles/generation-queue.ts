@@ -37,6 +37,7 @@ import {
   type GamePuzzleSummary
 } from "@chaturanga/shared/types/game-puzzles";
 import type { PlayerRatings } from "@chaturanga/shared/types/ratings";
+import { retryOnceIfBusy } from "../db/repositories";
 import { errorMessage, logger } from "../logger";
 import {
   gamePuzzleRepository as repository,
@@ -52,6 +53,8 @@ const ENGINE_POLL_MS = 1_000;
 const PROGRESS_INTERVAL_MS = 100;
 /** How long quitting waits for the running game to stop (its process is killed after anyway). */
 const STOP_WAIT_MS = 3_000;
+/** After the queue's own database write failed (busy past its retry): wait, then carry on. */
+const DRAIN_RETRY_MS = 5_000;
 
 const ENGINE_PROBLEM: Record<Exclude<GamePuzzleEngineState, "ready">, string> = {
   missing: "Finding puzzles needs a default engine such as Stockfish.",
@@ -109,6 +112,8 @@ export class GamePuzzleQueue {
   private loop: Promise<void> | null = null;
   /** A kick that came while the loop ran: it looks again once it ends. */
   private kickAgain = false;
+  /** Aborted when the app is closing: ends a wait before the queue tries again. */
+  private readonly stopping = new AbortController();
   private job: AbortController | null = null;
   private current: GamePuzzleCurrentGame | null = null;
   private lastProgressAt = Number.NEGATIVE_INFINITY;
@@ -132,6 +137,7 @@ export class GamePuzzleQueue {
   /** Quitting: the running game stops (it runs again next time) and nothing more is written. */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.stopping.abort();
     this.job?.abort(new Error("The app is closing."));
     const loop = this.loop;
     if (loop) await Promise.race([loop, sleep(STOP_WAIT_MS, undefined, { ref: false })]);
@@ -195,13 +201,14 @@ export class GamePuzzleQueue {
     if (!game || !userSideOfGame(game, await this.deps.usernames())) return false;
     const { kinds, depth } = repository.lastSettings();
     if (!kinds.length) return false;
+    const entries = scanFromReview(review, game.moves);
     const queued = repository.enqueue(
       [
         {
           gameId,
           source: "review",
           settings: { kinds, depth },
-          scan: scanFromReview(review, game.moves)
+          scan: entries && { moves: [...game.moves], entries }
         }
       ],
       this.now()
@@ -267,7 +274,7 @@ export class GamePuzzleQueue {
       return;
     }
     this.loop = this.drain()
-      .catch((error: unknown) => logger.error("game-puzzles", "the queue stopped:", error))
+      .catch((error: unknown) => this.drainFailed(error))
       .finally(() => {
         this.loop = null;
         if (!this.kickAgain) return;
@@ -276,9 +283,28 @@ export class GamePuzzleQueue {
       });
   }
 
+  /**
+   * The queue's own database write failed (busy past its retry, as during a repertoire import):
+   * the game goes back in line and the queue tries again shortly, instead of stopping until the
+   * app restarts.
+   */
+  private drainFailed(error: unknown): void {
+    logger.error("game-puzzles", "the queue stopped; it tries again shortly:", error);
+    try {
+      repository.requeueRunning();
+    } catch (requeueError) {
+      logger.warn("game-puzzles", "requeueing the game failed:", errorMessage(requeueError));
+    }
+    this.changed();
+    this.wait(DRAIN_RETRY_MS, this.stopping.signal).then(
+      () => this.kick(),
+      () => undefined
+    );
+  }
+
   private async drain(): Promise<void> {
     while (!this.paused && !this.stopped) {
-      const entry = repository.takeNext();
+      const entry = await retryOnceIfBusy(() => repository.takeNext());
       if (!entry) {
         this.problem = null;
         return;
@@ -286,12 +312,12 @@ export class GamePuzzleQueue {
       const outcome = await this.process(entry);
       if (outcome === "requeue" || outcome === "blocked") {
         // Back first in line (a cancelled game has already left the queue).
-        repository.requeueRunning();
+        await retryOnceIfBusy(() => repository.requeueRunning());
         this.changed();
         if (outcome === "blocked") return;
         continue;
       }
-      repository.finish(outcome, this.now());
+      await retryOnceIfBusy(() => repository.finish(outcome, this.now()));
       this.changed(outcome);
     }
   }
@@ -357,8 +383,8 @@ export class GamePuzzleQueue {
           engine,
           maia: this.deps.maia(),
           openingBook: this.deps.openingBook(),
-          // A scan for other moves (the game was edited since its review) is searched again.
-          scan: entry.scan?.length === game.moves.length + 1 ? entry.scan : null,
+          // The game was edited since its review: its moves are searched again.
+          scan: sameMoves(entry.scan?.moves, game.moves) ? entry.scan?.entries : null,
           signal: controller.signal,
           onProgress: (progress) => this.progressed(progress),
           beforeSearch: () => this.holdForUser(controller.signal)
@@ -453,3 +479,7 @@ export function attachReviewHook(
 
 /** Reviews noted at once (one runs at a time; a few may be waiting to report back). */
 const MAX_NOTED_REVIEWS = 16;
+
+function sameMoves(a: readonly string[] | undefined, b: readonly string[]): boolean {
+  return a?.length === b.length && a.every((move, index) => move === b[index]);
+}

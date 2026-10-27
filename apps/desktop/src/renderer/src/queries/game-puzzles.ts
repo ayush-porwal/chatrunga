@@ -17,21 +17,25 @@ import type {
 } from "@chaturanga/shared/types/game-puzzles";
 import type { NextPuzzleInput } from "../app/puzzle-session-controller";
 import { gamePuzzleSample } from "../features/puzzles/game-puzzle-set";
+import { queryKeys } from "./api";
 
 /**
  * Puzzles from the user's games through `window.chaturanga.gamePuzzles` (main runs the queue and
- * stores the puzzles). Everything sits under ["gamePuzzles"]; the queue's status is kept live by
- * `onGenerationProgress` (useGamePuzzleProgressSubscription), and each game it finishes reads the
- * counts again. Nothing is available in the web preview (no `window.chaturanga`).
+ * stores the puzzles). What counts the library's games (the summary, the dialog's match count, the
+ * puzzle lists) sits under the library's ["games"] key, so a save, import or delete reads it again;
+ * the queue's status is kept live by `onGenerationProgress` (useGamePuzzleProgressSubscription),
+ * and each game it finishes reads the counts again. Nothing is available in the web preview (no
+ * `window.chaturanga`).
  */
 const gamePuzzleKeys = {
-  summary: ["gamePuzzles", "summary"] as const,
+  summary: [...queryKeys.games, "puzzles", "summary"] as const,
   status: ["gamePuzzles", "status"] as const,
   lastSettings: ["gamePuzzles", "lastSettings"] as const,
-  counts: ["gamePuzzles", "count"] as const,
-  count: (settings: GamePuzzleSettings) => ["gamePuzzles", "count", settings] as const,
-  lists: ["gamePuzzles", "list"] as const,
-  list: (filter: GamePuzzleFilter) => ["gamePuzzles", "list", filter] as const
+  counts: [...queryKeys.games, "puzzles", "count"] as const,
+  count: (settings: GamePuzzleSettings) =>
+    [...queryKeys.games, "puzzles", "count", settings] as const,
+  lists: [...queryKeys.games, "puzzles", "list"] as const,
+  list: (filter: GamePuzzleFilter) => [...queryKeys.games, "puzzles", "list", filter] as const
 };
 
 function gamePuzzlesApi(): ChaturangaApi["gamePuzzles"] | undefined {

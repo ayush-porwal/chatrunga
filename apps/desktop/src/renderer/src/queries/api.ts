@@ -23,7 +23,7 @@ import type { SavePictureInput } from "@chaturanga/shared/types/pictures";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
-const queryKeys = {
+export const queryKeys = {
   databases: ["databases"] as const,
   engines: ["engines"] as const,
   games: ["games"] as const,
