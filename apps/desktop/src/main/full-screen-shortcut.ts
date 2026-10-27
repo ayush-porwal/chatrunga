@@ -6,6 +6,7 @@ type KeyInput = {
   control: boolean;
   meta: boolean;
   shift: boolean;
+  isAutoRepeat: boolean;
 };
 
 /**
@@ -17,6 +18,7 @@ export function isFullScreenShortcut(input: KeyInput, platform: NodeJS.Platform)
     platform !== "darwin" &&
     input.type === "keyDown" &&
     input.key === "F11" &&
+    !input.isAutoRepeat &&
     !input.alt &&
     !input.control &&
     !input.meta &&

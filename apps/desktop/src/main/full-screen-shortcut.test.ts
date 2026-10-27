@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { isFullScreenShortcut } from "./full-screen-shortcut";
 
-const f11 = { type: "keyDown", key: "F11", alt: false, control: false, meta: false, shift: false };
+const f11 = {
+  type: "keyDown",
+  key: "F11",
+  alt: false,
+  control: false,
+  meta: false,
+  shift: false,
+  isAutoRepeat: false
+};
 
 describe("isFullScreenShortcut", () => {
   it("is F11 on Windows and Linux", () => {
@@ -13,8 +21,9 @@ describe("isFullScreenShortcut", () => {
     expect(isFullScreenShortcut(f11, "darwin")).toBe(false);
   });
 
-  it("ignores key-up, other keys and F11 with a modifier", () => {
+  it("ignores key-up, held-key repeats, other keys and F11 with a modifier", () => {
     expect(isFullScreenShortcut({ ...f11, type: "keyUp" }, "win32")).toBe(false);
+    expect(isFullScreenShortcut({ ...f11, isAutoRepeat: true }, "linux")).toBe(false);
     expect(isFullScreenShortcut({ ...f11, key: "F10" }, "win32")).toBe(false);
     expect(isFullScreenShortcut({ ...f11, control: true }, "win32")).toBe(false);
     expect(isFullScreenShortcut({ ...f11, shift: true }, "linux")).toBe(false);
