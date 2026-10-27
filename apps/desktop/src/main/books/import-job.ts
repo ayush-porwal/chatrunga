@@ -72,7 +72,6 @@ export type BookJobDeps = {
 const OUTLINE_PAGES = 15;
 const RETRY_DELAYS_MS = [2_000, 8_000];
 const MAX_REPAIRS = 2;
-const MAX_TOKENS = { ocr: 6_000, outline: 8_000, lines: 24_000, repair: 16_000 };
 
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -221,10 +220,10 @@ class BookRun {
 
   /** A JSON answer read with `parse`; asked a second time when the first doesn't read. */
   private async askJson<T>(
-    request: Omit<BookChatRequest, "signal" | "json" | "reasoning">,
+    request: Omit<BookChatRequest, "signal" | "json">,
     parse: (value: unknown) => T
   ): Promise<T> {
-    const json = { ...request, json: true, reasoning: "low" as const };
+    const json = { ...request, json: true };
     try {
       return parse(extractJsonObject(await this.ask(json)));
     } catch (error) {
@@ -250,12 +249,9 @@ class BookRun {
     let done = total - pending.length;
     this.emit(done, total);
     await eachLimited(pending, this.deps.concurrency?.ocr ?? 4, async (page) => {
-      // No reasoning effort: the model thinks as it does by default, which is what read the
-      // pages best (Haiku 5.5 thinks for about two thirds of its answer).
       const text = await this.ask({
         model: this.book.ocrModel,
-        messages: bookOcrMessages(await this.image(page)),
-        maxTokens: MAX_TOKENS.ocr
+        messages: bookOcrMessages(await this.image(page))
       });
       this.deps.store.saveOcr(this.id, page.pageIndex, text, printedPageOf(text));
       done += 1;
@@ -276,8 +272,7 @@ class BookRun {
           pages: pages
             .slice(0, OUTLINE_PAGES)
             .map((page) => ({ pdfPage: page.pageIndex + 1, text: page.ocrText ?? "" }))
-        }),
-        maxTokens: MAX_TOKENS.outline
+        })
       },
       parseBookOutline
     );
@@ -341,8 +336,7 @@ class BookRun {
             context: where,
             previousPage: previous?.ocrText?.slice(-PREVIOUS_PAGE_TAIL) ?? null,
             page: page.ocrText ?? ""
-          }),
-          maxTokens: MAX_TOKENS.lines
+          })
         },
         parsePageLines
       );
@@ -495,8 +489,7 @@ class BookRun {
           ...failure,
           legalSans: legalSans(failure.fenBefore),
           images: input.images
-        }),
-        maxTokens: MAX_TOKENS.repair
+        })
       },
       parseBookRepair
     ).catch((error: unknown) => {

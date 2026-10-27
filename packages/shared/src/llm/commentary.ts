@@ -16,8 +16,8 @@ export type CommentaryDetailLevel = NonNullable<ReviewInsightPayload["commentary
  * Per-detail budget for the BODY. `targetSentences` / `targetChars` are what
  * the prompt asks for; `maxSentences` / `maxChars` are the validator's hard
  * caps (looser, so a model that follows the prompt is never rejected on a
- * boundary); `maxTokens` covers the whole JSON answer (headline + body)
- * with headroom so it is never truncated mid-object.
+ * boundary). These are the only length controls: requests set no token limit,
+ * so a thinking model thinks as long as it needs to.
  */
 export const COMMENTARY_LIMITS: Record<
   CommentaryDetailLevel,
@@ -26,29 +26,25 @@ export const COMMENTARY_LIMITS: Record<
     targetChars: number;
     maxSentences: number;
     maxChars: number;
-    maxTokens: number;
   }
 > = {
   concise: {
     targetSentences: "2-3",
     targetChars: 330,
     maxSentences: 4,
-    maxChars: 440,
-    maxTokens: 350
+    maxChars: 440
   },
   balanced: {
     targetSentences: "3-5",
     targetChars: 620,
     maxSentences: 6,
-    maxChars: 800,
-    maxTokens: 550
+    maxChars: 800
   },
   detailed: {
     targetSentences: "5-7",
     targetChars: 950,
     maxSentences: 8,
-    maxChars: 1200,
-    maxTokens: 800
+    maxChars: 1200
   }
 };
 
@@ -57,11 +53,6 @@ const HEADLINE_MAX_CHARS = 80;
 
 function commentaryLimits(detail: ReviewInsightPayload["commentaryDetail"]) {
   return COMMENTARY_LIMITS[detail ?? "balanced"];
-}
-
-/** Provider `max_tokens` for one payload. */
-export function maxTokensForDetail(detail: ReviewInsightPayload["commentaryDetail"]): number {
-  return commentaryLimits(detail).maxTokens;
 }
 
 export const COACH_SYSTEM_PROMPT = `

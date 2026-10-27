@@ -26,8 +26,9 @@ type Totals = {
  * answer, model, tokens, cost, latency), and at the end one `$ai_trace` plus one terminal
  * `commentary_completed` / `commentary_failed` — so a batch with mixed results counts each move
  * once. The move's `request_id` is the trace id. Usage is summed over every answered attempt
- * (including the corrective retry); totals nobody reported stay unknown, and `*_complete` says
- * whether they cover every attempt. The API key is never part of a report.
+ * (including the corrective retry) and every attempt that ran out of room before answering
+ * (billed, no answer); totals nobody reported stay unknown, and `*_complete` says whether they
+ * cover every answered attempt. The API key is never part of a report.
  */
 export function commentaryReporter(
   telemetry: TelemetryService,
@@ -50,7 +51,8 @@ export function commentaryReporter(
   const recordAttempt = (totals: Totals, event: AttemptReport) => {
     const answered = event.result === "accepted" || event.result === "validation_failed";
     totals.input ??= event.request.messages;
-    if (answered) addUsage(totals, event.usage);
+    // An attempt that ran out of room before answering has no answer but was billed.
+    if (answered || event.usage) addUsage(totals, event.usage);
     telemetry.record("$ai_generation", {
       ...common,
       request_id: totals.requestId,
@@ -72,8 +74,6 @@ export function commentaryReporter(
       $ai_total_cost_usd: event.usage?.costUsd,
       $ai_latency: seconds(event.latencyMs),
       $ai_http_status: event.httpStatus ?? undefined,
-      $ai_temperature: event.request.temperature,
-      $ai_max_tokens: event.request.maxTokens,
       $ai_stream: false,
       // No answer arrived; an answer that failed validation is recorded as `result` instead.
       $ai_is_error: !answered,

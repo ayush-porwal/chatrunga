@@ -6,7 +6,6 @@ import {
   buildRetryMessage,
   buildUserMessage,
   groundedSanTokens,
-  maxTokensForDetail,
   parseCoachResponse,
   validateCommentary,
   validateProse,
@@ -283,12 +282,6 @@ describe("coach prompt", () => {
     expect(curve).toContain("only with ratings from the curve");
     // The old per-level fields are gone from the contract.
     expect(COACH_SYSTEM_PROMPT).not.toMatch(/humanTopMoves|playedAtPlayerLevel/);
-  });
-
-  it("scales the provider token budget with the requested detail", () => {
-    expect(maxTokensForDetail("concise")).toBeLessThan(maxTokensForDetail("balanced"));
-    expect(maxTokensForDetail("balanced")).toBeLessThan(maxTokensForDetail("detailed"));
-    expect(maxTokensForDetail(undefined)).toBe(maxTokensForDetail("balanced"));
   });
 
   it("sends the facts, the move and the requested length in the user message", () => {

@@ -3,6 +3,7 @@ import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturan
 import type { PuzzleInsightPayload } from "@chaturanga/shared/schemas/puzzle-insight";
 import {
   NO_API_KEY_ERROR,
+  type CommentaryReport,
   explainPuzzleWithOpenRouter,
   generateOpenRouterCommentary,
   parseCommentaryPayloads,
@@ -67,6 +68,39 @@ function completion(text: string): Response {
   });
 }
 
+/** Everything a request sends besides the messages: the model and its settings. */
+function sentSettings(init?: RequestInit): Record<string, unknown> {
+  const { messages: _messages, ...settings } = JSON.parse(bodyText(init)) as Record<
+    string,
+    unknown
+  >;
+  return settings;
+}
+
+/** No token limit, no sampling settings: the model thinks as long as it needs to. */
+function uncapped(model: string) {
+  return { model, reasoning: { exclude: true } };
+}
+
+/** What a thinking model returns when it used its whole output limit before answering. */
+function ranOutOfRoom(): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: null } }],
+      usage: {
+        prompt_tokens: 900,
+        completion_tokens: 2598,
+        completion_tokens_details: { reasoning_tokens: 2598 },
+        cost: 0.013
+      }
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+const RAN_OUT_ERROR =
+  "The model ran out of room before answering. Try again, or pick another model.";
+
 const GOOD_ANSWER = JSON.stringify({
   headline: "Claiming the center at once",
   body: "e4 grabs central space right away and opens lines for your queen and bishop."
@@ -127,8 +161,57 @@ describe("generateOpenRouterCommentary", () => {
     expect(retryBody.messages[3]?.content).toContain(
       "You wrote the move Qh5, which is not in the facts"
     );
+    // Neither attempt limits thinking or sets sampling (the correction is in the message).
+    expect(fetchImpl.mock.calls.map(([, init]) => sentSettings(init))).toStrictEqual([
+      uncapped("openai/test-model"),
+      uncapped("openai/test-model")
+    ]);
     expect(result.commentary[0]?.headline).toBe("Claiming the center at once");
     expect(result.error).toBeNull();
+  });
+
+  it("fails clearly, without a retry, when the model ran out of room before answering", async () => {
+    const fetchImpl = vi.fn(async () => ranOutOfRoom());
+    const events: CommentaryReport[] = [];
+    const result = await generateOpenRouterCommentary([payload()], {
+      apiKey: "unit-test-key",
+      fetchImpl,
+      report: (event) => events.push(event)
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result).toStrictEqual({ commentary: [], error: RAN_OUT_ERROR });
+    expect(events).toMatchObject([
+      { type: "request" },
+      // Billed although nothing came back.
+      { type: "attempt", reason: "initial", result: "length_exhausted", usage: { costUsd: 0.013 } },
+      {
+        type: "outcome",
+        ok: false,
+        code: "length_exhausted",
+        attempts: 1,
+        firstAttemptValid: false
+      }
+    ]);
+  });
+
+  it("keeps the plain empty-answer error when the model stopped without running out", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: null } }] }),
+          { status: 200 }
+        )
+    );
+    const result = await generateOpenRouterCommentary([payload()], {
+      apiKey: "unit-test-key",
+      fetchImpl
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.error).toBe(
+      "The model returned an empty answer. Try again, or pick another model."
+    );
   });
 
   it("returns an error, not substitute prose, when the answer fails validation twice", async () => {
@@ -247,13 +330,10 @@ describe("explainPuzzleWithOpenRouter", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const init = fetchImpl.mock.calls[0][1];
-    const body = JSON.parse(bodyText(init)) as {
-      messages: { content: string }[];
-      max_tokens: number;
-    };
+    const body = JSON.parse(bodyText(init)) as { messages: { content: string }[] };
     expect(body.messages[0].content).toContain("tactics puzzle");
     expect(body.messages[1].content).toContain('"solutionSan"');
-    expect(body.max_tokens).toBe(350);
+    expect(sentSettings(init)).toStrictEqual(uncapped("openai/test-model"));
     expect(result).toStrictEqual({
       explanation: {
         headline: "The f7 pawn had one defender",
@@ -288,6 +368,14 @@ describe("explainPuzzleWithOpenRouter", () => {
       explanation: null,
       error: expect.stringContaining("didn't match the engine facts")
     });
+  });
+
+  it("fails clearly, without a retry, when the model ran out of room before answering", async () => {
+    const fetchImpl = vi.fn(async () => ranOutOfRoom());
+    expect(
+      await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: "unit-test-key", fetchImpl })
+    ).toStrictEqual({ explanation: null, error: RAN_OUT_ERROR });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("is cancelled by its signal, without an error to show", async () => {

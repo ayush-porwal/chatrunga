@@ -1,13 +1,16 @@
 /**
  * The book import's OpenRouter client: one chat request with text and image parts, a JSON-object
- * answer when asked, a reasoning effort, a time limit, cancellation, and the charge OpenRouter
- * reports (`usage.cost`, USD). Errors carry a message safe to show and whether trying again may
- * help. The key is the caller's (main process only).
+ * answer when asked, a time limit, cancellation, and the charge OpenRouter reports (`usage.cost`,
+ * USD). No token limit, temperature or reasoning effort: a thinking model (Claude Haiku 5.5 thinks
+ * by default) thinks as long as it needs to, and Haiku 5.5 rejects any temperature but 1. Errors
+ * carry a message safe to show and whether trying again may help. The key is the caller's (main
+ * process only).
  */
 import type { BookChatMessage } from "@chaturanga/shared/books/prompts";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   OPENROUTER_ENDPOINT,
+  completionHitTokenLimit,
   completionText,
   openRouterHeaders,
   openRouterHttpFailure,
@@ -17,11 +20,8 @@ import {
 export type BookChatRequest = {
   model: string;
   messages: BookChatMessage[];
-  maxTokens: number;
   /** Ask for a JSON object (OpenRouter's `response_format`). */
   json?: boolean;
-  /** Reasoning effort; models that don't reason ignore it. */
-  reasoning?: "low" | "medium" | "high";
   signal: AbortSignal;
 };
 
@@ -42,8 +42,13 @@ export class BookChatError extends Error {
 const UNREACHABLE = "OpenRouter couldn't be reached. Check your connection and try again.";
 const TIMEOUT = "OpenRouter took too long to answer.";
 const EMPTY = "The model returned an empty answer.";
-/** A page image and a long answer (with reasoning) can take a while. */
-const DEFAULT_TIMEOUT_MS = 180_000;
+const RAN_OUT = "The model ran out of room before answering. Try again, or pick another model.";
+/**
+ * Guards against a hung request, not the model's thinking (no token limit is set). A page image
+ * and a long answer, after as much thinking as the model needs (a chapter page's lines can run to
+ * tens of thousands of tokens), can take minutes.
+ */
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -72,6 +77,8 @@ export function openRouterChat(options: {
       }
       const body: unknown = await response.json();
       const text = completionText(body);
+      // Its whole output limit went on thinking, with no answer: asking again would do the same.
+      if (!text && completionHitTokenLimit(body)) throw new BookChatError(RAN_OUT, false);
       if (!text) throw new BookChatError(EMPTY, true);
       const usage = parseUsage(isRecord(body) ? body.usage : undefined);
       return { text, costUsd: usage?.costUsd ?? 0 };
@@ -89,10 +96,7 @@ function requestBody(request: BookChatRequest): Record<string, unknown> {
   return {
     model: request.model,
     messages: request.messages,
-    temperature: 0,
-    max_tokens: request.maxTokens,
     usage: { include: true },
-    ...(request.json ? { response_format: { type: "json_object" } } : {}),
-    ...(request.reasoning ? { reasoning: { effort: request.reasoning } } : {})
+    ...(request.json ? { response_format: { type: "json_object" } } : {})
   };
 }
