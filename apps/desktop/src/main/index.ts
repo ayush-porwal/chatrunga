@@ -43,6 +43,7 @@ import {
   PRODUCTION_CSP
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
+import { isFullScreenShortcut } from "./full-screen-shortcut";
 import { requestRendererFlush, type FlushResult } from "./renderer-flush";
 import { getTelemetry, initTelemetry } from "./telemetry";
 import { resolveTelemetryConfig, usageAnalyticsConsent } from "./telemetry/config";
@@ -363,6 +364,11 @@ function createWindow(): void {
   // Full screen moves the macOS traffic lights out of the titlebar: the renderer drops their room.
   window.on("enter-full-screen", () => window.webContents.send("appearance:fullScreen", true));
   window.on("leave-full-screen", () => window.webContents.send("appearance:fullScreen", false));
+  window.webContents.on("before-input-event", (event, input) => {
+    if (!isFullScreenShortcut(input, process.platform)) return;
+    event.preventDefault();
+    window.setFullScreen(!window.isFullScreen());
+  });
   // Fallback reveal if the renderer never reports ready (a crash before React mounts).
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
