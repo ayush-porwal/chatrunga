@@ -503,6 +503,66 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     database.exec(
       "ALTER TABLE books ADD COLUMN title_chosen INTEGER NOT NULL DEFAULT 0 CHECK (title_chosen IN (0, 1))"
     );
+  },
+  // 15: puzzles from the user's games (main/game-puzzles): the puzzles, their spaced-repetition
+  // progress, and the generation queue (one row per game: queued or running, else its last result).
+  // All of it goes with the game.
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS game_puzzles (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      ply INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      solver_side TEXT NOT NULL CHECK (solver_side IN ('white', 'black')),
+      start_fen TEXT NOT NULL,
+      setup_move TEXT,
+      solution_json TEXT NOT NULL,
+      played_move TEXT NOT NULL,
+      win_before REAL NOT NULL,
+      win_after REAL NOT NULL,
+      difficulty INTEGER,
+      difficulty_capped INTEGER NOT NULL DEFAULT 0 CHECK (difficulty_capped IN (0, 1)),
+      user_chance REAL,
+      chance_rating INTEGER,
+      themes_json TEXT NOT NULL DEFAULT '[]',
+      position_key TEXT NOT NULL,
+      generator_version INTEGER NOT NULL,
+      scan_depth INTEGER NOT NULL,
+      verify_depth INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (game_id, ply)
+    )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS game_puzzle_progress (
+      puzzle_id TEXT PRIMARY KEY REFERENCES game_puzzles(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL DEFAULT 0,
+      due_at INTEGER,
+      lapses INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at INTEGER,
+      last_outcome TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0
+    )`);
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS game_puzzle_progress_due_idx ON game_puzzle_progress(due_at)"
+    );
+    // `status` is the queue state; `last_result` the last finished run's (what a cancel restores).
+    database.exec(`CREATE TABLE IF NOT EXISTS puzzle_generation_games (
+      game_id TEXT PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed', 'skipped')),
+      last_result TEXT CHECK (last_result IN ('done', 'failed', 'skipped')),
+      source TEXT NOT NULL CHECK (source IN ('dialog', 'review')),
+      settings_json TEXT NOT NULL,
+      scan_json TEXT,
+      queue_order INTEGER NOT NULL DEFAULT 0,
+      in_batch INTEGER NOT NULL DEFAULT 0 CHECK (in_batch IN (0, 1)),
+      enqueued_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      puzzles_found INTEGER NOT NULL DEFAULT 0,
+      error TEXT
+    )`);
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS puzzle_generation_games_queue_idx ON puzzle_generation_games(status, queue_order)"
+    );
   }
 ];
 

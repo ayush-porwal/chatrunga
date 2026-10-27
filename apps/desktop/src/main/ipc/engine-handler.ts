@@ -25,12 +25,12 @@ export function engineImages(): EngineImageStore {
  * Adding, editing and removing engines. These writes (like the settings and game ones) get one
  * more try when another connection holds the write lock past the busy timeout: a repertoire import
  * or backup restore. Each change is announced, so views already showing the engines (Play) read
- * them again.
+ * them again, and `onChanged` is told (main's own listeners: the puzzle generation queue).
  *
  * A new picture is copied into the app's data before the write (a picture that can't be copied
  * fails the change); copies the engine no longer uses are deleted after it.
  */
-export function registerEngineCrudIpc(): void {
+export function registerEngineCrudIpc(onChanged: () => void): void {
   ipcMain.handle("engines:create", async (_event, input: unknown) => {
     const parsed = parseEngineInput(input);
     const id = nanoid();
@@ -45,6 +45,7 @@ export function registerEngineCrudIpc(): void {
     }
     noteEngineReadiness(false);
     broadcast("engines:changed", undefined);
+    onChanged();
     return engine;
   });
   ipcMain.handle("engines:update", async (_event, id: unknown, patch: unknown) => {
@@ -56,6 +57,7 @@ export function registerEngineCrudIpc(): void {
         : await updateWithPicture(engineImages(), engineId, parsed);
     noteEngineReadiness(false);
     broadcast("engines:changed", undefined);
+    onChanged();
     return engine;
   });
   ipcMain.handle("engines:remove", async (_event, id: unknown) => {
@@ -66,6 +68,7 @@ export function registerEngineCrudIpc(): void {
       await images.prune(engineId, null);
     });
     broadcast("engines:changed", undefined);
+    onChanged();
   });
 }
 

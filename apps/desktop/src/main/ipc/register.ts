@@ -79,6 +79,8 @@ import { asAbsolutePath, asId, asObject, asString } from "./fields";
 import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
+import { registerGamePuzzleIpc } from "./game-puzzles-handler";
+import { gamePuzzleEnginesChanged, noteReviewedGame, startGamePuzzleQueue } from "../game-puzzles";
 import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import { RASTER_PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
@@ -158,6 +160,8 @@ export function registerIpc(engineManager: EngineManager): void {
   registerTelemetryIpc();
   registerRepertoireIpc();
   registerPuzzleIpc();
+  // Resumes a queue persisted from the last run.
+  registerGamePuzzleIpc(startGamePuzzleQueue(engineManager));
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).
@@ -187,7 +191,7 @@ function refuseMaiaEvaluation(engineId: string, use: string): void {
 
 function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
-  registerEngineCrudIpc();
+  registerEngineCrudIpc(gamePuzzleEnginesChanged);
   ipcMain.handle("engines:test", (_event, idOrInput: unknown) =>
     engineManager.testEngine(testConfigFor(idOrInput))
   );
@@ -210,6 +214,7 @@ function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:reviewGame", (_event, value: unknown) => {
     const input = parseReviewGameInput(value);
     refuseMaiaEvaluation(input.engineId, "a review's evaluation");
+    noteReviewedGame(input.reviewId, input.gameId);
     return runGameReview(engineManager, input);
   });
   ipcMain.handle("engines:cancelReview", (_event, reviewId: unknown) =>
@@ -263,6 +268,7 @@ function registerAssetIpc(): void {
     syncAssetsToEngineRegistry()
       .then(async (removed) => {
         broadcast("engines:changed", undefined);
+        gamePuzzleEnginesChanged();
         noteEngineReadiness(false);
         const images = engineImages();
         await Promise.all(removed.map((id) => images.exclusive(id, () => images.prune(id, null))));

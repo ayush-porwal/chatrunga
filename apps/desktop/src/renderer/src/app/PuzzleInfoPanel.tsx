@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { ExternalLink, Loader2, Puzzle, Swords } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import type { GamePuzzle } from "@chaturanga/shared/types/game-puzzles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -11,11 +12,14 @@ import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { PuzzleExplanation } from "../features/puzzles/PuzzleExplanation";
+import { GamePuzzleFacts } from "../features/puzzles/GamePuzzleFacts";
+import { gamePuzzleFor } from "../features/puzzles/game-puzzle-set";
 import { explainOutcome } from "../features/puzzles/puzzle-explanation";
 import { formatPuzzleTag, puzzleDatasetLabel } from "../features/puzzles/puzzle-set";
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
 import {
+  puzzleEnded,
   selectFirstWrongMove,
   usePuzzleStore,
   type PuzzleFeedbackKind,
@@ -30,6 +34,8 @@ type PanelProps = {
   nextPending: boolean;
   onNextPuzzle: () => void;
   onPlayEngineFromHere: () => void;
+  /** A finished "From my games" puzzle's Open game. */
+  onOpenGamePuzzleGame: (puzzle: GamePuzzle) => void;
   puzzleConfig: PuzzleSessionConfig | null;
 };
 
@@ -81,6 +87,7 @@ function PuzzleCard({
   nextError,
   nextPending,
   onNextPuzzle,
+  onOpenGamePuzzleGame,
   onPlayEngineFromHere,
   outcome,
   playing,
@@ -107,6 +114,8 @@ function PuzzleCard({
   const failed = outcome === "failed";
   // Its data is broken (a scripted reply can't be played): over, neither solved nor failed by it.
   const broken = feedbackKind === "broken";
+  // Finished, broken or its solution opened (a wrong move fails it, but it is still being solved).
+  const ended = puzzleEnded(feedbackKind, solutionViewed);
   const plies = puzzle.solutionMoves.length;
   const progressCount = complete ? plies : Math.min(solutionIndex, plies);
   // The solver plays every other ply; count their moves, not the replies.
@@ -174,6 +183,8 @@ function PuzzleCard({
       />
 
       <PuzzleThemes puzzle={puzzle} outcome={outcome} />
+
+      {ended ? <GamePuzzleSource puzzle={puzzle} onOpenGame={onOpenGamePuzzleGame} /> : null}
 
       <PuzzleSource puzzle={puzzle} puzzleConfig={puzzleConfig} />
     </section>
@@ -277,6 +288,18 @@ function PuzzleThemes({ outcome, puzzle }: { outcome: PuzzleOutcome; puzzle: Puz
       ))}
     </div>
   );
+}
+
+/** A "From my games" puzzle's game and difficulty, once it is over (nothing for other sets). */
+function GamePuzzleSource({
+  puzzle,
+  onOpenGame
+}: {
+  puzzle: PuzzleSample;
+  onOpenGame: (puzzle: GamePuzzle) => void;
+}) {
+  const gamePuzzle = gamePuzzleFor(puzzle);
+  return gamePuzzle ? <GamePuzzleFacts puzzle={gamePuzzle} onOpenGame={onOpenGame} /> : null;
 }
 
 /** Where the puzzle comes from: the dataset it was drawn from and its source game. */

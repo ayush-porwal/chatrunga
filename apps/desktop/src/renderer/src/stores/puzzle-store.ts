@@ -114,6 +114,14 @@ function emit(
   for (const listener of [...listeners]) listener(event);
 }
 
+/**
+ * The puzzle is over: its line finished, its data broke, or its solution was opened. A wrong move
+ * fails it but doesn't end it (the solver can still find the move).
+ */
+export function puzzleEnded(feedbackKind: PuzzleFeedbackKind, solutionViewed: boolean): boolean {
+  return feedbackKind === "complete" || feedbackKind === "broken" || solutionViewed;
+}
+
 /** The solver's first wrong move (what an explanation starts from), or null. */
 export function selectFirstWrongMove(state: Pick<PuzzleStore, "attempt">): PuzzleWrongMove | null {
   return state.attempt?.wrongMoves[0] ?? null;

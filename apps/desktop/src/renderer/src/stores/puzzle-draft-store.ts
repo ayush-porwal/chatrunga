@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import type { PuzzleDifficulty } from "@chaturanga/shared/chess/puzzle-rating";
+import type { GamePuzzleKind, GamePuzzleSource } from "@chaturanga/shared/types/game-puzzles";
 
 /** The Puzzles page's choices before a set starts. */
 export type PuzzleDraft = {
-  /** "" = the preferred installed database. */
+  /** "" = the preferred installed database; "my-games" = the "From my games" set. */
   databaseId: string;
   themes: string[];
   lengths: string[];
@@ -17,6 +18,11 @@ export type PuzzleDraft = {
   difficultyMin: number;
   difficultyMax: number;
   positionTags: string[];
+  /** "From my games": the kinds and sources drawn (none: every one), and the Maia difficulty range. */
+  gameKinds: GamePuzzleKind[];
+  gameSources: GamePuzzleSource[];
+  gameDifficultyMin: number;
+  gameDifficultyMax: number;
 };
 
 export const DEFAULT_PUZZLE_FILTERS: Omit<PuzzleDraft, "databaseId"> = {
@@ -30,7 +36,11 @@ export const DEFAULT_PUZZLE_FILTERS: Omit<PuzzleDraft, "databaseId"> = {
   popularityMin: 0,
   difficultyMin: 1,
   difficultyMax: 4,
-  positionTags: ["initiative", "development"]
+  positionTags: ["initiative", "development"],
+  gameKinds: [],
+  gameSources: [],
+  gameDifficultyMin: 600,
+  gameDifficultyMax: 2600
 };
 
 type PuzzleDraftStore = {

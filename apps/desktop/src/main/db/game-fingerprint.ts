@@ -42,7 +42,8 @@ function normalized(value: string | null | undefined): string {
   return /^[?.\s]*$/.test(text) ? "" : text;
 }
 
-function mainlineUcis(moveTree: readonly MoveNode[]): string[] {
+/** The main line's moves (UCI), from the root, following each node's first child. */
+export function mainlineUcis(moveTree: readonly MoveNode[]): string[] {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   const ucis: string[] = [];
   let node = moveTree.find((item) => item.parentId === null);

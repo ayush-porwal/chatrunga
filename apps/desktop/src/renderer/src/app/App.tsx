@@ -21,13 +21,9 @@ import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import { useBroadcastEventSubscription } from "../queries/broadcasts";
+import { useGamePuzzleProgressSubscription, useNextPuzzleMutation } from "../queries/game-puzzles";
 import { usePuzzleAttemptRecording } from "../queries/puzzles";
-import {
-  useEnginesQuery,
-  useSamplePuzzleMutation,
-  useSettingsQuery,
-  useUpdateSettingMutation
-} from "../queries/api";
+import { useEnginesQuery, useSettingsQuery, useUpdateSettingMutation } from "../queries/api";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analysis-engine";
 import { useGameStore } from "../stores/game-store";
@@ -178,7 +174,7 @@ export function App() {
   useEffect(() => {
     if (noEngines) useAnalysisStore.getState().endPause();
   }, [noEngines]);
-  const nextPuzzle = useSamplePuzzleMutation();
+  const nextPuzzle = useNextPuzzleMutation();
   const settingsQuery = useSettingsQuery();
   const settings = useMemo(
     () => ({ ...defaultSettings, ...settingsQuery.data }),
@@ -232,6 +228,7 @@ export function App() {
   });
   usePuzzleAutoReply();
   usePuzzleAttemptRecording();
+  useGamePuzzleProgressSubscription();
   // Review as: a game whose side isn't known yet asks on the Summary before its review starts.
   const askReviewSide = useCallback(() => setReviewTab("summary"), []);
   // A run fills the move list as it goes: it opens on the Moves tab.
@@ -413,6 +410,7 @@ export function App() {
         nextPending={nextPuzzle.isPending}
         onNextPuzzle={on.nextPuzzle}
         onPlayEngineFromHere={on.playEngineFromPuzzle}
+        onOpenGamePuzzleGame={on.openGamePuzzleGame}
         puzzleConfig={puzzleSession.config}
       />
     ),
@@ -421,6 +419,7 @@ export function App() {
       nextPuzzle.isPending,
       on.nextPuzzle,
       on.playEngineFromPuzzle,
+      on.openGamePuzzleGame,
       puzzleSession.config
     ]
   );

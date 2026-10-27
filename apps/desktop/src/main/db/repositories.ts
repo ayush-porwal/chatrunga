@@ -886,9 +886,15 @@ export const gameRepository = {
   }
 };
 
+/**
+ * A `settings` row main keeps for itself (the puzzle queue's paused state and last-used dialog
+ * choices): never one of AppSettings, so `getAll` leaves these rows out.
+ */
+type MainSettingKey = `main.${string}`;
+
 export const settingsRepository = {
   getAll(): AppSettings {
-    const rows = all<SettingRow>("SELECT key, value FROM settings");
+    const rows = all<SettingRow>("SELECT key, value FROM settings WHERE key NOT LIKE 'main.%'");
     const values: Record<string, unknown> = {};
     for (const row of rows) {
       try {
@@ -949,16 +955,35 @@ export const settingsRepository = {
     }
   },
 
+  /** A value main keeps for itself (see MainSettingKey); undefined when never set or unreadable. */
+  getMain(key: MainSettingKey): unknown {
+    const row = get<SettingRow>("SELECT key, value FROM settings WHERE key = ?", key);
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      return undefined;
+    }
+  },
+
+  setMain(key: MainSettingKey, value: unknown): void {
+    writeSetting(key, value);
+  },
+
   set(key: keyof AppSettings, value: unknown): void {
-    run(
-      `INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = excluded.updated_at`,
-      key,
-      JSON.stringify(value),
-      now()
-    );
+    writeSetting(key, value);
   }
 };
+
+function writeSetting(key: string, value: unknown): void {
+  run(
+    `INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at`,
+    key,
+    JSON.stringify(value),
+    now()
+  );
+}

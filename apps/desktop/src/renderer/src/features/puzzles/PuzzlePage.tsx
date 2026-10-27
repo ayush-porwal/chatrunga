@@ -5,6 +5,7 @@ import {
   type PuzzleDifficulty
 } from "@chaturanga/shared/chess/puzzle-rating";
 import type { InstalledDatabase, PuzzleSample } from "@chaturanga/shared/types/database";
+import type { GamePuzzleFilter } from "@chaturanga/shared/types/game-puzzles";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
@@ -16,17 +17,31 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { card, pageShell } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
+import {
+  useDrawGamePuzzleMutation,
+  useGamePuzzleListQuery,
+  useGamePuzzleStatusQuery,
+  useGamePuzzleSummaryQuery
+} from "../../queries/game-puzzles";
 import { useFailedPuzzlesQuery, usePuzzleRatingSummaryQuery } from "../../queries/puzzles";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
 import { CardTitleBar } from "../play/card-title";
 import {
+  choosePuzzleSet,
+  GAME_PUZZLES_SET_ID,
+  GAME_PUZZLES_SET_NAME,
+  gamePuzzleCountText,
+  gamePuzzleFilter,
+  gamePuzzleFiltersChanged,
+  gamePuzzleSetConfig
+} from "./game-puzzle-set";
+import {
   drawnRatingRange,
   puzzleDatabasesOf,
   puzzleFiltersChanged,
-  puzzleSetConfig,
-  selectedPuzzleDatabase
+  puzzleSetConfig
 } from "./puzzle-set";
-import { LichessPuzzleFilters, PositionTrainingFilters } from "./PuzzleFilters";
+import { GamePuzzleFilters, LichessPuzzleFilters, PositionTrainingFilters } from "./PuzzleFilters";
 import { PuzzleRatingChart } from "./PuzzleRatingChart";
 import { formatPuzzleRating } from "./PuzzleRatingLine";
 import { PuzzleThemeChart } from "./PuzzleThemeChart";
@@ -34,7 +49,8 @@ import { toggleTheme } from "./rating-chart";
 
 export type PuzzleSessionConfig = {
   databaseId: string | null;
-  mode: "lichess-puzzle" | "position-training";
+  /** `my-games`: the "From my games" set (no database; `games` filters it). */
+  mode: "lichess-puzzle" | "position-training" | "my-games";
   /**
    * "Around my rating": the Lichess rating range was set this far from the solver's rating when the
    * set started (null or absent: the range was chosen by hand).
@@ -47,6 +63,8 @@ export type PuzzleSessionConfig = {
    * after it.
    */
   puzzleOfTheDayId?: string;
+  /** The "From my games" set's filters. */
+  games?: GamePuzzleFilter;
   lichess: {
     ratingMin: number;
     ratingMax: number;
@@ -77,19 +95,12 @@ export const PuzzlePage = memo(function PuzzlePage({
   onStart: (config: PuzzleSessionConfig, puzzle: PuzzleSample) => void;
 }) {
   const databases = useDatabasesQuery();
-  const samplePuzzle = useSamplePuzzleMutation();
   const puzzleDatabases = useMemo(() => puzzleDatabasesOf(databases.data ?? []), [databases.data]);
   const draft = usePuzzleDraftStore((state) => state.draft);
   const updateDraft = usePuzzleDraftStore((state) => state.update);
-  const selectedDatabase = selectedPuzzleDatabase(puzzleDatabases, draft.databaseId);
-  const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
-  const ratingSummary = usePuzzleRatingSummaryQuery();
-  const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
-  const failedPuzzles = useFailedPuzzlesQuery(selectedDatabase?.sourceId ?? null);
-  const failedIds = useMemo(
-    () => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId),
-    [failedPuzzles.data]
-  );
+  const gameSet = useGamePuzzleSetAvailability();
+  const choice = choosePuzzleSet(puzzleDatabases, draft.databaseId, gameSet.available);
+  const isLichess = choice?.kind === "database" && choice.database.sourceId === "lichess-puzzles";
   const themes = draft.themes;
   const onToggleTheme = useMemo(
     () =>
@@ -97,39 +108,8 @@ export const PuzzlePage = memo(function PuzzlePage({
     [isLichess, themes, updateDraft]
   );
 
-  function sessionConfig(database: NonNullable<typeof selectedDatabase>): PuzzleSessionConfig {
-    return puzzleSetConfig(draft, database, userRating.rating);
-  }
-
-  function start() {
-    if (!selectedDatabase) return;
-    const config = sessionConfig(selectedDatabase);
-    samplePuzzle.mutate(
-      {
-        databaseId: selectedDatabase.id,
-        lichess: config.lichess,
-        position: config.position
-      },
-      {
-        onSuccess: (puzzle) => onStart(config, puzzle)
-      }
-    );
-  }
-
-  /** A set of the puzzles whose latest try failed (recorded unrated: they were played before). */
-  function retryFailed() {
-    if (!selectedDatabase || !failedIds.length) return;
-    const config: PuzzleSessionConfig = {
-      ...sessionConfig(selectedDatabase),
-      retryIds: failedIds
-    };
-    samplePuzzle.mutate(
-      { databaseId: selectedDatabase.id, ids: failedIds },
-      { onSuccess: (puzzle) => onStart(config, puzzle) }
-    );
-  }
-
-  if (databases.isPending && window.chaturanga)
+  // Without a database, wait for whether "From my games" has puzzles before saying there are none.
+  if ((databases.isPending || (!choice && gameSet.pending)) && window.chaturanga)
     return (
       <PuzzlesPage>
         <PuzzleSetupSkeleton />
@@ -142,7 +122,7 @@ export const PuzzlePage = memo(function PuzzlePage({
         <DatabasesError error={databases.error} onRetry={() => void databases.refetch()} />
       </PuzzlesPage>
     );
-  if (!selectedDatabase)
+  if (!choice)
     return (
       <PuzzlesPage>
         <EmptyState
@@ -159,30 +139,31 @@ export const PuzzlePage = memo(function PuzzlePage({
         />
       </PuzzlesPage>
     );
+  const setField = (
+    <SetField
+      databases={puzzleDatabases}
+      gameSet={gameSet.available ? gameSet.puzzles : null}
+      value={choice.kind === "games" ? GAME_PUZZLES_SET_ID : choice.database.id}
+      onChange={(databaseId) => updateDraft({ databaseId })}
+    />
+  );
   return (
     <PuzzlesPage>
       <PuzzleGrid
         practice={
-          <PracticeCard
-            filtersChanged={puzzleFiltersChanged(draft, isLichess)}
-            onManageDatabases={onDatabases}
-            footer={
-              <PracticeActions
-                sample={samplePuzzle}
-                failedCount={failedIds.length}
-                unrated={!isLichess}
-                onStart={start}
-                onRetryFailed={retryFailed}
-              />
-            }
-          >
-            <DatabaseField
-              databases={puzzleDatabases}
-              selected={selectedDatabase}
-              onChange={(databaseId) => updateDraft({ databaseId })}
-            />
-            <SetFilters lichess={isLichess} rating={userRating} />
-          </PracticeCard>
+          choice.kind === "games" ? (
+            <GamePuzzlePractice onManageDatabases={onDatabases} onStart={onStart}>
+              {setField}
+            </GamePuzzlePractice>
+          ) : (
+            <DatabasePractice
+              database={choice.database}
+              onManageDatabases={onDatabases}
+              onStart={onStart}
+            >
+              {setField}
+            </DatabasePractice>
+          )
         }
         rating={<PuzzleRatingChart />}
         themes={<PuzzleThemeChart selected={themes} onToggleTheme={onToggleTheme} />}
@@ -190,6 +171,157 @@ export const PuzzlePage = memo(function PuzzlePage({
     </PuzzlesPage>
   );
 });
+
+/**
+ * Whether the "From my games" set can be picked: it has puzzles, or its queue is finding some.
+ * `pending` while that isn't known yet.
+ */
+function useGamePuzzleSetAvailability(): {
+  available: boolean;
+  pending: boolean;
+  puzzles: number;
+} {
+  const summary = useGamePuzzleSummaryQuery();
+  const status = useGamePuzzleStatusQuery();
+  const puzzles = summary.data?.puzzles ?? 0;
+  const generating = Boolean(status.data && status.data.done < status.data.total);
+  return { available: puzzles > 0 || generating, pending: summary.isLoading, puzzles };
+}
+
+/** Practice on a downloaded database: its filters, Start, and Retry the failed puzzles. */
+function DatabasePractice({
+  database,
+  onManageDatabases,
+  onStart,
+  children
+}: {
+  database: InstalledDatabase;
+  onManageDatabases: () => void;
+  onStart: (config: PuzzleSessionConfig, puzzle: PuzzleSample) => void;
+  /** The set picker. */
+  children: ReactNode;
+}) {
+  const samplePuzzle = useSamplePuzzleMutation();
+  const draft = usePuzzleDraftStore((state) => state.draft);
+  const isLichess = database.sourceId === "lichess-puzzles";
+  const ratingSummary = usePuzzleRatingSummaryQuery();
+  const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
+  const failedPuzzles = useFailedPuzzlesQuery(database.sourceId);
+  const failedIds = useMemo(
+    () => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId),
+    [failedPuzzles.data]
+  );
+
+  function start() {
+    const config = puzzleSetConfig(draft, database, userRating.rating);
+    samplePuzzle.mutate(
+      {
+        databaseId: database.id,
+        lichess: config.lichess,
+        position: config.position
+      },
+      {
+        onSuccess: (puzzle) => onStart(config, puzzle)
+      }
+    );
+  }
+
+  /** A set of the puzzles whose latest try failed (recorded unrated: they were played before). */
+  function retryFailed() {
+    if (!failedIds.length) return;
+    const config: PuzzleSessionConfig = {
+      ...puzzleSetConfig(draft, database, userRating.rating),
+      retryIds: failedIds
+    };
+    samplePuzzle.mutate(
+      { databaseId: database.id, ids: failedIds },
+      { onSuccess: (puzzle) => onStart(config, puzzle) }
+    );
+  }
+
+  return (
+    <PracticeCard
+      filtersChanged={puzzleFiltersChanged(draft, isLichess)}
+      onManageDatabases={onManageDatabases}
+      footer={
+        <PracticeActions
+          pending={samplePuzzle.isPending}
+          retrying={samplePuzzle.isPending && Boolean(samplePuzzle.variables.ids)}
+          error={samplePuzzle.error}
+          failedCount={failedIds.length}
+          unrated={!isLichess}
+          onStart={start}
+          onRetryFailed={retryFailed}
+        />
+      }
+    >
+      {children}
+      <SetFilters lichess={isLichess} rating={userRating} />
+    </PracticeCard>
+  );
+}
+
+/** A "From my games" set keeps the Lichess and position filters as drafted (unused by its draws). */
+const GAME_SET_REF = { id: GAME_PUZZLES_SET_ID, sourceId: GAME_PUZZLES_SET_ID };
+
+/** Practice on the "From my games" set: its filters, how many puzzles match and are due, Start. */
+function GamePuzzlePractice({
+  onManageDatabases,
+  onStart,
+  children
+}: {
+  onManageDatabases: () => void;
+  onStart: (config: PuzzleSessionConfig, puzzle: PuzzleSample) => void;
+  /** The set picker. */
+  children: ReactNode;
+}) {
+  const draft = usePuzzleDraftStore((state) => state.draft);
+  const update = usePuzzleDraftStore((state) => state.update);
+  const draw = useDrawGamePuzzleMutation();
+  const filter = gamePuzzleFilter(draft);
+  const counts = useGamePuzzleListQuery(filter);
+
+  function start() {
+    const config = gamePuzzleSetConfig(
+      puzzleSetConfig(draft, GAME_SET_REF, DEFAULT_PUZZLE_RATING.rating),
+      draft
+    );
+    draw.mutate(filter, { onSuccess: (puzzle) => onStart(config, puzzle) });
+  }
+
+  return (
+    <PracticeCard
+      filtersChanged={gamePuzzleFiltersChanged(draft)}
+      onManageDatabases={onManageDatabases}
+      footer={
+        <PracticeActions
+          pending={draw.isPending}
+          retrying={false}
+          error={draw.error}
+          failedCount={0}
+          unrated
+          onStart={start}
+          onRetryFailed={() => undefined}
+        />
+      }
+    >
+      {children}
+      <GamePuzzleFilters
+        kinds={draft.gameKinds}
+        sources={draft.gameSources}
+        difficultyMin={draft.gameDifficultyMin}
+        difficultyMax={draft.gameDifficultyMax}
+        onKindsChange={(gameKinds) => update({ gameKinds })}
+        onSourcesChange={(gameSources) => update({ gameSources })}
+        onDifficultyMinChange={(gameDifficultyMin) => update({ gameDifficultyMin })}
+        onDifficultyMaxChange={(gameDifficultyMax) => update({ gameDifficultyMax })}
+      />
+      <p className="text-xs tabular-nums text-fg-muted" aria-live="polite">
+        {counts.data ? gamePuzzleCountText(counts.data) : "\u00a0"}
+      </p>
+    </PracticeCard>
+  );
+}
 
 /** The page around whichever state the Puzzles page is in (as Play: full width, no header). */
 function PuzzlesPage({ children }: { children: ReactNode }) {
@@ -292,28 +424,30 @@ function PracticeCard({
   );
 }
 
-/** The database the set is drawn from (its size, else where it comes from). */
-function DatabaseField({
+/**
+ * The set the puzzles are drawn from: a downloaded database (its size, else where it comes from)
+ * or, when it has puzzles, "From my games".
+ */
+function SetField({
   databases,
-  selected,
+  gameSet,
+  value,
   onChange
 }: {
   databases: readonly InstalledDatabase[];
-  selected: InstalledDatabase;
+  /** The "From my games" set's puzzles (null: not offered). */
+  gameSet: number | null;
+  value: string;
   onChange: (databaseId: string) => void;
 }) {
   const fieldId = useId();
+  const selected = databases.find((database) => database.id === value);
   return (
-    <Field
-      label="Database"
-      hint={
-        selected.recordCount
-          ? `${selected.recordCount.toLocaleString()} ${selected.kind === "puzzle" ? "puzzles" : "positions"}`
-          : `${selected.provider}, ${selected.format}`
-      }
-      htmlFor={fieldId}
-    >
-      <Select id={fieldId} value={selected.id} onChange={(event) => onChange(event.target.value)}>
+    <Field label="Database" hint={setHint(selected, gameSet)} htmlFor={fieldId}>
+      <Select id={fieldId} value={value} onChange={(event) => onChange(event.target.value)}>
+        {gameSet === null ? null : (
+          <option value={GAME_PUZZLES_SET_ID}>{GAME_PUZZLES_SET_NAME}</option>
+        )}
         {databases.map((database) => (
           <option key={database.id} value={database.id}>
             {database.name}
@@ -322,6 +456,14 @@ function DatabaseField({
       </Select>
     </Field>
   );
+}
+
+/** The set field's hint: how many puzzles or positions the set holds, else where it comes from. */
+function setHint(database: InstalledDatabase | undefined, gameSet: number | null): string {
+  if (!database)
+    return `${(gameSet ?? 0).toLocaleString()} ${gameSet === 1 ? "puzzle" : "puzzles"}`;
+  if (!database.recordCount) return `${database.provider}, ${database.format}`;
+  return `${database.recordCount.toLocaleString()} ${database.kind === "puzzle" ? "puzzles" : "positions"}`;
 }
 
 /** The selected set's filters (a Lichess set's, or a position set's), bound to the draft. */
@@ -372,26 +514,30 @@ function SetFilters({
 }
 
 /**
- * Practice's actions, under why the last start failed: Start, and Retry the failed puzzles
- * (`failedCount`). `sample` draws the first puzzle. A position set says it is unrated.
+ * Practice's actions, under why the last start failed (`error`): Start, and Retry the failed
+ * puzzles (`failedCount`). `pending` while a puzzle is drawn (`retrying`: the failed ones). An
+ * unrated set says so.
  */
 function PracticeActions({
-  sample,
+  pending,
+  retrying,
+  error,
   failedCount,
   unrated,
   onStart,
   onRetryFailed
 }: {
-  sample: ReturnType<typeof useSamplePuzzleMutation>;
+  pending: boolean;
+  retrying: boolean;
+  error: Error | null;
   failedCount: number;
   unrated: boolean;
   onStart: () => void;
   onRetryFailed: () => void;
 }) {
-  const retrying = sample.isPending && Boolean(sample.variables.ids);
-  const starting = sample.isPending && !retrying;
+  const starting = pending && !retrying;
   // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
-  const startError = sample.error ? ipcErrorMessage(sample.error) || String(sample.error) : null;
+  const startError = error ? ipcErrorMessage(error) || String(error) : null;
   return (
     <>
       {startError ? (
@@ -400,7 +546,7 @@ function PracticeActions({
         </Notice>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="primary" disabled={sample.isPending} onClick={onStart}>
+        <Button type="button" variant="primary" disabled={pending} onClick={onStart}>
           {starting ? <Loader2 className="animate-spin" /> : <Play />}
           {starting ? "Finding a puzzle…" : "Start puzzles"}
         </Button>
@@ -408,7 +554,7 @@ function PracticeActions({
           <Button
             type="button"
             variant="outline"
-            disabled={sample.isPending}
+            disabled={pending}
             onClick={onRetryFailed}
             title="Puzzles whose last try failed, from this database (not rated again)"
           >
@@ -419,7 +565,8 @@ function PracticeActions({
           </Button>
         ) : null}
         {unrated ? (
-          // The position set grades difficulty 1–4, with no rating to play against.
+          // Position sets grade difficulty 1–4, and puzzles from your games are scheduled instead:
+          // neither has a rating to play against.
           <span className="text-xs text-fg-muted">Unrated: no effect on your puzzle rating</span>
         ) : null}
       </div>

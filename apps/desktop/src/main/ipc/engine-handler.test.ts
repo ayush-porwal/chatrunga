@@ -58,7 +58,9 @@ const readiness = vi.hoisted(() => vi.fn());
 vi.mock("../telemetry/engine-readiness", () => ({ noteEngineReadiness: readiness }));
 
 const { registerEngineCrudIpc } = await import("./engine-handler");
-registerEngineCrudIpc();
+/** Main's own listener (the puzzle generation queue). */
+const changed = vi.fn();
+registerEngineCrudIpc(changed);
 
 const call = (channel: string, ...args: unknown[]) =>
   Promise.resolve().then(() => handlers.get(channel)!(null, ...args));
@@ -79,6 +81,7 @@ describe("engine create/update/remove", () => {
     userData.dir = "/nonexistent";
     sent.length = 0;
     readiness.mockClear();
+    changed.mockClear();
     vi.useRealTimers();
   });
 
@@ -86,6 +89,7 @@ describe("engine create/update/remove", () => {
     await call(channel, ...args);
     expect(writes.calls).toHaveLength(1);
     expect(sent).toStrictEqual(["engines:changed"]);
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 
   it.each(cases)("%s announces nothing when the write fails", async (channel, args) => {
@@ -93,6 +97,7 @@ describe("engine create/update/remove", () => {
     await expect(call(channel, ...args)).rejects.toThrow(/disk I\/O error/);
     expect(sent).toStrictEqual([]);
     expect(readiness).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
   });
 
   it("announces once, after the retry, when the database was busy", async () => {

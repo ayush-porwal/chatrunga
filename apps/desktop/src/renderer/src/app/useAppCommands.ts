@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import type { BroadcastRoundDetail } from "@chaturanga/shared/types/broadcast";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import type { GamePuzzle } from "@chaturanga/shared/types/game-puzzles";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -172,6 +173,10 @@ export function useAppCommands({
       unlessOnlineGame(() => void board.openSavedGameById(id))
     ),
     nextPuzzle: useEventCallback(puzzles.loadNextPuzzle),
+    // A finished "From my games" puzzle's Open game: its game at that move (Back returns to the puzzle).
+    openGamePuzzleGame: useEventCallback((puzzle: GamePuzzle) =>
+      unlessOnlineGame(() => void board.openGamePuzzleGame(puzzle))
+    ),
     playEngineFromPuzzle: useEventCallback(puzzles.playEngineFromCurrentPuzzlePosition),
     reviewCurrentGame: useEventCallback(() => void board.openSelectedGameReview("current")),
     reviewEngineGame: useEventCallback(() => void board.reviewFinishedEngineGame()),

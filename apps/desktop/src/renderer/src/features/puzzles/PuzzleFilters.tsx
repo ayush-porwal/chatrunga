@@ -1,7 +1,8 @@
 /**
  * The Puzzles page's filters: a Lichess puzzle set's (difficulty or rating range, side to move,
- * themes, solution length; popularity and openings under More filters) and a position set's
- * (difficulty, strategic tags). Laid out for the Practice card's width (a size container).
+ * themes, solution length; popularity and openings under More filters), a position set's
+ * (difficulty, strategic tags) and the "From my games" set's (kinds, Maia difficulty, sources).
+ * Laid out for the Practice card's width (a size container).
  */
 import { useId, useMemo, useState, type ReactNode } from "react";
 import {
@@ -9,6 +10,12 @@ import {
   PUZZLE_DIFFICULTIES,
   type PuzzleDifficulty
 } from "@chaturanga/shared/chess/puzzle-rating";
+import {
+  GAME_PUZZLE_KINDS,
+  GAME_PUZZLE_SOURCES,
+  type GamePuzzleKind,
+  type GamePuzzleSource
+} from "@chaturanga/shared/types/game-puzzles";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
@@ -16,6 +23,12 @@ import { Input, Select } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { fieldLabel } from "@/lib/ui";
+import {
+  difficultyBoundLabel,
+  GAME_PUZZLE_DIFFICULTY_STEPS,
+  GAME_PUZZLE_KIND_PLURALS,
+  GAME_PUZZLE_SOURCE_LABELS
+} from "./game-puzzle-set";
 import { formatPuzzleTag as formatTag, moreFiltersSummary } from "./puzzle-set";
 import { formatRatingDelta } from "./PuzzleRatingLine";
 
@@ -276,6 +289,79 @@ export function PositionTrainingFilters({
   );
 }
 
+/** The "From my games" set's filters: kinds and sources (none chosen: all), and the Maia difficulty. */
+export function GamePuzzleFilters({
+  kinds,
+  sources,
+  difficultyMin,
+  difficultyMax,
+  onKindsChange,
+  onSourcesChange,
+  onDifficultyMinChange,
+  onDifficultyMaxChange
+}: {
+  kinds: GamePuzzleKind[];
+  sources: GamePuzzleSource[];
+  difficultyMin: number;
+  difficultyMax: number;
+  onKindsChange: (value: GamePuzzleKind[]) => void;
+  onSourcesChange: (value: GamePuzzleSource[]) => void;
+  onDifficultyMinChange: (value: number) => void;
+  onDifficultyMaxChange: (value: number) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-4">
+      <FilterGroup label="Kinds">
+        <ChipToggleGroup
+          items={GAME_PUZZLE_KINDS}
+          selected={kinds}
+          label={(kind) => GAME_PUZZLE_KIND_PLURALS[kind]}
+          onChange={onKindsChange}
+        />
+      </FilterGroup>
+      <Field label="Difficulty" hint="Maia rating" htmlFor={id} className="max-w-sm">
+        <div className="flex items-center gap-2">
+          <Select
+            id={id}
+            aria-label="Minimum difficulty"
+            value={difficultyMin}
+            onChange={(event) => onDifficultyMinChange(Number(event.target.value))}
+          >
+            {GAME_PUZZLE_DIFFICULTY_STEPS.map((step) => (
+              <option key={step} value={step}>
+                {step}
+              </option>
+            ))}
+          </Select>
+          <span aria-hidden="true" className="text-fg-subtle">
+            –
+          </span>
+          <Select
+            aria-label="Maximum difficulty"
+            value={difficultyMax}
+            onChange={(event) => onDifficultyMaxChange(Number(event.target.value))}
+          >
+            {GAME_PUZZLE_DIFFICULTY_STEPS.map((step) => (
+              <option key={step} value={step}>
+                {difficultyBoundLabel(step)}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Field>
+      <FilterGroup label="Games from">
+        <ChipToggleGroup
+          items={GAME_PUZZLE_SOURCES}
+          selected={sources}
+          label={(source) => GAME_PUZZLE_SOURCE_LABELS[source]}
+          onChange={onSourcesChange}
+        />
+      </FilterGroup>
+    </div>
+  );
+}
+
 /**
  * Labelled group for controls that aren't a single input (chips, segmented picker).
  * Same label style as <Field>, exposed as role="group" for screen readers.
@@ -423,14 +509,17 @@ function ChipAutocomplete({
   );
 }
 
-function ChipToggleGroup({
+function ChipToggleGroup<T extends string>({
   items,
   selected,
+  label = formatTag,
   onChange
 }: {
-  items: string[];
-  selected: string[];
-  onChange: (value: string[]) => void;
+  items: readonly T[];
+  selected: T[];
+  /** A chip's text (default: the tag formatted). */
+  label?: (item: T) => string;
+  onChange: (value: T[]) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -444,7 +533,7 @@ function ChipToggleGroup({
               onChange(active ? selected.filter((value) => value !== item) : [...selected, item])
             }
           >
-            {formatTag(item)}
+            {label(item)}
           </ChipButton>
         );
       })}

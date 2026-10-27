@@ -214,6 +214,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private lastExit: Promise<void> = Promise.resolve();
   private readonly maia3: () => Maia3Evaluator;
   private readonly random: () => number;
+  /** When the user's engine work was last seen (see `userEngineIdleMs`). */
+  private userWorkSeenAt = Number.NEGATIVE_INFINITY;
 
   constructor(options: EngineManagerOptions = {}) {
     super();
@@ -245,8 +247,23 @@ export class EngineManager extends EventEmitter<EngineEvents> {
 
   /** A review job started / finished (so closing the window can cancel what's running). */
   trackReview(reviewId: string, active: boolean): void {
+    this.userWorkSeenAt = Date.now();
     if (active) this.activeReviewIds.add(reviewId);
     else this.activeReviewIds.delete(reviewId);
+  }
+
+  /**
+   * How long (ms) the user's engine work has been idle: 0 while a review or position analysis runs
+   * or the interactive engine searches (live analysis, an engine game's move); since the last one
+   * was requested or seen otherwise (Infinity before any). Read only, for background work that
+   * yields to the user (the puzzle generation queue, which asks about once a second).
+   */
+  userEngineIdleMs(now: number = Date.now()): number {
+    if (this.activeReviewIds.size > 0 || this.session?.searchId) {
+      this.userWorkSeenAt = now;
+      return 0;
+    }
+    return Math.max(0, now - this.userWorkSeenAt);
   }
 
   cancelAllReviews(): void {
@@ -374,6 +391,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
    * `error` event and a rejection. A newer request, a stop or a dispose cancels it (no event).
    */
   private playMaia(input: StartEngineGameInput): Promise<void> {
+    this.userWorkSeenAt = Date.now();
     this.latestSearchId = input.searchId;
     this.supersede();
     this.clearIdleTimer();
@@ -433,6 +451,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
    * warm process has exited, and searches requested meanwhile start after it finished.
    */
   runExclusive<T>(work: () => Promise<T>): Promise<T> {
+    this.userWorkSeenAt = Date.now();
     const exited = this.dispose();
     const job = this.queue.then(() => exited).then(work);
     this.queue = job.then(
@@ -481,6 +500,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     searchId: string,
     prepare: (session: EngineSession) => () => void
   ): Promise<void> {
+    this.userWorkSeenAt = Date.now();
     this.latestSearchId = searchId;
     this.supersede();
     this.clearIdleTimer();

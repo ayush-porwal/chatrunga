@@ -12,7 +12,7 @@ import {
   puzzleSetConfig,
   selectedPuzzleDatabase
 } from "../features/puzzles/puzzle-set";
-import type { useSamplePuzzleMutation } from "../queries/api";
+import type { useNextPuzzleMutation } from "../queries/game-puzzles";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
@@ -26,8 +26,8 @@ import { cancelActiveReview } from "./useReviewRunner";
 type PuzzleCommandDeps = {
   engines: readonly EngineConfig[] | undefined;
   defaultEngineId: string | null;
-  /** Samples the set's next puzzle (the sample-puzzle mutation). */
-  sampleNextPuzzle: ReturnType<typeof useSamplePuzzleMutation>["mutate"];
+  /** Draws the set's next puzzle (a database's sampler, or the "From my games" queue). */
+  sampleNextPuzzle: ReturnType<typeof useNextPuzzleMutation>["mutate"];
   /** The board is a game played on from a puzzle: Next puzzle (after it) resumes the set. */
   puzzleSetContinues: boolean;
 };

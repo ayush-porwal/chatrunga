@@ -80,6 +80,36 @@ describe("submitPuzzleMove", () => {
     expect(usePuzzleStore.getState().feedbackKind).toBe("complete");
   });
 
+  describe("a mate beside the solution's mate", () => {
+    // Ra8# and Rb8# both mate.
+    const fen = "7k/6pp/8/8/8/8/8/RR4K1 w - - 0 1";
+    const mateInOne = { ...puzzle, initialFen: fen, solutionMoves: ["a1a8"] };
+
+    it("solves a puzzle from my games", () => {
+      usePuzzleStore.getState().setActivePuzzle({ ...mateInOne, sourceId: "my-games" });
+      const play = vi.fn(() => true);
+      expect(submitPuzzleMove("b1b8", play, fen)).toBe(true);
+      expect(play).toHaveBeenCalledTimes(1);
+      expect(usePuzzleStore.getState()).toMatchObject({
+        feedbackKind: "complete",
+        outcome: "solved"
+      });
+      expect(sounds).toStrictEqual(["correct"]);
+    });
+
+    it("is still wrong when it doesn't mate, or in a Lichess set", () => {
+      usePuzzleStore.getState().setActivePuzzle({ ...mateInOne, sourceId: "my-games" });
+      expect(submitPuzzleMove("b1b7", () => true, fen)).toBe(false);
+      expect(usePuzzleStore.getState().feedbackKind).toBe("wrong");
+
+      usePuzzleStore.getState().setActivePuzzle(mateInOne);
+      const play = vi.fn(() => true);
+      expect(submitPuzzleMove("b1b8", play, fen)).toBe(false);
+      expect(play).not.toHaveBeenCalled();
+      expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "wrong", outcome: "failed" });
+    });
+  });
+
   it("does not advance when the move cannot be played", () => {
     expect(submitPuzzleMove("e2e4", () => false)).toBe(false);
     expect(usePuzzleStore.getState().solutionIndex).toBe(0);

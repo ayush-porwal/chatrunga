@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   onPuzzleAttempt,
+  puzzleEnded,
   selectFirstWrongMove,
   usePuzzleStore,
   type PuzzleAttemptEvent
@@ -205,6 +206,31 @@ describe("puzzle outcome", () => {
     usePuzzleStore.getState().markComplete();
     expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "void" });
     expect(events).toStrictEqual([]);
+  });
+
+  it("ends when finished, broken or its solution is opened, not at a wrong move", () => {
+    const ended = () => {
+      const { feedbackKind, attempt } = usePuzzleStore.getState();
+      return puzzleEnded(feedbackKind, Boolean(attempt?.solutionViewed));
+    };
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    expect(ended()).toBe(false);
+    usePuzzleStore
+      .getState()
+      .markWrongMove({ uci: "a2a3", san: "a3", fen: start, expected: "e2e4" });
+    // Failed, but still being solved.
+    expect(usePuzzleStore.getState().outcome).toBe("failed");
+    expect(ended()).toBe(false);
+    usePuzzleStore.getState().revealSolution();
+    expect(ended()).toBe(true);
+
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    usePuzzleStore.getState().markComplete();
+    expect(ended()).toBe(true);
+
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    usePuzzleStore.getState().markReplyFailed();
+    expect(ended()).toBe(true);
   });
 
   it("a puzzle already failed stays failed when its reply then breaks", () => {
