@@ -19,6 +19,7 @@ import { formatPuzzleTag, puzzleDatasetLabel } from "../features/puzzles/puzzle-
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
 import {
+  puzzleEnded,
   selectFirstWrongMove,
   usePuzzleStore,
   type PuzzleFeedbackKind,
@@ -113,6 +114,8 @@ function PuzzleCard({
   const failed = outcome === "failed";
   // Its data is broken (a scripted reply can't be played): over, neither solved nor failed by it.
   const broken = feedbackKind === "broken";
+  // Finished, broken or its solution opened (a wrong move fails it, but it is still being solved).
+  const ended = puzzleEnded(feedbackKind, solutionViewed);
   const plies = puzzle.solutionMoves.length;
   const progressCount = complete ? plies : Math.min(solutionIndex, plies);
   // The solver plays every other ply; count their moves, not the replies.
@@ -181,9 +184,7 @@ function PuzzleCard({
 
       <PuzzleThemes puzzle={puzzle} outcome={outcome} />
 
-      {complete || failed || broken ? (
-        <GamePuzzleSource puzzle={puzzle} onOpenGame={onOpenGamePuzzleGame} />
-      ) : null}
+      {ended ? <GamePuzzleSource puzzle={puzzle} onOpenGame={onOpenGamePuzzleGame} /> : null}
 
       <PuzzleSource puzzle={puzzle} puzzleConfig={puzzleConfig} />
     </section>

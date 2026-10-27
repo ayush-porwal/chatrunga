@@ -112,6 +112,11 @@ export function noteReviewedGame(reviewId: string, gameId: string | null | undef
   noteReview?.(reviewId, gameId);
 }
 
+/** The engines changed (added, edited, removed, installed): a queue the engine stopped tries again. */
+export function gamePuzzleEnginesChanged(): void {
+  queue?.enginesChanged();
+}
+
 /** Quitting: the running game stops (it runs again next time). */
 export async function stopGamePuzzleQueue(): Promise<void> {
   await queue?.stop();

@@ -534,7 +534,7 @@ export const gamePuzzleRepository = {
     }
     for (const row of all<{ source: string; count: number }>(
       `SELECT g.source, COUNT(*) AS count FROM puzzle_generation_games q JOIN games g ON g.id = q.game_id
-      WHERE q.last_result IS NOT NULL GROUP BY g.source`
+      WHERE q.last_result IN ('done', 'skipped') GROUP BY g.source`
     )) {
       const source = puzzleSourceOf(row.source);
       if (source) sources[source].processed = row.count;
@@ -560,8 +560,8 @@ export const gamePuzzleRepository = {
 
   /**
    * The games `settings` would queue, newest first (`limit` applied), and how many matching games
-   * have no user side. Games already in the queue are left out; so are processed ones when
-   * `skipProcessed`.
+   * have no user side. Games already in the queue are left out; so are processed ones (done or
+   * skipped: a failed one is tried again) when `skipProcessed`.
    */
   matchingGames(
     settings: GamePuzzleSettings,
@@ -581,7 +581,8 @@ export const gamePuzzleRepository = {
     let withoutUserSide = 0;
     for (const row of rows) {
       if (row.status === "queued" || row.status === "running") continue;
-      if (settings.skipProcessed && row.last_result !== null) continue;
+      if (settings.skipProcessed && (row.last_result === "done" || row.last_result === "skipped"))
+        continue;
       const headers = storedHeaders(row.headers_json) ?? { event: row.event, site: row.site };
       if (!isOneOf(MY_GAME_SOURCES, row.source)) continue;
       if (!modes.has(gameRatingMode(headers, row.source))) continue;

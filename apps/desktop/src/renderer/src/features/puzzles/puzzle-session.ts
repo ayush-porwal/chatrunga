@@ -4,6 +4,7 @@ import { userMoveFromUci } from "@/lib/uci";
 import { playSound } from "../../sounds/sounds";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
+import { GAME_PUZZLES_SET_ID } from "./game-puzzle-set";
 
 /** Delay before the puzzle plays the opponent's reply, so the user sees their own move land. */
 const PUZZLE_REPLY_DELAY_MS = 320;
@@ -12,17 +13,22 @@ const PUZZLE_REPLY_DELAY_MS = 320;
 function advancePuzzle(feedback: string): void {
   const store = usePuzzleStore.getState();
   if (!store.activePuzzle) return;
-  if (store.solutionIndex + 1 >= store.activePuzzle.solutionMoves.length) {
-    store.markComplete();
-    // A puzzle finished after a wrong move or a shown solution is complete, not solved.
-    const { feedbackKind, outcome } = usePuzzleStore.getState();
-    if (feedbackKind === "complete" && outcome !== "failed") playSound("correct");
-  } else store.advanceSolution(1, feedback);
+  if (store.solutionIndex + 1 >= store.activePuzzle.solutionMoves.length) completePuzzle();
+  else store.advanceSolution(1, feedback);
+}
+
+function completePuzzle(): void {
+  usePuzzleStore.getState().markComplete();
+  // A puzzle finished after a wrong move or a shown solution is complete, not solved.
+  const { feedbackKind, outcome } = usePuzzleStore.getState();
+  if (feedbackKind === "complete" && outcome !== "failed") playSound("correct");
 }
 
 /**
  * Checks the user's move (UCI) against the active puzzle's next solution move. The expected move
  * is played through `play` and the puzzle advances; anything else is marked wrong and not played.
+ * In the "From my games" set, whose generator accepts a mate with another mate beside it, any
+ * mate where the solution mates is right too: it is played and ends the line.
  * Returns whether the move was played (callers restore the board otherwise). `fenBefore` (default:
  * the board's position) is where the move was played from: a wrong move is recorded with it, and
  * named in SAN in the feedback.
@@ -36,15 +42,24 @@ export function submitPuzzleMove(
   const expected = activePuzzle?.solutionMoves[solutionIndex];
   // A broken puzzle has ended: no move is checked against it any more.
   if (!expected || feedbackKind === "broken") return false;
-  if (uci !== expected) {
-    markWrongMove({ uci, san: sanOf(fenBefore, uci), fen: fenBefore, expected });
+  const san = sanOf(fenBefore, uci);
+  const otherMate =
+    uci !== expected &&
+    activePuzzle.sourceId === GAME_PUZZLES_SET_ID &&
+    isMate(san) &&
+    isMate(sanOf(fenBefore, expected));
+  if (uci !== expected && !otherMate) {
+    markWrongMove({ uci, san, fen: fenBefore, expected });
     playSound("error");
     return false;
   }
   if (!play()) return false;
-  advancePuzzle("Correct. Continue the line.");
+  if (otherMate) completePuzzle();
+  else advancePuzzle("Correct. Continue the line.");
   return true;
 }
+
+const isMate = (san: string) => san.endsWith("#");
 
 function sanOf(fen: string, uci: string): string {
   try {

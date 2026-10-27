@@ -278,8 +278,8 @@ export async function puzzleDifficulty(
 
 /**
  * Lichess theme names for the solution from `fen`: a fork, pin or skewer the solver's moved piece
- * makes (chess/tactics.ts, only what the move created), and `mate` / `mateInN` when it ends in
- * checkmate.
+ * makes (chess/tactics.ts, only what the move created; never the mating move), and `mate` /
+ * `mateInN` when it ends in checkmate.
  */
 export function solutionThemes(fen: string, solution: readonly string[]): string[] {
   const pos = positionFromFen(fen);
@@ -287,7 +287,7 @@ export function solutionThemes(fen: string, solution: readonly string[]): string
   const themes = new Set<string>();
   solution.forEach((uci, index) => {
     const before = fenOf(pos);
-    if (!playUci(pos, uci) || index % 2 !== 0) return;
+    if (!playUci(pos, uci) || index % 2 !== 0 || pos.isCheckmate()) return;
     const to = uci.slice(2, 4);
     for (const fact of analyzeTacticsForPosition(fenOf(pos), solver, { fenBefore: before })) {
       if (fact.kind === "fork" && fact.attacker.square === to) themes.add("fork");

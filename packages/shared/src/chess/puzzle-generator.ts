@@ -10,12 +10,11 @@
  */
 import type { Chess } from "chessops/chess";
 import { makeFen } from "chessops/fen";
-import { parseUci } from "chessops/util";
+import { parseSquare, parseUci } from "chessops/util";
 import { nearestMaia3Rating, rankedMoves, type Maia3Output } from "../engine/maia3";
 import type { Color } from "../types/chess";
 import type { EngineScore, GameReview, MoveReview } from "../types/engine";
 import {
-  GAME_PUZZLE_KINDS,
   MAIA_PUZZLE_KINDS,
   type GamePuzzleContent,
   type GamePuzzleDepths,
@@ -361,10 +360,11 @@ async function userCandidate(run: Run, index: number): Promise<Candidate> {
     candidate.attempts.push(attempt);
   };
   const mistake = lossAt(run, index) >= MISTAKE_LOSS;
-  if (kinds.has("mistake") && mistake)
-    add({ kind: "mistake", rules: ERROR_RULES, played: "not-best" });
+  // A missed chance is nearly always a mistake too: the more telling kind goes first.
   if (kinds.has("missed-chance") && isMissedChance(run, index))
     add({ kind: "missed-chance", rules: CHANCE_RULES, played: "not-best" });
+  if (kinds.has("mistake") && mistake)
+    add({ kind: "mistake", rules: ERROR_RULES, played: "not-best" });
   // A mistake can't be a Tricky position itself (its user lost too much), but is tagged as one.
   if (kinds.has("tricky") && (await isTricky(run, index))) {
     candidate.applicable.push("tricky");
@@ -466,9 +466,24 @@ async function checkCandidate(run: Run, candidate: Candidate): Promise<Generated
       );
       solutions.set(attempt.rules, solution);
     }
-    if (solution) return makePuzzle(run, candidate, attempt.kind, solution);
+    if (solution && !isRecapture(run, candidate.index, solution))
+      return makePuzzle(run, candidate, attempt.kind, solution);
   }
   return null;
+}
+
+/**
+ * A one-move solution that only takes back what the move before it captured (same square): too
+ * plain to be a puzzle.
+ */
+function isRecapture(run: Run, index: number, solution: readonly string[]): boolean {
+  const previous = index > 0 ? run.positions[index - 1] : null;
+  const setup = previous?.played;
+  if (solution.length !== 1 || !previous || !setup) return false;
+  const square = setup.slice(2, 4);
+  const target = parseSquare(square);
+  const captured = target !== undefined && positionFromFen(previous.fen).board.has(target);
+  return captured && solution[0].slice(2, 4) === square;
 }
 
 async function makePuzzle(
@@ -481,7 +496,6 @@ async function makePuzzle(
   const index = candidate.index;
   const position = positions[index];
   const previous = index > 0 ? positions[index - 1] : null;
-  const rank = GAME_PUZZLE_KINDS.indexOf(kind);
   const difficulty = input.maia
     ? await puzzleDifficulty(
         input.maia,
@@ -493,7 +507,7 @@ async function makePuzzle(
   return {
     ply: rootPly(input.rootFen) + index + 1,
     kind,
-    tags: candidate.applicable.filter((tag) => GAME_PUZZLE_KINDS.indexOf(tag) > rank),
+    tags: candidate.applicable.filter((tag) => tag !== kind),
     solverSide: position.turn,
     startFen: previous ? previous.fen : position.fen,
     setupMove: previous ? previous.played : null,

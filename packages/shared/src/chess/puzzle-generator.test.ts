@@ -246,6 +246,19 @@ describe("generateGamePuzzles: Your mistake and Opponent's chance", () => {
     ]);
   });
 
+  it("drops a one-move mistake that only takes back what was just captured", async () => {
+    // 4.Bxc6 (index 6) takes the knight; 4…Nf6 doesn't take back (−3.00).
+    const exchange = game(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "Nf6"]);
+    const engine = scriptScan(new FakeEngine(), exchange, [0, 0, 0, 0, 0, 0, 0, 0, 300], {
+      7: "d7c6"
+    }).script(exchange.fens[7], VERIFY, [
+      ["d7c6", cp(0)],
+      ["f8c5", cp(-700)]
+    ]);
+    const puzzles = await generateGamePuzzles(input(exchange, engine, { userSide: "black" }));
+    expect(puzzles).toStrictEqual([]);
+  });
+
   it("leaves out kinds that weren't asked for", async () => {
     const puzzles = await generateGamePuzzles(
       input(OPEN, openMistake(), { kinds: ["missed-chance", "opponent-chance"] })
@@ -288,11 +301,25 @@ describe("generateGamePuzzles: Missed chance", () => {
     expect(puzzles).toStrictEqual([]);
   });
 
-  it("makes one puzzle per position: a mistake that also missed a chance is tagged so", async () => {
+  it("makes one puzzle per position: a missed chance that was also a mistake is tagged so", async () => {
     const engine = scriptMissedChance(MISS, { white: [0, 0, 0, 0, 400, 0, 0] });
     const puzzles = await generateGamePuzzles(input(MISS, engine));
     expect(puzzles).toMatchObject([
-      { kind: "mistake", tags: ["missed-chance"], solution: ["f1b5", "c7c6", "b5a4"] }
+      { kind: "missed-chance", tags: ["mistake"], solution: ["f1b5", "c7c6", "b5a4"] }
+    ]);
+  });
+
+  it("falls back to a mistake, tagged a missed chance, when the chance is a single move", async () => {
+    const engine = scriptMissedChance(MISS, {
+      white: [0, 0, 0, 0, 400, 0, 0],
+      second: [
+        ["b5a4", cp(600)],
+        ["b5c4", cp(500)]
+      ]
+    });
+    const puzzles = await generateGamePuzzles(input(MISS, engine));
+    expect(puzzles).toMatchObject([
+      { kind: "mistake", tags: ["missed-chance"], solution: ["f1b5"] }
     ]);
   });
 });
@@ -410,6 +437,19 @@ describe("generateGamePuzzles: clear-cut mates", () => {
     expect(puzzles).toMatchObject([
       { kind: "mistake", solution: ["a1a8"], themes: ["mate", "mateIn1"] }
     ]);
+  });
+
+  it("doesn't call the mating move a fork", async () => {
+    const scholar = game(["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Nc3", "a6"]);
+    const fen = scholar.fens[6];
+    const engine = scriptScan(new FakeEngine(), scholar, [0, 0, 0, 0, 0, 0, 10000, 0, 0], {
+      6: "h5f7"
+    }).script(fen, VERIFY, [
+      ["h5f7", mate(1)],
+      ["h5e5", cp(0)]
+    ]);
+    const puzzles = await generateGamePuzzles(input(scholar, engine));
+    expect(puzzles).toMatchObject([{ solution: ["h5f7"], themes: ["mate", "mateIn1"] }]);
   });
 
   it("takes a mate in one with another mate in one when every other move is clearly worse", async () => {

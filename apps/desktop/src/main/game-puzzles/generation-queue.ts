@@ -1,9 +1,11 @@
 /**
  * The puzzle generation queue (docs/puzzles-from-games.md, "The queue"): one game at a time, each
  * through chess/puzzle-generator.ts on its own engine process. It yields to the user: before every
- * search it waits while they use an engine elsewhere, and while it is paused. Its games are
- * persisted (db rows), so a restart resumes it; a game that fails records its error and the queue
- * moves on.
+ * search it waits while they use an engine elsewhere. Pausing stops the running game (no engine
+ * process is left open) and puts it back first in line. Its games are persisted (db rows), so a
+ * restart resumes it; a game that fails records its error and the queue moves on. An engine that
+ * is missing or won't start stops the queue instead (no game is failed for it): the status says
+ * why, and it tries again on Start, Resume, app start and when the engines change.
  */
 import type { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -94,17 +96,22 @@ function sideRatings(
 
 const waitFor = (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal });
 
+/** What one game came to: its result, `requeue` (stopped: it waits again), or `blocked` (no engine). */
+type GameOutcome = GamePuzzleGameResult | "requeue" | "blocked";
+
 export class GamePuzzleQueue {
   private paused: boolean;
   private stopped = false;
   private waitingForEngine = false;
+  /** Why the queue stopped short of its games (the engine is missing or won't start), or null. */
+  private problem: string | null = null;
   /** The loop working through the queue, while it runs. */
   private loop: Promise<void> | null = null;
+  /** A kick that came while the loop ran: it looks again once it ends. */
+  private kickAgain = false;
   private job: AbortController | null = null;
   private current: GamePuzzleCurrentGame | null = null;
   private lastProgressAt = Number.NEGATIVE_INFINITY;
-  /** Searches held while paused, released by `resume`. */
-  private resumeWaiters = new Set<() => void>();
   private readonly generate: typeof generateGamePuzzles;
   private readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly now: () => number;
@@ -135,6 +142,7 @@ export class GamePuzzleQueue {
     return {
       paused: this.paused,
       waitingForEngine: this.waitingForEngine,
+      problem: this.problem,
       ...repository.batchCounts(),
       current: this.current
     };
@@ -156,7 +164,10 @@ export class GamePuzzleQueue {
     return { eligible: ids.length, withoutUserSide };
   }
 
-  /** Queues the games `settings` match (newest first) and remembers them as the last used. */
+  /**
+   * Queues the games `settings` match (newest first) and remembers them as the last used. Starting
+   * from the dialog resumes a paused queue.
+   */
   async enqueueMatching(settings: GamePuzzleSettings): Promise<GamePuzzleQueueStatus> {
     const { state } = this.deps.engine();
     if (state !== "ready") throw new Error(ENGINE_PROBLEM[state]);
@@ -168,6 +179,7 @@ export class GamePuzzleQueue {
       ids.map((gameId) => ({ gameId, source: "dialog", settings: queued, scan: null })),
       this.now()
     );
+    this.setPaused(false);
     this.changed();
     this.kick();
     return this.status();
@@ -200,56 +212,107 @@ export class GamePuzzleQueue {
     return true;
   }
 
-  /** Holds the queue after the current search (kept across restarts). */
+  /**
+   * Holds the queue (kept across restarts): the running game stops, its engine process closes, and
+   * it goes back first in line to start again on resume.
+   */
   pause(): GamePuzzleQueueStatus {
-    this.paused = true;
-    repository.setPaused(true);
+    this.setPaused(true);
+    this.job?.abort(new Error("Puzzle generation was paused."));
     this.changed();
     return this.status();
   }
 
+  /** Carries on (and tries the engine again when it was what stopped the queue). */
   resume(): GamePuzzleQueueStatus {
-    this.paused = false;
-    repository.setPaused(false);
-    for (const release of [...this.resumeWaiters]) release();
+    this.setPaused(false);
     this.changed();
     this.kick();
     return this.status();
   }
 
-  /** Empties the queue; the game being processed is dropped (puzzles already found stay). */
+  /**
+   * Empties the queue; the game being processed is dropped (puzzles already found stay). An empty
+   * queue is neither paused nor stopped.
+   */
   cancel(): GamePuzzleQueueStatus {
     repository.cancelQueue();
+    this.setPaused(false);
+    this.problem = null;
     this.job?.abort(new Error("Puzzle generation was cancelled."));
     this.changed();
     return this.status();
   }
 
-  /** Starts working through the queue, unless it already is, is paused or the app is closing. */
+  /** The engines were added, edited or removed: a queue the engine stopped tries again. */
+  enginesChanged(): void {
+    if (this.problem !== null) this.kick();
+  }
+
+  private setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    repository.setPaused(paused);
+  }
+
+  /**
+   * Starts working through the queue, unless it is paused or the app is closing. While the loop
+   * runs, it looks once more after it ends (it may be ending just now: a game stopped, or the
+   * engine missing).
+   */
   private kick(): void {
-    if (this.loop || this.paused || this.stopped) return;
+    if (this.paused || this.stopped) return;
+    if (this.loop) {
+      this.kickAgain = true;
+      return;
+    }
     this.loop = this.drain()
       .catch((error: unknown) => logger.error("game-puzzles", "the queue stopped:", error))
       .finally(() => {
         this.loop = null;
+        if (!this.kickAgain) return;
+        this.kickAgain = false;
+        this.kick();
       });
   }
 
   private async drain(): Promise<void> {
     while (!this.paused && !this.stopped) {
       const entry = repository.takeNext();
-      if (!entry) return;
-      const result = await this.process(entry);
-      if (result) repository.finish(result, this.now());
-      this.changed(result);
+      if (!entry) {
+        this.problem = null;
+        return;
+      }
+      const outcome = await this.process(entry);
+      if (outcome === "requeue" || outcome === "blocked") {
+        // Back first in line (a cancelled game has already left the queue).
+        repository.requeueRunning();
+        this.changed();
+        if (outcome === "blocked") return;
+        continue;
+      }
+      repository.finish(outcome, this.now());
+      this.changed(outcome);
     }
   }
 
-  /** One game; null when it was stopped (cancelled, or the app is closing). */
-  private async process(entry: QueueEntry): Promise<GamePuzzleGameResult | null> {
+  /** The engine is missing or won't start: the queue stops, saying why (`problem`). */
+  private blocked(problem: string): "blocked" {
+    if (this.problem !== problem) logger.warn("game-puzzles", "the queue stopped:", problem);
+    this.problem = problem;
+    return "blocked";
+  }
+
+  /**
+   * One game: its result, `requeue` when it was stopped (paused, cancelled, or the app is closing),
+   * or `blocked` when the engine is missing or won't start.
+   */
+  private async process(entry: QueueEntry): Promise<GameOutcome> {
     const { gameId } = entry;
     const controller = new AbortController();
     this.job = controller;
+    // Read anew after every await (paused, cancelled or closing meanwhile).
+    const stopped = () => controller.signal.aborted;
     const ended = (
       status: GamePuzzleGameResult["status"],
       puzzlesFound = 0,
@@ -268,10 +331,21 @@ export class GamePuzzleQueue {
       };
       this.changed();
       const userSide = userSideOfGame(game, await this.deps.usernames());
+      if (stopped()) return "requeue";
       if (!userSide || !game.moves.length) return ended("skipped");
       const { state, config } = this.deps.engine();
-      if (!config) throw new Error(ENGINE_PROBLEM[state === "lc0" ? "lc0" : "missing"]);
-      const engine = await this.deps.openEngine(config, controller.signal);
+      if (!config) return this.blocked(ENGINE_PROBLEM[state === "lc0" ? "lc0" : "missing"]);
+      let engine: OpenedEngine;
+      try {
+        engine = await this.deps.openEngine(config, controller.signal);
+      } catch (error) {
+        if (stopped()) return "requeue";
+        return this.blocked(`${config.name} didn't start: ${errorMessage(error)}`);
+      }
+      if (this.problem !== null) {
+        this.problem = null;
+        this.changed();
+      }
       try {
         const puzzles = await this.generate({
           rootFen: game.rootFen,
@@ -295,7 +369,7 @@ export class GamePuzzleQueue {
         engine.close();
       }
     } catch (error) {
-      if (controller.signal.aborted) return null;
+      if (stopped()) return "requeue";
       logger.warn("game-puzzles", `game ${gameId} failed:`, errorMessage(error));
       return ended("failed", 0, errorMessage(error));
     } finally {
@@ -305,14 +379,10 @@ export class GamePuzzleQueue {
     }
   }
 
-  /** Before every search: waits while paused, and while the user is using an engine. */
+  /** Before every search: waits while the user is using an engine (a pause aborts the game). */
   private async holdForUser(signal: AbortSignal): Promise<void> {
     for (;;) {
       signal.throwIfAborted();
-      if (this.paused) {
-        await this.untilResumed(signal);
-        continue;
-      }
       if (this.deps.engineIdleMs() < ENGINE_IDLE_MS) {
         this.setWaiting(true);
         await this.wait(ENGINE_POLL_MS, signal);
@@ -321,22 +391,6 @@ export class GamePuzzleQueue {
       this.setWaiting(false);
       return;
     }
-  }
-
-  private untilResumed(signal: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const release = () => {
-        signal.removeEventListener("abort", onAbort);
-        this.resumeWaiters.delete(release);
-        resolve();
-      };
-      const onAbort = () => {
-        this.resumeWaiters.delete(release);
-        reject(signal.reason);
-      };
-      this.resumeWaiters.add(release);
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
   }
 
   private setWaiting(waiting: boolean): void {

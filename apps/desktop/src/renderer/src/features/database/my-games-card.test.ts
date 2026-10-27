@@ -16,8 +16,10 @@ import {
 import {
   myGamesBlocker,
   myGamesFacts,
+  myGamesNote,
   myGamesSourcesLine,
   queueActive,
+  queueHeld,
   queueProgress
 } from "./my-games-card";
 
@@ -43,6 +45,7 @@ const summary: GamePuzzleSummary = {
 const idle: GamePuzzleQueueStatus = {
   paused: false,
   waitingForEngine: false,
+  problem: null,
   done: 0,
   total: 0,
   current: null
@@ -122,6 +125,25 @@ describe("the queue's progress", () => {
     expect(queueProgress({ ...running, waitingForEngine: true }).detail).toBe(
       "Magnus – Hikaru · Waiting while the engine is in use"
     );
+  });
+
+  it("says when its engine stopped it, offering Resume to try again, and why (once)", () => {
+    const problem = "Stockfish didn't start: spawn EACCES";
+    const stopped = { ...idle, done: 2, total: 20, problem };
+    expect(queueProgress(stopped).detail).toBe("Stopped");
+    expect(queueHeld(stopped)).toBe(true);
+    expect(queueHeld({ ...running, paused: true })).toBe(true);
+    expect(queueHeld(running)).toBe(false);
+    expect(myGamesNote(null, stopped)).toStrictEqual({
+      kind: "engine-failed",
+      message: problem,
+      settings: "engines"
+    });
+    // The card's blocker already says the engine is missing: it isn't said twice.
+    const missing = myGamesBlocker({ ...summary, engine: "missing" });
+    expect(myGamesNote(missing, stopped)).toBe(missing);
+    expect(myGamesNote(null, running)).toBeNull();
+    expect(myGamesNote(null, undefined)).toBeNull();
   });
 
   it("says which game is next before one starts", () => {

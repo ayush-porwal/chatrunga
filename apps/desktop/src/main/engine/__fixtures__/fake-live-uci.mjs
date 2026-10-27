@@ -15,6 +15,8 @@
 // "review-gated": REVIEW, but a search of a position N plies into the game answers only once the
 // file `<argv[2]>.gate` holds a number ≥ N (missing: 0), so a journey releases a running review
 // move by move: with the gate at N, moves 1…N finish and move N + 1 is being analysed.
+// "puzzles": REVIEW's bounded `go`, with the lines of GAME_PUZZLES below (a game in which White
+// misses 4. Qxf7#), for puzzle generation from the user's games.
 // "stockfish": output shaped like Stockfish 19's. `go infinite` starts with `info string` lines,
 // then streams, for each depth, one line per MultiPV of the position's legal moves (seldepth,
 // score with a bound now and then, wdl, nodes, nps, hashfull, tbhits, time, pv) and a `currmove`
@@ -105,6 +107,32 @@ const REVIEW_UNSTABLE = {
     only: { f3e5: "cp -30 pv f3e5 d8g5" }
   }
 };
+/**
+ * "puzzles": the lines of 1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6?? 4. d3?? Nxh5. White's 4. d3 misses
+ * Qxf7# (a mistake, after a chance Black gave): one puzzle. Black's 3... Nf6 is a mistake too, but
+ * its best move isn't clear-cut (g6 and Qe7 are as good), so it makes none.
+ */
+const GAME_PUZZLES = {
+  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -": { lines: ["cp 30 pv e2e4 e7e5"] },
+  "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -": { lines: ["cp -30 pv e7e5 g1f3"] },
+  "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -": { lines: ["cp 35 pv f1c4 b8c6"] },
+  "rnbqkbnr/pppp1ppp/8/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR b KQkq -": { lines: ["cp -35 pv b8c6 d1h5"] },
+  "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR w KQkq -": {
+    lines: ["cp 40 pv d1h5 g8f6"]
+  },
+  "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq -": {
+    lines: ["cp -40 pv g7g6 h5f3", "cp -60 pv d8e7 g1f3", "cp -80 pv d8f6 b1c3"]
+  },
+  "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq -": {
+    lines: ["mate 1 pv h5f7", "cp -60 pv h5e2 f8c5", "cp -900 pv d2d3 f6h5"]
+  },
+  "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/3P4/PPP2PPP/RNB1K1NR b KQkq -": {
+    lines: ["cp 900 pv f6h5 g1f3"]
+  },
+  "r1bqkb1r/pppp1ppp/2n5/4p2n/2B1P3/3P4/PPP2PPP/RNB1K1NR w KQkq -": {
+    lines: ["cp -900 pv g1f3 d7d6"]
+  }
+};
 const mode = process.argv[3];
 /** "stockfish" modes: chessops, to play the `position` moves and list the legal ones. */
 const chess =
@@ -178,7 +206,9 @@ const review =
     ? REVIEW
     : mode === "review-unstable"
       ? { ...REVIEW, ...REVIEW_UNSTABLE }
-      : null;
+      : mode === "puzzles"
+        ? GAME_PUZZLES
+        : null;
 /** "review-stuck-check": a deeper search is hanging (it answers `stop` with a bestmove). */
 let stuck = false;
 /** The FEN of the last `position fen` command. */

@@ -11,8 +11,9 @@ import type { Color } from "./chess";
 import { RATING_MODES, type RatingMode } from "./ratings";
 
 /**
- * The puzzle kinds, highest priority first (one puzzle per position: the first kind that makes a
- * puzzle wins, the lower ones that also applied become its tags).
+ * The puzzle kinds, as the dialog and filters list them. One puzzle per position: the first kind
+ * that makes a puzzle wins, in the order missed chance, mistake, opponent's chance, tricky, hard
+ * find (chess/puzzle-generator.ts); the others that also applied become its tags.
  * - `mistake`: the user's move lost 10+ win-%; the puzzle is the move they should have played;
  * - `missed-chance`: the opponent's move handed the user a win (+2 pawns or a mate) and the user's
  *   move let it go;
@@ -121,6 +122,11 @@ export type GamePuzzleQueueStatus = {
   paused: boolean;
   /** Waiting while the user uses an engine elsewhere (a review, live analysis, a game, …). */
   waitingForEngine: boolean;
+  /**
+   * Why the queue stopped with games left (the default engine is missing or won't start), or
+   * null. It tries again on Start, Resume, app start and when the engines change.
+   */
+  problem: string | null;
   /** Games of the queue since it was last empty: finished (done, failed or skipped) and in all. */
   done: number;
   total: number;
@@ -148,7 +154,7 @@ export type GamePuzzleSourceSummary = {
   games: number;
   /** Games with a user side (a player name matches a connected account). */
   eligible: number;
-  /** Games the queue has finished (done, failed or skipped). */
+  /** Games the queue has finished (done or skipped; a failed game is tried again). */
   processed: number;
   /** Puzzles found in this source's games. */
   puzzles: number;

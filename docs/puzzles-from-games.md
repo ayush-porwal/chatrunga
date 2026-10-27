@@ -47,7 +47,14 @@ A game's user side is the side whose player name matches a connected Lichess or 
 - Yields while the user is using an engine elsewhere (a review, live analysis, a game against an
   engine, puzzle explanation): it finishes the current search and waits until they are idle.
 - Persisted: queued games survive a restart and resume (paused state is kept).
-- A game whose generation fails is recorded with its error and the queue moves on.
+- Pause stops the running game at once (no engine process stays open) and puts it back first in
+  line; Resume starts it again. Starting from the dialog resumes a paused queue; Cancel empties it
+  and clears the pause.
+- A game whose generation fails is recorded with its error and the queue moves on. A failed game
+  isn't "processed": "Skip games already processed" skips done and skipped games only.
+- A default engine that is missing or won't start stops the queue instead (its games stay queued);
+  the card says why, and the queue tries again on Start, Resume, app start and when the engines
+  change.
 - Saves no game reviews.
 - **Review hook**: when a game review the user ran finishes (`reviewCompleted`), and the game has a
   user side, the game is queued with that review's evaluations used instead of the quick scan
@@ -92,15 +99,19 @@ puzzle).
    to the end. The line always ends on a solver move; trailing solver moves that had only one legal
    move are dropped. Minimum length: one solver move for Your mistake, Hard find and Tricky; two
    solver moves for Missed chance and Opponent's chance from a missed chance. Maximum 8 solver moves.
-5. **One puzzle per position** — priority Your mistake > Missed chance > Opponent's chance >
-   Tricky position > Hard find; a lower-priority kind that also applied becomes a tag
-   (e.g. a mistake in a tricky position is tagged `tricky`).
+   A one-move solution that only takes back what the previous move captured (same square) is
+   dropped.
+5. **One puzzle per position** — priority Missed chance > Your mistake > Opponent's chance >
+   Tricky position > Hard find (a missed chance is nearly always a mistake too, so the more telling
+   kind goes first); every other kind that also applied becomes a tag (e.g. a mistake in a tricky
+   position is tagged `tricky`).
 6. **Difficulty** (Maia 3 installed) — for each grid rating r in 600–2600: chance(r) = product over
    the solver's moves of Maia's probability of that move at r (`eloOppo` = r, as both sides are
    read at the same rating for the curve). Difficulty = lowest r with chance(r) ≥ 50%, or "2600+"
    (stored as null with a flag) when none. The chance at the user's rating is stored for the
    "Players at … find this …%" line.
-7. **Themes** — tagged from `chess/tactics.ts` on the solution where available (fork, pin, mate…).
+7. **Themes** — tagged from `chess/tactics.ts` on the solution where available (fork, pin, mate…);
+   the mating move itself is never tagged with a motif.
 
 ### Depths
 

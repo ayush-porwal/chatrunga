@@ -80,7 +80,7 @@ import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
 import { registerGamePuzzleIpc } from "./game-puzzles-handler";
-import { noteReviewedGame, startGamePuzzleQueue } from "../game-puzzles";
+import { gamePuzzleEnginesChanged, noteReviewedGame, startGamePuzzleQueue } from "../game-puzzles";
 import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import { RASTER_PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
@@ -191,7 +191,7 @@ function refuseMaiaEvaluation(engineId: string, use: string): void {
 
 function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
-  registerEngineCrudIpc();
+  registerEngineCrudIpc(gamePuzzleEnginesChanged);
   ipcMain.handle("engines:test", (_event, idOrInput: unknown) =>
     engineManager.testEngine(testConfigFor(idOrInput))
   );
@@ -268,6 +268,7 @@ function registerAssetIpc(): void {
     syncAssetsToEngineRegistry()
       .then(async (removed) => {
         broadcast("engines:changed", undefined);
+        gamePuzzleEnginesChanged();
         noteEngineReadiness(false);
         const images = engineImages();
         await Promise.all(removed.map((id) => images.exclusive(id, () => images.prune(id, null))));

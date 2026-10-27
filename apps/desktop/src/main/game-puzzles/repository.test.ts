@@ -298,10 +298,16 @@ describe("gamePuzzleRepository (SQLite)", () => {
     saveGame("strangers", { white: "A", black: "B", playedAt: T0 - 3 * DAY });
     saveGame("chesscom", { source: "chesscom", playedAt: T0 - 4 * DAY });
     const queued = { kinds: ["mistake" as const], depth: "quick" as const };
-    repository.enqueue([{ gameId: "rapid", source: "dialog", settings: queued, scan: null }]);
-    repository.takeNext();
-    repository.finish({ gameId: "rapid", status: "failed", puzzlesFound: 0, error: "boom" });
+    for (const [gameId, status] of [
+      ["rapid", "done"],
+      ["rapid-old", "failed"]
+    ] as const) {
+      repository.enqueue([{ gameId, source: "dialog", settings: queued, scan: null }]);
+      repository.takeNext();
+      repository.finish({ gameId, status, puzzlesFound: 0, error: null });
+    }
 
+    // A failed game isn't processed: it is tried again.
     expect(repository.matchingGames(settings(), USERNAMES)).toStrictEqual({
       ids: ["blitz", "rapid-old", "chesscom"],
       withoutUserSide: 1
@@ -315,6 +321,7 @@ describe("gamePuzzleRepository (SQLite)", () => {
         USERNAMES
       )
     ).toStrictEqual({ ids: ["rapid-old"], withoutUserSide: 1 });
+    expect(repository.summary(USERNAMES, T0).sources.lichess.processed).toBe(1);
     // A game already queued isn't queued twice.
     repository.enqueue([{ gameId: "blitz", source: "dialog", settings: queued, scan: null }]);
     expect(repository.matchingGames(settings(), USERNAMES).ids).toStrictEqual([

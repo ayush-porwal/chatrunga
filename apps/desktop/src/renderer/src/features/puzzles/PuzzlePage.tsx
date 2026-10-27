@@ -460,7 +460,8 @@ function SetField({
 
 /** The set field's hint: how many puzzles or positions the set holds, else where it comes from. */
 function setHint(database: InstalledDatabase | undefined, gameSet: number | null): string {
-  if (!database) return `${(gameSet ?? 0).toLocaleString()} puzzles`;
+  if (!database)
+    return `${(gameSet ?? 0).toLocaleString()} ${gameSet === 1 ? "puzzle" : "puzzles"}`;
   if (!database.recordCount) return `${database.provider}, ${database.format}`;
   return `${database.recordCount.toLocaleString()} ${database.kind === "puzzle" ? "puzzles" : "positions"}`;
 }

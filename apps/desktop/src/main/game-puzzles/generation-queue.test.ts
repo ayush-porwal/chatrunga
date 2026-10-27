@@ -47,15 +47,6 @@ const stockfish: EngineConfig = {
   updatedAt: 0
 };
 
-type Deferred = { promise: Promise<void>; resolve: () => void };
-function deferred(): Deferred {
-  let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 function saveGame(id: string, playedAt: number, headers = '[White "Me"]\n[Black "Rival"]'): void {
   const { game } = importPgnText(`${headers}\n[TimeControl "600+0"]\n\n${TRAP_PGN} 0-1`);
   gameRepository.saveImported({ ...game, id, source: "lichess" }, playedAt);
@@ -127,6 +118,8 @@ function nextPoll(): Promise<() => void> {
 }
 let opened = 0;
 let closed = 0;
+/** Why the next engine process fails to start (null: it starts). */
+let openFails: string | null = null;
 let generated: GeneratePuzzlesInput[] = [];
 /** The fake generator's work for one game (default: one search, then one puzzle). */
 let generateGame: (input: GeneratePuzzlesInput) => Promise<GeneratedPuzzle[]>;
@@ -144,10 +137,36 @@ function inTurn(
 }
 const queues: InstanceType<typeof GamePuzzleQueue>[] = [];
 
+const pausedBetweenGames = (event: GamePuzzleGenerationEvent) =>
+  event.status.paused && event.status.current === null;
+/** A game that searches until it is stopped. */
+function searchesUntilStopped(input: GeneratePuzzlesInput): Promise<GeneratedPuzzle[]> {
+  return new Promise((_resolve, reject) => {
+    input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+  });
+}
+async function solve(input: GeneratePuzzlesInput): Promise<GeneratedPuzzle[]> {
+  await input.beforeSearch?.();
+  return [foundPuzzle(input)];
+}
+/** Queues games straight into the repository (as a persisted queue from the last run). */
+function persistedQueue(...gameIds: string[]): void {
+  repository.enqueue(
+    gameIds.map((gameId) => ({
+      gameId,
+      source: "dialog",
+      settings: { kinds: ["mistake"], depth: "quick" },
+      scan: null
+    })),
+    clock
+  );
+}
+
 function newQueue(): InstanceType<typeof GamePuzzleQueue> {
   const queue = new GamePuzzleQueue({
     engine: () => ({ state: engineState, config: engineState === "ready" ? stockfish : null }),
     openEngine: () => {
+      if (openFails) return Promise.reject(new Error(openFails));
       opened += 1;
       return Promise.resolve({ analyse: () => Promise.resolve([]), close: () => (closed += 1) });
     },
@@ -192,12 +211,10 @@ describe("GamePuzzleQueue", () => {
     pollWaiters = [];
     opened = 0;
     closed = 0;
+    openFails = null;
     generated = [];
     clock = T0;
-    generateGame = async (input) => {
-      await input.beforeSearch?.();
-      return [foundPuzzle(input)];
-    };
+    generateGame = solve;
   });
 
   afterEach(async () => {
@@ -234,6 +251,7 @@ describe("GamePuzzleQueue", () => {
     expect(queue.status()).toStrictEqual({
       paused: false,
       waitingForEngine: false,
+      problem: null,
       done: 2,
       total: 2,
       current: null
@@ -278,7 +296,65 @@ describe("GamePuzzleQueue", () => {
       { gameId: "fine", status: "done", puzzlesFound: 1, error: null }
     ]);
     expect(closed).toBe(2);
-    expect(repository.summary(["me"]).sources.lichess.processed).toBe(2);
+    // A failed game isn't processed: "Skip games already processed" tries it again.
+    expect(repository.summary(["me"]).sources.lichess.processed).toBe(1);
+    expect(repository.matchingGames(settings(), ["me"]).ids).toStrictEqual(["broken"]);
+  });
+
+  it("a missing engine stops the queue without failing its games; it tries again once the engines change", async () => {
+    saveGame("first", T0);
+    saveGame("second", T0 - 1000);
+    persistedQueue("first", "second");
+    engineState = "missing";
+    const stopped = eventWhere((event) => event.status.problem !== null);
+    const queue = newQueue();
+    queue.start();
+    await stopped;
+    expect(queue.status()).toStrictEqual({
+      paused: false,
+      waitingForEngine: false,
+      problem: "Finding puzzles needs a default engine such as Stockfish.",
+      done: 0,
+      total: 2,
+      current: null
+    });
+    expect([results(), opened, generated.length]).toStrictEqual([[], 0, 0]);
+    expect(repository.hasQueued()).toBe(true);
+
+    engineState = "ready";
+    const done = finished("second");
+    queue.enginesChanged();
+    await done;
+    expect(results().map((result) => [result.gameId, result.status])).toStrictEqual([
+      ["first", "done"],
+      ["second", "done"]
+    ]);
+    expect(queue.status()).toMatchObject({ problem: null, done: 2, total: 2 });
+  });
+
+  it("an engine that won't start stops the queue, saying why, until Resume tries again", async () => {
+    saveGame("g", T0);
+    openFails = "spawn EACCES";
+    const stopped = eventWhere((event) => event.status.problem !== null);
+    const queue = newQueue();
+    await queue.enqueueMatching(settings());
+    await stopped;
+    expect(queue.status()).toMatchObject({
+      problem: "Stockfish didn't start: spawn EACCES",
+      done: 0,
+      total: 1,
+      current: null
+    });
+    expect(results()).toStrictEqual([]);
+
+    openFails = null;
+    const done = finished("g");
+    queue.resume();
+    await done;
+    expect(results()).toStrictEqual([
+      { gameId: "g", status: "done", puzzlesFound: 1, error: null }
+    ]);
+    expect(queue.status()).toMatchObject({ problem: null, done: 1 });
   });
 
   it("refuses to start without a UCI engine as the default (Lc0 is skipped)", async () => {
@@ -314,22 +390,21 @@ describe("GamePuzzleQueue", () => {
     expect(queue.status()).toMatchObject({ waitingForEngine: false, done: 1 });
   });
 
-  it("pauses after the current search, survives a restart paused, and resumes", async () => {
+  it("pausing stops the running game and its engine, keeps it first in line across a restart, and resumes", async () => {
     saveGame("first", T0);
     saveGame("second", T0 - 1000);
-    const gate = deferred();
-    generateGame = async (input) => {
-      await gate.promise;
-      await input.beforeSearch?.();
-      return [foundPuzzle(input)];
-    };
+    generateGame = inTurn(searchesUntilStopped, solve, solve);
     const running = eventWhere((event) => event.status.current?.gameId === "first");
     const queue = newQueue();
     await queue.enqueueMatching(settings());
     await running;
+    const requeued = eventWhere(pausedBetweenGames);
     expect(queue.pause()).toMatchObject({ paused: true });
-    gate.resolve();
-    // Quit while paused: the game it was on goes back in the queue.
+    await requeued;
+    // No engine process is left open while paused.
+    expect([opened, closed]).toStrictEqual([1, 1]);
+    expect(queue.status()).toMatchObject({ paused: true, done: 0, total: 2, current: null });
+    // Quit while paused.
     await queue.stop();
     expect(events.some((event) => event.finished)).toBe(false);
 
@@ -342,33 +417,43 @@ describe("GamePuzzleQueue", () => {
     restarted.resume();
     await done;
     expect(generated).toHaveLength(3);
+    expect(results().map((result) => result.gameId)).toStrictEqual(["first", "second"]);
     expect(restarted.status()).toMatchObject({ paused: false, done: 2, total: 2 });
-    expect(repository.list({}).puzzles.map((puzzle) => puzzle.gameId)).toStrictEqual([
-      "first",
-      "second"
-    ]);
   });
 
-  it("a pause mid-game holds the next search until resumed", async () => {
+  it("a game paused and resumed at once starts again from the beginning", async () => {
     saveGame("g", T0);
-    const gate = deferred();
-    generateGame = async (input) => {
-      await gate.promise;
-      await input.beforeSearch?.();
-      return [foundPuzzle(input)];
-    };
+    generateGame = inTurn(searchesUntilStopped, solve);
     const running = eventWhere((event) => event.status.current?.gameId === "g");
     const queue = newQueue();
     await queue.enqueueMatching(settings());
     await running;
-    queue.pause();
-    gate.resolve();
-    await gate.promise;
-    expect(queue.status()).toMatchObject({ paused: true, done: 0, current: { gameId: "g" } });
     const done = finished("g");
+    queue.pause();
     queue.resume();
     await done;
-    expect(queue.status()).toMatchObject({ done: 1, total: 1 });
+    expect(generated).toHaveLength(2);
+    expect([opened, closed]).toStrictEqual([2, 2]);
+    expect(queue.status()).toMatchObject({ paused: false, done: 1, total: 1 });
+  });
+
+  it("Start unpauses the queue, and Cancel leaves it unpaused", async () => {
+    saveGame("first", T0);
+    saveGame("second", T0 - 1000);
+    const queue = newQueue();
+    queue.pause();
+    const done = finished("second");
+    expect(await queue.enqueueMatching(settings())).toMatchObject({ paused: false, total: 2 });
+    await done;
+    expect(repository.paused()).toBe(false);
+
+    generateGame = searchesUntilStopped;
+    const running = eventWhere((event) => event.status.current?.gameId === "first");
+    await queue.enqueueMatching(settings({ skipProcessed: false }));
+    await running;
+    queue.pause();
+    expect(queue.cancel()).toMatchObject({ paused: false, done: 0, total: 0 });
+    expect(repository.paused()).toBe(false);
   });
 
   it("cancel drops the running game and empties the queue (puzzles already found stay)", async () => {

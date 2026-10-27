@@ -27,8 +27,10 @@ import {
 import {
   myGamesBlocker,
   myGamesFacts,
+  myGamesNote,
   myGamesSourcesLine,
   queueActive,
+  queueHeld,
   queueProgress,
   type MyGamesBlocker
 } from "./my-games-card";
@@ -54,6 +56,7 @@ export function MyGamesCard({ onTrain }: { onTrain: (setId: string) => void }) {
   const data = summary.data;
   const blocker = data ? myGamesBlocker(data) : null;
   const sources = data ? myGamesSourcesLine(data) : null;
+  const note = myGamesNote(blocker, status.data);
 
   return (
     <article className={cardShell}>
@@ -97,7 +100,7 @@ export function MyGamesCard({ onTrain }: { onTrain: (setId: string) => void }) {
               </Button>
             </p>
           ) : null}
-          {blocker ? <BlockerNote blocker={blocker} /> : null}
+          {note ? <BlockerNote blocker={note} /> : null}
           {status.data && queueActive(status.data) ? <QueueProgress status={status.data} /> : null}
         </div>
       </div>
@@ -137,7 +140,7 @@ export function MyGamesCard({ onTrain }: { onTrain: (setId: string) => void }) {
   );
 }
 
-/** Why Generate puzzles can't run, and Open Settings where that is fixed. */
+/** Why Generate puzzles can't run (or the queue stopped), and Open Settings where that is fixed. */
 function BlockerNote({ blocker }: { blocker: MyGamesBlocker }) {
   const openSettings = useOpenSettings();
   return (
@@ -163,17 +166,18 @@ function BlockerNote({ blocker }: { blocker: MyGamesBlocker }) {
 function QueueProgress({ status }: { status: GamePuzzleQueueStatus }) {
   const queue = useGamePuzzleQueueMutation();
   const progress = queueProgress(status);
+  const held = queueHeld(status);
   return (
     <div className="grid animate-fade-in gap-1.5" role="status">
       <div className="flex min-w-0 items-center gap-2">
         <span className="text-xs font-medium tabular-nums text-fg">{progress.headline}</span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <IconButton
-            label={status.paused ? "Resume" : "Pause"}
-            icon={status.paused ? <Play /> : <Pause />}
+            label={held ? "Resume" : "Pause"}
+            icon={held ? <Play /> : <Pause />}
             size="icon-xs"
             disabled={queue.isPending}
-            onClick={() => queue.mutate(status.paused ? "resume" : "pause")}
+            onClick={() => queue.mutate(held ? "resume" : "pause")}
           />
           <IconButton
             label="Cancel"

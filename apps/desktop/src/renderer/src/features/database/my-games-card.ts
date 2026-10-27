@@ -32,9 +32,10 @@ export function myGamesSourcesLine(summary: GamePuzzleSummary): string | null {
 /**
  * Why Generate puzzles can't run, and where that is fixed (Settings → an account, or Engines):
  * no games, no game played by a connected account, no default engine, or Lc0 as the default.
+ * `engine-failed`: the queue stopped because its engine won't start ({@link myGamesNote}).
  */
 export type MyGamesBlocker = {
-  kind: "no-games" | "no-account" | "engine-missing" | "lc0";
+  kind: "no-games" | "no-account" | "engine-missing" | "lc0" | "engine-failed";
   message: string;
   settings: "lichess" | "engines";
 };
@@ -69,6 +70,23 @@ export function myGamesBlocker(summary: GamePuzzleSummary): MyGamesBlocker | nul
   return null;
 }
 
+/**
+ * The note the card shows: its blocker, else why the queue stopped with games left (its engine
+ * won't start) pointing at Settings → Engines. The blocker already says when it is missing.
+ */
+export function myGamesNote(
+  blocker: MyGamesBlocker | null,
+  status: GamePuzzleQueueStatus | undefined
+): MyGamesBlocker | null {
+  if (blocker || !status?.problem) return blocker;
+  return { kind: "engine-failed", message: status.problem, settings: "engines" };
+}
+
+/** Held with games left, paused or stopped by its engine: Resume carries on (or tries again). */
+export function queueHeld(status: GamePuzzleQueueStatus): boolean {
+  return status.paused || status.problem !== null;
+}
+
 /** The queue has games left (running, waiting or paused). */
 export function queueActive(status: GamePuzzleQueueStatus | undefined): boolean {
   return Boolean(status && (status.current !== null || status.done < status.total));
@@ -83,7 +101,8 @@ const PHASE_LABELS: Record<GamePuzzleGenerationPhase, string> = {
 /**
  * The queue's progress as the card shows it: "Game 3 of 20", the game being worked on and its
  * step ("Magnus – Hikaru · Checking candidates 4/12"), and the bar's percentage (games done).
- * Paused, or waiting while the engine is in use elsewhere, says so instead of the step.
+ * Paused, stopped (its engine is missing or won't start), or waiting while the engine is in use
+ * elsewhere, says so instead of the step.
  */
 export function queueProgress(status: GamePuzzleQueueStatus): {
   headline: string;
@@ -104,6 +123,7 @@ export function queueProgress(status: GamePuzzleQueueStatus): {
 
 function queueStep(status: GamePuzzleQueueStatus): string | null {
   if (status.paused) return "Paused";
+  if (status.problem !== null) return "Stopped";
   if (status.waitingForEngine) return "Waiting while the engine is in use";
   const progress = status.current?.progress;
   return progress ? `${PHASE_LABELS[progress.phase]} ${progress.done}/${progress.total}` : null;
