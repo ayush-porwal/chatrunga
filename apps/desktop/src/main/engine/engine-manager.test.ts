@@ -236,6 +236,13 @@ describe("EngineManager", () => {
     await expectEventually(() => sent().includes("go movetime 5000"));
   });
 
+  it("live analysis is the user's engine work until it stops", async () => {
+    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [] });
+    await expectEventually(() => manager.userEngineIdleMs() === 0);
+    await manager.stop();
+    expect(manager.userEngineIdleMs(Date.now() + 20_000)).toBeGreaterThanOrEqual(20_000);
+  });
+
   it("sends ucinewgame (then isready) before the position only for a fresh analysis (Restart)", async () => {
     collect(manager);
     const analyse = (searchId: string, fresh?: boolean) =>
@@ -843,6 +850,14 @@ describe("EngineManager review cancels", () => {
     expect(manager.isReviewCancelled("finished-99")).toBe(true);
     // A running job's cancel is never dropped for them.
     expect(manager.isReviewCancelled("running")).toBe(true);
+  });
+
+  it("a running review is the user's engine work; idle time counts from when it ended", () => {
+    const manager = new EngineManager();
+    manager.trackReview("r1", true);
+    expect(manager.userEngineIdleMs(Number.MAX_SAFE_INTEGER)).toBe(0);
+    manager.trackReview("r1", false);
+    expect(manager.userEngineIdleMs(Date.now() + 5_000)).toBeGreaterThanOrEqual(5_000);
   });
 
   it("cancelling everything cancels only what's running", () => {

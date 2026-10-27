@@ -27,6 +27,7 @@ import { engineRepository, gameRepository, settingsRepository } from "./db/repos
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
+import { stopGamePuzzleQueue } from "./game-puzzles";
 import { shutdownLichess } from "./lichess";
 import { shutdownBroadcasts } from "./broadcasts";
 import { shutdownChesscom } from "./chesscom";
@@ -281,6 +282,8 @@ function shutdown(): Promise<void> {
       ["chess.com", shutdownChesscom],
       ["broadcasts", shutdownBroadcasts],
       ["reviews", () => engineManager.cancelAllReviews()],
+      // Before the database closes: the game it was on goes back in the queue.
+      ["puzzle generation", stopGamePuzzleQueue],
       ["engines", () => void engineManager.dispose()],
       ["engine processes", killAllEngineProcesses],
       ["maia", disposeMaia3Evaluator],

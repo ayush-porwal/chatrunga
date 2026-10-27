@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { GameSession } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type { GamePuzzleQuery } from "@chaturanga/shared/types/game-puzzles";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleStore } from "../stores/puzzle-store";
 
@@ -21,14 +22,20 @@ export function puzzleBoard(puzzle: PuzzleSample): GameSession {
   });
 }
 
+/** What the set's next puzzle is drawn with: a database's sampler, or the "From my games" queue. */
+export type NextPuzzleInput = PuzzleSampleInput | { gamePuzzles: GamePuzzleQuery };
+
 /**
  * The request for the set's next puzzle (excluding those already shown), or null with no dataset
- * chosen. A set of failed puzzles tried again asks for those by id, without the filters.
+ * chosen. A set of failed puzzles tried again asks for those by id, without the filters. The
+ * "From my games" set asks its own queue.
  */
 export function nextPuzzleInput(
   config: PuzzleSessionConfig | null,
   shownIds: string[]
-): PuzzleSampleInput | null {
+): NextPuzzleInput | null {
+  if (config?.mode === "my-games")
+    return { gamePuzzles: { ...config.games, excludeIds: shownIds } };
   if (!config?.databaseId) return null;
   if (config.retryIds)
     return { databaseId: config.databaseId, excludeIds: shownIds, ids: config.retryIds };

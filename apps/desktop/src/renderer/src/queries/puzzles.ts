@@ -2,15 +2,21 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 import type {
+  GamePuzzleAttemptInput,
+  GamePuzzleProgress
+} from "@chaturanga/shared/types/game-puzzles";
+import type {
   PuzzleAttemptResult,
   RecordPuzzleAttemptInput
 } from "@chaturanga/shared/types/puzzle-rating";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { GAME_PUZZLES_SET_ID, gamePuzzleOutcome } from "../features/puzzles/game-puzzle-set";
 import {
   onPuzzleAttempt,
   type DecidedPuzzleAttempt,
   type PuzzleAttemptEvent
 } from "../stores/puzzle-store";
+import { invalidateGamePuzzleCounts } from "./game-puzzles";
 
 /**
  * The local puzzle rating through `window.chaturanga.puzzles` (main rates attempts and owns the
@@ -175,17 +181,69 @@ export async function recordAttemptEvent(
   }
 }
 
-/** Records each puzzle attempt as it is decided and completed (see recordAttemptEvent). Mount once. */
+/** Where a "From my games" attempt is scheduled (never the puzzle rating). */
+export type GamePuzzleAttemptRecorder = {
+  recordAttempt: (input: GamePuzzleAttemptInput) => Promise<GamePuzzleProgress>;
+  /** Called after the write succeeded: the set's due count may have changed. */
+  onRecorded: () => void;
+};
+
+/**
+ * Schedules a "From my games" puzzle once its attempt is decided (a clean solve, the first wrong
+ * move, or the solution shown); finishing it later changes nothing. A failed write says so on the
+ * card, as a rated attempt's does.
+ */
+async function recordGamePuzzleAttemptEvent(
+  { kind, attempt }: PuzzleAttemptEvent,
+  recorder: GamePuzzleAttemptRecorder
+): Promise<void> {
+  if (kind !== "decided" || !isRecordable(attempt)) return;
+  const key = attemptKey(attempt);
+  try {
+    await recorder.recordAttempt({
+      puzzleId: attempt.puzzleId,
+      outcome: gamePuzzleOutcome(attempt)
+    });
+    recorder.onRecorded();
+  } catch (error) {
+    console.warn("gamePuzzles.recordAttempt failed", error);
+    usePuzzleRecordStore
+      .getState()
+      .set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
+  }
+}
+
+/**
+ * Sends an attempt to where its set records it: "From my games" puzzles are scheduled
+ * (`gamePuzzles.recordAttempt`) and never reach the puzzle rating; every other set's go to
+ * `puzzles.recordAttempt` (rated or not, as main decides).
+ */
+export function recordPuzzleAttemptEvent(
+  event: PuzzleAttemptEvent,
+  recorders: { puzzles: AttemptRecorder; gamePuzzles: GamePuzzleAttemptRecorder }
+): Promise<void> {
+  return event.attempt.sourceId === GAME_PUZZLES_SET_ID
+    ? recordGamePuzzleAttemptEvent(event, recorders.gamePuzzles)
+    : recordAttemptEvent(event, recorders.puzzles);
+}
+
+/** Records each puzzle attempt as it is decided and completed (see recordPuzzleAttemptEvent). Mount once. */
 export function usePuzzleAttemptRecording(): void {
   const queryClient = useQueryClient();
   useEffect(
     () =>
       onPuzzleAttempt((event) => {
-        const puzzles = api()?.puzzles;
-        if (!puzzles) return;
-        void recordAttemptEvent(event, {
-          recordAttempt: (input) => puzzles.recordAttempt(input),
-          onRecorded: () => void queryClient.invalidateQueries({ queryKey: puzzleKeys.all })
+        const desktop = api();
+        if (!desktop) return;
+        void recordPuzzleAttemptEvent(event, {
+          puzzles: {
+            recordAttempt: (input) => desktop.puzzles.recordAttempt(input),
+            onRecorded: () => void queryClient.invalidateQueries({ queryKey: puzzleKeys.all })
+          },
+          gamePuzzles: {
+            recordAttempt: (input) => desktop.gamePuzzles.recordAttempt(input),
+            onRecorded: () => invalidateGamePuzzleCounts(queryClient)
+          }
         });
       }),
     [queryClient]

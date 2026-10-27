@@ -31,16 +31,21 @@ import {
   databaseFacts,
   databaseSample,
   downloadProgressText,
-  type DatabaseAction
+  type DatabaseAction,
+  type DatabaseFact
 } from "./database-card";
 
-/** Title bar, body (board picture + text) and one fixed action row: every state is this tall. */
-const cardShell = cn(card, "flex flex-col leading-[1.43]");
-const titleBar = "flex h-12 shrink-0 items-center gap-2 border-b border-line-subtle pl-4 pr-3";
-const body = "flex gap-4.5 p-4";
+/**
+ * Title bar, body (board picture + text) and one fixed action row: every state is this tall. The
+ * "My games" card (MyGamesCard) is built from the same parts.
+ */
+export const cardShell = cn(card, "flex flex-col leading-[1.43]");
+export const titleBar =
+  "flex h-12 shrink-0 items-center gap-2 border-b border-line-subtle pl-4 pr-3";
+export const body = "flex gap-4.5 p-4";
 // Top-aligned: a stretched item would lose its square shape when the text beside it is taller.
-const board = "w-39 shrink-0 self-start";
-const footer = "mt-auto grid grid-rows-[2.5rem] px-4 pb-4";
+export const board = "w-39 shrink-0 self-start";
+export const footer = "mt-auto grid grid-rows-[2.5rem] px-4 pb-4";
 
 export function DatabaseCard({
   source,
@@ -126,28 +131,7 @@ export function DatabaseCard({
             {source.provider}, {source.license}
           </p>
           <p className="text-[0.84375rem] leading-normal text-fg-muted">{source.description}</p>
-          {facts.length ? (
-            <dl
-              className="grid rounded-[0.625rem] border border-line bg-surface-sunken"
-              // Content-sized cells share the spare room, so a long value (a date) isn't cut short.
-              style={{ gridTemplateColumns: `repeat(${facts.length}, auto)` }}
-            >
-              {facts.map((fact) => (
-                <div
-                  key={fact.label}
-                  className="grid min-w-0 gap-px px-3 py-2 not-first:border-l not-first:border-line-subtle"
-                >
-                  <dt className="text-[0.6875rem] text-fg-subtle">{fact.label}</dt>
-                  <dd
-                    className="truncate text-[0.84375rem] font-semibold tabular-nums text-fg"
-                    title={fact.value}
-                  >
-                    {fact.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
+          <FactsStrip facts={facts} />
         </div>
       </div>
 
@@ -161,6 +145,33 @@ export function DatabaseCard({
         />
       </div>
     </article>
+  );
+}
+
+/** A card's facts, side by side in one sunken strip (nothing without any). */
+export function FactsStrip({ facts }: { facts: readonly DatabaseFact[] }) {
+  if (!facts.length) return null;
+  return (
+    <dl
+      className="grid rounded-[0.625rem] border border-line bg-surface-sunken"
+      // Content-sized cells share the spare room, so a long value (a date) isn't cut short.
+      style={{ gridTemplateColumns: `repeat(${facts.length}, auto)` }}
+    >
+      {facts.map((fact) => (
+        <div
+          key={fact.label}
+          className="grid min-w-0 gap-px px-3 py-2 not-first:border-l not-first:border-line-subtle"
+        >
+          <dt className="text-[0.6875rem] text-fg-subtle">{fact.label}</dt>
+          <dd
+            className="truncate text-[0.84375rem] font-semibold tabular-nums text-fg"
+            title={fact.value}
+          >
+            {fact.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { ExternalLink, Loader2, Puzzle, Swords } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import type { GamePuzzle } from "@chaturanga/shared/types/game-puzzles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -11,6 +12,8 @@ import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { PuzzleExplanation } from "../features/puzzles/PuzzleExplanation";
+import { GamePuzzleFacts } from "../features/puzzles/GamePuzzleFacts";
+import { gamePuzzleFor } from "../features/puzzles/game-puzzle-set";
 import { explainOutcome } from "../features/puzzles/puzzle-explanation";
 import { formatPuzzleTag, puzzleDatasetLabel } from "../features/puzzles/puzzle-set";
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
@@ -30,6 +33,8 @@ type PanelProps = {
   nextPending: boolean;
   onNextPuzzle: () => void;
   onPlayEngineFromHere: () => void;
+  /** A finished "From my games" puzzle's Open game. */
+  onOpenGamePuzzleGame: (puzzle: GamePuzzle) => void;
   puzzleConfig: PuzzleSessionConfig | null;
 };
 
@@ -81,6 +86,7 @@ function PuzzleCard({
   nextError,
   nextPending,
   onNextPuzzle,
+  onOpenGamePuzzleGame,
   onPlayEngineFromHere,
   outcome,
   playing,
@@ -174,6 +180,10 @@ function PuzzleCard({
       />
 
       <PuzzleThemes puzzle={puzzle} outcome={outcome} />
+
+      {complete || failed || broken ? (
+        <GamePuzzleSource puzzle={puzzle} onOpenGame={onOpenGamePuzzleGame} />
+      ) : null}
 
       <PuzzleSource puzzle={puzzle} puzzleConfig={puzzleConfig} />
     </section>
@@ -277,6 +287,18 @@ function PuzzleThemes({ outcome, puzzle }: { outcome: PuzzleOutcome; puzzle: Puz
       ))}
     </div>
   );
+}
+
+/** A "From my games" puzzle's game and difficulty, once it is over (nothing for other sets). */
+function GamePuzzleSource({
+  puzzle,
+  onOpenGame
+}: {
+  puzzle: PuzzleSample;
+  onOpenGame: (puzzle: GamePuzzle) => void;
+}) {
+  const gamePuzzle = gamePuzzleFor(puzzle);
+  return gamePuzzle ? <GamePuzzleFacts puzzle={gamePuzzle} onOpenGame={onOpenGame} /> : null;
 }
 
 /** Where the puzzle comes from: the dataset it was drawn from and its source game. */

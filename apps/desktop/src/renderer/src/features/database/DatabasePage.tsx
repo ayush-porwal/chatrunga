@@ -15,10 +15,12 @@ import { hasDesktopApi } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useDownloadStore } from "../../stores/download-store";
 import { DatabaseCard, DatabaseCardSkeleton } from "./DatabaseCard";
+import { MyGamesCard } from "./MyGamesCard";
 
 export const DatabasePage = memo(function DatabasePage({
   onTrain
 }: {
+  /** Puzzles with this database (or the "From my games" set) chosen. */
   onTrain: (databaseId: string) => void;
 }) {
   const databases = useDatabasesQuery();
@@ -78,6 +80,8 @@ export const DatabasePage = memo(function DatabasePage({
         // As many columns of at least 28rem as fit (one on a narrow window, up to three on a wide
         // one); every row as tall as the tallest card, so the cards line up.
         <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(min(100%,28rem),1fr))] gap-4">
+          {/* Puzzles from the user's own games, first. */}
+          {desktopApiAvailable ? <MyGamesCard onTrain={onTrain} /> : null}
           {databases.isPending && desktopApiAvailable
             ? externalDatabaseSources.map((source) => <DatabaseCardSkeleton key={source.id} />)
             : externalDatabaseSources.map((source) => (

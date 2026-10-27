@@ -60,13 +60,32 @@ describe("nextPuzzleInput", () => {
   it("is null without a dataset", () => {
     expect(nextPuzzleInput(null, [])).toBeNull();
   });
+
+  it("asks the From my games set's queue with its filters, excluding the ones shown", () => {
+    const games = {
+      ...config,
+      databaseId: null,
+      mode: "my-games",
+      games: { kinds: ["mistake"], sources: [], difficulty: { min: 800, max: 1400 } }
+    } as PuzzleSessionConfig;
+    expect(nextPuzzleInput(games, ["a"])).toStrictEqual({
+      gamePuzzles: {
+        kinds: ["mistake"],
+        sources: [],
+        difficulty: { min: 800, max: 1400 },
+        excludeIds: ["a"]
+      }
+    });
+  });
 });
 
 describe("puzzle set state", () => {
   const other = { ...config, databaseId: "other" } as PuzzleSessionConfig;
   /** The request Next puzzle makes in `state`. */
-  const excluded = (state: PuzzleSessionState) =>
-    nextPuzzleInput(state.set?.config ?? null, shownInSet(state))?.excludeIds;
+  const excluded = (state: PuzzleSessionState) => {
+    const input = nextPuzzleInput(state.set?.config ?? null, shownInSet(state));
+    return input && "databaseId" in input ? input.excludeIds : undefined;
+  };
 
   it("records the set's id, filters and the puzzles shown, and nothing without a set", () => {
     const state = joinPuzzleSet(startPuzzleSet(NO_PUZZLE_SET, "a", { id: "s", config }), "b");

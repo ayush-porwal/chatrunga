@@ -1,5 +1,6 @@
 import { exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
+import type { GamePuzzle } from "@chaturanga/shared/types/game-puzzles";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { positionStatus } from "@/lib/position-status";
@@ -8,6 +9,7 @@ import { boardResultPatch } from "../features/analysis/post-game";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { mainlineEnd } from "../features/game/move-tree-model";
 import { openSavedGame } from "../features/game/saved-game";
+import { gamePuzzleNodeId } from "../features/puzzles/game-puzzle-set";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useGameStore } from "../stores/game-store";
@@ -276,6 +278,19 @@ export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
   }
 
   /**
+   * A "From my games" puzzle's Open game: its saved game on the board at the move played from the
+   * puzzle position (the game's start when that move isn't found).
+   */
+  async function openGamePuzzleGame(puzzle: Pick<GamePuzzle, "gameId" | "ply" | "playedMove">) {
+    if (!(await openSavedGameById(puzzle.gameId))) return;
+    const nodeId = gamePuzzleNodeId(currentGame().moveTree, puzzle);
+    if (!nodeId) return;
+    currentGame().goToNode(nodeId);
+    // The entry pushed when the game opened now names that move.
+    record("replace", historyEntry("game"));
+  }
+
+  /**
    * Play's In progress card on a saved engine game: the game opens and, when its engine is
    * installed and available, the match goes on from its latest move against it. A timed game goes
    * on with the time each side has now (the side to move's clock ran while it was away), and one
@@ -357,6 +372,7 @@ export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
     analyzeCurrentPosition,
     openSelectedGameReview,
     openSavedGameById,
+    openGamePuzzleGame,
     rejoinSavedGame,
     reviewFinishedEngineGame
   };

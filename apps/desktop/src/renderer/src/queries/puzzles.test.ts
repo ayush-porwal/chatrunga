@@ -6,7 +6,9 @@ import {
   isRecordable,
   recordAttemptEvent,
   recordInput,
-  usePuzzleRecordStore
+  recordPuzzleAttemptEvent,
+  usePuzzleRecordStore,
+  type GamePuzzleAttemptRecorder
 } from "./puzzles";
 
 const attempt: DecidedPuzzleAttempt = {
@@ -148,5 +150,84 @@ describe("recordAttemptEvent", () => {
     );
     expect(target.recordAttempt).not.toHaveBeenCalled();
     expect(stateOf()).toBeUndefined();
+  });
+});
+
+describe("recordPuzzleAttemptEvent", () => {
+  const gameAttempt: DecidedPuzzleAttempt = {
+    ...attempt,
+    id: "g1",
+    puzzleId: "gp1",
+    databaseId: "my-games",
+    sourceId: "my-games",
+    puzzleRating: null,
+    puzzleRatingDeviation: null
+  };
+
+  function recorders() {
+    return {
+      puzzles: { recordAttempt: vi.fn(), onRecorded: vi.fn() },
+      gamePuzzles: {
+        recordAttempt: vi.fn<GamePuzzleAttemptRecorder["recordAttempt"]>(async () => ({
+          stage: 0,
+          dueAt: 1,
+          lapses: 1,
+          lastAttemptAt: 1,
+          lastOutcome: "wrong" as const,
+          attempts: 1
+        })),
+        onRecorded: vi.fn()
+      }
+    };
+  }
+
+  beforeEach(() => {
+    usePuzzleRecordStore.setState({ byAttempt: {} });
+    vi.spyOn(console, "warn").mockReturnValue(undefined);
+  });
+
+  it("schedules a From my games attempt once decided and never sends it to the puzzle rating", async () => {
+    const target = recorders();
+    await recordPuzzleAttemptEvent({ kind: "decided", attempt: gameAttempt }, target);
+    await recordPuzzleAttemptEvent(
+      { kind: "completed", attempt: { ...gameAttempt, completedAt: 3_000 } },
+      target
+    );
+    expect(target.gamePuzzles.recordAttempt).toHaveBeenCalledTimes(1);
+    expect(target.gamePuzzles.recordAttempt).toHaveBeenCalledWith({
+      puzzleId: "gp1",
+      outcome: "wrong"
+    });
+    expect(target.gamePuzzles.onRecorded).toHaveBeenCalledTimes(1);
+    expect(target.puzzles.recordAttempt).not.toHaveBeenCalled();
+  });
+
+  it("schedules a clean solve as unaided and the solution shown as reveal", async () => {
+    const target = recorders();
+    const solved = { ...gameAttempt, outcome: "solved" as const, wrongMoves: [] };
+    await recordPuzzleAttemptEvent({ kind: "decided", attempt: solved }, target);
+    const revealed = { ...gameAttempt, wrongMoves: [], solutionViewed: true };
+    await recordPuzzleAttemptEvent({ kind: "decided", attempt: revealed }, target);
+    expect(
+      target.gamePuzzles.recordAttempt.mock.calls.map(([input]) => input.outcome)
+    ).toStrictEqual(["unaided", "reveal"]);
+  });
+
+  it("says on the card when scheduling failed", async () => {
+    const target = recorders();
+    target.gamePuzzles.recordAttempt.mockRejectedValueOnce(new Error("database is locked"));
+    await recordPuzzleAttemptEvent({ kind: "decided", attempt: gameAttempt }, target);
+    expect(usePuzzleRecordStore.getState().byAttempt.g1).toStrictEqual({
+      status: "failed",
+      message: "database is locked"
+    });
+    expect(target.gamePuzzles.onRecorded).not.toHaveBeenCalled();
+  });
+
+  it("sends every other set's attempt to the puzzle rating, as before", async () => {
+    const target = recorders();
+    await recordPuzzleAttemptEvent({ kind: "decided", attempt }, target);
+    expect(target.puzzles.recordAttempt).toHaveBeenCalledTimes(1);
+    expect(target.gamePuzzles.recordAttempt).not.toHaveBeenCalled();
   });
 });
