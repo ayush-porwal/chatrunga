@@ -12,7 +12,6 @@ const request = (overrides: Partial<BookChatRequest> = {}): BookChatRequest => (
       ]
     }
   ],
-  maxTokens: 100,
   signal: new AbortController().signal,
   ...overrides
 });
@@ -21,27 +20,25 @@ const answer = (body: unknown, status = 200) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status }));
 
 describe("openRouterChat", () => {
-  it("sends text and image parts, JSON mode and reasoning, and reads the answer and its cost", async () => {
+  it("sends text and image parts and JSON mode, uncapped, and reads the answer and its cost", async () => {
     const fetchImpl = answer({
       choices: [{ message: { content: ' {"lines": []} ' } }],
       usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 }
     });
     const chat = openRouterChat({ apiKey: "test-key", fetchImpl });
-    await expect(chat(request({ json: true, reasoning: "low" }))).resolves.toStrictEqual({
+    await expect(chat(request({ json: true }))).resolves.toStrictEqual({
       text: '{"lines": []}',
       costUsd: 0.0042
     });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(init.headers).toMatchObject({ Authorization: "Bearer test-key" });
+    // No token limit, temperature or reasoning effort: the model thinks as long as it needs to.
     expect(JSON.parse(init.body as string)).toStrictEqual({
       model: "vision/model",
       messages: request().messages,
-      temperature: 0,
-      max_tokens: 100,
       usage: { include: true },
-      response_format: { type: "json_object" },
-      reasoning: { effort: "low" }
+      response_format: { type: "json_object" }
     });
   });
 
@@ -83,35 +80,20 @@ describe("openRouterChat", () => {
     await expect(slow(request())).rejects.toThrow("took too long");
   });
 
-  it("asks once more with twice the room when the model thought until it ran out", async () => {
-    const thoughtOut = {
-      choices: [{ finish_reason: "length", message: { content: null, reasoning_details: [] } }],
-      usage: { completion_tokens: 100, completion_tokens_details: { reasoning_tokens: 100 } }
-    };
-    const fetchImpl = vi
-      .fn(async () => new Response(JSON.stringify(thoughtOut)))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...thoughtOut, usage: { cost: 0.01 } })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: "1. e4 e5" } }], usage: { cost: 0.02 } })
-        )
-      );
+  it("says the model ran out of room, not worth retrying, when it thought without answering", async () => {
+    const fetchImpl = answer({
+      choices: [{ finish_reason: "length", message: { content: null } }],
+      usage: {
+        completion_tokens: 128_000,
+        completion_tokens_details: { reasoning_tokens: 128_000 }
+      }
+    });
     const chat = openRouterChat({ apiKey: "k", fetchImpl });
-    const read = await chat(request({ reasoning: "low" }));
-    expect(read.text).toBe("1. e4 e5");
-    expect(read.costUsd).toBeCloseTo(0.03);
-    const sent = (fetchImpl.mock.calls as unknown as [string, RequestInit][]).map(
-      ([, init]) => JSON.parse(init.body as string) as { max_tokens: number; reasoning: unknown }
-    );
-    expect(sent.map((body) => body.max_tokens)).toStrictEqual([100, 200]);
-    expect(sent[1].reasoning).toStrictEqual({ effort: "low" });
-
-    // Out of room twice: a message that says so, not worth the same request again.
     const failure = await chat(request()).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(BookChatError);
     expect(failure).toMatchObject({ retryable: false });
-    expect((failure as Error).message).toContain("whole budget thinking");
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect((failure as Error).message).toContain("ran out of room before answering");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("passes the caller's cancel through as it is, before and during a request", async () => {

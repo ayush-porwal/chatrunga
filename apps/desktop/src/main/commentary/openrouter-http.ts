@@ -69,9 +69,10 @@ export function completionText(body: unknown): string | null {
 }
 
 /**
- * The model stopped at `max_tokens` (`finish_reason: "length"`). With no answer text, a thinking
- * model spent the whole budget reasoning: OpenRouter then returns `content: null` and only the
- * reasoning (or nothing, with `reasoning.exclude`).
+ * The model stopped at its output limit (`finish_reason: "length"`; requests set no `max_tokens`,
+ * so the model's own maximum). With no answer text, a thinking model spent it all reasoning:
+ * OpenRouter then returns `content: null` and only the reasoning (or nothing, with
+ * `reasoning.exclude`).
  */
 export function completionHitTokenLimit(body: unknown): boolean {
   return firstChoice(body)?.finish_reason === "length";

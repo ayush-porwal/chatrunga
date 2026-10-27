@@ -16,11 +16,8 @@ export type CommentaryDetailLevel = NonNullable<ReviewInsightPayload["commentary
  * Per-detail budget for the BODY. `targetSentences` / `targetChars` are what
  * the prompt asks for; `maxSentences` / `maxChars` are the validator's hard
  * caps (looser, so a model that follows the prompt is never rejected on a
- * boundary). `answerTokens` is the visible answer's allowance: the whole JSON
- * answer (headline + body) with headroom so it is never truncated mid-object.
- * It is a runaway/cost guard, not the length control (the prompt and
- * {@link validateProse} are); a thinking model gets
- * {@link COMMENTARY_REASONING_TOKENS} on top of it.
+ * boundary). These are the only length controls: requests set no token limit,
+ * so a thinking model thinks as long as it needs to.
  */
 export const COMMENTARY_LIMITS: Record<
   CommentaryDetailLevel,
@@ -29,29 +26,25 @@ export const COMMENTARY_LIMITS: Record<
     targetChars: number;
     maxSentences: number;
     maxChars: number;
-    answerTokens: number;
   }
 > = {
   concise: {
     targetSentences: "2-3",
     targetChars: 330,
     maxSentences: 4,
-    maxChars: 440,
-    answerTokens: 350
+    maxChars: 440
   },
   balanced: {
     targetSentences: "3-5",
     targetChars: 620,
     maxSentences: 6,
-    maxChars: 800,
-    answerTokens: 550
+    maxChars: 800
   },
   detailed: {
     targetSentences: "5-7",
     targetChars: 950,
     maxSentences: 8,
-    maxChars: 1200,
-    answerTokens: 800
+    maxChars: 1200
   }
 };
 
@@ -60,19 +53,6 @@ const HEADLINE_MAX_CHARS = 80;
 
 function commentaryLimits(detail: ReviewInsightPayload["commentaryDetail"]) {
   return COMMENTARY_LIMITS[detail ?? "balanced"];
-}
-
-/**
- * The thinking budget a request allows a reasoning model, on top of the answer's allowance
- * (`max_tokens` covers both, so thinking can no longer eat the answer's room). 2048: above
- * Anthropic's 1024 minimum, room to weigh a move's facts before a few sentences of prose, and
- * capped so a move's explanation stays quick and cheap.
- */
-export const COMMENTARY_REASONING_TOKENS = 2048;
-
-/** The visible answer's token allowance for one payload (see {@link COMMENTARY_LIMITS}). */
-export function answerTokensForDetail(detail: ReviewInsightPayload["commentaryDetail"]): number {
-  return commentaryLimits(detail).answerTokens;
 }
 
 export const COACH_SYSTEM_PROMPT = `

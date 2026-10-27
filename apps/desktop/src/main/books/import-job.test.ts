@@ -212,8 +212,7 @@ describe("runBookImport", () => {
     expect(repair.messages[0].content).toHaveLength(3);
     expect(requests.find((request) => promptKind(request) === "lines")).toMatchObject({
       model: "text/model",
-      json: true,
-      reasoning: "low"
+      json: true
     });
   });
 

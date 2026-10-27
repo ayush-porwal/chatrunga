@@ -144,7 +144,6 @@ describe("commentary analytics", () => {
       $ai_total_cost_usd: 0.004,
       $ai_latency: 0.1,
       $ai_http_status: 200,
-      $ai_temperature: 0.7,
       $ai_output_choices: [{ role: "assistant", content: INVALID_ANSWER }]
     });
     // The retry's prompt carries the rejected answer and the correction.
@@ -179,20 +178,15 @@ describe("commentary analytics", () => {
     expect(of("commentary_failed")).toStrictEqual([]);
   });
 
-  it("a retry with more thinking room is its own attempt, and the billed thinking counts", async () => {
-    const thoughtOut = new Response(
+  it("an attempt that ran out of room before answering fails the move, its billed usage counted", async () => {
+    const ranOut = new Response(
       JSON.stringify({
         choices: [{ finish_reason: "length", message: { content: null } }],
         usage: { prompt_tokens: 900, completion_tokens: 2598, cost: 0.013 }
       }),
       { status: 200 }
     );
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(thoughtOut)
-      .mockResolvedValueOnce(
-        completion(GOOD_ANSWER, { prompt_tokens: 900, completion_tokens: 700, cost: 0.004 })
-      );
+    const fetchImpl = vi.fn().mockResolvedValueOnce(ranOut);
     const { of } = await run(fetchImpl, [payload(1)]);
 
     expect(
@@ -202,17 +196,16 @@ describe("commentary analytics", () => {
         generation.$ai_span_name,
         generation.$ai_error
       ])
-    ).toStrictEqual([
-      ["initial", "reasoning_exhausted", "commentary", "reasoning_exhausted"],
-      ["reasoning_retry", "accepted", "commentary reasoning retry", undefined]
-    ]);
-    expect(of("commentary_completed")).toStrictEqual([
+    ).toStrictEqual([["initial", "length_exhausted", "commentary", "length_exhausted"]]);
+    expect(of("commentary_failed")).toStrictEqual([
       expect.objectContaining({
-        attempts: 2,
+        error_code: "length_exhausted",
+        attempts: 1,
         validation_retried: false,
-        prompt_tokens_total: 1800,
-        completion_tokens_total: 3298,
-        cost_usd_total: 0.017
+        first_attempt_valid: false,
+        prompt_tokens_total: 900,
+        completion_tokens_total: 2598,
+        cost_usd_total: 0.013
       })
     ]);
   });
