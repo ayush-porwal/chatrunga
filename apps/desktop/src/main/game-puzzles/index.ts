@@ -1,6 +1,7 @@
 /**
  * Main's one puzzle generation queue (generation-queue.ts), wired to the app: the default engine
- * on its own UCI process (Threads 1, Hash from the engine settings), Maia 3 at review priority,
+ * on its own UCI process (Threads and Hash from the engine settings: it steps aside while the user
+ * uses an engine), Maia 3 at review priority,
  * the bundled opening book, the connected accounts, and the review hook on the EngineManager.
  */
 import { existsSync } from "node:fs";
@@ -39,7 +40,7 @@ async function openEngine(config: EngineConfig, signal: AbortSignal): Promise<Op
   const cancelled = () => signal.aborted;
   const session = new UciReviewSession(config, cancelled);
   try {
-    await session.start({ multipv: 1, threads: 1, hashMb: engineResourceOptions().hashMb });
+    await session.start({ multipv: 1, ...engineResourceOptions() });
   } catch (error) {
     session.stop();
     throw error;

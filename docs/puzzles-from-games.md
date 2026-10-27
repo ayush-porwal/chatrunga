@@ -42,8 +42,8 @@ A game's user side is the side whose player name matches a connected Lichess or 
 ## The queue
 
 - Runs in main, one game at a time, with its own UCI process of the default engine (custom UCI
-  engines only; Lc0 is skipped if it is the default — the dialog says so). Threads 1, hash from the
-  engine settings.
+  engines only; Lc0 is skipped if it is the default — the dialog says so). Threads and hash from the
+  engine settings (it steps aside while the user uses an engine, so it can use them all).
 - Yields while the user is using an engine elsewhere (a review, live analysis, a game against an
   engine, puzzle explanation): it finishes the current search and waits until they are idle.
 - Persisted: queued games survive a restart and resume (paused state is kept).
