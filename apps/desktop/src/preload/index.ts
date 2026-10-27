@@ -5,6 +5,7 @@ import type {
   WindowGlassState
 } from "@chaturanga/shared/ipc/chaturanga-api";
 import type { BookProgressEvent } from "@chaturanga/shared/types/books";
+import type { GamePuzzleGenerationEvent } from "@chaturanga/shared/types/game-puzzles";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   IMPORT_CANCELLED_MESSAGE,
@@ -135,6 +136,21 @@ const api: ChaturangaApi = {
     ratingHistory: (limit) => ipcRenderer.invoke("puzzles:ratingHistory", limit),
     themeStats: (limit) => ipcRenderer.invoke("puzzles:themeStats", limit),
     failedPuzzles: (sourceId, limit) => ipcRenderer.invoke("puzzles:failedPuzzles", sourceId, limit)
+  },
+  // Puzzles from the user's games (main/game-puzzles): the queue and the "From my games" set.
+  gamePuzzles: {
+    summary: () => ipcRenderer.invoke("gamePuzzles:summary"),
+    countGames: (settings) => ipcRenderer.invoke("gamePuzzles:countGames", settings),
+    start: (settings) => ipcRenderer.invoke("gamePuzzles:start", settings),
+    pause: () => ipcRenderer.invoke("gamePuzzles:pause"),
+    resume: () => ipcRenderer.invoke("gamePuzzles:resume"),
+    cancel: () => ipcRenderer.invoke("gamePuzzles:cancel"),
+    status: () => ipcRenderer.invoke("gamePuzzles:status"),
+    list: (query) => ipcRenderer.invoke("gamePuzzles:list", query),
+    next: (query) => ipcRenderer.invoke("gamePuzzles:next", query),
+    recordAttempt: (input) => ipcRenderer.invoke("gamePuzzles:recordAttempt", input),
+    lastSettings: () => ipcRenderer.invoke("gamePuzzles:lastSettings"),
+    onGenerationProgress: subscribe<GamePuzzleGenerationEvent>("gamePuzzles:progress")
   },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),

@@ -84,6 +84,18 @@ import type {
   PuzzleSampleInput
 } from "../types/database";
 import type {
+  GamePuzzle,
+  GamePuzzleAttemptInput,
+  GamePuzzleGameCount,
+  GamePuzzleGenerationEvent,
+  GamePuzzleList,
+  GamePuzzleProgress,
+  GamePuzzleQuery,
+  GamePuzzleQueueStatus,
+  GamePuzzleSettings,
+  GamePuzzleSummary
+} from "../types/game-puzzles";
+import type {
   FailedPuzzle,
   PuzzleAttemptResult,
   PuzzleRatingPoint,
@@ -338,6 +350,35 @@ export type ChaturangaApi = {
     themeStats(limit?: number): Promise<PuzzleThemeStat[]>;
     /** Puzzles whose latest try failed (of one database source, or all), most recent first. */
     failedPuzzles(sourceId: string | null, limit?: number): Promise<FailedPuzzle[]>;
+  };
+  /**
+   * Puzzles from the user's own games (main/game-puzzles, types/game-puzzles.ts): a background
+   * queue finds them, Puzzles trains them as the "From my games" set. Attempts never touch the
+   * puzzle rating.
+   */
+  gamePuzzles: {
+    /** The "My games" card: games per source, processed, puzzles found and due. */
+    summary(): Promise<GamePuzzleSummary>;
+    /** How many games `settings` would queue (the dialog shows it before starting). */
+    countGames(settings: GamePuzzleSettings): Promise<GamePuzzleGameCount>;
+    /** Queues the matching games (newest first) and remembers `settings` as the last used. */
+    start(settings: GamePuzzleSettings): Promise<GamePuzzleQueueStatus>;
+    /** Stops after the current search; the paused state survives a restart. */
+    pause(): Promise<GamePuzzleQueueStatus>;
+    resume(): Promise<GamePuzzleQueueStatus>;
+    /** Empties the queue (the game being processed is dropped; puzzles already found stay). */
+    cancel(): Promise<GamePuzzleQueueStatus>;
+    status(): Promise<GamePuzzleQueueStatus>;
+    /** The "From my games" set in queue order, filtered. */
+    list(query: GamePuzzleQuery): Promise<GamePuzzleList>;
+    /** The set's next puzzle (leaving out `excludeIds`); null when none is left. */
+    next(query: GamePuzzleQuery): Promise<GamePuzzle | null>;
+    /** Schedules the puzzle after a finished attempt and returns its new progress. */
+    recordAttempt(input: GamePuzzleAttemptInput): Promise<GamePuzzleProgress>;
+    /** The dialog's last-used settings (the defaults when it was never used). */
+    lastSettings(): Promise<GamePuzzleSettings>;
+    /** Every change of the queue: progress, pause / resume, and each game it finishes. */
+    onGenerationProgress(callback: (event: GamePuzzleGenerationEvent) => void): Unsubscribe;
   };
   files: {
     openPgnFile(): Promise<{ path: string; contents: string } | null>;

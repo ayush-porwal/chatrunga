@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { uniformRatings, type PlayerRatings } from "../types/ratings";
 import {
+  gameRatingMode,
   lichessSpeedForClock,
   lichessSpeedFromHeaders,
   nearestMaiaModel,
@@ -184,6 +185,15 @@ describe("lichessSpeedFromHeaders", () => {
     expect(
       lichessSpeedFromHeaders({ event: "Rated game", site: "https://lichess.org/x" })
     ).toBeNull();
+  });
+});
+
+describe("gameRatingMode", () => {
+  it("reads a Lichess game's speed first, then the TimeControl, else rapid", () => {
+    const site = "https://lichess.org/abcdefgh";
+    expect(gameRatingMode({ event: "Rated Blitz game", site, timeControl: "600+0" })).toBe("blitz");
+    expect(gameRatingMode({ event: "Live Chess", timeControl: "60+1" }, "chesscom")).toBe("bullet");
+    expect(gameRatingMode({ event: "Club match", timeControl: null }, "pgn-import")).toBe("rapid");
   });
 });
 

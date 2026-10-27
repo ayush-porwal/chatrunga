@@ -174,6 +174,17 @@ export function lichessSpeedFromHeaders(
   return isOneOf(LICHESS_SPEEDS, speed) ? speed : null;
 }
 
+/**
+ * The mode a game was played at, as a review rates it: Lichess's speed for a Lichess game, else
+ * its TimeControl's; rapid without either.
+ */
+export function gameRatingMode(
+  headers: Pick<GameHeaders, "event" | "site" | "timeControl">,
+  source?: GameSource | null
+): RatingMode {
+  return reviewMode(lichessSpeedFromHeaders(headers, source), headers.timeControl);
+}
+
 /** What a review needs to know about a game to resolve its rating (sent to main with a review). */
 export type ReviewRatingContext = {
   side: "white" | "black";

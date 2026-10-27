@@ -103,8 +103,13 @@ function moverWin(value: MoverEval): number {
   return winPercent(value.moverMates ? CP_CEILING : -CP_CEILING);
 }
 
+/** The side to move's winning chances (0–100) for an engine score from its own point of view. */
+export function sideToMoveWin(score: EngineScore): number {
+  return moverWin(moverEval(score, true));
+}
+
 function lineWin(line: AnalysisLine): number {
-  return moverWin(moverEval(line.score, true));
+  return sideToMoveWin(line.score);
 }
 
 type SeverityResult = {
@@ -234,7 +239,7 @@ function evidenceFor(move: AssessableMove): Evidence | null {
  * Legal moves in a position (0 when it can't be read). A pawn reaching the last rank is four moves,
  * one for each piece it can promote to.
  */
-function legalMoveCount(fen: string): number {
+export function legalMoveCount(fen: string): number {
   try {
     const pos = positionFromFen(fen);
     let count = 0;
@@ -271,7 +276,8 @@ function isRecapture(move: AssessableMove, previous: AssessableMove | null): boo
   }
 }
 
-function materialBalance(
+/** `color`'s material lead in pawns (negative: behind), kings not counted. */
+export function materialBalance(
   pos: ReturnType<typeof positionFromFen>,
   color: "white" | "black"
 ): number {
