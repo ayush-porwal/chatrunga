@@ -144,7 +144,7 @@ export function RepertoireStudyPage({
   onStageApplied?: () => void;
   /** What the user's games did at the position, from Insights (the From your games banner). */
   fromGames?: StudyFromGames | null;
-  /** Practises one position now (the banner's Practise this position). */
+  /** Practises one position now (the banner's Practice this position). */
   onPractisePosition?: (positionKey: string) => void;
   /** Opens a health flag's position (the Explorer's flags elsewhere), with its banner. */
   onOpenFlag?: (flag: RepertoireHealthFlag) => void;

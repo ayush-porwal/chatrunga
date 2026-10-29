@@ -29,28 +29,25 @@ export function InsightsReviewNotice({
   if (!text) return null;
   const decision = focus.issue ? decisionNodeId(moveTree, focus.issue.ply) : null;
   return (
-    <div className="shrink-0 border-b border-line-subtle">
-      <Notice
-        tone={focus.outcome === "forgot" ? "warn" : "info"}
-        title="From your games"
-        appear={false}
-        className="items-center rounded-none border-0 px-3 py-2.5 [&>svg]:mt-0"
-        action={
-          <BandActions
-            decision={decision}
-            fix={fixOf(focus)}
-            onStudy={onStudy}
-            onRefreshDecision={onRefreshDecision}
-          />
-        }
-      >
-        {text}
-      </Notice>
-    </div>
+    <Notice
+      tone={focus.outcome === "forgot" ? "warn" : "info"}
+      title="From your games"
+      appear={false}
+      className="shrink-0 rounded-none border-0 border-b border-line-subtle px-3 py-2.5"
+    >
+      {text}
+      {/* The fix on its own row under the sentence, so the sentence keeps the band's width. */}
+      <BandActions
+        decision={decision}
+        fix={fixOf(focus)}
+        onStudy={onStudy}
+        onRefreshDecision={onRefreshDecision}
+      />
+    </Notice>
   );
 }
 
-/** Show the move, then the fix: Practise this position and Open in Study, or Prepare a reply. */
+/** The fix (Practice this position and Open in Study, or Prepare a reply), then Show the move. */
 function BandActions({
   decision,
   fix,
@@ -64,17 +61,7 @@ function BandActions({
 }) {
   const study = fix?.study ?? null;
   return (
-    <span className="flex flex-wrap justify-end gap-1.5">
-      {decision ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          onClick={() => useGameStore.getState().goToNode(decision)}
-        >
-          Show the move
-        </Button>
-      ) : null}
+    <span className="mt-2 flex flex-wrap items-center gap-1.5 whitespace-normal">
       {fix?.kind === "forgot" && onRefreshDecision ? (
         <Button
           type="button"
@@ -83,7 +70,7 @@ function BandActions({
           onClick={() => onRefreshDecision(fix.repertoireId, fix.positionKey)}
         >
           <GraduationCap />
-          Practise this position
+          Practice this position
         </Button>
       ) : null}
       {study && onStudy ? (
@@ -95,6 +82,16 @@ function BandActions({
         >
           {fix?.kind === "forgot" ? <BookOpen /> : <Plus />}
           {fix?.kind === "forgot" ? "Open in Study" : "Prepare a reply"}
+        </Button>
+      ) : null}
+      {decision ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          onClick={() => useGameStore.getState().goToNode(decision)}
+        >
+          Show the move
         </Button>
       ) : null}
     </span>

@@ -236,7 +236,7 @@ export const ReviewSummary = memo(function ReviewSummary({
           <SummarySection id="practice" title="Practice">
             <div
               role="group"
-              aria-label="Practise your mistakes"
+              aria-label="Practice your mistakes"
               className="col-span-full flex flex-wrap gap-1.5"
             >
               {chips.map((chip) => (

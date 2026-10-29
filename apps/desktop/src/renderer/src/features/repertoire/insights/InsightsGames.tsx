@@ -1,12 +1,15 @@
 import { forwardRef, useId, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { settingsRowSelect } from "@/components/ui/settings-group";
 import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { cn } from "@/lib/utils";
 import { RATING_MODE_LABELS } from "@chaturanga/shared/types/ratings";
 import {
   INSIGHTS_GAMES_PAGE_SIZE,
@@ -15,6 +18,7 @@ import {
 } from "@chaturanga/shared/types/repertoire-insights";
 import { useInsightsGamesQuery } from "../../../queries/repertoire-insights";
 import { CardTitleBar } from "../../play/card-title";
+import { ChessboardIcon } from "../../play/recent-games-controls";
 import type { InsightsReviewTarget } from "./insights-actions";
 import {
   ACCOUNT_LABELS,
@@ -35,7 +39,7 @@ const RESULT_PILL: Record<
 };
 
 const columns =
-  "grid grid-cols-[5.5rem_5rem_1rem_minmax(0,1.2fr)_3.5rem_5.5rem_minmax(0,1.2fr)_minmax(0,1fr)_4.5rem] items-center gap-x-3 px-4";
+  "grid grid-cols-[5.5rem_5rem_1rem_minmax(0,1.2fr)_3.5rem_5.5rem_minmax(0,1.2fr)_minmax(0,1fr)_2rem] items-center gap-x-3 px-4";
 
 /**
  * Insights' Games section (§5.3): the compared games, newest first, 50 a page, under the saved filters
@@ -61,9 +65,9 @@ export const InsightsGamesCard = forwardRef<
   let body: ReactNode;
   if (games.isPending) {
     body = (
-      <div aria-busy="true" aria-label="Loading games" className="grid gap-2 p-4">
+      <div aria-busy="true" aria-label="Loading games">
         {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-8 w-full" />
+          <SkeletonRow key={index} />
         ))}
       </div>
     );
@@ -82,7 +86,11 @@ export const InsightsGamesCard = forwardRef<
       </Notice>
     );
   } else if (!page?.rows.length) {
-    body = <p className="px-4 py-6 text-sm text-fg-muted">No games match these filters.</p>;
+    body = (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No games match these filters.
+      </p>
+    );
   } else {
     body = (
       <ul aria-label="Games">
@@ -102,12 +110,22 @@ export const InsightsGamesCard = forwardRef<
         count={page?.total ?? null}
         actions={
           <>
+            {narrowed ? (
+              <Badge
+                tone="accent"
+                size="md"
+                onRemove={() => set({ positionKey: null, uci: null, repertoireId: null })}
+                removeLabel="Show all games"
+              >
+                Report position
+              </Badge>
+            ) : null}
             <label htmlFor={outcomeId} className="sr-only">
               Outcome
             </label>
             <Select
               id={outcomeId}
-              className="h-8 w-auto text-xs"
+              className={settingsRowSelect}
               value={String(outcomeFilterIndex(query.outcomes ?? null))}
               onChange={(event) =>
                 set({ outcomes: OUTCOME_FILTERS[Number(event.target.value)]?.outcomes ?? null })
@@ -128,7 +146,7 @@ export const InsightsGamesCard = forwardRef<
               min={1}
               max={100}
               placeholder="Up to move"
-              className="h-8 w-28 text-xs"
+              className="h-8 w-28"
               value={query.upToMove ?? ""}
               onChange={(event) => {
                 const move = Number.parseInt(event.target.value, 10);
@@ -138,19 +156,6 @@ export const InsightsGamesCard = forwardRef<
           </>
         }
       />
-      {narrowed ? (
-        <div className="flex items-center gap-2 px-4 pb-2 text-xs text-fg-muted">
-          <span>Games at one position of the report.</span>
-          <Button
-            type="button"
-            variant="link"
-            size="xs"
-            onClick={() => set({ positionKey: null, uci: null, repertoireId: null })}
-          >
-            Show all games
-          </Button>
-        </div>
-      ) : null}
       <div
         aria-hidden="true"
         className={`${columns} h-9 border-y border-b-line border-t-line-subtle bg-surface-sunken text-xs font-medium text-fg-muted`}
@@ -167,35 +172,42 @@ export const InsightsGamesCard = forwardRef<
       </div>
       {body}
       {pages > 1 ? (
-        <div className="flex items-center justify-end gap-2 border-t border-line-subtle px-4 py-2 text-xs text-fg-muted">
-          <span className="tabular-nums">
-            Page {query.page + 1} of {pages}
-          </span>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
+        // The list's end row (Play's Load more): newer and older pages either side of where it is.
+        <div className="flex items-center justify-center gap-2 border-t border-line-subtle py-3">
+          <IconButton
+            label="Newer games"
+            icon={<ChevronLeft />}
+            size="icon-xs"
             disabled={query.page === 0}
             onClick={() => onQueryChange({ ...query, page: query.page - 1 })}
-          >
-            <ChevronLeft />
-            Newer
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
+          />
+          <span className="text-xs tabular-nums text-fg-muted">
+            Page {query.page + 1} of {pages}
+          </span>
+          <IconButton
+            label="Older games"
+            icon={<ChevronRight />}
+            size="icon-xs"
             disabled={query.page + 1 >= pages}
             onClick={() => onQueryChange({ ...query, page: query.page + 1 })}
-          >
-            Older
-            <ChevronRight />
-          </Button>
+          />
         </div>
       ) : null}
     </section>
   );
 });
+
+/** A row's placeholder: the date, the account and the opponent. */
+function SkeletonRow() {
+  return (
+    <div className={cn(columns, "h-11 border-t border-line-subtle first:border-t-0")}>
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="h-3 w-12" />
+      <span />
+      <Skeleton className="h-3 w-28" />
+    </div>
+  );
+}
 
 function GameRow({
   row,
@@ -216,7 +228,10 @@ function GameRow({
   const result = row.result ? RESULT_PILL[row.result] : null;
   return (
     <li
-      className={`${columns} relative min-h-11 border-t border-line-subtle py-1.5 text-xs transition-colors duration-micro first:border-t-0 hover:bg-control/50 focus-within:bg-control/50`}
+      className={cn(
+        columns,
+        "group/row relative h-11 cursor-pointer border-t border-line-subtle text-[0.8125rem] transition-colors duration-micro first:border-t-0 hover:bg-control focus-within:bg-control"
+      )}
     >
       <span className="tabular-nums text-fg-secondary">
         {row.playedAt === null
@@ -264,10 +279,7 @@ function GameRow({
         </Badge>
       </span>
       <span className="relative z-10">
-        <Button type="button" size="xs" variant="ghost" onClick={review}>
-          <Play />
-          Review
-        </Button>
+        <IconButton label="Review game" icon={<ChessboardIcon />} onClick={review} />
       </span>
     </li>
   );

@@ -132,7 +132,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await expect(phases.getByRole("rowheader")).toHaveText(["Opening", "Middlegame"]);
 
   // Practice: the themes behind White's errors, Be2's mate in one among them.
-  const practice = summary(page).getByRole("group", { name: "Practise your mistakes" });
+  const practice = summary(page).getByRole("group", { name: "Practice your mistakes" });
   await expect(practice.getByRole("button", { name: /^Mate in 1/ })).toBeVisible();
 
   // Each section folds behind its header (⌄ Phases), and stays folded when the summary is shown
@@ -241,7 +241,7 @@ test("the summary's opening and practice shortcuts open Puzzles with that filter
     await picker.getByRole("button", { name: /^Alpha vs Beta/ }).click();
   await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
   await summary(page)
-    .getByRole("group", { name: "Practise your mistakes" })
+    .getByRole("group", { name: "Practice your mistakes" })
     .getByRole("button", { name: /^Mate in 1/ })
     .click();
   await expect(page.getByRole("heading", { name: "Puzzles", level: 1 })).toBeVisible();

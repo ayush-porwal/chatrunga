@@ -15,11 +15,10 @@ import {
   Copy,
   Download,
   FilePlus2,
-  HeartPulse,
   Library,
-  Loader2,
   Pencil,
   Plus,
+  Stethoscope,
   Trash2,
   Upload
 } from "lucide-react";
@@ -27,6 +26,7 @@ import type { BookSummary } from "@chaturanga/shared/types/books";
 import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import { tabPanelProps } from "@/components/ui/segmented-control";
+import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -62,6 +62,7 @@ import { createScrollRestore } from "./hub-scroll";
 import { HubActionsSlot, HubTabActions } from "./hub-tab-actions";
 import { REPERTOIRE_HUB_PANEL_ID, useRepertoireHubTab } from "./hub-tabs";
 import type { InsightsReviewTarget, WeakSpotsTarget } from "./insights/insights-actions";
+import { PracticeTilesLoading } from "./practice/practice-tiles";
 import { weakSpotsPreset, type PracticePreset } from "./practice-setup";
 import {
   plural,
@@ -70,7 +71,11 @@ import {
   type StudyOpenTarget,
   type StudyTarget
 } from "./repertoire-chapters";
-import { RepertoireTable, type HubChapterActions } from "./RepertoireTable";
+import {
+  RepertoireTable,
+  RepertoireTableSkeleton,
+  type HubChapterActions
+} from "./RepertoireTable";
 
 const PracticeTab = lazy(() =>
   import("./practice/PracticeTab").then((module) => ({ default: module.PracticeTab }))
@@ -202,8 +207,8 @@ function RepertoiresTab({
       },
       { label: "Export PGN", icon: <Download />, onSelect: () => exportPgn(item) },
       !item.archivedAt && {
-        label: "Check now",
-        icon: <HeartPulse />,
+        label: "Run check",
+        icon: <Stethoscope />,
         onSelect: () => checkHealth(item)
       },
       { label: "Duplicate", icon: <Copy />, divided: true, onSelect: () => duplicate(item) },
@@ -272,7 +277,7 @@ function RepertoiresTab({
           />
         </HubTabActions>
       )}
-      <div className="grid gap-2 p-4 empty:hidden">
+      <div className="grid gap-2 p-3 empty:hidden">
         {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
         <BookReadyNotices onOpen={(repertoireId) => void study(repertoireId)} />
       </div>
@@ -424,7 +429,15 @@ export function RepertoireHubPage(props: HubPageProps) {
           {/* The tab's content: its height is what the scroll restore waits on. */}
           <div className="flex min-h-full min-w-0 flex-col">
             <HubActionsSlot.Provider value={actionsSlot}>
-              <Suspense fallback={<HubTabLoading />}>
+              <Suspense
+                fallback={
+                  tab === "practice" ? (
+                    <PracticeTilesLoading />
+                  ) : (
+                    <RepertoireTableSkeleton label="Loading" />
+                  )
+                }
+              >
                 {tab === "repertoires" ? (
                   <RepertoiresTab {...props} />
                 ) : tab === "practice" ? (
@@ -469,14 +482,6 @@ function InsightsTabWithSets({
       // Every repertoire's weak spots need their list (the route names the first one).
       weakSpotsReady={ids.length > 0}
     />
-  );
-}
-
-function HubTabLoading() {
-  return (
-    <div className="grid place-items-center py-16" role="status" aria-label="Loading">
-      <Loader2 className="size-5 animate-spin text-fg-subtle" />
-    </div>
   );
 }
 
@@ -531,17 +536,13 @@ function HubTitleActions({
         label="Search repertoires"
       />
       {archivedToggle ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          aria-pressed={filters.archived}
-          className={filters.archived ? "bg-control text-fg" : undefined}
+        <ChipButton
+          selected={filters.archived}
           onClick={() => filters.setArchived(!filters.archived)}
         >
           <Archive />
           Archived
-        </Button>
+        </ChipButton>
       ) : null}
       <OverflowMenu
         label="New repertoire"

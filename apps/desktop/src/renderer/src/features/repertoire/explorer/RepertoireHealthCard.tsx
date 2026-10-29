@@ -1,10 +1,15 @@
 import { RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { fieldHint } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
+import { cn } from "@/lib/utils";
 import {
+  useRepertoireHealthQueueMutation,
   useRepertoireHealthStatus,
   useRepertoireHealthSummaries
 } from "../../../queries/repertoire-health";
@@ -21,6 +26,7 @@ import { HealthQueueActions, HealthQueueLine } from "./HealthQueue";
 export function RepertoireHealthCard({ onOpen }: { onOpen: (repertoireId: string) => void }) {
   const summaries = useRepertoireHealthSummaries();
   const status = useRepertoireHealthStatus();
+  const queue = useRepertoireHealthQueueMutation();
   const rows = summaries.data ?? [];
   const now = useMinuteClock();
   return (
@@ -31,42 +37,44 @@ export function RepertoireHealthCard({ onOpen }: { onOpen: (repertoireId: string
       <CardTitleBar
         id="insights-health-title"
         title="Repertoire health"
-        className="border-b border-line-subtle"
         actions={
           <HealthQueueActions
             status={status.data}
             repertoireIds={rows.map((row) => row.repertoireId)}
+            queue={queue}
           />
         }
       />
-      <div className="grid gap-2 p-4">
-        <HealthQueueLine status={status.data} />
+      <div className="grid gap-2 px-4 pb-4">
+        <HealthQueueLine status={status.data} queue={queue} />
         {summaries.isPending ? (
           <div className="grid gap-2" aria-busy="true">
             {[0, 1].map((row) => (
-              <Skeleton key={row} className="h-7 w-full" />
+              <Skeleton key={row} className="h-10 w-full" />
             ))}
           </div>
         ) : null}
         {summaries.isError ? (
-          <p className="flex items-center gap-2 text-xs text-danger">
-            <span className="min-w-0 flex-1">
-              Couldn&apos;t read the health check:{" "}
-              {ipcErrorMessage(summaries.error) || "unknown error"}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => void summaries.refetch()}
-            >
-              <RotateCcw />
-              Try again
-            </Button>
-          </p>
+          <Notice
+            tone="danger"
+            title="Couldn't read the health check"
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => void summaries.refetch()}
+              >
+                <RotateCcw />
+                Try again
+              </Button>
+            }
+          >
+            {ipcErrorMessage(summaries.error)}
+          </Notice>
         ) : null}
         {summaries.data && !rows.length ? (
-          <p className="text-xs text-fg-muted">No repertoires to check yet.</p>
+          <EmptyState compact title="No repertoires to check yet." />
         ) : null}
         {rows.length ? (
           <ul className="grid" aria-label="Repertoires">
@@ -75,7 +83,7 @@ export function RepertoireHealthCard({ onOpen }: { onOpen: (repertoireId: string
               return (
                 <li
                   key={row.repertoireId}
-                  className="flex min-h-10 min-w-0 items-center gap-2 border-t border-line-subtle text-xs first:border-t-0"
+                  className="flex min-h-10 min-w-0 items-center gap-2 border-t border-line-subtle text-[0.8125rem] first:border-t-0"
                 >
                   <span className="min-w-0 truncate font-medium text-fg">{row.name}</span>
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
@@ -88,7 +96,7 @@ export function RepertoireHealthCard({ onOpen }: { onOpen: (repertoireId: string
                       <Badge tone="accent">No flags</Badge>
                     ) : null}
                   </span>
-                  <span className="shrink-0 text-2xs text-fg-subtle">
+                  <span className={cn(fieldHint, "shrink-0")}>
                     {healthStateText(row, status.data, now)}
                   </span>
                   <Button

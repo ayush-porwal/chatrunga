@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { BookOpen, CircleHelp, GraduationCap, Plus, RotateCcw, Settings, Zap } from "lucide-react";
+import { CircleHelp, GraduationCap, Plus, RotateCcw, Settings } from "lucide-react";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { MasteryCounts, PracticeOverview } from "@chaturanga/shared/types/repertoire-practice";
@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Eyebrow } from "@/components/ui/page";
+import { Stat, StatGroup } from "@/components/ui/stat";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { usePracticeOverviewQuery } from "../../../queries/repertoire-practice";
 import { body, footer, titleBar } from "../../database/DatabaseCard";
@@ -27,6 +29,7 @@ import {
   setPreset,
   type PracticeSetCard
 } from "./practice-sets";
+import { PracticeTilesLoading, tile } from "./practice-tiles";
 
 const PROGRESS_ID = "practice-progress-title";
 
@@ -38,9 +41,6 @@ const PracticeSettingsDialog = lazy(() =>
 const HowItWorksDialog = lazy(() =>
   import("./HowItWorksDialog").then((module) => ({ default: module.HowItWorksDialog }))
 );
-
-/** A set's tile: sunken, inside the hub card (no card within the card). */
-const tile = "flex min-w-0 flex-col rounded-lg bg-surface-sunken leading-[1.43]";
 
 /**
  * Repertoire → Practice (docs/repertoire-games-and-practice.md §4): the weak spots from your games,
@@ -99,7 +99,7 @@ function PracticeContent({
   const overview = usePracticeOverviewQuery();
   // "Next review in 3 days" is relative to when the tab opened (render stays pure).
   const [now] = useState(() => Date.now());
-  if (overview.isPending) return <CardsLoading />;
+  if (overview.isPending) return <PracticeTilesLoading />;
   if (overview.isError) {
     return (
       <div className="p-4">
@@ -164,22 +164,6 @@ function PracticeContent({
   );
 }
 
-function CardsLoading() {
-  return (
-    <div
-      aria-busy="true"
-      aria-label="Loading practice"
-      className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4 p-4"
-    >
-      {[0, 1, 2].map((index) => (
-        <div key={index} className={cn(tile, "h-56 p-4")}>
-          <Skeleton className="h-3 w-32" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** A set: its counts and its actions (Review or Practice early, and Learn new). */
 function SetCard({
   set,
@@ -196,49 +180,60 @@ function SetCard({
   return (
     <li className={tile} aria-label={set.title}>
       <div className={titleBar}>
-        <h2 className="truncate text-sm font-medium text-fg">{set.title}</h2>
+        <h2 className={cn(sectionTitle, "truncate")}>{set.title}</h2>
       </div>
       <div className={body}>
         <BoardThumbnail
           fen={set.thumbnail.fen ?? START_FEN}
           orientation={set.thumbnail.color}
+          rounded="md"
           className="w-24 shrink-0 self-start"
         />
-        <div className="grid min-w-0 content-start gap-1 text-xs">
-          <p className="text-fg-muted">{set.subtitle}</p>
-          <p className="text-fg-secondary tabular-nums">
-            <span className={set.due ? "font-semibold text-accent" : undefined}>{set.due} due</span>
-            {" · "}
-            {set.new} new · {set.learning} learning
-          </p>
-          {actions.nothingDue ? <p className="text-fg-subtle">{actions.nothingDue}</p> : null}
+        <div className="grid min-w-0 flex-1 content-start gap-3">
+          <p className="text-[0.78125rem] text-fg-subtle">{set.subtitle}</p>
+          <StatGroup className="gap-3">
+            <Stat
+              label="Due"
+              value={set.due}
+              valueClassName={set.due ? "text-accent" : undefined}
+            />
+            <Stat label="New" value={set.new} />
+            <Stat label="Learning" value={set.learning} />
+          </StatGroup>
+          {actions.nothingDue ? (
+            <p className="text-xs leading-5 text-fg-muted">{actions.nothingDue}</p>
+          ) : null}
+          {/* Why Learn new is off, as text: a disabled button shows no tooltip. */}
+          {actions.learnNew?.disabledReason ? (
+            <p className="text-xs leading-5 text-fg-muted">{actions.learnNew.disabledReason}</p>
+          ) : null}
         </div>
       </div>
-      <div className={cn(footer, "flex flex-wrap items-center gap-2")}>
-        {actions.main?.kind === "review" ? (
-          <Button type="button" variant="primary" size="sm" onClick={() => onStart("review")}>
-            <GraduationCap />
-            Review {actions.main.count}
-          </Button>
-        ) : actions.main?.kind === "early" ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onStart("early")}>
-            <Zap />
-            Practice early {actions.main.count}
-          </Button>
-        ) : null}
-        {actions.learnNew ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={actions.learnNew.disabledReason !== null}
-            title={actions.learnNew.disabledReason ?? undefined}
-            onClick={() => onStart("learn")}
-          >
-            <Plus />
-            Learn new{actions.learnNew.count ? ` ${actions.learnNew.count}` : ""}
-          </Button>
-        ) : null}
+      <div className={footer}>
+        <div className="flex h-10 min-w-0 items-center gap-2">
+          {actions.main?.kind === "review" ? (
+            <Button type="button" variant="primary" onClick={() => onStart("review")}>
+              <GraduationCap />
+              Review {actions.main.count}
+            </Button>
+          ) : actions.main?.kind === "early" ? (
+            <Button type="button" variant="outline" onClick={() => onStart("early")}>
+              <GraduationCap />
+              Practice early {actions.main.count}
+            </Button>
+          ) : null}
+          {actions.learnNew ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={actions.learnNew.disabledReason !== null}
+              onClick={() => onStart("learn")}
+            >
+              <Plus />
+              Learn new{actions.learnNew.count ? ` ${actions.learnNew.count}` : ""}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </li>
   );
@@ -259,10 +254,7 @@ function PracticeProgress({ overview }: { overview: PracticeOverview }) {
           ))}
         </dl>
         <div className="grid gap-1">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
-            <BookOpen className="size-3.5" />
-            Perfect lines
-          </p>
+          <Eyebrow>Perfect lines</Eyebrow>
           <ul aria-label="Perfect lines" className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
             {overview.repertoires.map((item) => (
               <li key={item.repertoireId} className="text-fg-secondary">

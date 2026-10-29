@@ -8,7 +8,7 @@ import { fromGamesText, type StudyFromGames } from "./study-from-games";
  * The From your games banner (docs/repertoire-games-and-practice.md §3), when Study opens from
  * Insights: what the user's games did at the position (a move they forgot, a reply they aren't
  * prepared for, staged meanwhile), or a health flag's explanation. A forgotten move offers
- * Practise this position. Dismissible.
+ * Practice this position. Dismissible.
  */
 export function StudyFromGamesBanner({
   fromGames,
@@ -37,7 +37,7 @@ export function StudyFromGamesBanner({
             size="xs"
             onClick={() => onPractise(fromGames.positionKey)}
           >
-            Practise this position
+            Practice this position
           </Button>
         </div>
       ) : null}

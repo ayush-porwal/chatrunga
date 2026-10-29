@@ -50,7 +50,7 @@ function seedRepertoire(page: Page, { firstSight = false } = {}) {
   }, firstSight);
 }
 
-/** A counter of the session's strip ("Due", "New", "Done", "Right"). */
+/** A counter of the session's strip ("Due", "New", "Done", "Right") or of a set's tile. */
 const counter = (panel: Locator, label: string) =>
   panel.getByText(label, { exact: true }).locator("xpath=following-sibling::span");
 
@@ -220,7 +220,9 @@ test("the Practice tab's sets learn new positions with their move shown first, t
   await page.getByRole("tab", { name: "Practice", exact: true }).click();
 
   const card = page.getByRole("listitem", { name: "White practice (White)" });
-  await expect(card).toContainText("0 due · 3 new · 0 learning");
+  await expect(counter(card, "Due")).toHaveText("0");
+  await expect(counter(card, "New")).toHaveText("3");
+  await expect(counter(card, "Learning")).toHaveText("0");
   await card.getByRole("button", { name: "Learn new 3", exact: true }).click();
 
   // First sight: the move is shown; playing it is "seen", not right.
@@ -238,7 +240,8 @@ test("the Practice tab's sets learn new positions with their move shown first, t
     "aria-selected",
     "true"
   );
-  await expect(card).toContainText("0 due · 2 new · 1 learning");
+  await expect(counter(card, "New")).toHaveText("2");
+  await expect(counter(card, "Learning")).toHaveText("1");
   await expect(
     page.getByRole("img", { name: "White: 0 mastered · 1 learning · 2 new" })
   ).toBeVisible();

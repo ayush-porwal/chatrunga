@@ -13,8 +13,7 @@ import {
   type InsightsGameRow,
   type InsightsMove,
   type InsightsOutcome,
-  type InsightsPeriod,
-  type InsightsScore
+  type InsightsPeriod
 } from "@chaturanga/shared/types/repertoire-insights";
 
 const COLOR_NAME: Record<Color, string> = { white: "White", black: "Black" };
@@ -100,14 +99,6 @@ export function outcomePill(
         tone: "neutral"
       };
   }
-}
-
-/** "62%" with "3W 1D 2L" for its title. */
-export function scoreText(score: InsightsScore): { percent: string; detail: string } {
-  return {
-    percent: `${score.percent}%`,
-    detail: `${score.wins} won · ${score.draws} drawn · ${score.losses} lost`
-  };
 }
 
 /** "−12% after" (win chance lost after leaving book), with how many reviewed games it is from. */

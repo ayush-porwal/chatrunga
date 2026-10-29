@@ -110,7 +110,7 @@ test("Insights reports a move forgotten in a real game and opens it in Game revi
   // Its games link filters the Games card to that position.
   await forgot.getByRole("button", { name: "1 game", exact: true }).click();
   const games = page.getByRole("region", { name: "Games" });
-  await expect(games.getByText("Games at one position of the report.")).toBeVisible();
+  await expect(games.getByRole("button", { name: "Show all games", exact: true })).toBeVisible();
   const row = games.getByRole("list", { name: "Games" }).getByRole("listitem");
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("e2e_rival");
@@ -118,7 +118,7 @@ test("Insights reports a move forgotten in a real game and opens it in Game revi
   await expect(row).toContainText("Forgot 2.Nf3");
 
   // Review opens Game review at the move, with Back to Insights.
-  await row.getByRole("button", { name: "Review", exact: true }).click();
+  await row.getByRole("button", { name: "Review game", exact: true }).click();
   const back = page.getByRole("button", { name: "Back to Insights", exact: true });
   await expect(back).toBeVisible({ timeout: 20_000 });
   await back.click();

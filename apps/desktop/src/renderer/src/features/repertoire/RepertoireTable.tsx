@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useId, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, GraduationCap, Play, RotateCcw } from "lucide-react";
+import { ChevronRight, GraduationCap, Play, RotateCcw } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import type { RepertoirePracticeStats } from "@chaturanga/shared/types/repertoire-practice";
@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { eyebrow } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { colorGroups, learnedText } from "./hub-groups";
@@ -95,11 +96,7 @@ export function RepertoireTable({
         <span />
       </div>
       {list.isPending ? (
-        <div aria-busy="true" aria-label="Loading repertoires">
-          {[0, 1, 2].map((index) => (
-            <SkeletonRow key={index} />
-          ))}
-        </div>
+        <RepertoireTableSkeleton label="Loading repertoires" />
       ) : list.isError ? (
         <div className="p-3">
           <Notice
@@ -117,15 +114,21 @@ export function RepertoireTable({
         </div>
       ) : list.data.length ? (
         <ul aria-labelledby={labelledBy}>
-          {colorGroups(list.data).map((group) =>
-            group.items.length ? (
+          {colorGroups(list.data)
+            .filter((group) => group.items.length)
+            .map((group, index) => (
               <Fragment key={group.color}>
                 {/* The group's heading: text only, not a repertoire of the list. */}
                 <li
                   role="presentation"
-                  className="flex h-8 items-center border-b border-line-subtle bg-surface-sunken px-4 text-xs font-medium text-fg-muted"
+                  className={cn(
+                    eyebrow,
+                    "flex h-8 items-center gap-1.5 border-b border-line-subtle bg-surface-sunken px-4",
+                    index > 0 && "border-t"
+                  )}
                 >
-                  {COLOR_LABELS[group.color]} · {group.items.length}
+                  {COLOR_LABELS[group.color]}
+                  <span className="tabular-nums text-fg-subtle">{group.items.length}</span>
                 </li>
                 {group.items.map((item) => (
                   <RepertoireRow
@@ -143,13 +146,23 @@ export function RepertoireTable({
                   />
                 ))}
               </Fragment>
-            ) : null
-          )}
+            ))}
         </ul>
       ) : (
         empty
       )}
     </>
+  );
+}
+
+/** The table's placeholder rows while it loads (and while a hub tab's code loads). */
+export function RepertoireTableSkeleton({ label }: { label: string }) {
+  return (
+    <div aria-busy="true" aria-label={label}>
+      {[0, 1, 2].map((index) => (
+        <SkeletonRow key={index} />
+      ))}
+    </div>
   );
 }
 
@@ -212,7 +225,14 @@ const RepertoireRow = memo(function RepertoireRow({
         <span className="relative z-10 justify-self-end">
           <IconButton
             label={expanded ? "Hide chapters" : "Show chapters"}
-            icon={expanded ? <ChevronDown /> : <ChevronRight />}
+            icon={
+              <ChevronRight
+                className={cn(
+                  "text-fg-subtle transition-transform duration-standard ease-enter",
+                  expanded && "rotate-90"
+                )}
+              />
+            }
             size="icon-xs"
             aria-expanded={expanded}
             aria-controls={listId}
@@ -242,9 +262,9 @@ const RepertoireRow = memo(function RepertoireRow({
             <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
           ) : null}
         </button>
-        <span className="text-xs text-fg-secondary tabular-nums">{item.chapterCount}</span>
+        <span className="text-[0.8125rem] tabular-nums text-fg-muted">{item.chapterCount}</span>
         <Learned learned={stats?.learned ?? null} total={item.decisionCount} />
-        <span className="truncate text-xs text-fg-muted">
+        <span className="truncate text-[0.8125rem] tabular-nums text-fg-muted">
           {relativeDay(item.lastStudiedAt, now)}
         </span>
         <span className="relative z-10 flex items-center justify-end gap-1 justify-self-end">
@@ -276,11 +296,11 @@ const RepertoireRow = memo(function RepertoireRow({
 
 /** "Learned": a bar and "4 of 7,496" (stage 1 or more); a dash until the numbers load. */
 function Learned({ learned, total }: { learned: number | null; total: number }) {
-  if (learned === null || !total) return <span className="text-xs text-fg-subtle">–</span>;
+  if (learned === null || !total) return <span className="text-[0.8125rem] text-fg-subtle">–</span>;
   return (
     <span className="grid w-full max-w-36 gap-1" title={learnedText(learned, total)}>
       <Progress value={(learned / total) * 100} aria-label={learnedText(learned, total)} />
-      <span className="text-2xs text-fg-muted tabular-nums">
+      <span className="text-2xs text-fg-subtle tabular-nums">
         {learned.toLocaleString()} of {total.toLocaleString()}
       </span>
     </span>
@@ -314,7 +334,7 @@ function PracticeButton({
       {resuming ? <Play /> : <GraduationCap />}
       {resuming ? "Resume" : "Practice"}
       {!resuming && item.dueCount ? (
-        <span className="rounded-full bg-accent/20 px-1.5 text-2xs font-semibold tabular-nums">
+        <span className="inline-grid h-4.5 min-w-5 place-items-center rounded-full bg-accent/20 px-1.5 text-2xs font-semibold tabular-nums">
           {item.dueCount}
         </span>
       ) : null}

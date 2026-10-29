@@ -1,12 +1,18 @@
 import { useId, useState, type ReactNode } from "react";
-import { BookOpen, Dumbbell, Play, Plus } from "lucide-react";
+import { BookOpen, GraduationCap, Plus } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonProps } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { SectionHeader } from "@/components/ui/page";
+import { Progress } from "@/components/ui/progress";
+import { settingsRowSelect } from "@/components/ui/settings-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { fieldHint, fieldLabel } from "@/lib/ui";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { isOneOf } from "@chaturanga/shared/types/guards";
@@ -23,15 +29,16 @@ import {
   type InsightsUnpreparedReply
 } from "@chaturanga/shared/types/repertoire-insights";
 import { CardTitleBar } from "../../play/card-title";
-import { relativeDay } from "../repertoire-chapters";
+import { ChessboardIcon } from "../../play/recent-games-controls";
+import { plural, relativeDay } from "../repertoire-chapters";
+import { ScoreBar } from "../ScoreBar";
 import {
   afterBookText,
   comparingText,
   gamesCount,
   lineLabels,
   plyAfter,
-  plyMoveLabel,
-  scoreText
+  plyMoveLabel
 } from "./insights-format";
 import type { InsightsActions } from "./insights-actions";
 
@@ -57,7 +64,7 @@ const BAR_SEGMENTS: readonly {
   {
     key: "otherOpenings",
     label: "Other openings",
-    className: "bg-fg-subtle/50",
+    className: "bg-fg-subtle",
     outcomes: ["not-covered", "no-repertoire"]
   }
 ];
@@ -90,6 +97,7 @@ export function InsightsReportCard({
     body = (
       <Notice
         tone="danger"
+        title="Couldn't load the report"
         className="m-4 w-auto"
         action={
           <Button type="button" size="xs" variant="outline" onClick={() => void report.refetch()}>
@@ -142,15 +150,21 @@ export function InsightsReportCard({
             disabled={!data?.forgot.length || !practiseAllReady}
             onClick={() => actions.practise(null)}
           >
-            <Dumbbell />
+            <GraduationCap />
             Practice weak spots
           </Button>
         }
       />
       {status?.running ? (
-        <p className="px-4 pb-3 text-xs text-fg-muted" role="status">
-          {comparingText(status.done, status.total)}
-        </p>
+        <div className="grid animate-fade-in gap-1.5 px-4 pb-3" role="status">
+          <span className="truncate text-xs tabular-nums text-fg-muted">
+            {comparingText(status.done, status.total)}
+          </span>
+          <Progress
+            value={status.total ? (status.done / status.total) * 100 : null}
+            aria-label={comparingText(status.done, status.total)}
+          />
+        </div>
       ) : null}
       {body}
     </section>
@@ -168,7 +182,7 @@ function ReportSkeleton() {
   );
 }
 
-/** The 4-segment bar and its legend; a segment or legend entry lists those games. */
+/** The 4-part meter and its legend; a legend entry lists those games. */
 function OutcomeBar({
   report,
   onShowGames
@@ -179,53 +193,43 @@ function OutcomeBar({
   const total = report.games || 1;
   return (
     <div className="grid gap-2">
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-control">
+      <div aria-hidden="true" className="flex h-1.5 w-full overflow-hidden rounded-full bg-control">
         {BAR_SEGMENTS.map((segment) =>
           report.bar[segment.key] ? (
-            <button
+            <span
               key={segment.key}
-              type="button"
-              aria-label={`${segment.label}: ${gamesCount(report.bar[segment.key])}`}
-              className={cn(
-                "h-full outline-none hover:opacity-80 focus-visible:opacity-80",
-                segment.className
-              )}
+              title={`${segment.label}: ${gamesCount(report.bar[segment.key])}`}
+              className={cn("h-full", segment.className)}
               style={{ width: `${(report.bar[segment.key] / total) * 100}%` }}
-              onClick={() => onShowGames({ outcomes: segment.outcomes })}
             />
           ) : null
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
+      <div className="-mx-2 flex flex-wrap items-center gap-x-1 text-xs">
         {BAR_SEGMENTS.map((segment) => (
           <button
             key={segment.key}
             type="button"
-            className="inline-flex items-center gap-1.5 rounded outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-fg-secondary outline-none transition-colors duration-micro hover:bg-control hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
             onClick={() => onShowGames({ outcomes: segment.outcomes })}
           >
             <span aria-hidden="true" className={cn("size-2 rounded-full", segment.className)} />
             {segment.label}
-            <span className="tabular-nums text-fg-secondary">
+            <span className="tabular-nums text-fg-muted">
               {report.bar[segment.key].toLocaleString()}
             </span>
           </button>
         ))}
         {report.noUserSide ? (
-          <span title="Neither player is one of your connected accounts.">
+          <span
+            className="px-2 text-fg-muted"
+            title="Neither player is one of your connected accounts."
+          >
             {gamesCount(report.noUserSide)} without your account aren't counted
           </span>
         ) : null}
       </div>
     </div>
-  );
-}
-
-function SectionTitle({ children, id }: { children: ReactNode; id: string }) {
-  return (
-    <h3 id={id} className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
-      {children}
-    </h3>
   );
 }
 
@@ -256,11 +260,53 @@ function LineText({
 }
 
 function ScoreCell({ score }: { score: InsightsScore }) {
-  const text = scoreText(score);
   return (
-    <span className="tabular-nums text-xs text-fg-secondary" title={text.detail}>
-      {text.percent}
+    <span className="text-fg-secondary">
+      <ScoreBar
+        wins={score.wins}
+        draws={score.draws}
+        losses={score.losses}
+        score={`${score.percent}%`}
+      />
     </span>
+  );
+}
+
+/** Why a row's Study action can't run. */
+const NO_CHAPTER = "No chapter has this position now";
+
+/**
+ * A row action that can't run now stays hoverable (`aria-disabled`, not `disabled`) so its tooltip
+ * says why, as IconButton's `disabledReason` does; a click then does nothing.
+ */
+function RowAction({
+  unavailable,
+  onClick,
+  className,
+  ...props
+}: Omit<ButtonProps, "disabled" | "title" | "size"> & {
+  /** Why it can't run now (null: it can). */
+  unavailable: string | null;
+}) {
+  const button = (
+    <Button
+      type="button"
+      size="xs"
+      aria-disabled={unavailable ? true : undefined}
+      className={cn(
+        unavailable && "cursor-not-allowed opacity-50 hover:bg-transparent active:scale-100",
+        className
+      )}
+      onClick={unavailable ? undefined : onClick}
+      {...props}
+    />
+  );
+  if (!unavailable) return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="bottom">{unavailable}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -298,7 +344,7 @@ function ForgotSection({
   const shown = showAll ? spots : spots.slice(0, TOP_FORGOT);
   return (
     <section aria-labelledby={id} className="grid gap-1">
-      <SectionTitle id={id}>Moves you forgot</SectionTitle>
+      <SectionHeader id={id} as="h3" title="Moves you forgot" />
       <ul>
         {shown.map((spot) => (
           <li key={`${spot.repertoireId}:${spot.positionKey}`} className={rowClass}>
@@ -343,20 +389,17 @@ function ForgotSection({
                 variant="outline"
                 onClick={() => actions.practise(spot)}
               >
-                <Dumbbell />
-                Practise
+                <GraduationCap />
+                Practice
               </Button>
-              <Button
-                type="button"
-                size="xs"
+              <RowAction
                 variant="ghost"
-                disabled={!spot.study}
-                title={spot.study ? undefined : "No chapter has this position now"}
+                unavailable={spot.study ? null : NO_CHAPTER}
                 onClick={() => actions.studyForgot(spot)}
               >
                 <BookOpen />
                 Open in Study
-              </Button>
+              </RowAction>
             </div>
           </li>
         ))}
@@ -388,7 +431,7 @@ function UnpreparedSection({
   if (!replies.length) return null;
   return (
     <section aria-labelledby={id} className="grid gap-1">
-      <SectionTitle id={id}>Replies you haven't prepared</SectionTitle>
+      <SectionHeader id={id} as="h3" title="Replies you haven't prepared" />
       <ul>
         {replies.map((reply) => (
           <li
@@ -418,17 +461,14 @@ function UnpreparedSection({
               </p>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="xs"
+              <RowAction
                 variant="outline"
-                disabled={!reply.study}
-                title={reply.study ? undefined : "No chapter has this position now"}
+                unavailable={reply.study ? null : NO_CHAPTER}
                 onClick={() => actions.prepare(reply)}
               >
                 <Plus />
                 Prepare
-              </Button>
+              </RowAction>
               <Button
                 type="button"
                 size="xs"
@@ -457,7 +497,7 @@ function UnpreparedSection({
                   })
                 }
               >
-                <Play />
+                <ChessboardIcon />
                 Review game
               </Button>
             </div>
@@ -476,37 +516,32 @@ const OPENING_COLUMNS: readonly { key: keyof Report["openings"]; title: string }
 
 function OpeningsSection({ openings }: { openings: Report["openings"] }) {
   const id = useId();
-  const [open, setOpen] = useState(false);
   const counts = OPENING_COLUMNS.map((column) =>
     openings[column.key].reduce((sum, row) => sum + row.games, 0)
   );
   const total = counts.reduce((sum, count) => sum + count, 0);
+  const rowCount = OPENING_COLUMNS.reduce((sum, column) => sum + openings[column.key].length, 0);
   if (!total) return null;
   return (
     <section aria-labelledby={id} className="grid gap-2">
-      <SectionTitle id={id}>Openings not in your repertoire</SectionTitle>
-      <div className="flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
-        <span>
-          {gamesCount(total)}: opponents chose another opening in {counts[0].toLocaleString()}, you
-          did in {counts[1].toLocaleString()}, and {counts[2].toLocaleString()} had no repertoire
-          for your colour.
-        </span>
-        <Button type="button" variant="link" size="xs" onClick={() => setOpen((value) => !value)}>
-          {open ? "Hide" : "See all"}
-        </Button>
-      </div>
-      {open ? (
-        <>
+      <SectionHeader id={id} as="h3" title="Openings not in your repertoire" />
+      <p className="text-xs text-fg-muted">
+        {gamesCount(total)}: opponents chose another opening in {counts[0].toLocaleString()}, you
+        did in {counts[1].toLocaleString()}, and {counts[2].toLocaleString()} had no repertoire for
+        your colour.
+      </p>
+      <Disclosure title="See all" summary={plural(rowCount, "opening")}>
+        <div className="grid gap-2">
           <div className="grid gap-4 sm:grid-cols-3">
             {OPENING_COLUMNS.map((column) => (
               <OpeningColumn key={column.key} title={column.title} rows={openings[column.key]} />
             ))}
           </div>
-          <p className="text-2xs text-fg-subtle">
+          <p className={fieldHint}>
             Games that left at the very first moves. Not mistakes: what to prepare next.
           </p>
-        </>
-      ) : null}
+        </div>
+      </Disclosure>
     </section>
   );
 }
@@ -514,7 +549,7 @@ function OpeningsSection({ openings }: { openings: Report["openings"] }) {
 function OpeningColumn({ title, rows }: { title: string; rows: InsightsOpeningRow[] }) {
   return (
     <div className="grid content-start gap-1">
-      <h4 className="text-xs font-medium text-fg-secondary">{title}</h4>
+      <h4 className={fieldLabel}>{title}</h4>
       {rows.length ? (
         <ul className="grid gap-0.5">
           {rows.map((row) => (
@@ -552,35 +587,39 @@ function ScoreByLineSection({
   const selectId = useId();
   return (
     <section aria-labelledby={id} className="grid gap-1">
-      <div className="flex items-center justify-between gap-2">
-        <SectionTitle id={id}>Score by line</SectionTitle>
-        <div>
-          <label htmlFor={selectId} className="sr-only">
-            Lines at move
-          </label>
-          <Select
-            id={selectId}
-            className="h-7 w-auto text-xs"
-            value={String(lineMove)}
-            onChange={(event) => {
-              const move = Number(event.target.value);
-              if (isOneOf(INSIGHTS_LINE_MOVES, move)) onLineMoveChange(move);
-            }}
-          >
-            {INSIGHTS_LINE_MOVES.map((move) => (
-              <option key={move} value={move}>
-                Lines at move {move}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
+      <SectionHeader
+        id={id}
+        as="h3"
+        title="Score by line"
+        actions={
+          <>
+            <label htmlFor={selectId} className="sr-only">
+              Lines at move
+            </label>
+            <Select
+              id={selectId}
+              className={settingsRowSelect}
+              value={String(lineMove)}
+              onChange={(event) => {
+                const move = Number(event.target.value);
+                if (isOneOf(INSIGHTS_LINE_MOVES, move)) onLineMoveChange(move);
+              }}
+            >
+              {INSIGHTS_LINE_MOVES.map((move) => (
+                <option key={move} value={move}>
+                  Lines at move {move}
+                </option>
+              ))}
+            </Select>
+          </>
+        }
+      />
       {lines.length ? (
         <ul>
           {lines.map((line) => (
             <li
               key={`${line.repertoireId}:${line.moves.map((move) => move.uci).join(" ")}`}
-              className="grid grid-cols-[minmax(0,1fr)_5rem_3.5rem_8rem_auto] items-center gap-3 border-t border-line-subtle py-1.5 first:border-t-0"
+              className="grid grid-cols-[minmax(0,1fr)_5rem_6.25rem_8rem_auto] items-center gap-3 border-t border-line-subtle py-1.5 text-xs first:border-t-0"
             >
               <LineText rootFen={line.rootFen} line={line.moves} highlight={null} />
               <span className="tabular-nums text-xs text-fg-secondary">
@@ -605,9 +644,7 @@ function ScoreByLineSection({
           ))}
         </ul>
       ) : (
-        <p className="py-2 text-xs text-fg-muted">
-          No games were still in your repertoire at move {lineMove}.
-        </p>
+        <EmptyState compact title={`No games were still in your repertoire at move ${lineMove}.`} />
       )}
     </section>
   );

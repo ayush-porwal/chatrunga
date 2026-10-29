@@ -161,3 +161,28 @@ export function sessionHeading(
 export function previewOf(card: Pick<PracticeCard, "preview" | "state">): string | null {
   return card.preview && card.state === "unanswered" ? card.preview.uci : null;
 }
+
+/** The ply of the move to play from `fen` (White's first move is ply 1). */
+function plyToPlay(fen: string): number {
+  const fields = fen.split(" ");
+  const move = Number.parseInt(fields.at(5) ?? "1", 10) || 1;
+  return (move - 1) * 2 + (fields.at(1) === "b" ? 2 : 1);
+}
+
+/**
+ * The line to the card's position as it reads, ending on the move to find: "1. e4 c5 2. ?" (a
+ * line that starts on Black's move numbers it: "1… ?").
+ */
+export function positionLine(card: Pick<PracticeCard, "fen" | "leadUp">): string {
+  const asked = plyToPlay(card.fen);
+  const first = asked - card.leadUp.length;
+  const labels = card.leadUp.map((move, index) => {
+    const ply = first + index;
+    const number = Math.ceil(ply / 2);
+    if (ply % 2 === 1) return `${number}. ${move.san}`;
+    return index === 0 ? `${number}… ${move.san}` : move.san;
+  });
+  const number = Math.ceil(asked / 2);
+  const last = asked % 2 === 1 ? `${number}. ?` : labels.length ? "?" : `${number}… ?`;
+  return [...labels, last].join(" ");
+}

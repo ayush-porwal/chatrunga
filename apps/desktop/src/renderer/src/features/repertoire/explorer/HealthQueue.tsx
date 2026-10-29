@@ -2,14 +2,18 @@ import { Pause, Play, Settings, Stethoscope, X } from "lucide-react";
 import type { RepertoireHealthQueueStatus } from "@chaturanga/shared/types/repertoire-health";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { Notice } from "@/components/ui/notice";
 import { Progress } from "@/components/ui/progress";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { useRepertoireHealthQueueMutation } from "../../../queries/repertoire-health";
+import type { useRepertoireHealthQueueMutation } from "../../../queries/repertoire-health";
 import { useOpenSettings } from "../../settings/settings-link";
 import { queueHeadline } from "./explorer-view";
 
 const queueActive = (status: RepertoireHealthQueueStatus | undefined) =>
   Boolean(status && (status.current || status.queued.length));
+
+/** The queue's commands (the caller's, so HealthQueueLine can show why one failed). */
+type HealthQueueMutation = ReturnType<typeof useRepertoireHealthQueueMutation>;
 
 /**
  * The health queue's controls (the MyGamesCard's): Run check for `repertoireIds`, and while the
@@ -17,12 +21,13 @@ const queueActive = (status: RepertoireHealthQueueStatus | undefined) =>
  */
 export function HealthQueueActions({
   status,
-  repertoireIds
+  repertoireIds,
+  queue
 }: {
   status: RepertoireHealthQueueStatus | undefined;
   repertoireIds: string[];
+  queue: HealthQueueMutation;
 }) {
-  const queue = useRepertoireHealthQueueMutation();
   const active = queueActive(status);
   return (
     <>
@@ -54,27 +59,34 @@ export function HealthQueueActions({
           />
         </>
       ) : null}
-      {queue.isError ? (
-        <span className="text-xs text-danger" role="alert">
-          {ipcErrorMessage(queue.error) || "The health check didn't answer."}
-        </span>
-      ) : null}
     </>
   );
 }
 
 /**
  * What the queue is doing (with its progress), or why it stopped: no usable default engine, with
- * Open Settings (Engines) where that is fixed (then Run check tries again). Nothing while it is
- * idle.
+ * Open Settings (Engines) where that is fixed (then Run check tries again); and a command of
+ * `queue` that failed. Nothing while it is idle.
  */
-export function HealthQueueLine({ status }: { status: RepertoireHealthQueueStatus | undefined }) {
+export function HealthQueueLine({
+  status,
+  queue
+}: {
+  status: RepertoireHealthQueueStatus | undefined;
+  queue: HealthQueueMutation;
+}) {
   const openSettings = useOpenSettings();
-  if (!status) return null;
+  const failed = queue.isError ? (
+    <Notice tone="danger">
+      {ipcErrorMessage(queue.error) || "The health check didn't answer."}
+    </Notice>
+  ) : null;
+  if (!status) return failed;
   const headline = queueHeadline(status);
   const current = status.current;
   return (
     <>
+      {failed}
       {status.problem ? (
         <p className="flex items-center gap-2 text-xs leading-5 text-fg-muted">
           <span className="min-w-0 flex-1">{status.problem}</span>

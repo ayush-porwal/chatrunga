@@ -477,8 +477,8 @@ test("groups repertoires by colour with what is learned, and lists chapters by o
   await openHub(page);
   const list = page.getByRole("list", { name: "Repertoires" });
   // Black has one repertoire; White none, so it has no group.
-  await expect(list).toContainText("Black · 1");
-  await expect(list).not.toContainText("White ·");
+  await expect(list).toContainText(/Black\s*1/);
+  await expect(list).not.toContainText("White");
   // The tabs sit in the card, not the window's title bar; Repertoires has no settings cog.
   const hub = page.getByRole("region", { name: "Repertoire" });
   await expect(hub.getByRole("tablist", { name: "Repertoire" })).toBeVisible();
@@ -491,7 +491,7 @@ test("groups repertoires by colour with what is learned, and lists chapters by o
   await expect(family).toContainText("Caro-Kann Defense · 2 chapters");
   await expect(family).toContainText("B12");
   await expect(family).toContainText("Advance Variation");
-  await expect(family.getByRole("button", { name: "Practise Advance", exact: true })).toBeVisible();
+  await expect(family.getByRole("button", { name: "Practice Advance", exact: true })).toBeVisible();
   await family.getByRole("button", { name: "Study Classical", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Repertoire study" })).toBeVisible();
 

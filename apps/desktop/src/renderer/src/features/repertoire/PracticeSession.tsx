@@ -34,6 +34,7 @@ import {
   practiceBoardPosition,
   practiceCardState,
   practiceWayOn,
+  positionLine,
   previewOf,
   sessionCounts,
   sessionHeading,
@@ -175,6 +176,7 @@ export function PracticeSession({
       footer={<SessionFooter busy={busy} nextAction={nextAction} onEnd={finish} />}
     >
       <div className="scroll-area grid h-full min-h-0 content-start gap-4 overflow-y-auto p-3">
+        <PositionContext card={card} color={color} />
         {card.prompt ? (
           <section aria-label="Prompt" className="grid gap-1">
             <p className="text-xs text-fg-muted">Prompt</p>
@@ -211,6 +213,12 @@ export function PracticeSession({
           onAct={act}
         />
         <CardStatus card={card} retrying={cardState.retrying} />
+        {cardState.canAnswer ? (
+          <p className="text-2xs text-fg-subtle">
+            Play your answer on the board. Hint gives a clue; Reveal shows the move but counts as a
+            miss; Skip moves on.
+          </p>
+        ) : null}
       </div>
     </BoardWorkspace>
   );
@@ -622,6 +630,26 @@ function AnswerNotes({
         </Notice>
       ) : null}
     </>
+  );
+}
+
+/**
+ * What the card asks: whose move it is and the line that led here ("1. e4 c5 2. ?"), and for a
+ * weak spot how often your games left the repertoire at this position.
+ */
+function PositionContext({ card, color }: { card: PracticeCard; color: Color }) {
+  const games = card.weakGames;
+  return (
+    <section aria-label="Position" className="grid gap-1">
+      <p className="text-xs font-medium text-fg-muted">Your move as {COLOR_LABELS[color]}</p>
+      <p className="font-mono text-sm text-fg">{positionLine(card)}</p>
+      {games ? (
+        <p className="text-xs text-fg-secondary">
+          In {games} of your game{games === 1 ? "" : "s"} you played something else here. Find your
+          repertoire's move.
+        </p>
+      ) : null}
+    </section>
   );
 }
 

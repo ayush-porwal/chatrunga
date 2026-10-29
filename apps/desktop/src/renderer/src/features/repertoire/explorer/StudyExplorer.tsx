@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, Plus, RotateCcw, Settings } from "lucide-react";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
-import type { ExplorerMove } from "@chaturanga/shared/types/repertoire-explorer";
 import type { RepertoireHealthFlag } from "@chaturanga/shared/types/repertoire-health";
 import {
   RATING_MODES,
@@ -25,10 +24,12 @@ import { cn } from "@/lib/utils";
 import { useExplorerGamesQuery, useExplorerMaiaQuery } from "../../../queries/repertoire-explorer";
 import {
   useRepertoireHealthFlags,
+  useRepertoireHealthQueueMutation,
   useRepertoireHealthStatus
 } from "../../../queries/repertoire-health";
 import { useOpenSettings } from "../../settings/settings-link";
 import { HEALTH_FLAG_LABELS, healthFlagText } from "../study-from-games";
+import { ScoreBar } from "../ScoreBar";
 import { moveLabel } from "../study-staging";
 import { filtersLine, flagFix, maiaHeading, shouldPrepare } from "./explorer-view";
 import { HealthQueueActions, HealthQueueLine } from "./HealthQueue";
@@ -134,27 +135,6 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
-/** W/D/L as one bar (wins, draws, losses), and the score. */
-function ScoreBar({ move }: { move: ExplorerMove }) {
-  const decided = move.wins + move.draws + move.losses;
-  const width = (count: number) => `${decided ? (count / decided) * 100 : 0}%`;
-  return (
-    <span
-      className="flex min-w-0 items-center gap-1.5"
-      title={`${move.wins} won · ${move.draws} drawn · ${move.losses} lost`}
-    >
-      <span className="flex h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-control">
-        <span className="bg-accent" style={{ width: width(move.wins) }} />
-        <span className="bg-fg-subtle" style={{ width: width(move.draws) }} />
-        <span className="bg-danger" style={{ width: width(move.losses) }} />
-      </span>
-      <span className="w-8 text-right tabular-nums">
-        {move.score === null ? "—" : percent(move.score)}
-      </span>
-    </span>
-  );
-}
-
 const lastPlayed = (at: number | null) =>
   at === null
     ? ""
@@ -203,7 +183,12 @@ function YourGames({ repertoireId, fen, onStage }: Omit<StudyExplorerProps, "onO
                   {move.games.toLocaleString()}
                 </td>
                 <td className="pl-3 text-fg-secondary">
-                  <ScoreBar move={move} />
+                  <ScoreBar
+                    wins={move.wins}
+                    draws={move.draws}
+                    losses={move.losses}
+                    score={move.score === null ? "—" : percent(move.score)}
+                  />
                 </td>
                 <td className="whitespace-nowrap text-2xs text-fg-subtle">
                   {lastPlayed(move.lastPlayedAt)}
@@ -325,6 +310,7 @@ function Health({ repertoireId, fen, onStage, onOpenFlag }: StudyExplorerProps) 
   const [whole, setWhole] = useState(false);
   const flags = useRepertoireHealthFlags(repertoireId);
   const status = useRepertoireHealthStatus();
+  const queue = useRepertoireHealthQueueMutation();
   const key = useMemo(() => positionKey(fen), [fen]);
   const shown = whole ? flags : flags.filter((flag) => flag.positionKey === key);
   const actions = (
@@ -333,12 +319,12 @@ function Health({ repertoireId, fen, onStage, onOpenFlag }: StudyExplorerProps) 
         Whole repertoire
         <Switch checked={whole} onCheckedChange={setWhole} aria-label="Whole repertoire" />
       </label>
-      <HealthQueueActions status={status.data} repertoireIds={[repertoireId]} />
+      <HealthQueueActions status={status.data} repertoireIds={[repertoireId]} queue={queue} />
     </>
   );
   return (
     <Section id="health" title="Health" actions={actions}>
-      <HealthQueueLine status={status.data} />
+      <HealthQueueLine status={status.data} queue={queue} />
       {shown.length ? (
         <ul className="grid gap-1" aria-label="Health flags">
           {shown.map((flag) => {

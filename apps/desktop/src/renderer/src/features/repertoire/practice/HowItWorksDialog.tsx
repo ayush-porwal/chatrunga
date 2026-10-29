@@ -5,7 +5,7 @@ const TERMS: readonly [string, string][] = [
   ["Due", "Scheduled for today or earlier."],
   ["Learning", "New or missed recently; a missed move comes back within 20 minutes."],
   ["New", "Moves of yours you haven't practised yet."],
-  ["Review", "Practise the moves that are due."],
+  ["Review", "Practice the moves that are due."],
   ["Practice early", "Today's learning moves without waiting for them to fall due."],
   [
     "Learn new",

@@ -1,3 +1,4 @@
+import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { useInsightsWeakSpotsQuery } from "../../../queries/repertoire-insights";
@@ -6,7 +7,7 @@ import { useOpenSettings } from "../../settings/settings-link";
 /**
  * The Practice tab's "Weak spots from your games" banner (docs/repertoire-games-and-practice.md
  * §4): the positions where the user left a repertoire in real games (under the Insights filters),
- * with Practise weak spots and See the report. Without a connected account it says how to get
+ * with Practice weak spots and See the report. Without a connected account it says how to get
  * them; otherwise it renders nothing until Insights has a forgotten position.
  */
 export function WeakSpotsBanner({
@@ -35,6 +36,7 @@ export function WeakSpotsBanner({
               variant="outline"
               onClick={() => openSettings("lichess")}
             >
+              <Settings />
               Open Settings
             </Button>
           ) : null
