@@ -353,19 +353,19 @@ describe("comparisonActions", () => {
     expect(actions[1]).toMatchObject({
       label: "Adopt played alternative",
       uci: "f1c4",
-      edge: "reference",
       nodeId: "n4"
     });
   });
 
-  it("stages an uncovered reply as covered", () => {
+  it("stages an uncovered reply", () => {
     const actions = comparisonActions(
       comparisonOf(moves, { status: "uncovered-opponent", playedUci: "b8c6", nodeId: "n3" }).issue
     );
     expect(actions[0]).toMatchObject({
       kind: "stage",
       label: "Add this response",
-      edge: "covered"
+      uci: "b8c6",
+      nodeId: "n3"
     });
   });
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { exportRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import type { ChapterSaveResult } from "@chaturanga/shared/types/repertoire";
@@ -11,8 +11,10 @@ import {
 import { decisionDraftKey } from "../features/repertoire/repertoire-model";
 import { promoteChild, promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
 import {
+  confirmLeavingStaged,
   removeSubtree,
   reuseUnchangedTree,
+  selectedChapterNodeId,
   UNDO_LIMIT,
   useRepertoireWorkspaceStore
 } from "./repertoire-workspace-store";
@@ -40,9 +42,22 @@ function storedComment(nodeId: string): string {
   return store().chapter!.tree.find((node) => node.id === nodeId)!.comment ?? "";
 }
 
+/** The node `id` of the chapter or the staged moves. */
+function shownNode(id: string) {
+  return [...store().chapter!.tree, ...store().staged].find((node) => node.id === id);
+}
+
+/** A board move at the selected node (staged unless the chapter has it). */
 function play(uci: string) {
-  const fen = store().chapter!.tree.find((node) => node.id === store().selectedNodeId)!.fenAfter;
+  const fen = shownNode(store().selectedNodeId)!.fenAfter;
   return store().playMove(uci, uci, fenAfterUci(fen, uci)!);
+}
+
+/** A board move added to the chapter at once (staged, then Add). */
+function playAndAdd(uci: string) {
+  const result = play(uci);
+  store().addStaged();
+  return result;
 }
 
 describe("repertoire workspace store", () => {
@@ -58,24 +73,196 @@ describe("repertoire workspace store", () => {
     expect(store().dirty).toBe(false);
   });
 
-  it("selects an existing child instead of adding a duplicate move", () => {
+  it("selects an existing child instead of staging a duplicate move", () => {
     load();
     const result = play("e2e4");
-    expect(result).toStrictEqual({ nodeId: "w0", created: false });
+    expect(result).toStrictEqual({ nodeId: "w0", staged: false });
     expect(store().dirty).toBe(false);
+    expect(store().staged).toHaveLength(0);
     expect(store().chapter!.tree).toHaveLength(5);
   });
 
-  it("adds new moves with the default edges and selects them", () => {
+  it("stages new moves, selected, without editing or saving the chapter", () => {
     load("w2");
     const reply = play("b8c6");
-    expect(reply.created).toBe(true);
-    expect(store().chapter!.nodeMeta[reply.nodeId]).toStrictEqual({ edge: "covered" });
+    expect(reply.staged).toBe(true);
     const own = play("f1c4");
-    expect(store().chapter!.nodeMeta[own.nodeId]).toStrictEqual({ edge: "reference" });
+    expect(store().selectedNodeId).toBe(own.nodeId);
+    expect(store().staged.map((node) => node.san)).toStrictEqual(["b8c6", "f1c4"]);
+    expect(shownNode(own.nodeId)!.parentId).toBe(reply.nodeId);
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().dirty).toBe(false);
+    expect(store().generation).toBe(0);
+    expect(store().undoStack).toHaveLength(0);
+    // Back on Nf3, the staged reply is followed rather than staged again.
+    store().selectNode("w2");
+    expect(play("b8c6")).toStrictEqual({ nodeId: reply.nodeId, staged: false });
+    expect(store().staged).toHaveLength(2);
+  });
+
+  it("adds the staged moves as one undoable edit: yours practised, theirs covered", () => {
+    load("w2");
+    const reply = play("b8c6");
+    const own = play("f1c4");
+    expect(store().addStaged()).toBe(2);
+    expect(store().staged).toHaveLength(0);
+    expect(store().chapter!.nodeMeta[reply.nodeId]).toStrictEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[own.nodeId]).toStrictEqual({ edge: "included" });
     expect(store().selectedNodeId).toBe(own.nodeId);
     expect(store().dirty).toBe(true);
-    expect(store().generation).toBe(2);
+    expect(store().generation).toBe(1);
+    expect(store().undoStack).toHaveLength(1);
+    // One Undo takes the whole add back (not back to staged).
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().addStaged()).toBe(0);
+  });
+
+  it("adds the player's staged moves as study-only on request", () => {
+    load("w2");
+    const reply = play("b8c6");
+    const own = play("f1c4");
+    store().addStaged({ studyOnly: true });
+    expect(store().chapter!.nodeMeta[reply.nodeId]).toStrictEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[own.nodeId]).toStrictEqual({ edge: "reference" });
+  });
+
+  it("drops a staged move with what follows it, or every one", () => {
+    load("w2");
+    const reply = play("b8c6");
+    play("f1c4");
+    store().dropStaged(reply.nodeId);
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w2");
+    const again = play("b8c6");
+    play("f1c4");
+    store().selectNode(again.nodeId);
+    store().discardStaged();
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().dirty).toBe(false);
+  });
+
+  it("drops staged moves whose parent an undo or a deleted line takes away", () => {
+    load("w1");
+    const added = playAndAdd("f1c4");
+    const staged = play("g8f6");
+    expect(store().selectedNodeId).toBe(staged.nodeId);
+    store().undo();
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w1");
+    store().redo();
+    store().selectNode(added.nodeId);
+    play("g8f6");
+    store().deleteLine(added.nodeId);
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w1");
+  });
+
+  it("drops the staged moves when a chapter loads", () => {
+    load("w2");
+    play("b8c6");
+    load("w2");
+    expect(store().staged).toHaveLength(0);
+  });
+
+  it("hands staged lines to another chapter once it opened, which adds them from its own start", async () => {
+    load("w2");
+    play("b8c6");
+    play("f1c4");
+    expect(await store().addStagedElsewhere("c2", () => Promise.resolve(true))).toBe(true);
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w2");
+    // Not this chapter's: nothing happens here.
+    expect(store().applyPendingAdd()).toBe("none");
+    store().loadChapter(detailOf(), chapterOf([rootNode()], {}, { id: "c2" }));
+    expect(store().applyPendingAdd()).toBe("applied");
+    const sans = () => store().chapter!.tree.map((node) => node.san);
+    expect(sans()).toStrictEqual([null, "e4", "e5", "Nf3", "Nc6", "Bc4"]);
+    const meta = Object.values(store().chapter!.nodeMeta).map((item) => item.edge);
+    expect(meta).toStrictEqual(["included", "covered", "included", "covered", "included"]);
+    expect(store().chapter!.tree.find((node) => node.id === store().selectedNodeId)!.san).toBe(
+      "Bc4"
+    );
+    expect(store().undoStack).toHaveLength(1);
+    expect(store().applyPendingAdd()).toBe("none");
+  });
+
+  it("keeps the staged moves, handing nothing over, when the other chapter doesn't open", async () => {
+    load("w2");
+    const staged = play("b8c6");
+    expect(await store().addStagedElsewhere("c2", () => Promise.resolve(false))).toBe(false);
+    expect(store().staged).toHaveLength(1);
+    expect(store().selectedNodeId).toBe(staged.nodeId);
+    expect(store().pendingAdd).toBeNull();
+  });
+
+  it("hands the lines over even when the other chapter loaded before the open settled", async () => {
+    load("w2");
+    play("b8c6");
+    const target = chapterOf([rootNode()], {}, { id: "c2" });
+    const opened = store().addStagedElsewhere("c2", () => {
+      store().loadChapter(detailOf(), target);
+      return Promise.resolve(true);
+    });
+    expect(await opened).toBe(true);
+    expect(store().applyPendingAdd()).toBe("applied");
+    expect(store().chapter!.tree.map((node) => node.san)).toContain("Nc6");
+  });
+
+  it("drops lines handed to a chapter when another loads, Study is left or the draft resets", async () => {
+    const handOver = async () => {
+      load("w2");
+      play("b8c6");
+      await store().addStagedElsewhere("c2", () => Promise.resolve(true));
+      expect(store().pendingAdd).not.toBeNull();
+    };
+    await handOver();
+    store().loadChapter(detailOf(), chapterOf([rootNode()], {}, { id: "c3" }));
+    expect(store().pendingAdd).toBeNull();
+    await handOver();
+    store().dropPendingAdd();
+    expect(store().pendingAdd).toBeNull();
+    await handOver();
+    store().reset();
+    expect(store().pendingAdd).toBeNull();
+    // The chapter they were for, opened later, adds nothing.
+    store().loadChapter(detailOf(), chapterOf([rootNode()], {}, { id: "c2" }));
+    expect(store().applyPendingAdd()).toBe("none");
+  });
+
+  it("names the chapter's move a staged selection hangs under (what history records)", () => {
+    load("w2");
+    expect(selectedChapterNodeId(store())).toBe("w2");
+    play("b8c6");
+    play("f1c4");
+    expect(store().staged.map((node) => node.id)).toContain(store().selectedNodeId);
+    expect(selectedChapterNodeId(store())).toBe("w2");
+  });
+
+  it("asks before leaving staged moves but drops none itself (the navigation may not happen)", () => {
+    load("w2");
+    play("b8c6");
+    const asked: string[] = [];
+    const answer = (reply: boolean) =>
+      vi.stubGlobal("window", {
+        confirm: (message: string) => {
+          asked.push(message);
+          return reply;
+        }
+      });
+    try {
+      answer(false);
+      expect(confirmLeavingStaged()).toBe(false);
+      answer(true);
+      expect(confirmLeavingStaged()).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(asked).toStrictEqual(["Discard 1 unsaved move?", "Discard 1 unsaved move?"]);
+    expect(store().staged).toHaveLength(1);
   });
 
   it("stores castling as the king's two-square move", () => {
@@ -85,7 +272,7 @@ describe("repertoire workspace store", () => {
     const fen = store().chapter!.tree.find((node) => node.id === "m5")!.fenAfter;
     const fenAfter = fenAfterUci(fen, "e1h1")!;
     const result = store().playMove("e1h1", "O-O", fenAfter);
-    expect(store().chapter!.tree.find((node) => node.id === result.nodeId)!.uci).toBe("e1g1");
+    expect(shownNode(result.nodeId)!.uci).toBe("e1g1");
   });
 
   it("flips node metadata and drops unset flags", () => {
@@ -207,7 +394,7 @@ describe("repertoire workspace store", () => {
 
   it("undoes and redoes structural edits, keeping comments typed since", () => {
     load("w2");
-    const added = play("b8c6");
+    const added = playAndAdd("b8c6");
     store().setComment("w2", "Develops");
     store().setNodeMeta("w1", { trainingStart: true });
     store().promoteVariation("s0");
@@ -289,7 +476,7 @@ describe("repertoire workspace store", () => {
 
   it("adopts a save result unless the draft changed while it ran", () => {
     load();
-    play("d2d4");
+    playAndAdd("d2d4");
     const generation = store().generation;
     const saved = { ...store().chapter!, revision: 2 };
     const result: ChapterSaveResult = {
@@ -303,7 +490,7 @@ describe("repertoire workspace store", () => {
     expect(store().baseRevision).toBe(5);
     expect(store().saveState).toStrictEqual({ status: "idle" });
 
-    play("c2c4");
+    playAndAdd("c2c4");
     const before = store().generation;
     store().setComment("root", "newer edit");
     store().saveSucceeded(
@@ -318,7 +505,7 @@ describe("repertoire workspace store", () => {
 
   it("keeps the draft's tree identity when a save returns the same tree", () => {
     load();
-    play("d2d4");
+    playAndAdd("d2d4");
     const local = store().chapter!.tree;
     // A save result is a fresh copy from the main process (absent optional fields included).
     const copy = local.map((node) => ({ ...node, clockAfter: undefined }));
@@ -421,74 +608,65 @@ describe("tree edits", () => {
   });
 });
 
-describe("staging a move from a game comparison", () => {
+describe("staging a line (an engine line, the explorer, another screen's move)", () => {
   beforeEach(() => store().reset());
 
-  it("adds a new reply under the node with the asked edge, selected and unsaved", () => {
-    load();
-    // After 1.e4 e5 2.Nf3 (w2), Black's 2…Nc6 is new: a covered reply.
-    const result = store().stageMove("w2", "b8c6", "covered");
-    expect(result).toMatchObject({ created: true });
-    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
-    expect(node).toMatchObject({ parentId: "w2", uci: "b8c6", san: "Nc6" });
-    expect(store().selectedNodeId).toBe(node.id);
-    expect(store().chapter!.nodeMeta[node.id]).toStrictEqual({ edge: "covered" });
-    expect(store().dirty).toBe(true);
-  });
-
-  it("adds the player's played alternative as a reference move (never accepted)", () => {
-    load();
-    // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
-    const result = store().stageMove("w1", "f1c4", "reference");
-    expect(store().chapter!.nodeMeta[result!.nodeId]).toStrictEqual({ edge: "reference" });
-    // The new move is selected: its menu makes it one of the player's moves.
-    expect(store().selectedNodeId).toBe(result!.nodeId);
-    // Adding it and setting its edge are one undo step.
-    expect(store().undoStack).toHaveLength(1);
-    store().undo();
-    expect(store().chapter!.tree.some((node) => node.id === result!.nodeId)).toBe(false);
-  });
-
-  it("only selects a move the chapter already has with that edge", () => {
-    store().loadChapter(detailOf(), chapterOf(sampleTree(), { w1: { edge: "covered" } }));
-    const generation = store().generation;
-    expect(store().stageMove("w0", "e7e5", "covered")).toStrictEqual({
-      nodeId: "w1",
-      created: false
-    });
-    expect(store().selectedNodeId).toBe("w1");
-    expect(store().generation).toBe(generation);
+  it("stages the line from the node, selecting its end; nothing is saved or undoable", () => {
+    load("w2");
+    // After 1.e4 e5 2.Nf3: 2…Nc6 3.Bb5, both new.
+    const result = store().playLine("w2", ["b8c6", "f1b5"]);
+    expect(result).toMatchObject({ staged: true });
+    const end = shownNode(result!.nodeId)!;
+    const reply = shownNode(end.parentId!)!;
+    expect([reply.san, end.san]).toStrictEqual(["Nc6", "Bb5"]);
+    expect(reply.parentId).toBe("w2");
+    expect(store().selectedNodeId).toBe(end.id);
+    expect(store().chapter!.tree).toHaveLength(5);
     expect(store().dirty).toBe(false);
+    expect(store().undoStack).toHaveLength(0);
   });
 
-  it("marks an existing reference or disabled reply as covered (enabled)", () => {
-    store().loadChapter(
-      detailOf(),
-      chapterOf(sampleTree(), {
-        w1: { edge: "reference" },
-        s0: { edge: "covered", disabled: true }
-      })
-    );
-    expect(store().stageMove("w0", "e7e5", "covered")).toStrictEqual({
-      nodeId: "w1",
-      created: false
-    });
-    expect(store().chapter!.nodeMeta.w1).toStrictEqual({ edge: "covered" });
-    expect(store().dirty).toBe(true);
-    store().stageMove("w0", "c7c5", "covered");
-    expect(store().chapter!.nodeMeta.s0).toStrictEqual({ edge: "covered" });
-    expect(store().selectedNodeId).toBe("s0");
-  });
-
-  it("never demotes an existing move when staging it as reference", () => {
+  it("follows the moves the chapter has and stages only the rest", () => {
     load();
-    expect(store().stageMove("w1", "g1f3", "reference")).toStrictEqual({
+    const result = store().playLine("root", ["e2e4", "e7e5", "f1c4"]);
+    expect(shownNode(result!.nodeId)).toMatchObject({ parentId: "w1", san: "Bc4" });
+    expect(store().staged).toHaveLength(1);
+  });
+
+  it("only selects a line the chapter already has", () => {
+    load();
+    expect(store().playLine("w0", ["e7e5", "g1f3"])).toStrictEqual({
       nodeId: "w2",
-      created: false
+      staged: false
     });
-    expect(store().chapter!.nodeMeta.w2).toBeUndefined();
     expect(store().selectedNodeId).toBe("w2");
-    expect(store().dirty).toBe(false);
+    expect(store().staged).toHaveLength(0);
+  });
+
+  it("continues from a staged move", () => {
+    load("w2");
+    const reply = store().playLine("w2", ["b8c6"])!;
+    const next = store().playLine(reply.nodeId, ["f1c4", "g8f6"])!;
+    expect(shownNode(next.nodeId)!.san).toBe("Nf6");
+    expect(store().staged).toHaveLength(3);
+  });
+
+  it("changes nothing for an unknown node, an empty line or an illegal move anywhere in it", () => {
+    load("w1");
+    expect(store().playLine("missing", ["g1f3"])).toBeNull();
+    expect(store().playLine("w1", [])).toBeNull();
+    // Nc3 is legal, the next "move" isn't: not even Nc3 is staged.
+    expect(store().playLine("w1", ["b1c3", "e5e4"])).toBeNull();
+    expect(store().staged).toHaveLength(0);
+    expect(store().selectedNodeId).toBe("w1");
+  });
+
+  it("stages castling given either way as the king's two-square move", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"], "w"));
+    store().loadChapter(detailOf(), chapterOf(tree));
+    const result = store().playLine("w5", ["e1h1"]);
+    expect(shownNode(result!.nodeId)).toMatchObject({ san: "O-O", uci: "e1g1" });
   });
 
   it("adopts the open chapter's stored revision with the repertoire's", () => {
@@ -498,77 +676,6 @@ describe("staging a move from a game comparison", () => {
     expect(store().chapter!.revision).toBe(4);
     store().adoptRevision(10);
     expect(store().chapter!.revision).toBe(4);
-  });
-
-  it("changes nothing for an unknown node or an illegal move", () => {
-    load();
-    expect(store().stageMove("missing", "e2e4", "covered")).toBeNull();
-    expect(store().stageMove("w0", "e2e4", "covered")).toBeNull();
-    expect(store().dirty).toBe(false);
-  });
-
-  it("stages standard-UCI castling", () => {
-    let tree = [rootNode()];
-    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"], "w"));
-    store().loadChapter(detailOf(), chapterOf(tree));
-    const result = store().stageMove("w5", "e1g1", "reference");
-    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
-    expect(node.san).toBe("O-O");
-  });
-});
-
-describe("playing an engine line into the chapter", () => {
-  beforeEach(() => store().reset());
-
-  it("adds the line from the node as one undo step with a board move's edges, selecting its end", () => {
-    load("w2");
-    // After 1.e4 e5 2.Nf3: 2…Nc6 3.Bb5, both new.
-    const result = store().playLine("w2", ["b8c6", "f1b5"]);
-    expect(result).toMatchObject({ created: true });
-    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
-    const reply = store().chapter!.tree.find((node) => node.id === end.parentId)!;
-    expect([reply.san, end.san]).toStrictEqual(["Nc6", "Bb5"]);
-    expect(reply.parentId).toBe("w2");
-    expect(store().chapter!.nodeMeta[reply.id]).toStrictEqual({ edge: "covered" });
-    expect(store().chapter!.nodeMeta[end.id]).toStrictEqual({ edge: "reference" });
-    expect(store().selectedNodeId).toBe(end.id);
-    expect(store().dirty).toBe(true);
-    expect(store().undoStack).toHaveLength(1);
-    store().undo();
-    expect(store().chapter!.tree).toHaveLength(5);
-    expect(store().selectedNodeId).toBe("w2");
-    store().redo();
-    expect(store().chapter!.tree.some((node) => node.id === end.id)).toBe(true);
-  });
-
-  it("follows the moves the chapter has and adds only the rest", () => {
-    load();
-    const result = store().playLine("root", ["e2e4", "e7e5", "f1c4"]);
-    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
-    expect(end).toMatchObject({ parentId: "w1", san: "Bc4" });
-    expect(store().chapter!.tree).toHaveLength(6);
-  });
-
-  it("only selects a line the chapter already has: no undo step, nothing to save", () => {
-    load();
-    expect(store().playLine("w0", ["e7e5", "g1f3"])).toStrictEqual({
-      nodeId: "w2",
-      created: false
-    });
-    expect(store().selectedNodeId).toBe("w2");
-    expect(store().dirty).toBe(false);
-    expect(store().undoStack).toHaveLength(0);
-  });
-
-  it("changes nothing for an unknown node, an empty line or an illegal move anywhere in it", () => {
-    load("w1");
-    expect(store().playLine("missing", ["g1f3"])).toBeNull();
-    expect(store().playLine("w1", [])).toBeNull();
-    // Nc3 is legal, the next "move" isn't: not even Nc3 is added.
-    expect(store().playLine("w1", ["b1c3", "e5e4"])).toBeNull();
-    expect(store().chapter!.tree).toHaveLength(5);
-    expect(store().selectedNodeId).toBe("w1");
-    expect(store().dirty).toBe(false);
   });
 });
 

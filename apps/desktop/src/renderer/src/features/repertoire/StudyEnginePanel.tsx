@@ -31,12 +31,12 @@ function useEngineHolder(): EngineHolder {
   return engineHolder(board, onlineGameLive);
 }
 
-const addLineLabel = (san: string) => `Add the line to ${san} to the chapter`;
+const stageLineLabel = (san: string) => `Stage the line to ${san}`;
 
 /**
  * Study's engine panel (opened by Analyze): live analysis of the selected move, following the
- * selection through the tree, with the board engine's lines. Picking a move of a line adds the line
- * up to it to the chapter at the selected move (one undo step; autosave saves it). While it is
+ * selection through the tree, with the board engine's lines. Picking a move of a line stages the
+ * line up to it at the selected move (the New moves card adds it). While it is
  * mounted the selected move is live analysis's target; unmounting it (closing it, leaving Study,
  * another chapter) clears the target, which stops the search. A game holding the engine (an
  * engine game on the board, a Lichess game) keeps it: the panel says so instead of searching.
@@ -68,15 +68,15 @@ export function StudyEnginePanel({
 
   /** A picked line that no longer fits the chapter (it changed under the line), for this move. */
   const [lineError, setLineError] = useState<{ nodeId: string; message: string } | null>(null);
-  const playLine = useCallback<GoToLine>(
+  const stageLine = useCallback<GoToLine>(
     ({ startNodeId, moves }) => {
       const start = tree.find((item) => item.id === startNodeId);
       const ucis = start ? sanLineToUcis(start.fenAfter, moves) : null;
-      const added = ucis
+      const staged = ucis
         ? useRepertoireWorkspaceStore.getState().playLine(startNodeId, ucis)
         : null;
       setLineError(
-        added ? null : { nodeId: startNodeId, message: "That line no longer fits this position." }
+        staged ? null : { nodeId: startNodeId, message: "That line no longer fits this position." }
       );
     },
     [tree]
@@ -88,10 +88,10 @@ export function StudyEnginePanel({
       orientation,
       analysing: true,
       engineGame: false,
-      onGoToLine: playLine,
-      goToLineLabel: addLineLabel
+      onGoToLine: stageLine,
+      goToLineLabel: stageLineLabel
     }),
-    [node.fenAfter, node.id, orientation, playLine]
+    [node.fenAfter, node.id, orientation, stageLine]
   );
   const over = statusForFen(node.fenAfter).isEnd;
   const closeButton = (
@@ -129,7 +129,7 @@ export function StudyEnginePanel({
           position={position}
           onOpenSettings={onOpenSettings}
           headerAction={closeButton}
-          linesHint="Click a move to add its line to the chapter."
+          linesHint="Click a move to stage its line."
         />
       )}
       {lineError?.nodeId === node.id ? <Notice tone="danger">{lineError.message}</Notice> : null}

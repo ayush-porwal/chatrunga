@@ -1,6 +1,13 @@
 import { nearestMaia3Rating } from "../engine/maia3";
 import { isOneOf } from "./guards";
 import {
+  DEFAULT_PRACTICE_SETTINGS,
+  normalizeRepertoirePracticeSettings,
+  REPERTOIRE_HUB_TABS,
+  type RepertoireHubTab,
+  type RepertoirePracticeSettings
+} from "./repertoire-practice";
+import {
   normalizePlayerRatings,
   RATINGS_ACCOUNTS,
   uniformRatings,
@@ -456,6 +463,14 @@ export type AppSettings = {
    * always waits, so they can be read.
    */
   practiceAutoAdvanceMs: PracticeAutoAdvanceMs;
+  /* Repertoire practice home (docs/repertoire-games-and-practice.md §1, §4). */
+  /** Practice settings (the Practice tab's cog): new positions per day, first sight, sounds. */
+  repertoirePractice: RepertoirePracticeSettings;
+  /** The Repertoire tab last shown (the sidebar's Repertoire returns to it). */
+  repertoireHubTab: RepertoireHubTab;
+  /* Repertoire study (docs/repertoire-games-and-practice.md §3). */
+  /** Study's board draws the repertoire's moves as arrows (off: quiz yourself while studying). */
+  studyRepertoireArrows: boolean;
   /**
    * When the first-run welcome was finished or skipped (epoch ms). `null`: not yet (the welcome
    * shows). `0`: an install that predates the welcome (set once at startup, see
@@ -558,6 +573,9 @@ export const defaultSettings: AppSettings = {
   repertoireCompareBlack: null,
   // The pace practice always had: a correct answer moves on after 0.6 s.
   practiceAutoAdvanceMs: 600,
+  repertoirePractice: DEFAULT_PRACTICE_SETTINGS,
+  repertoireHubTab: "repertoires",
+  studyRepertoireArrows: true,
   onboardingCompletedAt: null,
   onboardingHintsSeen: []
 };
@@ -668,11 +686,14 @@ export function normalizeSoundSettings(settings: AppSettings): AppSettings {
 /** Validates the practice settings, falling back to defaults for bad values. Idempotent. */
 export function normalizePracticeSettings(settings: AppSettings): AppSettings {
   const delay: unknown = settings.practiceAutoAdvanceMs;
+  const tab: unknown = settings.repertoireHubTab;
   return {
     ...settings,
     practiceAutoAdvanceMs: isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay)
       ? delay
-      : defaultSettings.practiceAutoAdvanceMs
+      : defaultSettings.practiceAutoAdvanceMs,
+    repertoirePractice: normalizeRepertoirePracticeSettings(settings.repertoirePractice),
+    repertoireHubTab: isOneOf(REPERTOIRE_HUB_TABS, tab) ? tab : defaultSettings.repertoireHubTab
   };
 }
 

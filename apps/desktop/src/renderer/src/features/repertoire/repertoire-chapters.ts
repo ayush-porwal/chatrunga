@@ -9,6 +9,7 @@ import {
   type RepertoireColor,
   type RepertoireDueSummary
 } from "@chaturanga/shared/types/repertoire";
+import type { StudyFromGames } from "./study-from-games";
 
 /** Small pure helpers for chapter lists, labels and creation input. */
 
@@ -130,13 +131,17 @@ export function plural(count: number, noun: string): string {
 /** Where a study screen opens: a chapter and optionally a node in it. */
 export type StudyTarget = { repertoireId: string; chapterId: string; nodeId: string | null };
 
-/** A move another screen asks study to add under `nodeId` (selected, unsaved until autosave). */
-export type StudyStage = { nodeId: string; uci: string; edge: "covered" | "reference" };
+/** A move another screen asks Study to stage under `nodeId` (selected; added from New moves). */
+export type StudyStage = { nodeId: string; uci: string };
 
-/** Opening study from another screen: optionally on a panel, with a move staged. */
+/**
+ * Opening study from another screen: optionally on a panel, with a move staged, and with what the
+ * user's games say about the position (Insights' From your games banner).
+ */
 export type StudyOpenTarget = StudyTarget & {
-  tab?: "moves" | "chapters";
+  tab?: "moves" | "chapters" | "explorer";
   stage?: StudyStage | null;
+  fromGames?: StudyFromGames | null;
 };
 
 /** An unfinished practice session to resume, as Play and the hub offer it. */
@@ -149,7 +154,9 @@ export type ResumePracticeTarget = NonNullable<RepertoireDueSummary["resume"]> &
 const RESUME_DESCRIPTIONS: Record<PracticeMode, string> = {
   "review-due": "Pick up your unfinished review where you left it",
   "learn-new": "Pick up your unfinished learning session where you left it",
-  "rehearse-lines": "Pick up your unfinished line rehearsal where you left it"
+  "rehearse-lines": "Pick up your unfinished line rehearsal where you left it",
+  "practice-early": "Pick up your unfinished early practice where you left it",
+  weak: "Pick up your unfinished weak-spots practice where you left it"
 };
 
 /**

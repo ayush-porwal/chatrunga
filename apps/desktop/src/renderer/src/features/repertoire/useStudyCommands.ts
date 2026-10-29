@@ -20,7 +20,9 @@ import type { ChapterBulkPatch } from "./long-lists";
 import { chapterOrderAfterMove, rootNodeFor } from "./repertoire-chapters";
 import { flushChapterTreeInWrite } from "./useChapterAutosave";
 
-type ChapterPatch = Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>;
+type ChapterPatch = Partial<
+  Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder" | "opening">
+>;
 
 /** Chapter ids one bulk write names at most (the main process refuses more). */
 const BULK_CHAPTER_LIMIT = 1_000;

@@ -9,7 +9,10 @@ import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
-import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
+import {
+  selectedChapterNodeId,
+  useRepertoireWorkspaceStore
+} from "../stores/repertoire-workspace-store";
 import type { BroadcastScreen } from "../features/broadcasts/navigation";
 import type { AppView, RepertoireScreen } from "./AppPages";
 import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
@@ -130,7 +133,8 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
         view,
         repertoireId: screen.repertoireId,
         chapterId: screen.chapterId,
-        nodeId: open ? draft.selectedNodeId : screen.nodeId,
+        // A staged move isn't saved: the entry names the chapter's move it hangs under.
+        nodeId: open ? selectedChapterNodeId(draft) : screen.nodeId,
         tab: screen.tab,
         orientation: open ? draft.orientation : screen.orientation
       };

@@ -1,10 +1,5 @@
 import { create } from "zustand";
-import { makeFen } from "chessops/fen";
-import { makeSanAndPlay } from "chessops/san";
-import { parseUci } from "chessops/util";
-import { addMoveNode } from "@chaturanga/shared/chess/pgn";
 import { promoteChild, promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
-import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
 import { trainableChapter, type AcceptedAt } from "@chaturanga/shared/chess/repertoire-training";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
@@ -20,7 +15,6 @@ import {
 } from "@chaturanga/shared/types/repertoire";
 import {
   decisionDraftKey,
-  defaultEdgeForNewMove,
   nextDecisionDraft,
   shouldAdoptSaveResult,
   type AutosaveSaveState,
@@ -29,6 +23,16 @@ import {
   type DecisionTextDraft,
   type DecisionTextField
 } from "../features/repertoire/repertoire-model";
+import {
+  chapterWithLines,
+  chapterWithStaged,
+  dropStaged,
+  liveStaged,
+  playUcis,
+  stageLine,
+  stagedLines,
+  treeWithStaged
+} from "../features/repertoire/study-staging";
 
 /**
  * The repertoire study draft: one chapter being edited, its selected node and board orientation,
@@ -39,6 +43,10 @@ import {
  * the draft when no edit happened meanwhile (`shouldAdoptSaveResult`); otherwise the newer draft
  * stays dirty and saves next against the revision the save returned.
  *
+ * `staged` holds the moves played in Study that the chapter doesn't have yet (study-staging.ts):
+ * shown in the tree and selectable, but never saved and outside Undo until Add puts them in the
+ * chapter as one edit. Loading a chapter drops them, and so does leaving Study (its page).
+ *
  * `decisionDrafts` hold decision changes made at a position (practice prompts and hints,
  * wrong-move feedback, pausing) until their write is confirmed (see decision-text-drafts.ts). They belong to no chapter: opening another chapter or
  * resetting the draft keeps them, so a failed write is never lost by moving on.
@@ -47,12 +55,32 @@ import {
 /** Structural edits kept for Undo (and as many undone ones for Redo). */
 export const UNDO_LIMIT = 20;
 
+/**
+ * Staged moves added to another chapter of the repertoire: their lines (UCI moves from `rootFen`,
+ * the chapter they were staged in), applied once that chapter is loaded.
+ */
+type PendingAdd = {
+  repertoireId: string;
+  chapterId: string;
+  rootFen: string;
+  lines: string[][];
+  studyOnly: boolean;
+};
+
 export type RepertoireWorkspaceState = {
   repertoireId: string | null;
   chapterId: string | null;
   /** The repertoire's colour (the side whose moves are choices). */
   color: RepertoireColor;
   chapter: RepertoireChapter | null;
+  /** Moves played here that aren't in the chapter yet (see above); never saved, never undone. */
+  staged: MoveNode[];
+  /**
+   * Staged moves on their way to another chapter, once Study opened it (applied when it loads;
+   * loading any other chapter, leaving Study or a reset drops them).
+   */
+  pendingAdd: PendingAdd | null;
+  /** The selected node: one of the chapter's or a staged move. */
   selectedNodeId: string;
   orientation: Color;
   dirty: boolean;
@@ -86,29 +114,49 @@ type Actions = {
   ) => void;
   reset: () => void;
   selectNode: (nodeId: string) => void;
-  /** Plays a move from the selected node: selects an existing child or adds a new one. */
-  playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; created: boolean };
   /**
-   * Plays `ucis` from `fromNodeId` as one undo step (an engine line picked in study), each move as
-   * a move played on the board would be: one the chapter has is followed, a new one is added with
-   * a board move's edge. Selects the last move. Null, changing nothing, when the node is unknown,
-   * the line is empty or a move is illegal where it's played.
+   * A move made on the board at the selected node: selects the move the chapter (or the staged
+   * moves) has there, else stages it. The move selected, and whether it was staged.
+   */
+  playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; staged: boolean };
+  /**
+   * Stages `ucis` from `fromNodeId` (an engine line picked in Study, the explorer, a move another
+   * screen asks for): moves the chapter or the staged moves have are followed, the rest staged.
+   * Selects the last move. Null, changing nothing, when the node isn't shown, the line is empty or
+   * a move is illegal where it's played.
    */
   playLine: (
     fromNodeId: string,
     ucis: readonly string[]
-  ) => { nodeId: string; created: boolean } | null;
+  ) => { nodeId: string; staged: boolean } | null;
+  /** Drops a staged move and what follows it (its parent is selected if it was). */
+  dropStaged: (nodeId: string) => void;
+  /** Drops every staged move. */
+  discardStaged: () => void;
   /**
-   * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
-   * existing child is only selected; a new one is added with `edge` and selected, unsaved until
-   * autosave (a reference one too: its menu makes it one of your moves).
-   * Null when the parent is unknown or the move is illegal there.
+   * Adds the staged moves to the chapter as one undoable edit: the player's as practised moves
+   * (study-only with `studyOnly`), the opponent's as covered. Returns how many were added.
    */
-  stageMove: (
-    parentNodeId: string,
-    uci: string,
-    edge: RepertoireNodeMeta["edge"]
-  ) => { nodeId: string; created: boolean } | null;
+  addStaged: (options?: { studyOnly?: boolean }) => number;
+  /**
+   * Hands the staged lines to `chapterId` (another chapter of the repertoire; see applyPendingAdd)
+   * once `open` opened it, and drops them here. Until then they stay staged: when it doesn't open
+   * (a save that failed, a newer navigation) nothing is handed over. False then, or when nothing
+   * is staged.
+   */
+  addStagedElsewhere: (
+    chapterId: string,
+    open: () => Promise<boolean>,
+    options?: { studyOnly?: boolean }
+  ) => Promise<boolean>;
+  /**
+   * Adds the lines handed over by addStagedElsewhere to the chapter now loaded, as one undoable
+   * edit selecting the end: "none" when there are none for it, "failed" (dropped) when they reach
+   * none of its positions.
+   */
+  applyPendingAdd: () => "applied" | "failed" | "none";
+  /** Drops the lines handed to another chapter that hasn't loaded them (Study was left). */
+  dropPendingAdd: () => void;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   /**
    * "Include in practice": switches the chapter on as an opening chapter and accepts the first
@@ -120,7 +168,7 @@ type Actions = {
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
   setChapterFields: (
-    patch: Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>
+    patch: Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder" | "opening">>
   ) => void;
   deleteLine: (nodeId: string) => boolean;
   undo: () => boolean;
@@ -181,6 +229,8 @@ const initialState: RepertoireWorkspaceState = {
   chapterId: null,
   color: "white",
   chapter: null,
+  staged: [],
+  pendingAdd: null,
   selectedNodeId: REPERTOIRE_ROOT_NODE_ID,
   orientation: "white",
   dirty: false,
@@ -192,6 +242,15 @@ const initialState: RepertoireWorkspaceState = {
   decisions: {},
   decisionDrafts: {}
 };
+
+/** `pending` when it is for this chapter, else null. */
+function pendingAddFor(
+  pending: PendingAdd | null,
+  repertoireId: string,
+  chapterId: string
+): PendingAdd | null {
+  return pending?.repertoireId === repertoireId && pending.chapterId === chapterId ? pending : null;
+}
 
 /** Removes `nodeId` and its subtree. Returns the tree, the removed ids and the parent id. */
 export function removeSubtree(
@@ -281,19 +340,6 @@ export function reuseUnchangedTree(local: MoveNode[], saved: MoveNode[]): MoveNo
   return local.every((node, index) => sameValue(node, saved[index])) ? local : saved;
 }
 
-/** The SAN and resulting position of `uci` from `fen`, or null when it isn't legal there. */
-export function playUci(fen: string, uci: string): { san: string; fenAfter: string } | null {
-  try {
-    const position = positionFromFen(fen);
-    const move = parseUci(uci);
-    if (!move || !position.isLegal(move)) return null;
-    const san = makeSanAndPlay(position, move);
-    return { san, fenAfter: makeFen(position.toSetup()) };
-  } catch {
-    return null;
-  }
-}
-
 function withUndo(
   stack: readonly RepertoireChapter[],
   draft: RepertoireChapter
@@ -303,8 +349,6 @@ function withUndo(
 
 export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Actions>(
   (set, get) => {
-    /** Set while a compound edit runs: it takes one undo step, recorded before it started. */
-    let grouping = false;
     /**
      * Undo / Redo entries that also restore the chapter's practice fields (enabled, kind): the
      * chapter before "Include in practice", and the ones its Undo and Redo leave on the other stack.
@@ -328,29 +372,29 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         if (options.selectedNodeId) set({ selectedNodeId: options.selectedNodeId });
         return;
       }
-      const recorded = options.undoable && !grouping;
       set({
         chapter: next,
         dirty: true,
         generation: generation + 1,
-        undoStack: recorded ? withUndo(undoStack, chapter) : undoStack,
-        redoStack: recorded ? [] : redoStack,
-        ...(options.selectedNodeId ? { selectedNodeId: options.selectedNodeId } : {})
+        undoStack: options.undoable ? withUndo(undoStack, chapter) : undoStack,
+        redoStack: options.undoable ? [] : redoStack,
+        ...followTree(chapter, next, options.selectedNodeId ?? get().selectedNodeId)
       });
     };
 
-    /** Runs `edits` as one undo step (when they change the draft at all). */
-    const group = <T>(edits: () => T): T => {
-      const { chapter, undoStack } = get();
-      grouping = true;
-      try {
-        return edits();
-      } finally {
-        grouping = false;
-        if (chapter && get().chapter !== chapter) {
-          set({ undoStack: withUndo(undoStack, chapter), redoStack: [] });
-        }
-      }
+    /**
+     * The staged moves and selection once the chapter's tree went from `before`'s to `after`'s:
+     * staged moves whose parent went drop out, and a selection that went moves to its nearest
+     * remaining ancestor.
+     */
+    const followTree = (before: RepertoireChapter, after: RepertoireChapter, selected: string) => {
+      const { staged } = get();
+      const kept = after.tree === before.tree ? staged : liveStaged(after.tree, staged);
+      const shown = treeWithStaged(after.tree, kept);
+      return {
+        staged: kept === staged ? staged : [...kept],
+        selectedNodeId: nearestKept(shown, treeWithStaged(before.tree, staged), selected)
+      };
     };
 
     /** Undo / Redo: moves the draft to the top of `from`, keeping the current one on `to`. */
@@ -370,7 +414,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         [to]: withUndo(state[to], state.chapter),
         dirty: true,
         generation: state.generation + 1,
-        selectedNodeId: nearestKept(chapter.tree, state.chapter.tree, state.selectedNodeId)
+        ...followTree(state.chapter, chapter, state.selectedNodeId)
       });
       return true;
     };
@@ -394,29 +438,6 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         { type: "edit", change }
       );
 
-    /** stageMove's edits, once the move is known to be legal at `parentId`. */
-    const stageAt = (
-      parentId: string,
-      uci: string,
-      { san, fenAfter }: { san: string; fenAfter: string },
-      edge: RepertoireNodeMeta["edge"]
-    ) => {
-      set({ selectedNodeId: parentId });
-      const result = get().playMove(uci, san, fenAfter);
-      const meta = get().chapter?.nodeMeta[result.nodeId];
-      if (result.created) {
-        if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
-      } else if (edge !== "reference") {
-        // An existing move staged as covered/included takes that edge and is re-enabled; a
-        // reference stage never demotes a move the chapter already has (it's only selected).
-        const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
-        if (current.edge !== edge || current.disabled) {
-          get().setNodeMeta(result.nodeId, { edge, disabled: false });
-        }
-      }
-      return result;
-    };
-
     const patchNode = (nodeId: string, patch: Partial<MoveNode>) =>
       edit((chapter) => ({
         ...chapter,
@@ -435,6 +456,8 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           ...initialState,
           decisions: get().repertoireId === detail.id ? get().decisions : {},
           decisionDrafts: get().decisionDrafts,
+          // Only the chapter they were handed to takes them; any other drops them.
+          pendingAdd: pendingAddFor(get().pendingAdd, detail.id, chapter.id),
           repertoireId: detail.id,
           chapterId: chapter.id,
           color: detail.color,
@@ -448,74 +471,120 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
       reset: () => set({ ...initialState, decisionDrafts: get().decisionDrafts }),
 
       selectNode: (nodeId) => {
-        const { chapter } = get();
-        if (chapter?.tree.some((node) => node.id === nodeId)) set({ selectedNodeId: nodeId });
+        const { chapter, staged } = get();
+        if (chapter && treeWithStaged(chapter.tree, staged).some((node) => node.id === nodeId)) {
+          set({ selectedNodeId: nodeId });
+        }
       },
 
       playMove: (rawUci, san, fenAfter) => {
-        const { chapter, selectedNodeId, color } = get();
-        const parent = chapter?.tree.find((node) => node.id === selectedNodeId);
-        if (!chapter || !parent) return { nodeId: selectedNodeId, created: false };
+        const { chapter, selectedNodeId, staged } = get();
+        const parent = chapter
+          ? treeWithStaged(chapter.tree, staged).find((node) => node.id === selectedNodeId)
+          : undefined;
+        if (!chapter || !parent) return { nodeId: selectedNodeId, staged: false };
         const uci = standardCastlingUci(parent.fenAfter, rawUci);
-        const existing = chapter.tree.find(
-          (node) => node.parentId === parent.id && node.uci === uci
-        );
-        if (existing) {
-          set({ selectedNodeId: existing.id });
-          return { nodeId: existing.id, created: false };
-        }
-        const added = addMoveNode(chapter.tree, parent.id, {
-          san,
-          uci,
-          fenBefore: parent.fenAfter,
-          fenAfter
-        });
-        edit(
-          (current) => ({
-            ...current,
-            tree: added.moveTree,
-            nodeMeta: {
-              ...current.nodeMeta,
-              [added.node.id]: { edge: defaultEdgeForNewMove(parent.fenAfter, color) }
-            }
-          }),
-          { undoable: true, selectedNodeId: added.node.id }
-        );
-        return { nodeId: added.node.id, created: true };
+        const result = stageLine(chapter.tree, staged, parent.id, [{ uci, san, fenAfter }])!;
+        const added = result.staged.length > staged.length;
+        set({ selectedNodeId: result.nodeId, ...(added ? { staged: result.staged } : {}) });
+        return { nodeId: result.nodeId, staged: added };
       },
 
-      playLine: (fromNodeId, ucis) => {
-        const start = get().chapter?.tree.find((node) => node.id === fromNodeId);
-        if (!start || !ucis.length) return null;
-        // The whole line is checked before anything is added: an illegal move adds none of it.
+      playLine: (fromNodeId, rawUcis) => {
+        const { chapter, staged } = get();
+        const start = chapter
+          ? treeWithStaged(chapter.tree, staged).find((node) => node.id === fromNodeId)
+          : undefined;
+        if (!chapter || !start || !rawUcis.length) return null;
+        // Castling as the king's two-square move (as the chapter stores it), checked move by move:
+        // an illegal move stages none of the line.
         const moves: Array<{ uci: string; san: string; fenAfter: string }> = [];
         let fen = start.fenAfter;
-        for (const uci of ucis) {
-          const played = playUci(fen, uci);
+        for (const raw of rawUcis) {
+          const uci = standardCastlingUci(fen, raw);
+          const played = playUcis(fen, [uci]);
           if (!played) return null;
-          moves.push({ uci, ...played });
-          fen = played.fenAfter;
+          moves.push(played[0]);
+          fen = played[0].fenAfter;
         }
-        return group(() => {
-          set({ selectedNodeId: start.id });
-          let created = false;
-          let nodeId = start.id;
-          for (const move of moves) {
-            const result = get().playMove(move.uci, move.san, move.fenAfter);
-            created ||= result.created;
-            nodeId = result.nodeId;
-          }
-          return { nodeId, created };
+        const result = stageLine(chapter.tree, staged, start.id, moves);
+        if (!result) return null;
+        const added = result.staged.length > staged.length;
+        set({ selectedNodeId: result.nodeId, ...(added ? { staged: result.staged } : {}) });
+        return { nodeId: result.nodeId, staged: added };
+      },
+
+      dropStaged: (nodeId) => {
+        const { staged, selectedNodeId, chapter } = get();
+        const target = staged.find((node) => node.id === nodeId);
+        if (!target || !chapter) return;
+        const next = dropStaged(staged, nodeId);
+        const shown = treeWithStaged(chapter.tree, next);
+        set({
+          staged: next,
+          selectedNodeId: shown.some((node) => node.id === selectedNodeId)
+            ? selectedNodeId
+            : (target.parentId ?? REPERTOIRE_ROOT_NODE_ID)
         });
       },
 
-      stageMove: (parentNodeId, uci, edge) => {
-        const parent = get().chapter?.tree.find((node) => node.id === parentNodeId);
-        if (!parent) return null;
-        const played = playUci(parent.fenAfter, uci);
-        if (!played) return null;
-        // Adding the move and setting its edge are one undo step.
-        return group(() => stageAt(parent.id, uci, played, edge));
+      discardStaged: () => {
+        const { staged, selectedNodeId, chapter } = get();
+        if (!staged.length) return;
+        set({
+          staged: [],
+          selectedNodeId: chapter
+            ? nearestKept(chapter.tree, treeWithStaged(chapter.tree, staged), selectedNodeId)
+            : selectedNodeId
+        });
+      },
+
+      addStaged: ({ studyOnly = false } = {}) => {
+        const { chapter, staged, color } = get();
+        const count = chapter ? liveStaged(chapter.tree, staged).length : 0;
+        if (!count) return 0;
+        // The staged moves keep their ids, so the selection stays where it is.
+        edit((current) => chapterWithStaged(current, staged, color, { studyOnly }), {
+          undoable: true
+        });
+        set({ staged: [] });
+        return count;
+      },
+
+      addStagedElsewhere: async (chapterId, open, { studyOnly = false } = {}) => {
+        const { chapter, staged, repertoireId } = get();
+        if (!chapter || !repertoireId) return false;
+        const lines = stagedLines(chapter.tree, staged);
+        if (!lines.length) return false;
+        if (!(await open())) return false;
+        // Still on the chapter they were staged in (the other one loads next): they leave it.
+        const now = get();
+        if (now.repertoireId === repertoireId && now.chapterId === chapter.id) now.discardStaged();
+        set({
+          pendingAdd: { repertoireId, chapterId, rootFen: chapter.rootFen, lines, studyOnly }
+        });
+        return true;
+      },
+
+      applyPendingAdd: () => {
+        const { pendingAdd, chapter, repertoireId, chapterId, color } = get();
+        if (
+          !pendingAdd ||
+          !chapter ||
+          pendingAdd.repertoireId !== repertoireId ||
+          pendingAdd.chapterId !== chapterId
+        ) {
+          return "none";
+        }
+        set({ pendingAdd: null });
+        const added = chapterWithLines(chapter, { ...pendingAdd, color });
+        if (!added) return "failed";
+        edit(() => added.chapter, { undoable: true, selectedNodeId: added.nodeId });
+        return "applied";
+      },
+
+      dropPendingAdd: () => {
+        if (get().pendingAdd) set({ pendingAdd: null });
       },
 
       setNodeMeta: (nodeId, patch) =>
@@ -596,12 +665,15 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           const tree = state.chapter
             ? reuseUnchangedTree(state.chapter.tree, result.chapter.tree)
             : result.chapter.tree;
+          const staged = liveStaged(tree, state.staged);
+          const shown = treeWithStaged(tree, staged);
           set({
             chapter: { ...result.chapter, tree },
+            staged: staged === state.staged ? state.staged : [...staged],
             dirty: false,
             baseRevision,
             saveState: { status: "idle" },
-            selectedNodeId: result.chapter.tree.some((node) => node.id === state.selectedNodeId)
+            selectedNodeId: shown.some((node) => node.id === state.selectedNodeId)
               ? state.selectedNodeId
               : REPERTOIRE_ROOT_NODE_ID
           });
@@ -671,4 +743,28 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
 /** The decision change waiting under `key`: none once it is saved or dropped. */
 export function pendingDecisionDraft(key: string): DecisionTextDraft | undefined {
   return useRepertoireWorkspaceStore.getState().decisionDrafts[key];
+}
+
+/**
+ * Before leaving Study (or its chapter): staged moves are never saved, so leaving with some asks
+ * first ("Discard 2 unsaved moves?"). True to go on (none staged, or the user agreed); false to
+ * stay. It drops nothing itself: the moves go once the screen actually changes (the next chapter's
+ * load, Study's page closing), so a navigation that doesn't happen (a save that failed, a Lichess
+ * game in progress) keeps them.
+ */
+export function confirmLeavingStaged(): boolean {
+  const { staged } = useRepertoireWorkspaceStore.getState();
+  if (!staged.length) return true;
+  const moves = staged.length === 1 ? "1 unsaved move" : `${staged.length} unsaved moves`;
+  return window.confirm(`Discard ${moves}?`);
+}
+
+/**
+ * The selected node when it is the chapter's, else its nearest ancestor that is (a staged move
+ * isn't saved, so a history entry never names one).
+ */
+export function selectedChapterNodeId(state: RepertoireWorkspaceState): string {
+  const { chapter, staged, selectedNodeId } = state;
+  if (!chapter) return selectedNodeId;
+  return nearestKept(chapter.tree, treeWithStaged(chapter.tree, staged), selectedNodeId);
 }

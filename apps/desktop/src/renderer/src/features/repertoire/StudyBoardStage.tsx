@@ -1,3 +1,4 @@
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import { SideDot } from "@/components/ui/side-dot";
@@ -12,9 +13,10 @@ import { StudyEvalBar } from "./StudyEnginePanel";
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
 /**
- * Study's board at the selected node, both sides playable (a move adds to the chapter) and
- * drawing on; the repertoire and chapter above it, and the eval bar while the engine panel is
- * open. No movetext under the board: moves live in the Moves tab (the row below stays empty so
+ * Study's board at the selected node, both sides playable (a move the chapter doesn't have is
+ * staged) and drawing on (not on a staged move, which isn't saved); the repertoire's arrows
+ * (`repertoireArrows`) over it; the repertoire and chapter above it, and the eval bar while the
+ * engine panel is open. No movetext under the board: moves live in the Moves tab (the row below stays empty so
  * the board keeps the shared stage geometry).
  */
 export function StudyBoardStage({
@@ -22,13 +24,18 @@ export function StudyBoardStage({
   color,
   node,
   orientation,
-  engineOpen
+  engineOpen,
+  staged,
+  repertoireArrows
 }: {
   chapterTitle: string;
   color: RepertoireColor;
   node: MoveNode;
   orientation: Color;
   engineOpen: boolean;
+  /** The selected move is staged (drawing would have nowhere to be saved). */
+  staged: boolean;
+  repertoireArrows: readonly DrawShape[];
 }) {
   const onMove = useEventCallback((uci: string, san: string, fenAfter: string) => {
     workspace().playMove(uci, san, fenAfter);
@@ -59,7 +66,8 @@ export function StudyBoardStage({
         lastMove={lastMoveOf(node.uci)}
         arrows={node.arrows}
         highlights={node.highlights}
-        onShapesChange={onShapesChange}
+        onShapesChange={staged ? undefined : onShapesChange}
+        autoShapes={repertoireArrows}
         onMove={onMove}
       />
     </BoardStage>

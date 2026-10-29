@@ -8,7 +8,8 @@ const workspace = () => useRepertoireWorkspaceStore.getState();
 
 /**
  * Keeps the workspace draft on the chapter Study shows: loads it from the stored repertoire and
- * chapter, follows a history restore to another node, and applies a staged move once.
+ * chapter, follows a history restore to another node, stages a move another screen asks for
+ * once, and adds moves staged in another chapter for this one.
  */
 export function useChapterDraftLoad({
   repertoireId,
@@ -32,7 +33,7 @@ export function useChapterDraftLoad({
   initialOrientation: Color | null;
   stage?: StudyStage | null;
   onStageApplied?: () => void;
-  /** Reports a staged move that couldn't be added (a stable callback: a state setter). */
+  /** Reports moves that couldn't be staged or added (a stable callback: a state setter). */
   onStageFailed: (message: string) => void;
 }): void {
   const [mountedAt] = useState(() => Date.now());
@@ -66,13 +67,24 @@ export function useChapterDraftLoad({
     if (initialNodeId) workspace().selectNode(initialNodeId);
   }, [initialNodeId]);
 
-  // A staged move (after the node selection above): added with its edge and selected (a reference
-  // move leaves its decision selected), or marked when the chapter already has it (see stageMove). Applied once, and only on a chapter read
-  // since this page opened, so it never edits a stale draft; the autosave saves it.
+  // A move another screen asks to stage (after the node selection above): staged under its node
+  // and selected (or only selected when the chapter has it already). Applied once, and only on a
+  // chapter read since this page opened, so it never stages on a stale draft.
   useEffect(() => {
     if (!stage || !loadedId || !chapterFresh) return;
-    const staged = workspace().stageMove(stage.nodeId, stage.uci, stage.edge);
-    if (!staged) onStageFailed("The game's move couldn't be added at this position.");
+    const staged = workspace().playLine(stage.nodeId, [stage.uci]);
+    if (!staged) onStageFailed("The game's move couldn't be staged at this position.");
     onStageApplied?.();
   }, [stage, loadedId, chapterFresh, onStageApplied, onStageFailed]);
+
+  // Moves staged in another chapter and added to this one ("Add N moves" → this chapter): added
+  // once it is read, as one undoable edit; the autosave saves them. They are handed over once the
+  // navigation here went ahead, which may be after the chapter loaded.
+  const pendingAdd = useRepertoireWorkspaceStore((state) => state.pendingAdd);
+  useEffect(() => {
+    if (!loadedId || !chapterFresh || !pendingAdd) return;
+    if (workspace().applyPendingAdd() === "failed") {
+      onStageFailed("The moves couldn't be added: this chapter doesn't reach their position.");
+    }
+  }, [loadedId, chapterFresh, pendingAdd, onStageFailed]);
 }

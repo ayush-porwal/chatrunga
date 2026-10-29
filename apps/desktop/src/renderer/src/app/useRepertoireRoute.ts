@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMatch } from "react-router-dom";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { StudyStage } from "../features/repertoire/repertoire-chapters";
+import type { StudyFromGames } from "../features/repertoire/study-from-games";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { AppView, RepertoireScreen } from "./AppPages";
 
@@ -13,6 +14,8 @@ export type RepertoireExtras = {
   preset: Extract<RepertoireScreen, { view: "repertoire-practice" }>["preset"];
   /** A move to stage once the study chapter loads (from a game's opening comparison). */
   stage: StudyStage | null;
+  /** What the user's games did at the study position (Insights' From your games banner). */
+  fromGames: StudyFromGames | null;
 };
 
 const initialRepertoireExtras: RepertoireExtras = {
@@ -20,7 +23,8 @@ const initialRepertoireExtras: RepertoireExtras = {
   orientation: null,
   tab: "moves",
   preset: null,
-  stage: null
+  stage: null,
+  fromGames: null
 };
 
 /**
@@ -53,7 +57,8 @@ export function useRepertoireRoute() {
         nodeId: extras.nodeId,
         orientation: extras.orientation,
         tab: extras.tab,
-        stage: extras.stage
+        stage: extras.stage,
+        fromGames: extras.fromGames
       };
     }
     if (practiceRepertoireId) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type { BoardArrow, BoardHighlight, Color, UserMove } from "@chaturanga/shared/types/chess";
@@ -22,6 +23,7 @@ import {
 import {
   annotationsFromShapes,
   chessgroundMovableColor,
+  DASHED_GREEN_BRUSH,
   movableDests,
   shapesFromAnnotations,
   type BoardMovable
@@ -40,6 +42,8 @@ export type ControlledBoardProps = {
   highlights?: readonly BoardHighlight[];
   /** Enables right-click drawing; called with every change. Omit to disable drawing. */
   onShapesChange?: (arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
+  /** Shapes drawn over the position that drawing never edits (Study's repertoire arrows). */
+  autoShapes?: readonly DrawShape[];
   /**
    * Called with a legal move (full UCI with any promotion letter, castling as `e1g1`), its SAN and
    * the FEN after it. The move is not applied: the parent updates `fen`. Returning `false` refuses
@@ -56,6 +60,7 @@ export type ControlledBoardProps = {
 type PendingPromotion = { from: Key; to: Key };
 
 const NO_ARROWS: readonly BoardArrow[] = [];
+const NO_SHAPES: readonly DrawShape[] = [];
 const NO_HIGHLIGHTS: readonly BoardHighlight[] = [];
 
 const PROMOTION_PIECES = [
@@ -79,6 +84,7 @@ export function ControlledBoard({
   arrows = NO_ARROWS,
   highlights = NO_HIGHLIGHTS,
   onShapesChange,
+  autoShapes = NO_SHAPES,
   onMove,
   allowMove,
   check,
@@ -117,6 +123,11 @@ export function ControlledBoard({
       premovable: { enabled: false }
     });
     groundRef.current = ground;
+    // The dashed green of autoShapes: Chessground's green, which board.css dashes by its key.
+    ground.state.drawable.brushes[DASHED_GREEN_BRUSH] = {
+      ...ground.state.drawable.brushes.green,
+      key: "dg"
+    };
     // Chessground caches the board's screen position; re-read it on every press so a board that
     // moved without resizing (a sidebar collapsing) still takes clicks on the right square.
     const refreshBounds = () => ground.state.dom.bounds.clear();
@@ -262,10 +273,11 @@ export function ControlledBoard({
         visible: true,
         defaultSnapToValidMove: true,
         shapes,
+        autoShapes: [...autoShapes],
         onChange: handleShapesChange
       }
     });
-  }, [drawingEnabled, handleShapesChange, shapes]);
+  }, [autoShapes, drawingEnabled, handleShapesChange, shapes]);
 
   return (
     <div className={cn("relative h-full w-full min-h-0 min-w-0", className)}>

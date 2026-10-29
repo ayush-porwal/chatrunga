@@ -10,6 +10,7 @@ import type { ReviewTab } from "../features/game-review/review-utils";
 import { mainlineEnd } from "../features/game/move-tree-model";
 import { openSavedGame } from "../features/game/saved-game";
 import { gamePuzzleNodeId } from "../features/puzzles/game-puzzle-set";
+import { useInsightsReturnStore } from "../features/repertoire/insights/insights-return";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useGameStore } from "../stores/game-store";
@@ -212,6 +213,9 @@ export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
   }
 
   async function openSelectedGameReview(gameId: string, tab: ReviewTab = "summary") {
+    // A review opened from anywhere but Insights offers no Back to Insights (Insights' Review game
+    // names its game again once the review shows it).
+    useInsightsReturnStore.getState().setGameId(null);
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {

@@ -148,6 +148,12 @@ cg-board square.check {
   font-weight: 600;
 }
 
+/* The dashed green brush (ControlledBoard's DASHED_GREEN_BRUSH): Chessground draws every arrow
+   solid, so its line is dashed here (in board units: a square is one). */
+.cg-wrap svg line[marker-end="url(#arrowhead-dg)"] {
+  stroke-dasharray: 0.22 0.14;
+}
+
 /* ---------------------------------------------------------------- coordinates */
 
 /* Ranks down the a-file (top-left of each square), files along the first rank (bottom-right),

@@ -29,7 +29,7 @@ function seedSicilian(
         expectedRevision: created.revision,
         selections: [{ gameIndex: 0, title: "Chapter 1", kind: "opening", include: true }]
       });
-      // The repertoire's empty first chapter goes, as "Create and import PGN" does.
+      // The repertoire's empty first chapter goes, as an import into a new repertoire does.
       const placeholder = imported.repertoire.chapters.find((chapter) => chapter.nodeCount === 0)!;
       const removed = await api.removeChapter({
         repertoireId: created.id,

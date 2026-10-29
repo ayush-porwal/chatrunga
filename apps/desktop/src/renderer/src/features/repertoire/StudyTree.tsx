@@ -20,6 +20,8 @@ type StudyTreeProps = Omit<
   selectedNodeId: string;
   /** Each move's kind, shown by its colour: the player's own stronger, study-only dimmed. */
   kinds: ReadonlyMap<string, MoveKind>;
+  /** Staged moves (not in the chapter yet), in the warn tone whatever their kind. */
+  staged: ReadonlySet<string>;
 };
 
 const KIND_TONES: Record<MoveKind, string | undefined> = {
@@ -31,18 +33,18 @@ const KIND_TONES: Record<MoveKind, string | undefined> = {
 /**
  * The Study move tree: the game TreeView over a collapsed view of the chapter, so a chapter of
  * thousands of moves renders a few hundred rows (see study-tree-model.ts), each move coloured by
- * its kind. Expanded rows last
+ * its kind, staged ones in the warn tone. Expanded rows last
  * while the chapter stays open; the page remounts this per chapter.
  */
-export function StudyTree({ lookup, selectedNodeId, kinds, ...props }: StudyTreeProps) {
+export function StudyTree({ lookup, selectedNodeId, kinds, staged, ...props }: StudyTreeProps) {
   const tones = useMemo(() => {
     const map = new Map<string, string>();
     for (const [id, kind] of kinds) {
-      const tone = KIND_TONES[kind];
+      const tone = staged.has(id) ? "text-warn" : KIND_TONES[kind];
       if (tone) map.set(id, tone);
     }
     return map;
-  }, [kinds]);
+  }, [kinds, staged]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const sizes = useMemo(() => subtreeSizes(lookup), [lookup]);
   const collapsed = useMemo(
