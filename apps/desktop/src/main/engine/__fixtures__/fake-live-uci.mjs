@@ -17,6 +17,8 @@
 // move by move: with the gate at N, moves 1…N finish and move N + 1 is being analysed.
 // "puzzles": REVIEW's bounded `go`, with the lines of GAME_PUZZLES below (a game in which White
 // misses 4. Qxf7#), for puzzle generation from the user's games.
+// "health": REVIEW's bounded `go`, with the lines of HEALTH below (the repertoire health check: at
+// the start 1. f3 loses about 18 win-% to 1. e4).
 // "stockfish": output shaped like Stockfish 19's. `go infinite` starts with `info string` lines,
 // then streams, for each depth, one line per MultiPV of the position's legal moves (seldepth,
 // score with a bound now and then, wdl, nodes, nps, hashfull, tbhits, time, pv) and a `currmove`
@@ -201,6 +203,13 @@ function stockfishDepth(moves) {
   });
   if (moves[0]) out(`info depth ${depth + 1} currmove ${moves[0]} currmovenumber 1`);
 }
+/** "health": the start position's two best lines, and 1. f3 searched alone (`searchmoves`). */
+const HEALTH = {
+  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -": {
+    lines: ["cp 80 pv e2e4 e7e5", "cp 70 pv d2d4 d7d5"],
+    only: { f2f3: "cp -120 pv f2f3 e7e5" }
+  }
+};
 const review =
   mode === "review" || mode === "review-stuck-check" || mode === "review-gated"
     ? REVIEW
@@ -208,7 +217,9 @@ const review =
       ? { ...REVIEW, ...REVIEW_UNSTABLE }
       : mode === "puzzles"
         ? GAME_PUZZLES
-        : null;
+        : mode === "health"
+          ? HEALTH
+          : null;
 /** "review-stuck-check": a deeper search is hanging (it answers `stop` with a bestmove). */
 let stuck = false;
 /** The FEN of the last `position fen` command. */
