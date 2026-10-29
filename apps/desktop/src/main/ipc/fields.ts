@@ -4,7 +4,7 @@
  */
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
-import { isRecord } from "@chaturanga/shared/types/guards";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 export const MAX_ID = 200;
 export const MAX_PATH = 4096;
@@ -50,6 +50,21 @@ export function nullable<T>(value: unknown, parse: (value: unknown) => T): T | n
   if (value === undefined) return undefined;
   if (value === null) return null;
   return parse(value);
+}
+
+/** A list of members of `values`, each once, in the order given. */
+export function asMembers<const T extends string>(
+  value: unknown,
+  label: string,
+  values: readonly T[]
+): T[] {
+  if (!Array.isArray(value)) fail(label, "expected an array");
+  if (value.length > values.length * 4) fail(label, "too many items");
+  const members = value.map((item: unknown) => {
+    if (!isOneOf(values, item)) fail(label, `expected ${values.join(", ")}`);
+    return item;
+  });
+  return [...new Set(members)];
 }
 
 export function asBoolean(value: unknown, label: string): boolean {

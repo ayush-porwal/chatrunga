@@ -15,26 +15,20 @@ import {
 } from "@chaturanga/shared/types/game-puzzles";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { RATING_MODES } from "@chaturanga/shared/types/ratings";
-import { asBoolean, asId, asIntegerInRange, asObject, fail, nullable, optional } from "./fields";
+import {
+  asBoolean,
+  asId,
+  asIntegerInRange,
+  asMembers,
+  asObject,
+  fail,
+  nullable,
+  optional
+} from "./fields";
 
 /** A session leaves out at most this many puzzles it has shown. */
 const MAX_EXCLUDED = 10_000;
 const MAX_LIST = 500;
-
-/** A list of members of `values`, each once, in the order given. */
-function asMembers<const T extends string>(
-  value: unknown,
-  label: string,
-  values: readonly T[]
-): T[] {
-  if (!Array.isArray(value)) fail(label, "expected an array");
-  if (value.length > values.length * 4) fail(label, "too many items");
-  const members = value.map((item: unknown) => {
-    if (!isOneOf(values, item)) fail(label, `expected ${values.join(", ")}`);
-    return item;
-  });
-  return [...new Set(members)];
-}
 
 function asGameLimit(value: unknown): number {
   if (!isOneOf(GAME_PUZZLE_GAME_LIMITS, value))

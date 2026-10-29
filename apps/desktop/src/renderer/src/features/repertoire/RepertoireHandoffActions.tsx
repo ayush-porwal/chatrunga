@@ -1,9 +1,18 @@
+import { lazy, Suspense } from "react";
 import { BookOpen, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { mainlineEnd } from "../game/move-tree-model";
 import { useGameStore } from "../../stores/game-store";
 import { isHandoffGame, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
 import { gameHasEnded } from "./handoffs";
+import { useInsightsReturnStore } from "./insights/insights-return";
+
+// Shown only after Insights' Review game: its button loads then, out of the first screen's code.
+const BackToInsightsButton = lazy(() =>
+  import("./insights/BackToInsightsButton").then((module) => ({
+    default: module.BackToInsightsButton
+  }))
+);
 
 /**
  * The titlebar's actions once a game played from a repertoire (Play from here) has ended:
@@ -40,5 +49,20 @@ export function RepertoireHandoffActions({
         Review opening
       </Button>
     </div>
+  );
+}
+
+/**
+ * Game review's "Back to Insights", while the game Insights opened (Review game) is the one shown:
+ * the Repertoire page's Insights tab.
+ */
+export function BackToInsightsAction({ onBack }: { onBack: () => void }) {
+  const fromInsights = useInsightsReturnStore((state) => state.gameId);
+  const gameId = useGameStore((state) => state.gameId);
+  if (!fromInsights || fromInsights !== gameId) return null;
+  return (
+    <Suspense fallback={null}>
+      <BackToInsightsButton onBack={onBack} />
+    </Suspense>
   );
 }

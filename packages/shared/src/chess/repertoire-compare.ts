@@ -455,7 +455,17 @@ export function compareGameToRepertoire(
   game: ComparedGame,
   repertoire: ComparedRepertoire
 ): RepertoireComparison {
-  const { color } = game;
+  return repertoireComparer(game.color, repertoire)(game);
+}
+
+/**
+ * {@link compareGameToRepertoire} with the repertoire indexed once, for comparing many games of
+ * `color` with it (Insights' background comparer).
+ */
+export function repertoireComparer(
+  color: RepertoireColor,
+  repertoire: ComparedRepertoire
+): (game: Omit<ComparedGame, "color">) => RepertoireComparison {
   const prepared: PreparedRepertoire = {
     color,
     active: indexActiveOccurrences(repertoire.chapters),
@@ -463,6 +473,15 @@ export function compareGameToRepertoire(
     stored: new Map(repertoire.decisions.map((decision) => [decision.positionKey, decision])),
     titles: new Map(repertoire.chapters.map((chapter) => [chapter.id, chapter.title]))
   };
+  return (game) => comparePrepared({ ...game, color }, repertoire, prepared);
+}
+
+function comparePrepared(
+  game: ComparedGame,
+  repertoire: ComparedRepertoire,
+  prepared: PreparedRepertoire
+): RepertoireComparison {
+  const { color } = game;
   const walk: Walk = {
     issue: null,
     end: null,
