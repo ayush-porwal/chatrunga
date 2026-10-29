@@ -6,6 +6,7 @@ import {
   type PracticeAnswer,
   type PracticeCard,
   type PracticeSessionSnapshot,
+  type PracticeShown,
   type PracticeTotals
 } from "@chaturanga/shared/types/repertoire";
 import { stripBookPage } from "@chaturanga/shared/books/book-page";
@@ -25,6 +26,7 @@ import {
   type PracticeSessionRecord
 } from "./practice-repository";
 import { changed, clock } from "./service-runtime";
+import { recordIntroduction } from "./practice-limits";
 
 /** The next hint stage, up to the last (3). */
 export function nextHintStage(stage: PracticeCard["hintStage"]): PracticeCard["hintStage"] {
@@ -62,7 +64,16 @@ export function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnaps
   // No card when the queue is empty.
   const card = session.cards.at(session.cursor);
   const policy = card ? session.policies[card.queueItemId] : undefined;
-  if (!card || !policy) return snapshot;
+  const shown = card && policy ? shownOf(session, card, policy) : null;
+  return shown ? { ...snapshot, shown } : snapshot;
+}
+
+/** What the current card already showed (null: nothing), so a resumed session shows it again. */
+function shownOf(
+  session: PracticeSessionRecord,
+  card: PracticeCard,
+  policy: FrozenPolicy
+): PracticeShown | null {
   // A reveal after a wrong answer leaves the card answered-wrong; its recorded action says so.
   const revealed =
     card.state === "revealed" ||
@@ -70,17 +81,23 @@ export function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnaps
       attemptRepository
         .list(session.id, card.queueItemId)
         .some((attempt) => attempt.kind === "reveal"));
-  if (!card.hintStage && !revealed) return snapshot;
-  // Only what the hint and reveal actions already returned for this card.
+  // A wrong answer showed the move to play next (a rehearsal's misses keep it hidden).
+  const correction =
+    card.state === "answered-wrong" && !revealed && session.mode !== "rehearse-lines";
+  if (!card.hintStage && !revealed && !correction) return null;
+  // Only what the hint, reveal and wrong answer already returned for this card.
   return {
-    ...snapshot,
-    shown: {
-      hint: card.hintStage >= 1 ? policy.hint : null,
-      hintUci:
-        card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis.at(0) ?? null) : null,
-      revealed: revealed ? answerOf(policy) : null
-    }
+    hint: card.hintStage >= 1 ? policy.hint : null,
+    hintUci:
+      card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis.at(0) ?? null) : null,
+    revealed: revealed ? answerOf(policy) : null,
+    ...(correction ? { correction: answerOf(policy) } : {})
   };
+}
+
+/** The repertoire a card's decision belongs to (a set's cards name theirs). */
+export function cardRepertoireId(session: PracticeSessionRecord, card: PracticeCard): string {
+  return card.repertoireId ?? session.repertoireId;
 }
 
 /**
@@ -176,7 +193,8 @@ export function historyAction(attempt: AttemptRecord): PracticeHistoryAction {
 /**
  * Applies a card's final outcome to its progress (scheduler v1). Callers first check the card is
  * still current (§8.3: no grade against a moving set). Returns whether it was written. An
- * ungraded session's outcome is recorded with the session only: progress stays as it was.
+ * ungraded session's outcome is recorded with the session only: progress stays as it was. A
+ * position graded for the first time counts towards today's new positions.
  */
 export function applySchedule(
   session: PracticeSessionRecord,
@@ -185,10 +203,11 @@ export function applySchedule(
   now: number
 ): boolean {
   if (session.scope.ungraded) return false;
-  const { repertoireId } = session;
+  const repertoireId = cardRepertoireId(session, card);
   const previous = progressRepository.get(repertoireId, card.positionKey);
   const schedule = scheduleAfterOutcome(previous, outcome, now, previous?.lastAttemptAt);
   if (!schedule) return false;
+  if (!previous) recordIntroduction(repertoireId, card.positionKey, schedule.lastAttemptAt ?? now);
   progressRepository.upsert({
     repertoireId,
     positionKey: card.positionKey,

@@ -231,8 +231,74 @@ describe("repertoire service: import and export", () => {
     ]);
     for (const pgn of fixtures) {
       const preview = await service.previewImport({ pgn });
-      expect(preview.games).toStrictEqual(parseRepertoirePgn(pgn).games.map(previewedGame));
+      // The practice home's additions are covered on their own (below).
+      const games = preview.games.map(
+        ({ opening: _o, firstMoves: _f, lineCount: _l, branching: _b, ...game }) => game
+      );
+      expect(games).toStrictEqual(parseRepertoirePgn(pgn).games.map(previewedGame));
     }
+  });
+
+  it("previews each game's opening, first moves and lines, and the positions with several moves", async () => {
+    const preview = await service.previewImport({ pgn: TWO_GAMES });
+    expect(
+      preview.games.map(({ opening, firstMoves, lineCount, branching }) => ({
+        opening,
+        firstMoves,
+        lineCount,
+        branching
+      }))
+    ).toStrictEqual([
+      {
+        opening: { name: "Italian Game", eco: "C50" },
+        firstMoves: "1. e4 e5 2. Nf3 Nc6 3. Bc4",
+        lineCount: 1,
+        branching: { white: 0, black: 0 }
+      },
+      {
+        opening: { name: "Scotch Game", eco: "C44" },
+        firstMoves: "1. e4 e5 2. Nf3 Nc6 3. d4",
+        lineCount: 2,
+        branching: { white: 1, black: 0 }
+      }
+    ]);
+    // White plays 3.Bc4 in one game and 3.d4 or 3.Bb5 in the other, at the same position.
+    expect(preview.multiMovePositions?.black).toStrictEqual([]);
+    expect(preview.multiMovePositions?.white).toStrictEqual([
+      {
+        positionKey: expect.any(String),
+        moves: [
+          { uci: "f1c4", san: "Bc4", games: [0] },
+          { uci: "d2d4", san: "d4", games: [1] },
+          { uci: "f1b5", san: "Bb5", games: [1] }
+        ]
+      }
+    ]);
+  });
+
+  it("stores each chapter's opening as the preview showed it, typed or detected", async () => {
+    const { id, revision } = create();
+    const preview = await service.previewImport({ pgn: TWO_GAMES });
+    const result = await service.commitImport({
+      jobId: preview.jobId,
+      repertoireId: id,
+      expectedRevision: revision,
+      selections: [
+        { gameIndex: 0, title: "", kind: "opening", include: true },
+        {
+          gameIndex: 1,
+          title: "",
+          kind: "opening",
+          include: true,
+          opening: { name: "My Scotch", eco: null, edited: true }
+        }
+      ]
+    });
+    expect(result.repertoire.chapters.map((chapter) => chapter.opening)).toStrictEqual([
+      null,
+      { name: "Italian Game", eco: "C50", edited: false },
+      { name: "My Scotch", eco: null, edited: true }
+    ]);
   });
 
   it("broadcasts progress for the job, ending with ready", async () => {

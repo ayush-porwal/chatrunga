@@ -1,45 +1,4 @@
-import { BrowserWindow, ipcMain } from "electron";
-import {
-  addFromGame,
-  archiveRepertoire,
-  cancelBackupImport,
-  cancelImport,
-  commitImport,
-  compareGame,
-  createRepertoire,
-  duplicateRepertoire,
-  endPractice,
-  exportBackup,
-  exportRepertoire,
-  getChapter,
-  getDecision,
-  getPausedKeys,
-  getPractisedElsewhere,
-  getOccurrences,
-  getDueSummary,
-  getRepertoire,
-  linkGame,
-  listGameLinks,
-  listRepertoires,
-  previewAddFromGame,
-  previewBackupImport,
-  previewImport,
-  recordAttempt,
-  recordPracticeAction,
-  refreshBackupPreview,
-  removeChapter,
-  updateChapters,
-  removeGameLink,
-  removeRepertoire,
-  restoreBackup,
-  resumePractice,
-  saveChapter,
-  saveWorkspace,
-  startPractice,
-  updateDecision,
-  updateMetadata,
-  withRepertoireWriteGate
-} from "../repertoire/service";
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IMPORT_CANCELLED_REPLY } from "@chaturanga/shared/types/repertoire";
 import { ImportCancelledError } from "../repertoire/import-job";
 import { logger } from "../logger";
@@ -72,7 +31,8 @@ import {
   parseSaveWorkspaceInput,
   parseStartPracticeInput,
   parseUpdateDecisionInput,
-  parseUpdateRepertoireMetadataInput
+  parseUpdateRepertoireMetadataInput,
+  parseOpeningOfInput
 } from "./validate-repertoire";
 
 /**
@@ -85,156 +45,256 @@ function sweepBookPages(): void {
     .catch((error: unknown) => logger.error("books", "sweeping book pages failed:", error));
 }
 
+/** The repertoire service (main/repertoire/service.ts), loaded with the first request. */
+const service = () => import("../repertoire/service");
+type RepertoireService = Awaited<ReturnType<typeof service>>;
+
 /**
- * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it.
- * Every write passes the service's write gate (`withRepertoireWriteGate`; `commitImport` takes it
- * itself), so it waits for a running import commit without blocking the main process.
+ * A handler that parses its input at once (a malformed one throws before the service loads), then
+ * calls the service with it.
+ */
+function read<T>(
+  parse: (value: unknown) => T,
+  call: (repertoires: RepertoireService, input: T) => unknown
+) {
+  return (_event: IpcMainInvokeEvent, value: unknown) => {
+    const input = parse(value);
+    return service().then((repertoires) => call(repertoires, input));
+  };
+}
+
+/** As `read`, the call inside the service's write gate. */
+function write<T>(
+  parse: (value: unknown) => T,
+  call: (repertoires: RepertoireService, input: T) => unknown
+) {
+  return read(parse, (repertoires, input) =>
+    repertoires.withRepertoireWriteGate(() => call(repertoires, input))
+  );
+}
+
+/** Inputs that are only an id. */
+const repertoireId = (value: unknown) => asId(value, "repertoireId");
+const jobId = (value: unknown) => asId(value, "jobId");
+const sessionId = (value: unknown) => asId(value, "sessionId");
+const none = () => undefined;
+
+/**
+ * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it (and
+ * before it loads). Every write passes the service's write gate (`withRepertoireWriteGate`;
+ * `commitImport` takes it itself), so it waits for a running import commit without blocking the
+ * main process.
  */
 export function registerRepertoireIpc(): void {
-  ipcMain.handle("repertoires:list", (_event, filters: unknown) =>
-    listRepertoires(parseRepertoireListFilters(filters))
+  ipcMain.handle(
+    "repertoires:list",
+    read(parseRepertoireListFilters, (repertoires, filters) => repertoires.listRepertoires(filters))
   );
-  ipcMain.handle("repertoires:get", (_event, id: unknown) =>
-    getRepertoire(asId(id, "repertoireId"))
+  ipcMain.handle(
+    "repertoires:get",
+    read(repertoireId, (repertoires, id) => repertoires.getRepertoire(id))
   );
-  ipcMain.handle("repertoires:getChapter", (_event, input: unknown) =>
-    getChapter(parseChapterRef(input))
+  ipcMain.handle(
+    "repertoires:getChapter",
+    read(parseChapterRef, (repertoires, ref) => repertoires.getChapter(ref))
   );
-  ipcMain.handle("repertoires:getDecision", (_event, input: unknown) =>
-    getDecision(parseDecisionRef(input))
+  ipcMain.handle(
+    "repertoires:getDecision",
+    read(parseDecisionRef, (repertoires, ref) => repertoires.getDecision(ref))
   );
-  ipcMain.handle("repertoires:getPractisedElsewhere", (_event, input: unknown) =>
-    getPractisedElsewhere(parsePractisedElsewhereInput(input))
+  ipcMain.handle(
+    "repertoires:getPractisedElsewhere",
+    read(parsePractisedElsewhereInput, (repertoires, input) =>
+      repertoires.getPractisedElsewhere(input)
+    )
   );
-  ipcMain.handle("repertoires:getPausedKeys", (_event, id: unknown) =>
-    getPausedKeys(asId(id, "repertoireId"))
+  ipcMain.handle(
+    "repertoires:getPausedKeys",
+    read(repertoireId, (repertoires, id) => repertoires.getPausedKeys(id))
   );
-  ipcMain.handle("repertoires:getOccurrences", (_event, input: unknown) =>
-    getOccurrences(parseDecisionRef(input))
+  ipcMain.handle(
+    "repertoires:getOccurrences",
+    read(parseDecisionRef, (repertoires, ref) => repertoires.getOccurrences(ref))
   );
-  ipcMain.handle("repertoires:compareGame", (_event, input: unknown) =>
-    compareGame(parseCompareGameInput(input))
+  ipcMain.handle(
+    "repertoires:compareGame",
+    read(parseCompareGameInput, (repertoires, input) => repertoires.compareGame(input))
   );
-  ipcMain.handle("repertoires:previewAddFromGame", (_event, input: unknown) =>
-    previewAddFromGame(parseAddFromGameInput(input))
+  ipcMain.handle(
+    "repertoires:previewAddFromGame",
+    read(parseAddFromGameInput, (repertoires, input) => repertoires.previewAddFromGame(input))
   );
-  ipcMain.handle("repertoires:addFromGame", (_event, input: unknown) => {
-    const parsed = parseAddFromGameInput(input);
-    return withRepertoireWriteGate(() => addFromGame(parsed));
-  });
-  ipcMain.handle("repertoires:listGameLinks", (_event, input: unknown) =>
-    listGameLinks(parseGameLinkQuery(input))
+  ipcMain.handle(
+    "repertoires:addFromGame",
+    write(parseAddFromGameInput, (repertoires, input) => repertoires.addFromGame(input))
   );
-  ipcMain.handle("repertoires:removeGameLink", (_event, input: unknown) => {
-    const parsed = parseRemoveGameLink(input);
-    return withRepertoireWriteGate(() => removeGameLink(parsed));
-  });
-  ipcMain.handle("repertoires:linkGame", (_event, input: unknown) => {
-    const parsed = parseLinkGameInput(input);
-    return withRepertoireWriteGate(() => linkGame(parsed));
-  });
-  ipcMain.handle("repertoires:create", (_event, input: unknown) => {
-    const parsed = parseCreateRepertoireInput(input);
-    return withRepertoireWriteGate(() => createRepertoire(parsed));
-  });
-  ipcMain.handle("repertoires:updateMetadata", (_event, input: unknown) => {
-    const parsed = parseUpdateRepertoireMetadataInput(input);
-    return withRepertoireWriteGate(() => updateMetadata(parsed));
-  });
-  ipcMain.handle("repertoires:saveChapter", (_event, input: unknown) => {
-    const parsed = parseSaveChapterInput(input);
-    return withRepertoireWriteGate(() => saveChapter(parsed));
-  });
-  ipcMain.handle("repertoires:updateDecision", (_event, input: unknown) => {
-    const parsed = parseUpdateDecisionInput(input);
-    return withRepertoireWriteGate(() => updateDecision(parsed));
-  });
-  ipcMain.handle("repertoires:removeChapter", (_event, input: unknown) => {
-    const parsed = parseRemoveChapterInput(input);
-    return withRepertoireWriteGate(() => removeChapter(parsed));
-  });
-  ipcMain.handle("repertoires:updateChapters", (_event, input: unknown) => {
-    const parsed = parseUpdateChaptersInput(input);
-    return withRepertoireWriteGate(() => updateChapters(parsed));
-  });
-  ipcMain.handle("repertoires:duplicate", (_event, input: unknown) => {
-    const parsed = parseDuplicateRepertoireInput(input);
-    return withRepertoireWriteGate(() => duplicateRepertoire(parsed));
-  });
-  ipcMain.handle("repertoires:archive", (_event, input: unknown) => {
-    const parsed = parseArchiveRepertoireInput(input);
-    return withRepertoireWriteGate(() => archiveRepertoire(parsed));
-  });
-  ipcMain.handle("repertoires:remove", async (_event, input: unknown) => {
-    const parsed = parseRemoveRepertoireInput(input);
-    const removed = await withRepertoireWriteGate(() => removeRepertoire(parsed));
+  ipcMain.handle(
+    "repertoires:listGameLinks",
+    read(parseGameLinkQuery, (repertoires, query) => repertoires.listGameLinks(query))
+  );
+  ipcMain.handle(
+    "repertoires:removeGameLink",
+    write(parseRemoveGameLink, (repertoires, input) => repertoires.removeGameLink(input))
+  );
+  ipcMain.handle(
+    "repertoires:linkGame",
+    write(parseLinkGameInput, (repertoires, input) => repertoires.linkGame(input))
+  );
+  ipcMain.handle(
+    "repertoires:create",
+    write(parseCreateRepertoireInput, (repertoires, input) => repertoires.createRepertoire(input))
+  );
+  ipcMain.handle(
+    "repertoires:updateMetadata",
+    write(parseUpdateRepertoireMetadataInput, (repertoires, input) =>
+      repertoires.updateMetadata(input)
+    )
+  );
+  ipcMain.handle(
+    "repertoires:saveChapter",
+    write(parseSaveChapterInput, (repertoires, input) => repertoires.saveChapter(input))
+  );
+  ipcMain.handle(
+    "repertoires:updateDecision",
+    write(parseUpdateDecisionInput, (repertoires, input) => repertoires.updateDecision(input))
+  );
+  ipcMain.handle(
+    "repertoires:removeChapter",
+    write(parseRemoveChapterInput, (repertoires, input) => repertoires.removeChapter(input))
+  );
+  ipcMain.handle(
+    "repertoires:updateChapters",
+    write(parseUpdateChaptersInput, (repertoires, input) => repertoires.updateChapters(input))
+  );
+  ipcMain.handle(
+    "repertoires:duplicate",
+    write(parseDuplicateRepertoireInput, (repertoires, input) =>
+      repertoires.duplicateRepertoire(input)
+    )
+  );
+  ipcMain.handle(
+    "repertoires:archive",
+    write(parseArchiveRepertoireInput, (repertoires, input) => repertoires.archiveRepertoire(input))
+  );
+  ipcMain.handle("repertoires:remove", async (_event, value: unknown) => {
+    const input = parseRemoveRepertoireInput(value);
+    const repertoires = await service();
+    const removed = await repertoires.withRepertoireWriteGate(() =>
+      repertoires.removeRepertoire(input)
+    );
     sweepBookPages();
     return removed;
   });
   // A cancelled preview resolves with a marker the preload turns back into the rejection, so a
   // cancel (an expected outcome) isn't logged as a failed handler.
-  ipcMain.handle("repertoires:previewImport", (_event, input: unknown) =>
-    Promise.resolve(previewImport(parsePreviewImportInput(input))).catch((error: unknown) => {
-      if (error instanceof ImportCancelledError) return IMPORT_CANCELLED_REPLY;
-      throw error;
-    })
-  );
-  ipcMain.handle("repertoires:commitImport", (_event, input: unknown) =>
-    commitImport(parseImportCommitInput(input))
-  );
-  ipcMain.handle("repertoires:cancelImport", (_event, jobId: unknown) =>
-    cancelImport(asId(jobId, "jobId"))
-  );
-  // The save dialog is parented to the calling window; the renderer never names a destination.
-  ipcMain.handle("repertoires:export", (event, input: unknown) =>
-    exportRepertoire(parseExportInput(input), BrowserWindow.fromWebContents(event.sender))
-  );
-  // Native backups: the save/open dialogs are parented to the calling window; no renderer path.
-  ipcMain.handle("repertoires:exportBackup", (event, input: unknown) =>
-    exportBackup(parseExportBackupInput(input), BrowserWindow.fromWebContents(event.sender))
-  );
-  ipcMain.handle("repertoires:previewBackupImport", (event, input: unknown) =>
-    previewBackupImport(
-      parsePreviewBackupImportInput(input),
-      BrowserWindow.fromWebContents(event.sender)
+  ipcMain.handle(
+    "repertoires:previewImport",
+    read(parsePreviewImportInput, (repertoires, input) =>
+      Promise.resolve(repertoires.previewImport(input)).catch((error: unknown) => {
+        if (error instanceof ImportCancelledError) return IMPORT_CANCELLED_REPLY;
+        throw error;
+      })
     )
   );
-  ipcMain.handle("repertoires:restoreBackup", async (_event, input: unknown) => {
-    const parsed = parseRestoreBackupInput(input);
-    const restored = await withRepertoireWriteGate(() => restoreBackup(parsed));
+  ipcMain.handle(
+    "repertoires:commitImport",
+    read(parseImportCommitInput, (repertoires, input) => repertoires.commitImport(input))
+  );
+  ipcMain.handle(
+    "repertoires:cancelImport",
+    read(jobId, (repertoires, id) => repertoires.cancelImport(id))
+  );
+  // The save dialog is parented to the calling window; the renderer never names a destination.
+  ipcMain.handle("repertoires:export", (event, value: unknown) => {
+    const input = parseExportInput(value);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    return service().then((repertoires) => repertoires.exportRepertoire(input, window));
+  });
+  // Native backups: the save/open dialogs are parented to the calling window; no renderer path.
+  ipcMain.handle("repertoires:exportBackup", (event, value: unknown) => {
+    const input = parseExportBackupInput(value);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    return service().then((repertoires) => repertoires.exportBackup(input, window));
+  });
+  ipcMain.handle("repertoires:previewBackupImport", (event, value: unknown) => {
+    const input = parsePreviewBackupImportInput(value);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    return service().then((repertoires) => repertoires.previewBackupImport(input, window));
+  });
+  ipcMain.handle("repertoires:restoreBackup", async (_event, value: unknown) => {
+    const input = parseRestoreBackupInput(value);
+    const repertoires = await service();
+    const restored = await repertoires.withRepertoireWriteGate(() =>
+      repertoires.restoreBackup(input)
+    );
     // A replaced repertoire is deleted and inserted again: a book of it went with the delete.
-    if (parsed.selections.some((selection) => selection.mode === "replace")) sweepBookPages();
+    if (input.selections.some((selection) => selection.mode === "replace")) sweepBookPages();
     return restored;
   });
-  ipcMain.handle("repertoires:refreshBackupPreview", (_event, jobId: unknown) =>
-    refreshBackupPreview(asId(jobId, "jobId"))
+  ipcMain.handle(
+    "repertoires:refreshBackupPreview",
+    read(jobId, (repertoires, id) => repertoires.refreshBackupPreview(id))
   );
-  ipcMain.handle("repertoires:cancelBackupImport", (_event, jobId: unknown) =>
-    cancelBackupImport(asId(jobId, "jobId"))
+  ipcMain.handle(
+    "repertoires:cancelBackupImport",
+    read(jobId, (repertoires, id) => repertoires.cancelBackupImport(id))
   );
-  ipcMain.handle("repertoires:startPractice", (_event, input: unknown) => {
-    const parsed = parseStartPracticeInput(input);
-    return withRepertoireWriteGate(() => startPractice(parsed));
-  });
-  ipcMain.handle("repertoires:resumePractice", (_event, sessionId: unknown) => {
-    const parsed = asId(sessionId, "sessionId");
-    return withRepertoireWriteGate(() => resumePractice(parsed));
-  });
-  ipcMain.handle("repertoires:recordPracticeAction", (_event, input: unknown) => {
-    const parsed = parsePracticeActionInput(input);
-    return withRepertoireWriteGate(() => recordPracticeAction(parsed));
-  });
-  ipcMain.handle("repertoires:recordAttempt", (_event, input: unknown) => {
-    const parsed = parseRecordAttemptInput(input);
-    return withRepertoireWriteGate(() => recordAttempt(parsed));
-  });
-  ipcMain.handle("repertoires:endPractice", (_event, sessionId: unknown) => {
-    const parsed = asId(sessionId, "sessionId");
-    return withRepertoireWriteGate(() => endPractice(parsed));
-  });
-  ipcMain.handle("repertoires:saveWorkspace", (_event, input: unknown) => {
-    const parsed = parseSaveWorkspaceInput(input);
-    return withRepertoireWriteGate(() => saveWorkspace(parsed));
-  });
-  ipcMain.handle("repertoires:getDueSummary", () => getDueSummary());
+  ipcMain.handle(
+    "repertoires:startPractice",
+    write(parseStartPracticeInput, (repertoires, input) => repertoires.startPractice(input))
+  );
+  ipcMain.handle(
+    "repertoires:resumePractice",
+    write(sessionId, (repertoires, id) => repertoires.resumePractice(id))
+  );
+  ipcMain.handle(
+    "repertoires:recordPracticeAction",
+    write(parsePracticeActionInput, (repertoires, input) => repertoires.recordPracticeAction(input))
+  );
+  ipcMain.handle(
+    "repertoires:recordAttempt",
+    write(parseRecordAttemptInput, (repertoires, input) => repertoires.recordAttempt(input))
+  );
+  ipcMain.handle(
+    "repertoires:endPractice",
+    write(sessionId, (repertoires, id) => repertoires.endPractice(id))
+  );
+  ipcMain.handle(
+    "repertoires:saveWorkspace",
+    write(parseSaveWorkspaceInput, (repertoires, input) => repertoires.saveWorkspace(input))
+  );
+  ipcMain.handle(
+    "repertoires:getDueSummary",
+    read(none, (repertoires) => repertoires.getDueSummary())
+  );
+  registerPracticeHomeIpc();
+}
+
+/** Seconds after startup the background opening detection waits (the window loads first). */
+const OPENING_DETECTION_DELAY_MS = 10_000;
+
+/**
+ * The practice home (docs/repertoire-games-and-practice.md §2, §4): openings, and the Practice
+ * tab's numbers. Chapters stored before openings were detected get theirs once, in the background.
+ */
+function registerPracticeHomeIpc(): void {
+  ipcMain.handle(
+    "repertoires:openingOf",
+    read(parseOpeningOfInput, (repertoires, input) => repertoires.openingOfLine(input))
+  );
+  ipcMain.handle(
+    "repertoires:bookOpenings",
+    read(none, (repertoires) => repertoires.bookOpenings())
+  );
+  ipcMain.handle(
+    "repertoires:practiceOverview",
+    read(none, (repertoires) => repertoires.practiceOverview())
+  );
+  setTimeout(() => {
+    service()
+      .then((repertoires) => repertoires.detectMissingOpenings())
+      .catch((error: unknown) =>
+        logger.error("repertoire", "detecting chapter openings failed:", error)
+      );
+  }, OPENING_DETECTION_DELAY_MS).unref();
 }

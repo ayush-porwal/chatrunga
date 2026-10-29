@@ -7,7 +7,8 @@ import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input, Select } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
-import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { playUci } from "./study-staging";
 import {
   DECISION_SCOPE_TEXT,
   MAX_DECISION_TEXT_LENGTH,

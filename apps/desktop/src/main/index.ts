@@ -28,6 +28,8 @@ import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
 import { stopGamePuzzleQueue } from "./game-puzzles";
+import { stopRepertoireExplorer } from "./repertoire-explorer";
+import { stopRepertoireInsights } from "./repertoire-insights";
 import { shutdownLichess } from "./lichess";
 import { shutdownBroadcasts } from "./broadcasts";
 import { shutdownChesscom } from "./chesscom";
@@ -284,6 +286,10 @@ function shutdown(): Promise<void> {
       ["reviews", () => engineManager.cancelAllReviews()],
       // Before the database closes: the game it was on goes back in the queue.
       ["puzzle generation", stopGamePuzzleQueue],
+      // Before the database closes: the repertoire being checked goes back in the queue.
+      ["repertoire health check", stopRepertoireExplorer],
+      // Before the database closes: the games comparison stops after the chunk being written.
+      ["repertoire insights", stopRepertoireInsights],
       ["engines", () => void engineManager.dispose()],
       ["engine processes", killAllEngineProcesses],
       ["maia", disposeMaia3Evaluator],

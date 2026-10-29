@@ -1,0 +1,130 @@
+import { describe, expect, it } from "vitest";
+import { START_FEN } from "@chaturanga/shared/chess/position";
+import {
+  DEFAULT_INSIGHTS_FILTERS,
+  type InsightsUnpreparedReply
+} from "@chaturanga/shared/types/repertoire-insights";
+import { prepareStudyTarget } from "./insights-actions";
+import {
+  afterBookText,
+  filtersSummary,
+  lineLabels,
+  outcomeFilterIndex,
+  outcomePill,
+  plyMoveLabel
+} from "./insights-format";
+
+describe("Insights words", () => {
+  it("numbers moves by their ply", () => {
+    expect(plyMoveLabel(5, "e5")).toBe("3.e5");
+    expect(plyMoveLabel(8, "Nc6")).toBe("4…Nc6");
+    expect(
+      lineLabels(START_FEN, [
+        { uci: "e2e4", san: "e4" },
+        { uci: "c7c6", san: "c6" },
+        { uci: "d2d4", san: "d4" }
+      ])
+    ).toStrictEqual(["1. e4", "c6", "2. d4"]);
+  });
+
+  it("says what happened in a game on its outcome pill", () => {
+    expect(
+      outcomePill({
+        outcome: "forgot",
+        color: "black",
+        issue: issueAt(8, "Nf6", ["Nc6"])
+      })
+    ).toMatchObject({ label: "Forgot 4…Nc6", title: "You played 4…Nf6; your repertoire has Nc6." });
+    expect(
+      outcomePill({
+        outcome: "new-reply",
+        color: "black",
+        issue: issueAt(5, "e5")
+      }).label
+    ).toBe("New reply 3.e5");
+    expect(
+      outcomePill({
+        outcome: "not-covered",
+        color: "white",
+        issue: issueAt(1, "e3")
+      }).label
+    ).toBe("Not covered: 1.e3");
+    expect(outcomePill({ outcome: "no-repertoire", color: "white", issue: null }).label).toBe(
+      "No White repertoire"
+    );
+  });
+
+  it("names only the filters that leave games out", () => {
+    expect(filtersSummary(DEFAULT_INSIGHTS_FILTERS)).toBeNull();
+    expect(
+      filtersSummary({
+        ...DEFAULT_INSIGHTS_FILTERS,
+        period: "3m",
+        timeControls: ["blitz", "rapid"],
+        ratedOnly: true,
+        accounts: ["lichess"]
+      })
+    ).toBe("Last 3 months · Blitz, Rapid · Rated only · Lichess");
+    expect(
+      filtersSummary({ ...DEFAULT_INSIGHTS_FILTERS, period: "since", since: "2026-09-01" })
+    ).toBe("Since 2026-09-01");
+  });
+
+  it("writes the after-book loss with its sign", () => {
+    expect(afterBookText({ averageLoss: 12.4, reviewedGames: 5 })?.text).toBe("−12% after");
+    expect(afterBookText({ averageLoss: -3, reviewedGames: 1 })?.text).toBe("+3% after");
+    expect(afterBookText(null)).toBeNull();
+  });
+
+  it("finds a bar segment's outcomes among the games list's choices", () => {
+    expect(outcomeFilterIndex(null)).toBe(0);
+    expect(outcomeFilterIndex(["in-book", "ended-in-book"])).toBeGreaterThan(0);
+  });
+});
+
+describe("Prepare", () => {
+  it("opens Study before the reply, staged, with the From your games banner", () => {
+    const reply: InsightsUnpreparedReply = {
+      repertoireId: "r",
+      repertoireName: "Caro-Kann",
+      color: "black",
+      positionKey: "k",
+      fen: START_FEN,
+      games: 32,
+      rootFen: START_FEN,
+      line: [],
+      score: { wins: 1, draws: 0, losses: 0, percent: 100 },
+      lastSeenAt: null,
+      afterBook: null,
+      latestGameId: "g",
+      ply: 1,
+      study: { chapterId: "c", nodeId: "n" },
+      reply: { uci: "e2e4", san: "e4" }
+    };
+    expect(prepareStudyTarget(reply)).toStrictEqual({
+      repertoireId: "r",
+      chapterId: "c",
+      nodeId: "n",
+      tab: "moves",
+      stage: { nodeId: "n", uci: "e2e4" },
+      fromGames: {
+        kind: "unprepared",
+        positionKey: "k",
+        reply: { uci: "e2e4", san: "e4", games: 32 }
+      }
+    });
+  });
+});
+
+/** A game row's issue: the move played at `ply` and the repertoire's moves there. */
+function issueAt(ply: number, played: string, expected: string[] = []) {
+  return {
+    ply,
+    played,
+    playedUci: null,
+    expected,
+    expectedUcis: [],
+    positionKey: null,
+    study: null
+  };
+}

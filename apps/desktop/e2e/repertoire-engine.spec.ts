@@ -127,10 +127,9 @@ const enginePanel = (page: Page) =>
   studyPanel(page).getByRole("region", { name: "Engine analysis" });
 const chapterMoves = (page: Page) => page.getByRole("tree", { name: "Chapter moves" });
 const addLine = (page: Page, san: string) =>
-  enginePanel(page).getByRole("button", {
-    name: `Add the line to ${san} to the chapter`,
-    exact: true
-  });
+  enginePanel(page).getByRole("button", { name: `Stage the line to ${san}`, exact: true });
+/** The New moves card (staged moves). */
+const newMoves = (page: Page) => studyPanel(page).getByRole("status", { name: "New moves" });
 
 /** The process id of the fake engine started last (it logs `pid <id>` as it starts). */
 function enginePid(log: string): number {
@@ -161,7 +160,7 @@ function engineCommands(log: string): string[] {
   }
 }
 
-test("Analyze runs the engine in study: its lines follow the selection, a picked move joins the chapter and Undo takes it back", async ({
+test("Analyze runs the engine in study: its lines follow the selection, a picked move is staged, added, and Undo takes it back", async ({
   launch,
   profile
 }) => {
@@ -270,12 +269,17 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   await page.mouse.move(0, 0);
   await expect(preview).toHaveCount(0);
 
-  // Picking an engine move adds it to the chapter at the selected move and selects it.
+  // Picking an engine move stages it at the selected move and selects it; Add saves it.
   await addLine(page, "Nf6").click();
   await expect(
     chapterMoves(page).getByRole("button", { name: "Nf6", exact: true })
   ).toHaveAttribute("aria-current", "step");
   await expect(addLine(page, "d3")).toBeVisible();
+  await expect(newMoves(page)).toContainText(
+    "3…Nf6 is a reply you'll cover; play your answer to practise it."
+  );
+  await newMoves(page).getByRole("button", { name: "Add 1 move", exact: true }).click();
+  await expect(newMoves(page)).toHaveCount(0);
   await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
 
   // Undo takes it back (one step), and the lines are the previous move's again.

@@ -4,7 +4,14 @@ import type { BoardArrow, BoardHighlight } from "@chaturanga/shared/types/chess"
 import { REPERTOIRE_METADATA_LIMITS } from "@chaturanga/shared/types/repertoire";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
-import { nodeAt, serviceHelpers, treeOf, withNodeId } from "./__fixtures__/repertoire-builders";
+import {
+  GRADING_SETTINGS,
+  nodeAt,
+  serviceHelpers,
+  setPracticeSettings,
+  treeOf,
+  withNodeId
+} from "./__fixtures__/repertoire-builders";
 
 const env = await vi.hoisted(async () => import("./__fixtures__/service-env"));
 vi.mock("electron", () => env.electronModule);
@@ -24,6 +31,8 @@ const START_KEY = positionKey(START_FEN);
 describe("repertoire edits", () => {
   beforeEach(() => {
     getDb().exec("DELETE FROM repertoires");
+    getDb().exec("DELETE FROM repertoire_new_introductions");
+    setPracticeSettings(getDb(), GRADING_SETTINGS);
     service.resetImportJobs();
     sent.length = 0;
     now = 1_000_000_000_000;

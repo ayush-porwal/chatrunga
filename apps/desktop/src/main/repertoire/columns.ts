@@ -1,5 +1,6 @@
 /** Repertoire columns read back: JSON that may be unreadable, and enums stored as text. */
 import type { ChapterKind, RepertoireColor } from "@chaturanga/shared/types/repertoire";
+import type { ChapterOpening } from "@chaturanga/shared/types/repertoire-practice";
 import { parseStoredJson } from "../stored-json";
 
 /** Parses a JSON column, returning `fallback` when it is unreadable (non-critical columns). */
@@ -32,3 +33,13 @@ export function stringRecord(text: string | null): Record<string, string> {
 export const asColor = (value: string): RepertoireColor => (value === "black" ? "black" : "white");
 export const asKind = (value: string): ChapterKind =>
   value === "reference" ? "reference" : "opening";
+
+/** A chapter's opening columns: null when none was found; a typed one may be empty (cleared). */
+export function chapterOpening(
+  name: string | null,
+  eco: string | null,
+  edited: number
+): ChapterOpening | null {
+  if (!name && edited !== 1) return null;
+  return { name: name ?? "", eco, edited: edited === 1 };
+}

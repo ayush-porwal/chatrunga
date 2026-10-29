@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { useEventCallback } from "@/lib/use-event-callback";
 import type { useRepertoireChapterQuery, useRepertoireQuery } from "../../queries/repertoire";
-import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { playUci } from "./study-staging";
 import {
   decisionDraftKey,
   decisionDraftName,

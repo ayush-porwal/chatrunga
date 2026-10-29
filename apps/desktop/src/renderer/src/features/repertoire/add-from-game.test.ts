@@ -187,12 +187,11 @@ describe("labels and destination defaults", () => {
 
   it("starts a new repertoire from the current game only on the plain Create path", () => {
     const later = applySan(START_FEN, "e4")!.fen;
-    expect(newRepertoireRootFen("game", "", later, "study")).toBe(later);
-    expect(newRepertoireRootFen("game", "", later, "import")).toBeNull();
-    expect(newRepertoireRootFen("game", "", START_FEN, "study")).toBeNull();
-    expect(newRepertoireRootFen("game", "", null, "study")).toBeNull();
-    expect(newRepertoireRootFen("fen", ` ${later} `, null, "import")).toBe(later);
-    expect(newRepertoireRootFen("initial", "", later, "study")).toBeNull();
+    expect(newRepertoireRootFen("game", "", later)).toBe(later);
+    expect(newRepertoireRootFen("game", "", START_FEN)).toBeNull();
+    expect(newRepertoireRootFen("game", "", null)).toBeNull();
+    expect(newRepertoireRootFen("fen", ` ${later} `, null)).toBe(later);
+    expect(newRepertoireRootFen("initial", "", later)).toBeNull();
   });
 
   it("selects the first candidate that is still an active repertoire, never guessing", () => {

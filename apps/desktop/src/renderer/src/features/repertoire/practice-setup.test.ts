@@ -67,8 +67,7 @@ describe("practice settings", () => {
     expect(practiceSettings(detailOf({ chapters }))).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
-      cardLimit: DEFAULT_CARD_LIMIT,
-      newCardLimit: 5
+      cardLimit: DEFAULT_CARD_LIMIT
     });
   });
 
@@ -94,7 +93,7 @@ describe("practice settings", () => {
     expect(practiceSettings(none)).not.toHaveProperty("chapterIds");
   });
 
-  it("clamp a saved draft to the main's limits and ignore another repertoire's", () => {
+  it("clamp a saved draft to the main's limits, drop its own new-card count (the daily limit replaced it), and ignore another repertoire's", () => {
     const detail = detailOf({
       chapters,
       workspace: workspace({
@@ -109,7 +108,6 @@ describe("practice settings", () => {
       repertoireId: "r1",
       mode: "review-due",
       cardLimit: MAX_CARD_LIMIT,
-      newCardLimit: 0,
       maxDepthPlies: MAX_DEPTH_PLIES
     });
     expect(practiceSettings(detailOf({ ...detail, id: "r2" })).cardLimit).toBe(DEFAULT_CARD_LIMIT);
@@ -129,16 +127,14 @@ describe("practice settings", () => {
       mode: "rehearse-lines",
       chapterIds: ["A"],
       maxDepthPlies: 12,
-      cardLimit: 10,
-      newCardLimit: 3
+      cardLimit: 10
     };
     const form = practiceSettingsForm(settings);
     expect(form).toStrictEqual({
       lines: true,
       chapterIds: ["A"],
       depth: "12",
-      cards: "10",
-      fresh: "3"
+      cards: "10"
     });
     expect(practiceSettingsFromForm({ repertoireId: "r1", ...form })).toStrictEqual(settings);
     expect(
@@ -147,15 +143,13 @@ describe("practice settings", () => {
         lines: false,
         chapterIds: [],
         depth: "2000",
-        cards: "abc",
-        fresh: ""
+        cards: "abc"
       })
     ).toStrictEqual({
       repertoireId: "r1",
       mode: "review-due",
       maxDepthPlies: MAX_DEPTH_PLIES,
-      cardLimit: DEFAULT_CARD_LIMIT,
-      newCardLimit: 0
+      cardLimit: DEFAULT_CARD_LIMIT
     });
   });
 });

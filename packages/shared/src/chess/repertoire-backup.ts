@@ -29,6 +29,7 @@ import {
 import { positionKey } from "./repertoire-position";
 import { isOneOf } from "../types/guards";
 import { nullPrototypeRecord } from "../types/record";
+import { MAX_OPENING_NAME } from "../types/repertoire-practice";
 
 /** Bounds a backup must stay within, and the versions this app reads (design §11). */
 export type BackupLimits = {
@@ -334,7 +335,17 @@ function parseChapter(value: unknown, where: string): RepertoireChapter {
     dueCount: 0,
     headers: chapter.headers === undefined ? {} : stringRecord(chapter.headers, `${at} headers`),
     tree,
-    nodeMeta: parseNodeMeta(chapter.nodeMeta, tree, at)
+    nodeMeta: parseNodeMeta(chapter.nodeMeta, tree, at),
+    // Optional: a backup from before chapters kept their opening has none (detection finds it).
+    ...(isObject(chapter.opening) && typeof chapter.opening.name === "string"
+      ? {
+          opening: {
+            name: chapter.opening.name.slice(0, MAX_OPENING_NAME),
+            eco: typeof chapter.opening.eco === "string" ? chapter.opening.eco.slice(0, 3) : null,
+            edited: chapter.opening.edited === true
+          }
+        }
+      : {})
   };
 }
 

@@ -270,15 +270,8 @@ export type ComparisonAction =
   | { kind: "study"; label: string; chapterId: string; nodeId: string | null }
   /** A targeted practice queue of this decision. */
   | { kind: "refresh"; label: string; positionKey: string }
-  /** Opens study at the issue's node with the played move staged. */
-  | {
-      kind: "stage";
-      label: string;
-      chapterId: string;
-      nodeId: string;
-      uci: string;
-      edge: "covered" | "reference";
-    }
+  /** Opens study at the issue's node with the played move staged (added from New moves). */
+  | { kind: "stage"; label: string; chapterId: string; nodeId: string; uci: string }
   /** Focuses the repertoire picker. */
   | { kind: "choose-repertoire"; label: string }
   /** Opens the repertoire hub. */
@@ -301,8 +294,7 @@ export function comparisonActions(issue: ComparisonIssue | null): ComparisonActi
                 label: "Adopt played alternative",
                 chapterId,
                 nodeId,
-                uci: playedUci,
-                edge: "reference" as const
+                uci: playedUci
               }
             ]
           : []),
@@ -317,8 +309,7 @@ export function comparisonActions(issue: ComparisonIssue | null): ComparisonActi
                 label: "Add this response",
                 chapterId,
                 nodeId,
-                uci: playedUci,
-                edge: "covered" as const
+                uci: playedUci
               }
             ]
           : []),

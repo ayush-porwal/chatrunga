@@ -150,14 +150,6 @@ export function deriveChoices(
   };
 }
 
-/** Default edge of a move added while studying (§5.2): own moves reference, replies covered. */
-export function defaultEdgeForNewMove(
-  fenBefore: string,
-  color: RepertoireColor
-): RepertoireNodeMeta["edge"] {
-  return playerToMove(fenBefore) === color ? "reference" : "covered";
-}
-
 /**
  * What a move of the chapter is, as Study's tree and move menu show it: one of the player's moves
  * (`yours`, an accepted choice), an opponent reply the repertoire prepares for (`covered`), or
@@ -221,7 +213,7 @@ export function occurrencesInOtherChapters(
 }
 
 /** Fullmove number and side to move of a FEN (defaults: move 1, White). */
-function moveNumberOf(fen: string): { fullmove: number; white: boolean } {
+export function moveNumberOf(fen: string): { fullmove: number; white: boolean } {
   const fields = fen.trim().split(/\s+/);
   const fullmove = Number.parseInt(fields[5] ?? "1", 10);
   return {

@@ -11,7 +11,10 @@ import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
 import { MatchActions } from "../features/analysis/MatchActions";
-import { RepertoireHandoffActions } from "../features/repertoire/RepertoireHandoffActions";
+import {
+  BackToInsightsAction,
+  RepertoireHandoffActions
+} from "../features/repertoire/RepertoireHandoffActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
@@ -316,13 +319,16 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
   gameLoading,
   hasMoves,
   onAnalyze,
-  onStop
+  onStop,
+  onBackToInsights
 }: {
   gameLoading: boolean;
   /** The game has main-line moves to review. */
   hasMoves: boolean;
   onAnalyze: () => void;
   onStop: () => void;
+  /** Shown while the game Insights opened is reviewed. */
+  onBackToInsights: () => void;
 }) {
   const headers = useGameStore((state) => state.headers);
   const running = useReviewStore((state) => state.status === "running");
@@ -339,6 +345,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
       result={resultBadgeLabel(headers.result, headers.termination)}
       actions={
         <>
+          <BackToInsightsAction onBack={onBackToInsights} />
           <AnalysisSwitcher onAnalyzeAgain={gameLoading ? undefined : onAnalyze} />
           {running || hasMoves ? (
             <Button

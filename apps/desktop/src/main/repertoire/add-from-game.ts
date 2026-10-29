@@ -52,6 +52,7 @@ import {
 } from "./repository";
 import { gameLinkRepository, libraryGameExists } from "./game-link-repository";
 import { changed, clock, loadChapter } from "./service-runtime";
+import { withDetectedOpening } from "./chapter-openings";
 
 type AddFromGamePlan = {
   /** The chapter as it would be stored (sanitised; next chapter revision). */
@@ -452,7 +453,7 @@ export function addFromGame(input: AddFromGameInput): AddFromGameResult {
     }
     const plan = planAddFromGame(record, input, now);
     const next = bump(record, now);
-    chapterRepository.upsert(record.id, plan.chapter, now);
+    chapterRepository.upsert(record.id, withDetectedOpening(plan.chapter), now);
     const { decisionsChanged } = reindex(next, now);
     const link: RepertoireGameLink = {
       id: nanoid(),

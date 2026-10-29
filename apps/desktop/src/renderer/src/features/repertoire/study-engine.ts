@@ -8,7 +8,7 @@ import type { AnalysisTarget } from "../analysis/live-analysis";
 /**
  * Study's engine panel: what live analysis searches for the selected move (the chapter's route to
  * it from its root, so the engine knows the game's history) and how a picked engine line becomes
- * chapter moves.
+ * staged moves.
  */
 
 /** The analysis target for `node` of `chapter`: owned by the chapter, so another chapter is another search. */

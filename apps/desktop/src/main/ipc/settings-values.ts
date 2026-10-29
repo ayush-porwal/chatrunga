@@ -19,6 +19,10 @@ import {
 import { MAIA3_RATINGS } from "@chaturanga/shared/engine/maia3";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { isPlayerRatings, RATINGS_ACCOUNTS } from "@chaturanga/shared/types/ratings";
+import {
+  isRepertoirePracticeSettings,
+  REPERTOIRE_HUB_TABS
+} from "@chaturanga/shared/types/repertoire-practice";
 
 /** Whether a value fits a setting, narrowing it to the setting's type. */
 type Check<T> = (value: unknown) => value is T;
@@ -110,6 +114,10 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   repertoireCompareWhite: nullable(text(200)),
   repertoireCompareBlack: nullable(text(200)),
   practiceAutoAdvanceMs: oneOf(...PRACTICE_AUTO_ADVANCE_MS),
+  repertoirePractice: isRepertoirePracticeSettings,
+  repertoireHubTab: oneOf(...REPERTOIRE_HUB_TABS),
+  // Repertoire study
+  studyRepertoireArrows: bool,
   onboardingCompletedAt: nullable(number(0, Number.MAX_SAFE_INTEGER, true)),
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };

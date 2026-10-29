@@ -75,6 +75,56 @@ describe("repertoire practice store", () => {
     expect(store().reveal).toBeNull();
   });
 
+  it("names the move to play after a wrong one and draws it until the right move", () => {
+    store().setSession(session());
+    const card = cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 });
+    store().applyAttempt(
+      {
+        outcome: "outside-repertoire",
+        acceptedUcis: ["e2e4", "d2d4"],
+        preferredUci: "d2d4",
+        feedback: "Not here.",
+        card,
+        finalGrade: true
+      },
+      "g1f3"
+    );
+    expect(store().message).toStrictEqual({
+      tone: "warn",
+      text: "Not 1.Nf3. Your move here is 1.d4. Play it to continue.",
+      feedback: "Not here."
+    });
+    expect(store().correction).toMatchObject({ ucis: ["e2e4", "d2d4"], preferredUci: "d2d4" });
+    // Still retryable: nothing is revealed.
+    expect(store().reveal).toBeNull();
+    store().applyAttempt({
+      outcome: "correct",
+      acceptedUcis: ["e2e4", "d2d4"],
+      preferredUci: "d2d4",
+      feedback: null,
+      card: { ...card, attemptsSoFar: 2 },
+      finalGrade: false
+    });
+    expect(store().correction).toBeNull();
+  });
+
+  it("at a first sight, another move points back to the shown one", () => {
+    store().setSession(session());
+    store().applyAttempt(
+      {
+        outcome: "outside-repertoire",
+        acceptedUcis: [],
+        preferredUci: null,
+        feedback: null,
+        card: cardOf("a", { preview: { uci: "e2e4" }, attemptsSoFar: 1 }),
+        finalGrade: false
+      },
+      "d2d4"
+    );
+    expect(store().message?.text).toBe("Not 1.d4. Your move here is 1.e4. Play it to continue.");
+    expect(store().correction?.ucis).toStrictEqual(["e2e4"]);
+  });
+
   it("keeps a wrong first answer retryable, and a correct retry shows the answer", () => {
     store().setSession(session());
     store().applyAttempt({

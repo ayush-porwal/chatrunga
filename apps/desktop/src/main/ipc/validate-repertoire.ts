@@ -17,6 +17,7 @@ import type {
   ImportCommitInput,
   LinkGameInput,
   PracticeActionInput,
+  PracticeMode,
   PreviewBackupImportInput,
   PreviewImportInput,
   RecordAttemptInput,
@@ -35,6 +36,12 @@ import type {
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
 import { COMPARE_GAME_MAX_PLIES } from "@chaturanga/shared/types/repertoire";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import {
+  MAX_OPENING_NAME,
+  type ChapterOpening,
+  type OpeningOfInput
+} from "@chaturanga/shared/types/repertoire-practice";
 import {
   MAX_NAME,
   MAX_HEADER,
@@ -64,6 +71,8 @@ const MAX_IMPORT_GAMES = 1_000;
 const MAX_POSITION_KEY = 200;
 /** Targeted practice ("Refresh this decision") names at most this many decisions. */
 const MAX_TARGETED_KEYS = 200;
+/** Repertoires one Practice tab set queues at most. */
+const MAX_SET_REPERTOIRES = 500;
 
 function asRevision(value: unknown): number {
   return asWholeNumber(value, "expectedRevision");
@@ -210,9 +219,43 @@ export function parseSaveChapterInput(value: unknown): SaveChapterInput {
       nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<
         string,
         RepertoireNodeMeta
-      >
+      >,
+      ...(chapter.opening !== undefined ? { opening: asChapterOpening(chapter.opening) } : {})
     }
   };
+}
+
+/* Practice home additions (docs/repertoire-games-and-practice.md §2, §4). */
+
+const PRACTICE_MODES: readonly PracticeMode[] = [
+  "review-due",
+  "learn-new",
+  "rehearse-lines",
+  "practice-early",
+  "weak"
+];
+
+function asPracticeMode(value: unknown): PracticeMode {
+  if (!isOneOf(PRACTICE_MODES, value))
+    fail("practice mode", `expected ${PRACTICE_MODES.join(", ")}`);
+  return value;
+}
+
+/** A chapter's opening (null: none); the service cleans the name and ECO again. */
+function asChapterOpening(value: unknown): ChapterOpening | null {
+  if (value === null) return null;
+  const opening = asObject(value, "opening");
+  return {
+    name: asString(opening.name, "opening name", MAX_OPENING_NAME),
+    eco: nullable(opening.eco, (eco) => asString(eco, "opening eco", 3)) ?? null,
+    edited: asBoolean(opening.edited, "opening edited")
+  };
+}
+
+/** `openingOf`'s line: a position and the moves played from it (at most a game's opening). */
+export function parseOpeningOfInput(value: unknown): OpeningOfInput {
+  const input = asObject(value, "opening line");
+  return { rootFen: asFen(input.rootFen, "rootFen"), moves: asUciMoves(input.moves) };
 }
 
 export function parseUpdateDecisionInput(value: unknown): UpdateDecisionInput {
@@ -332,7 +375,8 @@ export function parseImportCommitInput(value: unknown): ImportCommitInput {
         include,
         excludeNodeIds: optional(selection.excludeNodeIds, (ids) =>
           asIdArray(ids, "excludeNodeIds", MAX_CHAPTER_NODES)
-        )
+        ),
+        ...(selection.opening !== undefined ? { opening: asChapterOpening(selection.opening) } : {})
       };
     })
   };
@@ -398,16 +442,9 @@ export function parseRestoreBackupInput(value: unknown): RestoreBackupInput {
 
 export function parseStartPracticeInput(value: unknown): StartPracticeInput {
   const input = asObject(value, "practice");
-  if (
-    input.mode !== "review-due" &&
-    input.mode !== "learn-new" &&
-    input.mode !== "rehearse-lines"
-  ) {
-    fail("practice mode", "expected review-due, learn-new or rehearse-lines");
-  }
   const result: StartPracticeInput = {
     repertoireId: asId(input.repertoireId, "repertoireId"),
-    mode: input.mode
+    mode: asPracticeMode(input.mode)
   };
   const chapterIds = optional(input.chapterIds, (ids) =>
     asIdArray(ids, "chapterIds", MAX_IMPORT_GAMES)
@@ -446,6 +483,11 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     };
   });
   if (rehearse) result.rehearse = rehearse;
+  // A Practice tab set: the repertoires it queues together.
+  const repertoireIds = optional(input.repertoireIds, (ids) =>
+    asIdArray(ids, "repertoireIds", MAX_SET_REPERTOIRES)
+  );
+  if (repertoireIds) result.repertoireIds = repertoireIds;
   const ungraded = optional(input.ungraded, (flag) => asBoolean(flag, "ungraded"));
   if (ungraded) {
     if (!result.positionKeys?.length || result.mode === "rehearse-lines") {

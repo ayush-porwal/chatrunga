@@ -87,6 +87,12 @@ export function chessgroundMovableColor(movable: BoardMovable): Color | "both" |
   return movable === "none" ? undefined : movable;
 }
 
+/**
+ * Chessground's green drawn dashed (ControlledBoard adds the brush, board.css dashes it): a move
+ * that is one of several, beside the solid green of the main one (Study's repertoire arrows).
+ */
+export const DASHED_GREEN_BRUSH = "dashedGreen";
+
 /** The board's engine arrows setting (on or off) and how many plan arrows it shows (0: the best move alone). */
 type EngineArrowOptions = { bestMoveArrow: boolean; planArrows: number };
 

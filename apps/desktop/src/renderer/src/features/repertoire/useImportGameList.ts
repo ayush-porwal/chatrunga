@@ -46,6 +46,13 @@ export function useImportGameList() {
     setShownCount(PREVIEW_PAGE_SIZE);
   };
 
+  /** Lists only these games (the preview's "Show" for positions with several moves). */
+  const showOnly = (indexes: readonly number[]) => {
+    setQuery("");
+    setFound([...indexes]);
+    setShownCount(PREVIEW_PAGE_SIZE);
+  };
+
   /** Shows the next page of games and moves focus to the first one it adds. */
   const showMore = () => {
     const first = found[shownCount];
@@ -70,6 +77,7 @@ export function useImportGameList() {
     reset,
     update,
     search,
+    showOnly,
     showMore
   };
 }

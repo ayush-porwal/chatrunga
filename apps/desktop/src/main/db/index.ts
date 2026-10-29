@@ -7,6 +7,9 @@ import type { GameReview } from "@chaturanga/shared/types/engine";
 import { gameFingerprint } from "./game-fingerprint";
 import { reviewListingFields, reviewRowId } from "./review-rows";
 import { setRepertoireConnection } from "../repertoire/connection";
+import { migrateRepertoirePractice } from "../repertoire/practice-migration";
+import { migrateRepertoireExplorer } from "../repertoire-explorer/migration";
+import { migrateRepertoireInsights } from "../repertoire-insights/migration";
 import { allRows, getRow } from "./rows";
 import { parseStoredJson } from "../stored-json";
 
@@ -563,6 +566,20 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     database.exec(
       "CREATE INDEX IF NOT EXISTS puzzle_generation_games_queue_idx ON puzzle_generation_games(status, queue_order)"
     );
+  },
+  // 16: chapters' detected openings and the daily new-position limit (repertoire practice home).
+  migrateRepertoirePractice,
+  // 17: games compared with the repertoires, game misses, and decisions' accepted_at (Insights).
+  migrateRepertoireInsights,
+  // 18: the games' position index and the repertoire health check (Study's explorer).
+  migrateRepertoireExplorer,
+  // 19: a book's repertoire is marked by its books row; drop the `book` tag older imports gave it.
+  (database) => {
+    database.exec(`UPDATE repertoires
+      SET tags_json = (SELECT json_group_array(value) FROM json_each(repertoires.tags_json)
+        WHERE value <> 'book')
+      WHERE id IN (SELECT repertoire_id FROM books WHERE repertoire_id IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM json_each(repertoires.tags_json) WHERE value = 'book')`);
   }
 ];
 

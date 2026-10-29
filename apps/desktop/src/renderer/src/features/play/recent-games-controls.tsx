@@ -62,7 +62,7 @@ export function SourceBadge({ source, className }: { source: GameSource; classNa
 }
 
 /** A title-bar button's "on" mark (a filter or search applies): a dot at its icon's top-right. */
-function ActiveDot() {
+export function ActiveDot() {
   return (
     <span
       aria-hidden="true"

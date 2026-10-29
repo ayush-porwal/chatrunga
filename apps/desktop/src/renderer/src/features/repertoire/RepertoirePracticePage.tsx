@@ -2,13 +2,19 @@ import { useMemo, useState, type ReactNode } from "react";
 import { CircleAlert, GraduationCap, Loader2, RotateCcw, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import type { RepertoireDetail, StartPracticeInput } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useRepertoireQuery } from "../../queries/repertoire";
 import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
 import { PracticeEmptyState } from "./PracticeEmptyState";
 import { PracticeSession } from "./PracticeSession";
-import { explainedChapterIds, presetPracticeInput, type PracticePreset } from "./practice-setup";
+import {
+  explainedChapterIds,
+  presetPracticeInput,
+  returnTabOf,
+  type PracticePreset
+} from "./practice-setup";
 import { isEmptyTargetedStart, type PracticeStart } from "./practice-start";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import { RepertoireSettingsDialog } from "./RepertoireSettingsDialog";
@@ -31,7 +37,8 @@ export function RepertoirePracticePage({
   onSessionStarted,
   onAgain,
   onStudy,
-  onRehearse
+  onRehearse,
+  onReturnToHub
 }: {
   repertoireId: string;
   sessionId: string | null;
@@ -46,6 +53,8 @@ export function RepertoirePracticePage({
    * missed decisions as a targeted queue), or another line's chapter.
    */
   onRehearse: (preset: PracticePreset) => void;
+  /** Back to the Repertoire tab the session was started from (Practice, Insights). */
+  onReturnToHub: (tab: RepertoireHubTab) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
   const detail = useRepertoireQuery(repertoireId);
@@ -120,6 +129,8 @@ export function RepertoirePracticePage({
         onAgain={onAgain}
         onRehearse={onRehearse}
         onSettings={openSettings}
+        returnTab={returnTabOf(preset)}
+        onReturnToHub={onReturnToHub}
       />
     );
   }

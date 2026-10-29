@@ -2,18 +2,25 @@
 // review queue of missed positions. How to run them: playwright.config.ts.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ElectronApplication, Page } from "@playwright/test";
+import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import { clickSquare, expect, sidebar, skipWelcome, test } from "./app";
 
 /**
  * A White repertoire with an opening chapter "Italian": 1. e4 e5 2. Nf3 Nc6 3. Bc4, so three
  * decisions (the start, after 1... e5, after 2... Nc6). e4 and Nf3 carry comments, and so does
- * 1... e5 (the explanation of the position after it). Set up through the preload bridge.
+ * 1... e5 (the explanation of the position after it). Set up through the preload bridge. With
+ * `firstSight` false, new positions are asked straight away (their move isn't shown first).
  */
-function seedRepertoire(page: Page) {
-  return page.evaluate(async () => {
-    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
+function seedRepertoire(page: Page, { firstSight = false } = {}) {
+  return page.evaluate(async (firstSight) => {
+    const bridge = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+    await bridge.settings.set("repertoirePractice", {
+      newPerDay: 10,
+      showMoveOnNew: firstSight,
+      sounds: true
+    });
+    const api = bridge.repertoires;
     const created = await api.create({ name: "White practice", color: "white" });
     const preview = await api.previewImport({
       pgn: '[Event "Italian"]\n\n1. e4 {Control the centre} e5 {Black mirrors} 2. Nf3 {Develop with tempo} Nc6 3. Bc4 *'
@@ -40,8 +47,12 @@ function seedRepertoire(page: Page) {
         practiceDraft: null
       }
     });
-  });
+  }, firstSight);
 }
+
+/** A counter of the session's strip ("Due", "New", "Done", "Right") or of a set's tile. */
+const counter = (panel: Locator, label: string) =>
+  panel.getByText(label, { exact: true }).locator("xpath=following-sibling::span");
 
 const practicePanel = (page: Page) => page.getByRole("complementary", { name: "Practice" });
 
@@ -100,7 +111,8 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   await expect(settings).toBeHidden();
   await practise(page);
   const panel = practicePanel(page);
-  await expect(panel).toContainText("1 of 3");
+  await expect(counter(panel, "New")).toHaveText("3");
+  await expect(counter(panel, "Done")).toHaveText("0");
 
   // Before grading: no answer, no comment of an answer move.
   await expect(panel.getByText("Control the centre")).toHaveCount(0);
@@ -114,16 +126,21 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   // An absence check (nothing marks a card that didn't advance): well past the default 600 ms
   // auto-advance, the answered card is still the first one.
   await page.waitForTimeout(1_500);
-  await expect(panel).toContainText("1 of 3");
+  await expect(counter(panel, "Right")).toHaveText("100%");
+  await expect(counter(panel, "New")).toHaveText("2");
   // Space is Next (focus is on the board, not on a button).
   await page.keyboard.press("Space");
-  await expect(panel).toContainText("2 of 3");
+  await expect(panel.getByText("New · White practice (White) · Italian")).toBeVisible();
 
-  // A wrong answer keeps the answer, its comment and the position's explanation hidden...
+  // A wrong answer names the move to play, but keeps its comment and the position's explanation
+  // hidden...
   await expect(panel.getByText("Black mirrors")).toHaveCount(0);
   await clickSquare(page, "d2");
   await clickSquare(page, "d4");
-  await expect(panel.getByText("This move is outside your repertoire.")).toBeVisible();
+  await expect(
+    panel.getByText("Not 2.d4. Your move here is 2.Nf3. Play it to continue.")
+  ).toBeVisible();
+  await expect(counter(panel, "Right")).toHaveText("50%");
   await expect(panel.getByText("Develop with tempo", { exact: false })).toHaveCount(0);
   await expect(panel.getByText("Black mirrors")).toHaveCount(0);
   // ...until the answer is revealed.
@@ -132,12 +149,14 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   await expect(panel.getByText("Black mirrors")).toBeVisible();
   await expect(panel.getByText("Develop with tempo", { exact: false })).toBeVisible();
   await page.locator("body").press("Enter");
-  await expect(panel).toContainText("3 of 3");
+  await expect(counter(panel, "Done")).toHaveText("2");
 
   // A second miss, then the summary.
   await clickSquare(page, "d2");
   await clickSquare(page, "d4");
-  await expect(panel.getByText("This move is outside your repertoire.")).toBeVisible();
+  await expect(
+    panel.getByText("Not 3.d4. Your move here is 3.Bc4. Play it to continue.")
+  ).toBeVisible();
   await panel.getByRole("button", { name: "See summary", exact: true }).click();
 
   // The summary lists every miss with its chapter and moves, each with a Study link.
@@ -158,13 +177,13 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   // Retry missed: a targeted session of the two misses, labelled as extra practice that isn't
   // scheduled. Correct answers seconds after the misses leave their relearn steps as they were.
   await page.getByRole("button", { name: "Retry missed", exact: true }).click();
-  await expect(panel).toContainText("1 of 2");
+  await expect(counter(panel, "Due")).toHaveText("2");
   await expect(page.getByText("Extra practice, not scheduled · ", { exact: false })).toBeVisible();
   await clickSquare(page, "g1");
   await clickSquare(page, "f3");
   await expect(panel.getByText("You played Nf3.")).toBeVisible();
   await page.keyboard.press("Space");
-  await expect(panel).toContainText("2 of 2");
+  await expect(counter(panel, "Done")).toHaveText("1");
   await clickSquare(page, "f1");
   await clickSquare(page, "c4");
   await expect(panel.getByText("You played Bc4.")).toBeVisible();
@@ -181,7 +200,7 @@ test("a missed position's Study link opens it in its chapter", async ({ launch }
   await openStudy(page);
   await practise(page);
   const panel = practicePanel(page);
-  await expect(panel).toContainText("1 of 3");
+  await expect(counter(panel, "New")).toHaveText("3");
   await panel.getByRole("button", { name: "Reveal", exact: true }).click();
   await panel.getByRole("button", { name: "End session", exact: true }).click();
 
@@ -189,4 +208,41 @@ test("a missed position's Study link opens it in its chapter", async ({ launch }
   await expect(missed.getByRole("listitem")).toHaveCount(1);
   await missed.getByRole("button", { name: "Study Italian: Start", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Repertoire study" })).toBeVisible();
+});
+
+test("the Practice tab's sets learn new positions with their move shown first, then lead back", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  await seedRepertoire(page, { firstSight: true });
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
+  await page.getByRole("tab", { name: "Practice", exact: true }).click();
+
+  const card = page.getByRole("listitem", { name: "White practice (White)" });
+  await expect(counter(card, "Due")).toHaveText("0");
+  await expect(counter(card, "New")).toHaveText("3");
+  await expect(counter(card, "Learning")).toHaveText("0");
+  await card.getByRole("button", { name: "Learn new 3", exact: true }).click();
+
+  // First sight: the move is shown; playing it is "seen", not right.
+  const panel = practicePanel(page);
+  await expect(panel.getByText("New position: your move is 1.e4.")).toBeVisible();
+  await clickSquare(page, "e2");
+  await clickSquare(page, "e4");
+  await expect(panel.getByText("Seen — it comes back within 10 minutes to check.")).toBeVisible();
+  await expect(counter(panel, "Right")).toHaveText("–");
+  await panel.getByRole("button", { name: "End session", exact: true }).click();
+
+  // The summary leads back to the Practice tab, where the position is now learning.
+  await page.getByRole("button", { name: "Back to Practice", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Practice", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(counter(card, "New")).toHaveText("2");
+  await expect(counter(card, "Learning")).toHaveText("1");
+  await expect(
+    page.getByRole("img", { name: "White: 0 mastered · 1 learning · 2 new" })
+  ).toBeVisible();
 });

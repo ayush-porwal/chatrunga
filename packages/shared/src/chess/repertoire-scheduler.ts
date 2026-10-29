@@ -19,9 +19,11 @@ export const LAPSE_RETRY_MS = 10 * MINUTE_MS;
  * - `assisted`: accepted after a hint, with no wrong answer before it;
  * - `wrong`: the first legal answer was outside the repertoire;
  * - `reveal`: the answer was revealed before any accepted legal answer;
- * - `no-change`: nothing gradeable (illegal input, skipped, abandoned).
+ * - `no-change`: nothing gradeable (illegal input, skipped, abandoned);
+ * - `seen`: a new position shown with its move first (first sight): learning, with no success
+ *   credit and no lapse.
  */
-export type PracticeOutcome = "unaided" | "assisted" | "wrong" | "reveal" | "no-change";
+export type PracticeOutcome = "unaided" | "assisted" | "wrong" | "reveal" | "no-change" | "seen";
 
 /** The scheduling fields of a progress row (the caller owns ids, fingerprint and suspension). */
 export type RepertoireSchedule = Pick<
@@ -71,6 +73,9 @@ export function scheduleAfterOutcome(
     case "wrong":
     case "reveal":
       return { ...base, stage: 0, dueAt: at + LAPSE_RETRY_MS, lapses: base.lapses + 1 };
+    case "seen":
+      // Back within the sitting, like a lapse, but nothing was forgotten.
+      return { ...base, stage: 0, dueAt: at + LAPSE_RETRY_MS };
   }
 }
 

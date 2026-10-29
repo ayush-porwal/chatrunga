@@ -17,6 +17,7 @@ import {
   resumedHintText,
   totalsOf
 } from "../features/repertoire/repertoire-model";
+import { wrongMoveText } from "../features/repertoire/practice-messages";
 
 /**
  * A repertoire practice session as shown: the main process's snapshot (it grades and persists),
@@ -62,6 +63,11 @@ export type RepertoirePracticeState = {
    * or a reveal); null before, so nothing answer-bearing shows while the card can be answered.
    */
   answer: PracticeAnswer | null;
+  /**
+   * After a move outside the repertoire (or another move at a first sight): the move to play to
+   * continue, drawn on the board; the grade stays as the first answer left it.
+   */
+  correction: PracticeAnswer | null;
   /** Index into the card's lead-up while replaying it; null shows the card's position. */
   leadUpIndex: number | null;
   orientation: Color;
@@ -77,7 +83,8 @@ export type RepertoirePracticeState = {
 
 type Actions = {
   setSession: (session: PracticeSessionSnapshot) => void;
-  applyAttempt: (result: AttemptResult) => void;
+  /** A graded move; `playedUci` names it in the wrong-move message. */
+  applyAttempt: (result: AttemptResult, playedUci?: string) => void;
   applyAction: (kind: PracticeAction["kind"], result: PracticeActionResult) => void;
   /** Rehearsal: the authored reply goes on the board. */
   showReply: () => void;
@@ -110,6 +117,7 @@ const initialState: RepertoirePracticeState = {
   message: null,
   reveal: null,
   answer: null,
+  correction: null,
   leadUpIndex: null,
   orientation: "white",
   rehearsal: null,
@@ -125,6 +133,7 @@ const freshCardUi = {
   message: null,
   reveal: null,
   answer: null,
+  correction: null,
   leadUpIndex: null,
   rehearsal: null,
   otherLine: null,
@@ -328,6 +337,54 @@ const ACTION_PATCHES: Record<PracticeAction["kind"], ActionPatch> = {
   skip: (_result, next) => ({ session: next })
 };
 
+/** A correct move's words: graded, a correct retry, or a first sight played. */
+function correctMessage(result: AttemptResult): PracticeOutcomeMessage {
+  if (!result.finalGrade) {
+    return { tone: "success", text: "Correct — this card still counts as missed." };
+  }
+  return result.card.preview
+    ? { tone: "success", text: "Seen — it comes back within 10 minutes to check." }
+    : { tone: "success", text: "Correct — that's in your repertoire." };
+}
+
+/**
+ * A move outside the repertoire: "Not 1…e5. Your move here is 1…c6. Play it to continue." with
+ * the move to play (the answer the grade gave out, or a first sight's shown move); a rehearsal's
+ * misses give out none, so they keep the plain words.
+ */
+function wrongMove(
+  result: AttemptResult,
+  playedUci: string | undefined
+): { message: PracticeOutcomeMessage; correction: PracticeAnswer | null } {
+  const preview = result.card.preview?.uci;
+  const correction = result.acceptedUcis.length
+    ? answerOf(result)
+    : preview
+      ? { ucis: [preview], preferredUci: preview, explanation: null }
+      : null;
+  return {
+    correction,
+    message: {
+      tone: "warn",
+      text:
+        correction && playedUci
+          ? wrongMoveText(result.card.fen, playedUci, correction)
+          : "This move is outside your repertoire.",
+      feedback: result.feedback
+    }
+  };
+}
+
+/** The correction after an answer: a new one, none after a correct move, else the one shown. */
+function keptCorrection(
+  outcome: AttemptResult["outcome"],
+  next: PracticeAnswer | null,
+  shown: PracticeAnswer | null
+): PracticeAnswer | null {
+  if (outcome === "outside-repertoire") return next;
+  return outcome === "correct" ? null : shown;
+}
+
 export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actions>((set, get) => ({
   ...initialState,
 
@@ -341,6 +398,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       hintUci: shown?.hintUci ?? null,
       reveal: shown?.revealed ?? null,
       answer: shown?.revealed ?? null,
+      correction: shown?.correction ?? null,
       message: card ? openingReplyMessage(session, card) : null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
@@ -349,7 +407,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     });
   },
 
-  applyAttempt: (result) => {
+  applyAttempt: (result, playedUci) => {
     const { session } = get();
     if (!session) return;
     const next = withStep(withCard(session, result.card), result.rehearsal);
@@ -365,11 +423,10 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       return;
     }
     let message: PracticeOutcomeMessage | null;
+    let correction: PracticeAnswer | null = null;
     switch (result.outcome) {
       case "correct":
-        message = result.finalGrade
-          ? { tone: "success", text: "Correct — that's in your repertoire." }
-          : { tone: "success", text: "Correct — this card still counts as missed." };
+        message = correctMessage(result);
         break;
       case "other-line":
         // Not a memory failure: the card stays current, to retry or follow the other line.
@@ -380,11 +437,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
         });
         return;
       case "outside-repertoire":
-        message = {
-          tone: "warn",
-          text: "This move is outside your repertoire.",
-          feedback: result.feedback
-        };
+        ({ message, correction } = wrongMove(result, playedUci));
         break;
       case "illegal":
         message = { tone: "warn", text: "That move isn't legal here." };
@@ -410,6 +463,8 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       // A correct retry ends the card showing the accepted moves on the board too.
       reveal: answer && !result.finalGrade ? answer : get().reveal,
       answer: answer ?? get().answer,
+      // A correct move ends the correction; an illegal one keeps it on the board.
+      correction: keptCorrection(result.outcome, correction, get().correction),
       rehearsal: step ? { step, replyShown: false, auto: true } : get().rehearsal
     });
   },

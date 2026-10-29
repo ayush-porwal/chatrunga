@@ -451,3 +451,59 @@ test(
     expect(previewRows).toBe(50);
   }
 );
+
+test("groups repertoires by colour with what is learned, and lists chapters by opening", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  await withApi(page, {}, async (api) => {
+    const created = await api.create({ name: "Caro-Kann", color: "black" });
+    const preview = await api.previewImport({
+      pgn: '[Event "Advance"]\n\n1. e4 c6 2. d4 d5 3. e5 Bf5 *\n\n[Event "Classical"]\n\n1. e4 c6 2. d4 d5 3. Nc3 dxe4 *'
+    });
+    await api.commitImport({
+      jobId: preview.jobId,
+      repertoireId: created.id,
+      expectedRevision: created.revision,
+      selections: preview.games.map((game) => ({
+        gameIndex: game.index,
+        title: game.proposedTitle,
+        kind: "opening" as const,
+        include: true
+      }))
+    });
+  });
+  await openHub(page);
+  const list = page.getByRole("list", { name: "Repertoires" });
+  // Black has one repertoire; White none, so it has no group.
+  await expect(list).toContainText(/Black\s*1/);
+  await expect(list).not.toContainText("White");
+  // The tabs sit in the card, not the window's title bar; Repertoires has no settings cog.
+  const hub = page.getByRole("region", { name: "Repertoire" });
+  await expect(hub.getByRole("tablist", { name: "Repertoire" })).toBeVisible();
+  await expect(hub.getByRole("button", { name: "Repertoire settings" })).toHaveCount(0);
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("progressbar", { name: "0 of 4 learned" })).toBeVisible();
+
+  await list.getByRole("button", { name: "Show chapters", exact: true }).click();
+  const family = list.getByRole("region", { name: "Caro-Kann Defense" });
+  await expect(family).toContainText("Caro-Kann Defense · 2 chapters");
+  await expect(family).toContainText("B12");
+  await expect(family).toContainText("Advance Variation");
+  await expect(family.getByRole("button", { name: "Practice Advance", exact: true })).toBeVisible();
+  await family.getByRole("button", { name: "Study Classical", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Repertoire study" })).toBeVisible();
+
+  // Back returns to the hub's tab; the tabs switch the page and are remembered.
+  await page.getByRole("button", { name: /^Back \(/ }).click();
+  await page.getByRole("tab", { name: "Practice", exact: true }).click();
+  await expect(page.getByRole("listitem", { name: "Everything" })).toBeVisible();
+  // Practice's own tools sit at the end of the card's tab bar, its settings cog last.
+  await expect(hub.getByRole("button", { name: "Practice settings" })).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Practice", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+});

@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode
 import {
   ArrowDown,
   ArrowUp,
+  BookMarked,
   BookOpen,
   GraduationCap,
   Pencil,
@@ -11,6 +12,7 @@ import {
   X
 } from "lucide-react";
 import type { ChapterKind, RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
+import type { ChapterOpening } from "@chaturanga/shared/types/repertoire-practice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -28,6 +30,7 @@ import {
   withSelection,
   type ChapterBulkPatch
 } from "./long-lists";
+import { ChapterOpeningDialog } from "./ChapterOpeningDialog";
 import { KIND_LABELS, plural, sortedChapters } from "./repertoire-chapters";
 
 /** A chapter row's height, and the distance from one row's top to the next (rows don't vary). */
@@ -48,6 +51,7 @@ export function StudyChaptersPanel({
   busy,
   onOpen,
   onRename,
+  onEditOpening,
   onSetEnabled,
   onSetKind,
   onSetMany,
@@ -61,6 +65,8 @@ export function StudyChaptersPanel({
   busy: boolean;
   onOpen: (chapterId: string) => void;
   onRename: (chapterId: string, title: string) => void;
+  /** The chapter's opening, typed (or handed back to detection: not edited). */
+  onEditOpening: (chapterId: string, opening: ChapterOpening | null) => void;
   onSetEnabled: (chapterId: string, enabled: boolean) => void;
   onSetKind: (chapterId: string, kind: ChapterKind) => void;
   /** One write for several chapters (only those the patch changes are named). */
@@ -73,6 +79,7 @@ export function StudyChaptersPanel({
 }) {
   const ordered = useMemo(() => sortedChapters(chapters), [chapters]);
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const [editingOpening, setEditingOpening] = useState<RepertoireChapterSummary | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const [removing, setRemoving] = useState<RepertoireChapterSummary | null>(null);
   const [query, setQuery] = useState("");
@@ -294,8 +301,7 @@ export function StudyChaptersPanel({
                   >
                     <span className="truncate text-sm font-medium text-fg">{chapter.title}</span>
                     <span className="truncate text-2xs text-fg-subtle">
-                      {plural(chapter.nodeCount, "move")}
-                      {chapter.dueCount ? ` · ${chapter.dueCount} due` : ""}
+                      {chapterSubtitle(chapter)}
                     </span>
                   </button>
                 )}
@@ -317,6 +323,12 @@ export function StudyChaptersPanel({
                       label: "Rename",
                       icon: <Pencil />,
                       onSelect: () => setRenaming({ id: chapter.id, title: chapter.title })
+                    },
+                    {
+                      label: "Edit opening…",
+                      icon: <BookMarked />,
+                      disabled: busy,
+                      onSelect: () => setEditingOpening(chapter)
                     },
                     {
                       label:
@@ -401,6 +413,16 @@ export function StudyChaptersPanel({
         {footer}
       </div>
 
+      {editingOpening ? (
+        <ChapterOpeningDialog
+          chapter={editingOpening}
+          onClose={() => setEditingOpening(null)}
+          onSave={(opening) => {
+            onEditOpening(editingOpening.id, opening);
+            setEditingOpening(null);
+          }}
+        />
+      ) : null}
       {removing ? (
         <Dialog
           size="sm"
@@ -430,4 +452,15 @@ export function StudyChaptersPanel({
       ) : null}
     </div>
   );
+}
+
+/** "B12 · Caro-Kann Defense: Advance Variation · 41 moves · 2 due". */
+function chapterSubtitle(
+  chapter: Pick<RepertoireChapterSummary, "opening" | "nodeCount" | "dueCount">
+): string {
+  const opening = chapter.opening?.name
+    ? [chapter.opening.eco, chapter.opening.name].filter(Boolean).join(" · ")
+    : null;
+  const due = chapter.dueCount ? `${chapter.dueCount} due` : null;
+  return [opening, plural(chapter.nodeCount, "move"), due].filter(Boolean).join(" · ");
 }

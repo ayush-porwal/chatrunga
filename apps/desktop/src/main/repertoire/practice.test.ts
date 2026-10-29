@@ -3,7 +3,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateDecisionInput } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
-import { nodeAt, serviceHelpers } from "./__fixtures__/repertoire-builders";
+import {
+  GRADING_SETTINGS,
+  nodeAt,
+  serviceHelpers,
+  setPracticeSettings
+} from "./__fixtures__/repertoire-builders";
 
 const env = await vi.hoisted(async () => import("./__fixtures__/service-env"));
 vi.mock("electron", () => env.electronModule);
@@ -23,6 +28,8 @@ const START_KEY = positionKey(START_FEN);
 describe("repertoire service: practice", () => {
   beforeEach(() => {
     getDb().exec("DELETE FROM repertoires");
+    getDb().exec("DELETE FROM repertoire_new_introductions");
+    setPracticeSettings(getDb(), GRADING_SETTINGS);
     service.resetImportJobs();
     sent.length = 0;
     now = 1_000_000_000_000;
@@ -106,7 +113,7 @@ describe("repertoire service: practice", () => {
     expect(attempt(session.sessionId, card.queueItemId, "e2e4").outcome).toBe("already-final");
   });
 
-  it("a wrong first answer lapses, and a correct retry doesn't promote", () => {
+  it("a wrong first answer lapses and shows the move to play; a correct retry doesn't promote", () => {
     const { id } = create();
     save(id, [["e2e4"]]);
     service.updateDecision({
@@ -121,14 +128,14 @@ describe("repertoire service: practice", () => {
       outcome: "outside-repertoire",
       finalGrade: true,
       feedback: "We play 1.e4",
-      // Still hidden: the card can be retried.
-      acceptedUcis: [],
-      preferredUci: null
+      // "Not 1.d4. Your move here is 1.e4. Play it to continue."
+      acceptedUcis: ["e2e4"],
+      preferredUci: "e2e4"
     });
     expect(attempt(session.sessionId, card.queueItemId, "g1f3")).toMatchObject({
       outcome: "outside-repertoire",
       finalGrade: false,
-      acceptedUcis: []
+      acceptedUcis: ["e2e4"]
     });
     const retry = attempt(session.sessionId, card.queueItemId, "e2e4");
     expect(retry).toMatchObject({
@@ -217,7 +224,11 @@ describe("repertoire service: practice", () => {
     save(id, [["e2e4"]]);
     const { session, card } = learnFirst(id);
     attempt(session.sessionId, card.queueItemId, "d2d4");
-    expect(service.resumePractice(session.sessionId).shown).toBeUndefined();
+    // The move to play to continue shows again; nothing is revealed yet.
+    expect(service.resumePractice(session.sessionId).shown).toMatchObject({
+      revealed: null,
+      correction: { ucis: ["e2e4"], preferredUci: "e2e4" }
+    });
     service.recordPracticeAction({
       sessionId: session.sessionId,
       queueItemId: card.queueItemId,
@@ -470,7 +481,7 @@ describe("repertoire service: practice", () => {
     });
     const { session, card } = learnFirst(id);
     const ids = { sessionId: session.sessionId, queueItemId: card.queueItemId };
-    // A hint gives the hint only; a wrong answer only that move's feedback.
+    // A hint gives the hint only; a wrong answer that move's feedback and the move to play.
     expect(
       service.recordPracticeAction({ ...ids, action: { kind: "hint" } }).revealed
     ).toStrictEqual({
@@ -480,8 +491,10 @@ describe("repertoire service: practice", () => {
     });
     const wrong = attempt(session.sessionId, card.queueItemId, "d2d4");
     expect(wrong.feedback).toBe("Not 1.d4 here");
-    expect(wrong).not.toHaveProperty("explanation");
-    expect(wrong).not.toHaveProperty("moveComments");
+    expect(wrong).toMatchObject({
+      acceptedUcis: ["e2e4"],
+      explanation: "Choose your centre pawn."
+    });
     const revealed = service.recordPracticeAction({ ...ids, action: { kind: "reveal" } });
     expect(revealed.revealed).toStrictEqual({
       ucis: ["e2e4"],

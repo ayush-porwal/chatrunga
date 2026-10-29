@@ -124,18 +124,15 @@ export function missingGameNote(link: Pick<RepertoireGameLink, "unsaved">): stri
 
 /**
  * The root a new repertoire starts from: the FEN typed for "From FEN"; for "Current game" the
- * board game's root when it isn't the initial position, and only on the plain Create path (an
- * imported PGN brings its own games, so "Create and import PGN" starts from the initial
- * position); null for the initial position.
+ * board game's root when it isn't the initial position; null for the initial position.
  */
 export function newRepertoireRootFen(
   startFrom: "initial" | "fen" | "game",
   fen: string,
-  gameRootFen: string | null,
-  next: "study" | "import"
+  gameRootFen: string | null
 ): string | null {
   if (startFrom === "fen") return fen.trim();
-  if (startFrom !== "game" || next === "import" || !gameRootFen) return null;
+  if (startFrom !== "game" || !gameRootFen) return null;
   return gameRootFen === START_FEN ? null : gameRootFen;
 }
 

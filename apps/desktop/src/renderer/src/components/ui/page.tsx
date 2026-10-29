@@ -42,12 +42,15 @@ function PageHeader({ title, actions }: { title: React.ReactNode; actions?: Reac
  *   <SectionHeader title="Engines" actions={<IconButton .../>} />
  */
 function SectionHeader({
+  id,
   title,
   description,
   actions,
   as: Heading = "h2",
   className
 }: {
+  /** The heading's id, for the section it names (`aria-labelledby`). */
+  id?: string;
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
@@ -57,7 +60,9 @@ function SectionHeader({
   return (
     <div className={cn("flex min-h-8 items-center justify-between gap-3", className)}>
       <div className="grid min-w-0 gap-0.5">
-        <Heading className={sectionTitle}>{title}</Heading>
+        <Heading id={id} className={sectionTitle}>
+          {title}
+        </Heading>
         {description ? <p className={sectionDescription}>{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}

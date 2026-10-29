@@ -1,3 +1,4 @@
+import { useId, useMemo } from "react";
 import { AlertTriangle, Search } from "lucide-react";
 import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import { isOneOf } from "@chaturanga/shared/types/guards";
@@ -10,11 +11,20 @@ import {
   type ImportSelection,
   type RepertoireColor
 } from "@chaturanga/shared/types/repertoire";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { StatCell, StatStrip } from "@/components/ui/stat-strip";
 import { well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { useBookOpeningsQuery } from "../../queries/repertoire-practice";
+import { BookOpeningsDatalist } from "./BookOpeningsDatalist";
+import { FieldError, fieldErrorAria } from "./FieldError";
+import { importStats, type ImportStats } from "./import-inference";
 import { PREVIEW_PAGE_SIZE, setGamesIncluded, setGamesKind } from "./long-lists";
+import { nameError } from "./repertoire-metadata";
 import { plural } from "./repertoire-chapters";
 import { nodeIdForPathLabel } from "./repertoire-model";
 import { IMPORT_KIND_HELP, importPracticeNote } from "./training-explanations";
@@ -25,12 +35,16 @@ import type { ImportJob } from "./useImportJob";
 export function ImportPreviewActions({
   job,
   games,
-  repertoireLoaded
+  repertoireLoaded,
+  create
 }: {
   job: ImportJob;
   games: ImportGameList;
   repertoireLoaded: boolean;
+  /** A new repertoire's name and colour (null: importing into an existing one). */
+  create: { name: string; color: RepertoireColor } | null;
 }) {
+  const nameMissing = create !== null && Boolean(nameError(create.name));
   return (
     <>
       <Button
@@ -46,8 +60,13 @@ export function ImportPreviewActions({
         type="button"
         variant="primary"
         size="sm"
-        disabled={job.busy || !games.included || !repertoireLoaded}
-        onClick={() => void job.commit(games.selections)}
+        disabled={job.busy || !games.included || !repertoireLoaded || nameMissing}
+        onClick={() =>
+          void job.commit(
+            games.selections,
+            create ? { name: create.name.trim(), color: create.color } : undefined
+          )
+        }
       >
         {job.committing ? "Importing…" : `Import ${plural(games.included, "chapter")}`}
       </Button>
@@ -61,6 +80,7 @@ export function ImportPreviewBody({
   games,
   lookups,
   color,
+  newRepertoire,
   busy
 }: {
   preview: ImportPreview;
@@ -68,11 +88,27 @@ export function ImportPreviewBody({
   /** Per game, the lookup that finds its illegal branches' nodes (null when it has none). */
   lookups: (ChapterLookup | null)[];
   color: RepertoireColor | null;
+  /** A new repertoire's name and colour, editable (null: importing into an existing one). */
+  newRepertoire: NewRepertoireFields | null;
   busy: boolean;
 }) {
   const { found, shownCount, listRef } = games;
+  const openings = useBookOpeningsQuery();
+  const ecoByName = useMemo(
+    () => new Map(openings.data?.map((opening) => [opening.name, opening.eco])),
+    [openings.data]
+  );
+  const datalistId = useId();
   return (
     <>
+      {newRepertoire ? <NewRepertoireLine fields={newRepertoire} /> : null}
+      {color ? (
+        <ImportStatStrip
+          stats={importStats(preview, games.selections, color)}
+          onShow={games.showOnly}
+        />
+      ) : null}
+      <BookOpeningsDatalist id={datalistId} openings={openings.data} />
       <p className="shrink-0 text-2xs text-fg-muted">{IMPORT_KIND_HELP}</p>
       {preview.games.length > 1 ? (
         <ImportGamesToolbar games={preview.games} list={games} busy={busy} />
@@ -91,6 +127,8 @@ export function ImportPreviewBody({
                 selection={selection}
                 lookup={lookups[index]}
                 color={color}
+                datalistId={datalistId}
+                ecoByName={ecoByName}
                 onChange={(patch) => games.update(index, patch)}
               />
             );
@@ -202,6 +240,8 @@ function ImportGameRow({
   selection,
   lookup,
   color,
+  datalistId,
+  ecoByName,
   onChange
 }: {
   index: number;
@@ -209,6 +249,9 @@ function ImportGameRow({
   selection: ImportSelection;
   lookup: ChapterLookup | null;
   color: RepertoireColor | null;
+  /** The book's opening names (the Opening field's suggestions). */
+  datalistId: string;
+  ecoByName: ReadonlyMap<string, string>;
   onChange: (patch: Partial<ImportSelection>) => void;
 }) {
   return (
@@ -245,9 +288,18 @@ function ImportGameRow({
             <option value="reference">Reference (study only)</option>
           </Select>
         </div>
-        <span className="text-xs text-fg-muted tabular-nums">{plural(game.nodeCount, "move")}</span>
       </div>
-      {color && game.nodeCount > 0 ? (
+      {game.nodeCount > 0 ? (
+        <OpeningField
+          game={game}
+          selection={selection}
+          datalistId={datalistId}
+          ecoByName={ecoByName}
+          onChange={onChange}
+        />
+      ) : null}
+      <FirstMovesLine game={game} />
+      {color && game.nodeCount > 0 && selection.kind === "reference" ? (
         <PracticeNote kind={selection.kind} decisions={game.decisions[color]} color={color} />
       ) : null}
       {game.warnings.map((warning) => (
@@ -325,4 +377,130 @@ function PracticeNote({
 }) {
   const note = importPracticeNote(kind, decisions, color);
   return <p className={cn("text-2xs", note.warn ? "text-warn" : "text-fg-muted")}>{note.text}</p>;
+}
+
+/** A new repertoire's name and colour, as the import suggests them (both editable). */
+type NewRepertoireFields = {
+  name: string;
+  color: RepertoireColor;
+  onChange: (fields: { name: string; color: RepertoireColor }) => void;
+};
+
+/** The new repertoire's line (only when the import creates one). */
+function NewRepertoireLine({ fields }: { fields: NewRepertoireFields }) {
+  const nameId = useId();
+  const typedError = fields.name.trim() ? nameError(fields.name) : null;
+  return (
+    <div className="grid shrink-0 gap-1.5">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Name" htmlFor={nameId} className="min-w-48 flex-1">
+          <Input
+            id={nameId}
+            placeholder="My repertoire"
+            {...fieldErrorAria(typedError)}
+            value={fields.name}
+            onChange={(event) => fields.onChange({ name: event.target.value, color: fields.color })}
+          />
+        </Field>
+        <SegmentedControl
+          ariaLabel="Repertoire colour"
+          value={fields.color}
+          onChange={(color) => fields.onChange({ name: fields.name, color })}
+          options={[
+            { value: "white", label: "White" },
+            { value: "black", label: "Black" }
+          ]}
+        />
+      </div>
+      <FieldError error={typedError} />
+      <p className="text-2xs text-fg-muted">
+        Suggested from the PGN. Chapters are grouped by the part of the opening before the colon.
+      </p>
+    </div>
+  );
+}
+
+/** New moves · Your moves to practise · Positions with several of your moves (with Show). */
+function ImportStatStrip({
+  stats,
+  onShow
+}: {
+  stats: ImportStats;
+  onShow: (games: readonly number[]) => void;
+}) {
+  return (
+    <StatStrip className="shrink-0 grid-cols-3">
+      <StatCell label="New moves">{stats.newMoves}</StatCell>
+      <StatCell label="Your moves to practise">{stats.practiceMoves}</StatCell>
+      <StatCell
+        label="Positions with several of your moves"
+        valueClassName={stats.severalMoves ? "text-warn" : undefined}
+      >
+        <span className="flex items-baseline gap-2">
+          {stats.severalMoves}
+          {stats.severalMoves ? (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              title="Only the first of your moves at each such position is practised"
+              onClick={() => onShow(stats.severalMovesGames)}
+            >
+              Show
+            </Button>
+          ) : null}
+        </span>
+      </StatCell>
+    </StatStrip>
+  );
+}
+
+/** A game's opening, as typed or else as detected; the ECO follows a name the book knows. */
+function OpeningField({
+  game,
+  selection,
+  datalistId,
+  ecoByName,
+  onChange
+}: {
+  game: ImportPreviewGame;
+  selection: ImportSelection;
+  datalistId: string;
+  ecoByName: ReadonlyMap<string, string>;
+  onChange: (patch: Partial<ImportSelection>) => void;
+}) {
+  const opening = selection.opening !== undefined ? selection.opening : (game.opening ?? null);
+  const eco = opening?.name ? (ecoByName.get(opening.name) ?? opening.eco) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input
+        aria-label={`Opening for game ${game.index + 1}`}
+        list={datalistId}
+        placeholder="Opening not detected"
+        className="h-7 min-w-40 flex-1 text-xs"
+        value={opening?.name ?? ""}
+        onChange={(event) =>
+          onChange({
+            opening: {
+              name: event.target.value,
+              eco: ecoByName.get(event.target.value) ?? null,
+              edited: true
+            }
+          })
+        }
+      />
+      {eco ? <Badge>{eco}</Badge> : null}
+    </div>
+  );
+}
+
+/** "1. e4 c6 2. d4 d5 … · 4 lines · 65 moves". */
+function FirstMovesLine({ game }: { game: ImportPreviewGame }) {
+  return game.firstMoves ? (
+    <p className="truncate font-mono text-2xs text-fg-muted">
+      {game.firstMoves} · {plural(game.lineCount ?? 0, "line")} · {plural(game.nodeCount, "move")}
+    </p>
+  ) : (
+    <p className="text-2xs text-fg-muted tabular-nums">{plural(game.nodeCount, "move")}</p>
+  );
 }

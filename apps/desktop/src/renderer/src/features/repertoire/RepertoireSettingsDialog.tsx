@@ -3,6 +3,7 @@ import type { RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import {
   defaultSettings,
   PRACTICE_AUTO_ADVANCE_MS,
+  type AppSettings,
   type PracticeAutoAdvanceMs
 } from "@chaturanga/shared/types/settings";
 import { isOneOf } from "@chaturanga/shared/types/guards";
@@ -13,6 +14,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Switch } from "@/components/ui/switch";
 import { fieldHint } from "@/lib/ui";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useSettingsQuery } from "../../queries/api";
@@ -43,23 +45,28 @@ const ADVANCE_LABELS: Record<PracticeAutoAdvanceMs, string> = {
 
 /**
  * The repertoire's settings (the cog in Study and Practice): what Practice starts. Positions
- * reviews the due ones first, then new ones, from the chosen chapters (none: every enabled opening
- * chapter) up to a depth, with card limits; Lines rehearses a chapter's lines instead.
+ * reviews the due ones first, then new ones within the daily limit, from the chosen chapters
+ * (none: every enabled opening chapter) up to a depth, with a card limit; Lines rehearses a
+ * chapter's lines instead.
  * "Next card" is the app-wide auto-advance. Saved together with Save (the repertoire's settings
  * first; "Next card" only once they are), closing once both are; a failure stays in the dialog.
- * A running session keeps its own scope.
+ * A running session keeps its own scope. From Study (`study`) it also has the Board section:
+ * the app-wide "Repertoire arrows" (saved with "Next card").
  */
 export function RepertoireSettingsDialog({
   detail,
+  study = false,
   onClose,
   onSaved
 }: {
   detail: RepertoireDetail;
+  /** Opened from Study: offers the Study board's settings too. */
+  study?: boolean;
   onClose: () => void;
   /** Both writes succeeded: the repertoire as it now is (before the dialog closes). */
   onSaved?: (saved: RepertoireDetail) => void;
 }) {
-  const ids = { depth: useId(), cards: useId(), fresh: useId(), advance: useId() };
+  const ids = { depth: useId(), cards: useId(), advance: useId() };
   const settings = useSettingsQuery();
   const { saveMany } = useSettingsWriter();
   const save = useSaveRepertoireWorkspaceMutation();
@@ -71,6 +78,7 @@ export function RepertoireSettingsDialog({
   const [advance, setAdvance] = useState<PracticeAutoAdvanceMs | null>(null);
   const advanceMs =
     advance ?? settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs;
+  const [arrows, setArrows] = useState<boolean | null>(null);
   const trainable = sortedChapters(detail.chapters).filter(
     (chapter) => chapter.kind === "opening" && chapter.enabled
   );
@@ -99,11 +107,12 @@ export function RepertoireSettingsDialog({
       setSaving(false);
       return;
     }
-    if (advance !== null) {
+    const patch = appSettingsPatch(advance, arrows);
+    if (patch) {
       try {
-        await saveMany({ practiceAutoAdvanceMs: advance });
+        await saveMany(patch);
       } catch (cause) {
-        setError(ipcErrorMessage(cause) || "Couldn't save “Next card”.");
+        setError(ipcErrorMessage(cause) || "Couldn't save the settings.");
         setSaving(false);
         return;
       }
@@ -179,7 +188,7 @@ export function RepertoireSettingsDialog({
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Max depth" hint="plies from the chapter start" htmlFor={ids.depth}>
           <Input
             id={ids.depth}
@@ -193,30 +202,18 @@ export function RepertoireSettingsDialog({
           />
         </Field>
         {form.lines ? null : (
-          <>
-            <Field label="Cards" hint="due ones" htmlFor={ids.cards}>
-              <Input
-                id={ids.cards}
-                type="number"
-                min={1}
-                max={MAX_CARD_LIMIT}
-                inputMode="numeric"
-                value={form.cards}
-                onChange={(event) => update({ cards: event.target.value })}
-              />
-            </Field>
-            <Field label="New cards" hint="after due ones" htmlFor={ids.fresh}>
-              <Input
-                id={ids.fresh}
-                type="number"
-                min={0}
-                max={MAX_CARD_LIMIT}
-                inputMode="numeric"
-                value={form.fresh}
-                onChange={(event) => update({ fresh: event.target.value })}
-              />
-            </Field>
-          </>
+          // New positions come within the daily limit (Practice settings), not a count here.
+          <Field label="Cards" hint="due ones" htmlFor={ids.cards}>
+            <Input
+              id={ids.cards}
+              type="number"
+              min={1}
+              max={MAX_CARD_LIMIT}
+              inputMode="numeric"
+              value={form.cards}
+              onChange={(event) => update({ cards: event.target.value })}
+            />
+          </Field>
         )}
       </div>
 
@@ -244,7 +241,43 @@ export function RepertoireSettingsDialog({
         </Field>
       )}
 
+      {study ? <StudyBoardSettings arrows={arrows} onArrowsChange={setArrows} /> : null}
+
       {error ? <Notice tone="danger">{error}</Notice> : null}
     </Dialog>
+  );
+}
+
+/** The app-wide settings the dialog changed ("Next card", "Repertoire arrows"); null: none. */
+function appSettingsPatch(
+  advance: PracticeAutoAdvanceMs | null,
+  arrows: boolean | null
+): Partial<AppSettings> | null {
+  const patch: Partial<AppSettings> = {};
+  if (advance !== null) patch.practiceAutoAdvanceMs = advance;
+  if (arrows !== null) patch.studyRepertoireArrows = arrows;
+  return Object.keys(patch).length ? patch : null;
+}
+
+/** Study's board settings: the repertoire's arrows (`arrows` as changed here; null: as saved). */
+function StudyBoardSettings({
+  arrows,
+  onArrowsChange
+}: {
+  arrows: boolean | null;
+  onArrowsChange: (on: boolean) => void;
+}) {
+  const settings = useSettingsQuery();
+  const on =
+    arrows ?? settings.data?.studyRepertoireArrows ?? defaultSettings.studyRepertoireArrows;
+  return (
+    <div className="grid gap-1.5">
+      <p className="text-xs font-medium text-fg-secondary">Board</p>
+      <label className="flex items-center justify-between gap-3 text-sm text-fg">
+        Repertoire arrows
+        <Switch checked={on} onCheckedChange={onArrowsChange} aria-label="Repertoire arrows" />
+      </label>
+      <p className={fieldHint}>Off: quiz yourself while studying.</p>
+    </div>
   );
 }

@@ -356,4 +356,37 @@ describe("runMigrations", () => {
       title_chosen: 1
     });
   });
+
+  it("17: a stored decision was accepted no later than its last update", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE games (id TEXT PRIMARY KEY)");
+    db.exec("CREATE TABLE repertoires (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL)");
+    db.exec(`CREATE TABLE repertoire_decisions (repertoire_id TEXT NOT NULL, position_key TEXT NOT NULL,
+      acceptance_fingerprint TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)`);
+    db.exec("INSERT INTO repertoires VALUES ('r', 100)");
+    db.exec("INSERT INTO repertoire_decisions VALUES ('r', 'k', 'e2e4', 500)");
+    db.exec("PRAGMA user_version = 16");
+    runMigrations(db, MIGRATIONS.slice(0, 17));
+    expect({ ...db.prepare("SELECT accepted_at FROM repertoire_decisions").get() }).toStrictEqual({
+      accepted_at: 500
+    });
+  });
+
+  it("19: a book's repertoire loses the old `book` tag; other repertoires keep theirs", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE repertoires (id TEXT PRIMARY KEY, tags_json TEXT NOT NULL)");
+    db.exec("CREATE TABLE books (id TEXT PRIMARY KEY, repertoire_id TEXT)");
+    db.exec(`INSERT INTO repertoires VALUES ('from-book', '["book","sharp"]'),
+      ('only-tag', '["book"]'), ('mine', '["book"]')`);
+    db.exec("INSERT INTO books VALUES ('b1', 'from-book'), ('b2', 'only-tag'), ('b3', NULL)");
+    db.exec("PRAGMA user_version = 18");
+    runMigrations(db, MIGRATIONS.slice(0, 19));
+    const tags = db.prepare("SELECT id, tags_json FROM repertoires ORDER BY id").all();
+    expect(tags.map((row) => ({ ...row }))).toStrictEqual([
+      { id: "from-book", tags_json: '["sharp"]' },
+      // A tag the user gave a repertoire with no book stays.
+      { id: "mine", tags_json: '["book"]' },
+      { id: "only-tag", tags_json: "[]" }
+    ]);
+  });
 });

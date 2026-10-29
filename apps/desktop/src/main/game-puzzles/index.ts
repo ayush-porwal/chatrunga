@@ -29,14 +29,16 @@ function isLc0(config: EngineConfig): boolean {
   return /\blc0\b|leela/i.test(`${config.name} ${basename(config.executablePath)}`);
 }
 
-function defaultEngine(): { state: GamePuzzleEngineState; config: EngineConfig | null } {
+/** The default engine and whether a background queue can search with it (also the health check's). */
+export function defaultEngine(): { state: GamePuzzleEngineState; config: EngineConfig | null } {
   const config = engineRepository.list().find((engine) => engine.isDefault);
   if (!config || config.runtime === "maia3" || !existsSync(config.executablePath))
     return { state: "missing", config: null };
   return isLc0(config) ? { state: "lc0", config: null } : { state: "ready", config };
 }
 
-async function openEngine(config: EngineConfig, signal: AbortSignal): Promise<OpenedEngine> {
+/** One UCI process of `config` for a background queue (also the health check's). */
+export async function openEngine(config: EngineConfig, signal: AbortSignal): Promise<OpenedEngine> {
   const cancelled = () => signal.aborted;
   const session = new UciReviewSession(config, cancelled);
   try {
@@ -64,11 +66,17 @@ async function openEngine(config: EngineConfig, signal: AbortSignal): Promise<Op
   };
 }
 
-async function connectedUsernames(): Promise<string[]> {
+/**
+ * The connected Lichess and Chess.com usernames, and whether an account couldn't be read (the
+ * background passes that rewrite every game's user side skip rather than take it as disconnected).
+ */
+async function readAccounts(): Promise<{ names: string[]; failed: boolean }> {
+  let failed = false;
   const read = async (username: () => Promise<string | undefined>) => {
     try {
       return (await username()) ?? null;
     } catch (error) {
+      failed = true;
       logger.warn("game-puzzles", "reading a connected account failed:", errorMessage(error));
       return null;
     }
@@ -77,7 +85,21 @@ async function connectedUsernames(): Promise<string[]> {
     read(async () => (await getLichessAccountStore().status()).account?.username),
     read(async () => (await getChesscomAccountStore().account())?.username)
   ]);
-  return names.filter((name) => name !== null);
+  return { names: names.filter((name) => name !== null), failed };
+}
+
+/** The connected usernames that could be read. */
+async function connectedUsernames(): Promise<string[]> {
+  return (await readAccounts()).names;
+}
+
+/**
+ * The connected usernames; null when an account couldn't be read (Insights' comparer and the
+ * explorer's position index skip their pass then).
+ */
+export async function readConnectedUsernames(): Promise<string[] | null> {
+  const { names, failed } = await readAccounts();
+  return failed ? null : names;
 }
 
 /**

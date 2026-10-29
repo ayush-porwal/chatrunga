@@ -324,14 +324,14 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
               });
               break;
             case "stage":
-              // Opens on Moves with the staged move selected (making it one of your moves from its
-              // menu is the explicit policy change).
+              // Opens on Moves with the move staged and selected: nothing is saved until it is
+              // added from the New moves card.
               onStudy?.({
                 repertoireId: comparison.data.repertoireId,
                 chapterId: action.chapterId,
                 nodeId: action.nodeId,
                 tab: "moves",
-                stage: { nodeId: action.nodeId, uci: action.uci, edge: action.edge }
+                stage: { nodeId: action.nodeId, uci: action.uci }
               });
               break;
             case "refresh":
@@ -426,11 +426,10 @@ function ComparisonResult({
               </Button>
             ))}
           </div>
-          {stage?.kind === "stage" ? (
+          {stage ? (
             <p className={fieldHint}>
-              {stage.edge === "reference"
-                ? "Opens the chapter at this position with your move added for study only (if the chapter doesn't have it); choose “Your move” from its menu to make it part of your plan."
-                : "Opens the chapter with this reply added, or marked, as covered; then choose your answer to it."}
+              Opens the chapter at this position with the move staged in New moves; nothing is saved
+              until you add it.
             </p>
           ) : null}
         </div>

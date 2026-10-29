@@ -14,10 +14,10 @@ import type { AppCommands } from "./useAppCommands";
 const pageTitles: Partial<Record<AppView, string>> = {
   settings: "Settings",
   play: "Play",
+  "repertoire-hub": "Repertoire",
   puzzles: "Puzzles",
   databases: "Databases",
-  broadcasts: "Broadcasts",
-  "repertoire-hub": "Repertoire"
+  broadcasts: "Broadcasts"
 };
 
 /**
@@ -60,6 +60,7 @@ export function ViewTitlebar({
     | "nextPuzzle"
     | "reviewHandoffOpening"
     | "returnToRepertoire"
+    | "backToInsights"
     | "showGame"
     | "broadcasts"
   >;
@@ -73,6 +74,7 @@ export function ViewTitlebar({
         hasMoves={hasMoves}
         onAnalyze={on.startReview}
         onStop={on.stopReview}
+        onBackToInsights={on.backToInsights}
       />
     );
   }

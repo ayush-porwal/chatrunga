@@ -8,7 +8,6 @@ import {
   hasAnswerNotes,
   isPracticeNextKey,
   leadUpLabel,
-  defaultEdgeForNewMove,
   deriveChoices,
   hintMarks,
   isStaleRevisionError,
@@ -207,14 +206,6 @@ describe("deriveChoices", () => {
         decision: null
       }).rows
     ).toStrictEqual([]);
-  });
-});
-
-describe("boundaries", () => {
-  it("defaults new own moves to reference and replies to covered", () => {
-    const tree = sampleChapter();
-    expect(defaultEdgeForNewMove(tree[0].fenAfter, "white")).toBe("reference");
-    expect(defaultEdgeForNewMove(tree[0].fenAfter, "black")).toBe("covered");
   });
 });
 

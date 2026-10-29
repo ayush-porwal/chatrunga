@@ -24,6 +24,10 @@ import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { nullPrototypeRecord } from "@chaturanga/shared/types/record";
 import { isOneOf } from "@chaturanga/shared/types/guards";
+import {
+  MAX_OPENING_NAME,
+  type ChapterOpening
+} from "@chaturanga/shared/types/repertoire-practice";
 
 const MAX_TREE_NODES = 100_000;
 const MAX_NAME = 200;
@@ -314,6 +318,27 @@ export function chapterTitle(value: unknown, fallback = "Untitled chapter"): str
   return title || fallback;
 }
 
+/** An ECO code as the book writes them ("B12"). */
+const ECO_CODE = /^[A-E]\d\d$/;
+
+/**
+ * A chapter's opening as stored: a name on one line, an ECO code or null, and whether the user
+ * typed it (a typed empty name keeps detection off). Null: none; undefined when the chapter
+ * carries no opening at all.
+ */
+export function sanitizeOpening(value: unknown): ChapterOpening | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) return null;
+  const name = typeof value.name === "string" ? singleLine(value.name).trim() : "";
+  const edited = value.edited === true;
+  if (!name) return edited ? { name: "", eco: null, edited } : null;
+  return {
+    name: name.slice(0, MAX_OPENING_NAME),
+    eco: typeof value.eco === "string" && ECO_CODE.test(value.eco) ? value.eco : null,
+    edited
+  };
+}
+
 /**
  * The chapter as it will be stored: fields rebuilt and checked, tree validated (see
  * `validateTree`), metadata pruned to existing nodes. `revision` is the chapter's next revision.
@@ -337,7 +362,8 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
     dueCount: 0,
     headers: sanitizeHeaders(chapter.headers),
     tree,
-    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta, tree)
+    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta, tree),
+    ...(chapter.opening !== undefined ? { opening: sanitizeOpening(chapter.opening) } : {})
   };
 }
 

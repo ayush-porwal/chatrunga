@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { ArrowUpToLine, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowUpToLine, Trash2 } from "lucide-react";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { IconButton } from "@/components/ui/icon-button";
@@ -9,6 +9,26 @@ import { FigureSan, keepFocusOnPress, LineRow, lineMoveClassName, type LineEntry
 import { variationText, type VariationRow } from "./move-tree-model";
 
 const PROMOTE_ICON = <ArrowUpToLine />;
+
+/** A move's warning (`moveFlags`), unless it carries a mark (which says more). */
+function unmarkedFlag(
+  annotation: unknown,
+  moveFlags: ReadonlyMap<string, string> | undefined,
+  nodeId: string
+): string | undefined {
+  return annotation ? undefined : moveFlags?.get(nodeId);
+}
+
+/** The small warning glyph of a flagged move (nothing without a flag). */
+export function MoveFlagGlyph({
+  flag,
+  className
+}: {
+  flag: string | undefined;
+  className?: string;
+}) {
+  return flag ? <AlertTriangle aria-hidden className={cn("size-3 text-warn", className)} /> : null;
+}
 const DELETE_ICON = <Trash2 />;
 
 /**
@@ -26,6 +46,7 @@ export const VariationLineRow = memo(function VariationLineRow({
   currentNodeId,
   currentActions,
   moveTones,
+  moveFlags,
   onMoveContextMenu,
   reviews,
   collapsedRows,
@@ -42,6 +63,8 @@ export const VariationLineRow = memo(function VariationLineRow({
   currentActions?: ReactNode;
   /** A class for a move's SAN by node id, unless it carries a mark (see TreeView). */
   moveTones?: ReadonlyMap<string, string>;
+  /** A warning on a move by node id (see TreeView): a glyph after its SAN, the text its tooltip. */
+  moveFlags?: ReadonlyMap<string, string>;
   /** A move was right-clicked (selected first): open its actions. */
   onMoveContextMenu?: (nodeId: string) => void;
   reviews?: ReadonlyMap<string, MoveReview>;
@@ -72,6 +95,7 @@ export const VariationLineRow = memo(function VariationLineRow({
     const annotation = reviews?.get(node.id)?.assessment?.annotation ?? null;
     const current = node.id === currentNodeId;
     const san = node.san ?? "–";
+    const flag = unmarkedFlag(annotation, moveFlags, node.id);
     return {
       key: node.id,
       number,
@@ -82,7 +106,7 @@ export const VariationLineRow = memo(function VariationLineRow({
           aria-current={current ? "step" : undefined}
           // Named by its SAN (the piece is drawn, not written).
           aria-label={san}
-          title={annotation ? annotationLabel(annotation) : undefined}
+          title={annotation ? annotationLabel(annotation) : flag}
           className={cn(
             lineMoveClassName({
               current,
@@ -103,6 +127,7 @@ export const VariationLineRow = memo(function VariationLineRow({
           }
         >
           {node.san ? <FigureSan san={node.san} /> : san}
+          <MoveFlagGlyph flag={flag} className="ml-0.5 inline" />
         </button>
       )
     };

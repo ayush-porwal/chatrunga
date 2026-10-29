@@ -55,6 +55,9 @@ export {
   resumePractice,
   endPractice
 } from "./practice";
+// Practice home: chapter openings and the Practice tab's numbers.
+export { openingOfLine, bookOpenings, detectMissingOpenings } from "./chapter-openings";
+export { practiceOverview } from "./practice-overview";
 export {
   exportBackup,
   previewBackupImport,

@@ -60,6 +60,17 @@ describe("scheduleAfterOutcome", () => {
     }
   });
 
+  it("schedules a first sight as learning in ten minutes, with no success and no lapse", () => {
+    expect(scheduleAfterOutcome(null, "seen", NOW)).toStrictEqual({
+      stage: 0,
+      dueAt: NOW + 10 * 60_000,
+      lastAttemptAt: NOW,
+      lapses: 0,
+      unaidedSuccesses: 0,
+      schedulerVersion: REPERTOIRE_SCHEDULER_VERSION
+    });
+  });
+
   it("changes nothing for no-change", () => {
     const stored = progress({ stage: 2, dueAt: NOW - 5 });
     expect(scheduleAfterOutcome(stored, "no-change", NOW)).toStrictEqual(stored);

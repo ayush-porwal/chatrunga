@@ -121,7 +121,12 @@ export type AttemptRecord = {
 const { all, get, run } = queriesOn(repertoireDb);
 
 function sessionMode(mode: string): PracticeMode {
-  return mode === "learn-new" || mode === "rehearse-lines" ? mode : "review-due";
+  return mode === "learn-new" ||
+    mode === "rehearse-lines" ||
+    mode === "practice-early" ||
+    mode === "weak"
+    ? mode
+    : "review-due";
 }
 
 function toSession(row: SessionRow): PracticeSessionRecord {
@@ -163,6 +168,18 @@ function toAttempt(row: AttemptRow): AttemptRecord {
   };
 }
 
+/** A set's name as the Practice tab shows it: "Everything" for both colours, else "All White". */
+function setLabel(repertoireIds: readonly string[]): string {
+  const colors = new Set(
+    all<{ color: string }>(
+      `SELECT DISTINCT color FROM repertoires WHERE id IN (${repertoireIds.map(() => "?").join(", ")})`,
+      ...repertoireIds
+    ).map((row) => asColor(row.color))
+  );
+  if (colors.size !== 1) return "Everything";
+  return colors.has("black") ? "All Black" : "All White";
+}
+
 export const sessionRepository = {
   /** How many practice sessions a repertoire has, optionally only active ones. */
   count(repertoireId: string, status?: "active"): number {
@@ -188,35 +205,79 @@ export const sessionRepository = {
     return row ? toSession(row) : null;
   },
 
-  /** The most recently updated active session of a repertoire that isn't archived. */
+  /**
+   * The most recently updated active session of a repertoire that isn't archived; a set's names
+   * the set ("Everything", "All White").
+   */
   lastActive(): {
     id: string;
     repertoireId: string;
     mode: PracticeMode;
     repertoireName: string;
     color: RepertoireColor;
+    setLabel: string | null;
   } | null {
     const row = get<{
       id: string;
       repertoire_id: string;
       mode: string;
+      scope_json: string;
       name: string;
       color: string;
     }>(
-      `SELECT s.id, s.repertoire_id, s.mode, r.name, r.color FROM repertoire_practice_sessions s
-        JOIN repertoires r ON r.id = s.repertoire_id
+      `SELECT s.id, s.repertoire_id, s.mode, s.scope_json, r.name, r.color
+        FROM repertoire_practice_sessions s JOIN repertoires r ON r.id = s.repertoire_id
         WHERE s.status = 'active' AND r.archived_at IS NULL
         ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1`
     );
-    return row
-      ? {
-          id: row.id,
-          repertoireId: row.repertoire_id,
-          mode: sessionMode(row.mode),
-          repertoireName: row.name,
-          color: asColor(row.color)
-        }
-      : null;
+    if (!row) return null;
+    const { repertoireIds } = parseJson<PracticeScope>(row.scope_json, {
+      repertoireId: row.repertoire_id
+    });
+    return {
+      id: row.id,
+      repertoireId: row.repertoire_id,
+      mode: sessionMode(row.mode),
+      repertoireName: row.name,
+      color: asColor(row.color),
+      setLabel: repertoireIds && repertoireIds.length > 1 ? setLabel(repertoireIds) : null
+    };
+  },
+
+  /**
+   * Before a repertoire is deleted or archived: the set sessions it holds move to another of the
+   * set's repertoires (an active one; when deleting, else any still there), so they, and every
+   * repertoire's answers in them, don't go with it.
+   */
+  moveSetSessions(repertoireId: string, deleting: boolean): void {
+    const rows = all<{ id: string; scope_json: string }>(
+      `SELECT id, scope_json FROM repertoire_practice_sessions
+        WHERE repertoire_id = ? AND scope_json LIKE '%"repertoireIds"%'`,
+      repertoireId
+    );
+    for (const row of rows) {
+      const scope = parseJson<PracticeScope>(row.scope_json, { repertoireId });
+      const others = (scope.repertoireIds ?? []).filter((id) => id !== repertoireId);
+      const states = new Map(
+        others.map((id) => [
+          id,
+          get<{ archived_at: number | null }>(
+            "SELECT archived_at FROM repertoires WHERE id = ?",
+            id
+          )
+        ])
+      );
+      const next =
+        others.find((id) => states.get(id) && states.get(id)?.archived_at === null) ??
+        (deleting ? others.find((id) => states.get(id)) : undefined);
+      if (!next) continue;
+      run(
+        "UPDATE repertoire_practice_sessions SET repertoire_id = ?, scope_json = ? WHERE id = ?",
+        next,
+        JSON.stringify({ ...scope, repertoireId: next }),
+        row.id
+      );
+    }
   },
 
   /** Inserts or replaces a session's mutable state. */

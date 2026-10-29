@@ -33,7 +33,7 @@ import {
 import { loadShowAllLines, saveShowAllLines } from "./move-list-prefs";
 import { BestLineRow, type BrowseLine } from "./BestLineRow";
 import { keepFocusOnPress } from "./LineRow";
-import { VariationLineRow } from "./VariationLineRow";
+import { MoveFlagGlyph, VariationLineRow } from "./VariationLineRow";
 import type { BestLineCursor } from "./best-line-cursor";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
@@ -86,6 +86,11 @@ type TreeViewProps = {
   /** A class for a move's SAN by node id (Study: the kind of move), unless it carries a mark. */
   moveTones?: ReadonlyMap<string, string>;
   /**
+   * Moves flagged with a warning (Study: the repertoire health check), by node id: what the flag
+   * says. A move without a mark draws a small warning glyph; the text is its tooltip.
+   */
+  moveFlags?: ReadonlyMap<string, string>;
+  /**
    * With `showComments`: each move that starts a book page (`[%page N]`, a repertoire imported
    * from a book) gets a chip with the page's label, which opens it.
    */
@@ -128,6 +133,7 @@ export function TreeView({
   selectedActions,
   onMoveContextMenu,
   moveTones,
+  moveFlags,
   bookPages
 }: TreeViewProps) {
   const model = useMemo(() => buildTreeModel(nodes, ROOT_ID), [nodes]);
@@ -212,6 +218,7 @@ export function TreeView({
       selected,
       actions: selected ? selectedActions : undefined,
       tone: moveTones?.get(node.id),
+      flag: moveFlags?.get(node.id),
       onContextMenu: onMoveContextMenu,
       review,
       commentary: commentaryByNodeId?.get(node.id),
@@ -313,6 +320,7 @@ export function TreeView({
                   currentNodeId={currentIn(item.row)}
                   currentActions={currentIn(item.row) ? selectedActions : undefined}
                   moveTones={moveTones}
+                  moveFlags={moveFlags}
                   onMoveContextMenu={onMoveContextMenu}
                   reviews={reviews}
                   collapsedRows={collapsedRows}
@@ -431,6 +439,11 @@ type MoveCellProps = {
   actions?: ReactNode;
   /** The SAN's class when the move carries no mark (`moveTones`). */
   tone?: string;
+  /**
+   * A warning on the move (`moveFlags`): a glyph in the mark's slot (a mark's disc covers it), the
+   * text its tooltip.
+   */
+  flag?: string;
   onContextMenu?: (nodeId: string) => void;
   review?: MoveReview;
   commentary?: ReviewCommentary;
@@ -455,6 +468,7 @@ const MoveCell = memo(function MoveCell({
   selected,
   actions,
   tone,
+  flag,
   onContextMenu,
   review,
   commentary,
@@ -495,13 +509,16 @@ const MoveCell = memo(function MoveCell({
           moveTextClass(annotation, selected, tone),
           actions ? "pr-8" : null
         )}
-        title={moveTitle(node, review)}
+        title={moveTitle(node, review, flag)}
         onMouseDown={keepFocusOnPress}
         onClick={() => onSelectNode(node.id)}
         onContextMenu={openActions}
       >
-        {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
-        <span aria-hidden className="w-[1.125rem] shrink-0" />
+        {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control);
+            a flagged move without a mark shows its warning there. */}
+        <span aria-hidden className="flex w-[1.125rem] shrink-0 justify-center">
+          <MoveFlagGlyph flag={flag} />
+        </span>
         <MoveSan san={node.san} />
         <MoveCellEnd
           commentaryReady={showCommentaryState && Boolean(commentary)}
@@ -593,9 +610,9 @@ function MoveCellEnd({
   );
 }
 
-/** The move's tooltip: its mark and eval once reviewed, else its SAN. */
-function moveTitle(node: MoveNode, review: MoveReview | undefined): string {
-  if (!review) return node.san ?? "Move";
+/** The move's tooltip: its mark and eval once reviewed, else its warning (`flag`) or its SAN. */
+function moveTitle(node: MoveNode, review: MoveReview | undefined, flag?: string): string {
+  if (!review) return flag ?? node.san ?? "Move";
   const annotation = review.assessment?.annotation ?? null;
   return `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`;
 }

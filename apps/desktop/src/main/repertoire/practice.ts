@@ -1,58 +1,30 @@
 /** Practice sessions (design §8.3): starting, answering, resuming and ending them. */
 import { nanoid } from "nanoid";
-import { stripBookPage } from "@chaturanga/shared/books/book-page";
-import {
-  REPERTOIRE_ROOT_NODE_ID,
-  type AttemptResult,
-  type PracticeActionInput,
-  type PracticeActionResult,
-  type PracticeCard,
-  type PracticeScope,
-  type PracticeSessionSnapshot,
-  type PracticeSummary,
-  type RecordAttemptInput,
-  type RepertoireChapter,
-  type RepertoireProgress,
-  type StartPracticeInput
+import type {
+  AttemptResult,
+  PracticeActionInput,
+  PracticeActionResult,
+  PracticeSessionSnapshot,
+  PracticeSummary,
+  RecordAttemptInput,
+  StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
-import {
-  acceptanceFingerprint,
-  buildChapterLookup,
-  collectDecisions,
-  effectiveAcceptedUcis,
-  effectivePreferredUci,
-  type ChapterLookup,
-  type CollectedDecision,
-  type DecisionOccurrence
-} from "@chaturanga/shared/chess/repertoire-index";
 import {
   firstAnswerOutcome,
   orderQueue,
   type PracticeOutcome
 } from "@chaturanga/shared/chess/repertoire-scheduler";
+import { masteryOf } from "@chaturanga/shared/chess/repertoire-mastery";
 import { requireRepertoire } from "./core";
 import { fenAfterMove, normalizeUci } from "./chapter-validation";
-import {
-  chapterRepository,
-  decisionRepository,
-  progressRepository,
-  transaction,
-  type RepertoireRecord,
-  type StoredDecision
-} from "./repository";
-import {
-  attemptRepository,
-  sessionRepository,
-  type AttemptRecord,
-  type FrozenPolicy,
-  type PracticeSessionRecord
-} from "./practice-repository";
+import { transaction } from "./repository";
+import { attemptRepository, sessionRepository, type AttemptRecord } from "./practice-repository";
 import { parseStoredJson } from "../stored-json";
 import {
-  acceptedMoveComments,
   answerOf,
   applySchedule,
   cardIndex,
+  cardRepertoireId,
   cardTurn,
   gradeIsFinal,
   historyAction,
@@ -74,33 +46,34 @@ import {
   startRehearsal
 } from "./rehearsal";
 import { clock } from "./service-runtime";
+import { practiceSettings, remainingNewToday } from "./practice-limits";
+import {
+  frozenQueue,
+  openSession,
+  practiceCandidates,
+  queueSources,
+  type Candidate
+} from "./practice-queue";
+import { startWeakPractice } from "./weak-practice";
 
 const DEFAULT_DUE_LIMIT = 20;
-const DEFAULT_NEW_AFTER_DUE = 5;
 const DEFAULT_LEARN_LIMIT = 10;
-
-type Candidate = {
-  entry: CollectedDecision;
-  decision: StoredDecision;
-  effective: string[];
-  occurrence: DecisionOccurrence;
-  practiced: boolean;
-  dueAt: number | null;
-  /** Plies from the occurrence's chapter root, including the tested move. */
-  ply: number;
-  chapterOrder: number;
-};
+/** Review adds at most this many new positions after the due ones (§4). */
+const REVIEW_NEW_LIMIT = 10;
 
 /**
  * Starts a session over the eligible decisions of the scope (enabled opening chapters, within the
  * depth limit, not paused, not suspended). Review due: due cards (overdue first) up to
- * `cardLimit` (20), then up to `newCardLimit` (5) unseen ones. Learn new: unseen decisions only,
- * up to `cardLimit` (10). With `positionKeys` the queue is exactly the named eligible decisions,
- * in that order and whether or not they are due (learn new keeps only unseen ones); the limits
- * don't apply and being queued records nothing. An `ungraded` targeted queue ("Retry missed")
- * records its answers with the session only: no schedule changes. Each card freezes its policy so
- * grading never uses a moving set. Depth counts plies from the chapter root including the tested
- * move (§5.3).
+ * `cardLimit` (20), then unseen ones up to `newCardLimit` and at most 10, never past today's new
+ * limit. Learn new: unseen decisions only, up to `cardLimit` (10) and today's new limit. Practice
+ * early: learning decisions not due yet, soonest first (`cardLimit`, 20). With `positionKeys` the
+ * queue is exactly the named eligible decisions (in a set, each repertoire's at a named
+ * position), in that order and whether or not they are due (learn new keeps only unseen ones);
+ * the limits don't apply and being queued records nothing. An `ungraded` targeted queue ("Retry missed") records its answers
+ * with the session only: no schedule changes. `repertoireIds` (a Practice tab set) queues several
+ * repertoires' decisions together. Each card freezes its policy so grading never uses a moving
+ * set; with "Show the move on new positions" a new card carries its move (first sight). Depth
+ * counts plies from the chapter root including the tested move (§5.3).
  */
 export function startPractice(input: StartPracticeInput): PracticeSessionSnapshot {
   const now = clock();
@@ -110,183 +83,66 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
       throw new Error("Invalid practice: this repertoire is archived; restore it to practice");
     }
     if (input.mode === "rehearse-lines") return startRehearsal(input, record, now);
-    const chapters = chapterRepository.list(record.id);
-    const known = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+    if (input.mode === "weak") return startWeakPractice(input, record, now);
+    const sources = queueSources(record, input);
     for (const id of input.chapterIds ?? []) {
-      if (!known.has(id)) throw new Error(`Invalid chapterIds: "${id}" is not in this repertoire`);
+      if (!sources[0].chapters.has(id)) {
+        throw new Error(`Invalid chapterIds: "${id}" is not in this repertoire`);
+      }
     }
-    const progress = new Map(
-      progressRepository.list(record.id).map((item) => [item.positionKey, item])
-    );
-    const candidates = practiceCandidates(record, chapters, progress, input);
-    const { cards, policies } = frozenQueue(
-      record,
-      known,
-      pickedCandidates(candidates, input, now),
-      progress
-    );
-    const session: PracticeSessionRecord = {
-      id: nanoid(),
-      repertoireId: record.id,
-      mode: input.mode,
-      scope: sessionScope(record.id, input),
-      snapshotRevision: record.revision,
-      cards,
-      policies,
-      cursor: 0,
-      status: cards.length ? "active" : "finished",
-      createdAt: now,
-      updatedAt: now
-    };
-    sessionRepository.save(session);
-    return snapshotOf(session);
-  });
-}
-
-/**
- * The eligible decisions of the scope: not paused or suspended, with accepted moves, and an
- * occurrence in a chosen chapter within the depth limit (the shallowest, then the first chapter).
- */
-function practiceCandidates(
-  record: RepertoireRecord,
-  chapters: readonly RepertoireChapter[],
-  progress: ReadonlyMap<string, RepertoireProgress>,
-  input: StartPracticeInput
-): Candidate[] {
-  const scope = input.chapterIds ? new Set(input.chapterIds) : null;
-  const rootPlies = new Map(
-    chapters.map((chapter) => [
-      chapter.id,
-      chapter.tree.find((node) => node.id === REPERTOIRE_ROOT_NODE_ID)?.ply ?? 0
-    ])
-  );
-  const decisions = new Map(
-    decisionRepository.list(record.id).map((item) => [item.positionKey, item])
-  );
-  const candidates: Candidate[] = [];
-  for (const entry of collectDecisions(record.color, chapters).values()) {
-    const decision = decisions.get(entry.positionKey);
-    const stored = progress.get(entry.positionKey);
-    if (!decision || decision.paused || stored?.suspended) continue;
-    const effective = effectiveAcceptedUcis(decision, entry.acceptedUcis);
-    if (!effective.length) continue;
-    // Depth from the chapter root, so chapters starting at different move numbers compare fairly.
-    const inScope = entry.occurrences
-      .filter((occurrence) => !scope || scope.has(occurrence.chapterId))
-      .map((occurrence) => ({
-        occurrence,
-        depth: occurrence.ply - rootPlies.get(occurrence.chapterId)! + 1
-      }))
-      .filter(({ depth }) => input.maxDepthPlies === undefined || depth <= input.maxDepthPlies)
-      .sort((a, b) => a.depth - b.depth || a.occurrence.chapterOrder - b.occurrence.chapterOrder);
-    if (!inScope.length) continue;
-    candidates.push({
-      entry,
-      decision,
-      effective,
-      occurrence: inScope[0].occurrence,
-      practiced: Boolean(stored),
-      dueAt: stored?.dueAt ?? null,
-      ply: inScope[0].depth,
-      chapterOrder: inScope[0].occurrence.chapterOrder
+    const settings = practiceSettings();
+    const candidates = sources.flatMap((source) => practiceCandidates(source, input));
+    const picked = pickedCandidates(candidates, input, now, remainingNewToday(now, settings));
+    const { cards, policies } = frozenQueue(picked, {
+      firstSight: settings.showMoveOnNew && !input.ungraded,
+      set: Boolean(input.repertoireIds)
     });
-  }
-  return candidates;
+    return openSession(record, input, { cards, policies }, now);
+  });
 }
 
 /** The session's queue (see startPractice for the modes and limits). */
 function pickedCandidates(
   candidates: readonly Candidate[],
   input: StartPracticeInput,
-  now: number
+  now: number,
+  remainingNew: number
 ): Candidate[] {
   const unseen = orderQueue(candidates.filter((candidate) => !candidate.practiced));
   if (input.positionKeys) {
-    // A targeted queue: the named decisions that are eligible, in the given order, due or not.
-    const byKey = new Map(candidates.map((candidate) => [candidate.entry.positionKey, candidate]));
+    // A targeted queue: the named decisions that are eligible, in the given order, due or not. A
+    // set's repertoires each have their own decision at a position (one per repertoire and key).
+    const byKey = new Map<string, Candidate[]>();
+    for (const candidate of candidates) {
+      const key = candidate.entry.positionKey;
+      byKey.set(key, [...(byKey.get(key) ?? []), candidate]);
+    }
     return [...new Set(input.positionKeys)]
-      .map((key) => byKey.get(key))
-      .filter((candidate): candidate is Candidate => candidate !== undefined)
+      .flatMap((key) => byKey.get(key) ?? [])
       .filter((candidate) => input.mode === "review-due" || !candidate.practiced);
   }
-  if (input.mode === "learn-new") return unseen.slice(0, input.cardLimit ?? DEFAULT_LEARN_LIMIT);
+  if (input.mode === "learn-new") {
+    return unseen.slice(0, Math.min(input.cardLimit ?? DEFAULT_LEARN_LIMIT, remainingNew));
+  }
+  if (input.mode === "practice-early") {
+    // Learning cards not due yet, soonest first: they don't count as overdue reviews.
+    return orderQueue(
+      candidates.filter(
+        (candidate) =>
+          candidate.dueAt !== null &&
+          candidate.dueAt > now &&
+          masteryOf(candidate.progress) === "learning"
+      )
+    ).slice(0, input.cardLimit ?? DEFAULT_DUE_LIMIT);
+  }
   const due = orderQueue(
     candidates.filter(
       (candidate) => candidate.practiced && candidate.dueAt !== null && candidate.dueAt <= now
     ),
     now
   ).slice(0, input.cardLimit ?? DEFAULT_DUE_LIMIT);
-  return [...due, ...unseen.slice(0, input.newCardLimit ?? DEFAULT_NEW_AFTER_DUE)];
-}
-
-/** The queue's cards, each with the policy it freezes for grading. */
-function frozenQueue(
-  record: RepertoireRecord,
-  chapters: ReadonlyMap<string, RepertoireChapter>,
-  picked: readonly Candidate[],
-  progress: ReadonlyMap<string, RepertoireProgress>
-): { cards: PracticeCard[]; policies: Record<string, FrozenPolicy> } {
-  const lookups = new Map<string, ChapterLookup>();
-  const lookupOf = (chapterId: string) => {
-    let lookup = lookups.get(chapterId);
-    if (!lookup) {
-      lookup = buildChapterLookup(chapters.get(chapterId)!);
-      lookups.set(chapterId, lookup);
-    }
-    return lookup;
-  };
-  const cards: PracticeCard[] = [];
-  const policies: Record<string, FrozenPolicy> = {};
-  picked.forEach((candidate, index) => {
-    const { chapterId, nodeId } = candidate.occurrence;
-    const lookup = lookupOf(chapterId);
-    const node = lookup.nodesById.get(nodeId)!;
-    const queueItemId = `q${index + 1}`;
-    cards.push({
-      queueItemId,
-      positionKey: candidate.entry.positionKey,
-      fen: node.fenAfter,
-      orientation: record.color,
-      leadUp: lookup.parentPath
-        .get(nodeId)!
-        .slice(1)
-        .map((id) => {
-          const move = lookup.nodesById.get(id)!;
-          return { san: move.san ?? "", uci: move.uci ?? "", fen: move.fenAfter };
-        }),
-      chapterId,
-      nodeId,
-      prompt: candidate.decision.prompt,
-      stage: candidate.practiced ? "review" : "new",
-      state: "unanswered",
-      hintStage: 0,
-      attemptsSoFar: 0
-    });
-    policies[queueItemId] = {
-      acceptedUcis: candidate.effective,
-      preferredUci: effectivePreferredUci(candidate.decision, candidate.entry.acceptedUcis),
-      fingerprint: acceptanceFingerprint(candidate.effective),
-      hint: candidate.decision.hint,
-      wrongMoveFeedback: candidate.decision.wrongMoveFeedback,
-      explanation: stripBookPage(node.comment),
-      moveComments: acceptedMoveComments(lookup, nodeId, candidate.effective),
-      progressAt: progress.get(candidate.entry.positionKey)?.lastAttemptAt ?? null
-    };
-  });
-  return { cards, policies };
-}
-
-/** What the session was started over, kept with it (only the options that were given). */
-function sessionScope(repertoireId: string, input: StartPracticeInput): PracticeScope {
-  return {
-    repertoireId,
-    ...(input.chapterIds ? { chapterIds: [...input.chapterIds] } : {}),
-    ...(input.maxDepthPlies !== undefined ? { maxDepthPlies: input.maxDepthPlies } : {}),
-    ...(input.cardLimit !== undefined ? { cardLimit: input.cardLimit } : {}),
-    ...(input.newCardLimit !== undefined ? { newCardLimit: input.newCardLimit } : {}),
-    ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {}),
-    ...(input.ungraded && input.positionKeys?.length ? { ungraded: true } : {})
-  };
+  const newLimit = Math.min(input.newCardLimit ?? REVIEW_NEW_LIMIT, REVIEW_NEW_LIMIT, remainingNew);
+  return [...due, ...unseen.slice(0, newLimit)];
 }
 
 /**
@@ -308,7 +164,7 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
     const { card, policy, history, index, now } = turn;
     const uci = normalizeUci(card.fen, input.uci);
     const grade = gradeAnswer(turn, uci);
-    if (grade.rescheduled) rescheduled = session.repertoireId;
+    if (grade.rescheduled) rescheduled = cardRepertoireId(session, card);
     const result = attemptResultOf(turn, uci, grade);
     attemptRepository.insert({
       attemptId: input.attemptId,
@@ -382,7 +238,7 @@ function gradeAnswer(turn: CardTurn, uci: string): Grade {
   if (!legal) return ungraded("illegal");
   if (
     card.state === "unanswered" &&
-    !stillCurrent(session.repertoireId, card.positionKey, policy)
+    !stillCurrent(cardRepertoireId(session, card), card.positionKey, policy)
   ) {
     card.state = "skipped";
     return ungraded("stale");
@@ -390,6 +246,20 @@ function gradeAnswer(turn: CardTurn, uci: string): Grade {
   const outcome = correct ? "correct" : "outside-repertoire";
   card.attemptsSoFar += 1;
   if (card.state !== "unanswered") return ungraded(outcome);
+  if (card.preview) {
+    // First sight: the move was shown, so playing it is "seen" (learning, no success credit);
+    // another move changes nothing and the card waits for the shown one.
+    if (!correct) return ungraded(outcome);
+    card.state = "answered-correct";
+    return {
+      outcome,
+      legal,
+      correct,
+      finalGrade: true,
+      gradeOutcome: "seen",
+      rescheduled: applySchedule(session, card, "seen", now)
+    };
+  }
   const gradeOutcome = firstAnswerOutcome([
     ...history.map(historyAction),
     { kind: "attempt", legal: true, correct }
@@ -406,9 +276,9 @@ function gradeAnswer(turn: CardTurn, uci: string): Grade {
 }
 
 function attemptResultOf({ card, policy }: CardTurn, uci: string, grade: Grade): AttemptResult {
-  // A wrong answer keeps the answer hidden so the card can be retried (§5.3); a correct retry,
-  // like any other final state, shows the accepted set.
-  const revealed = card.state === "answered-wrong" ? grade.correct : gradeIsFinal(card);
+  // A wrong answer shows the move to play to continue ("Not 1…e5. Your move here is 1…c6."); the
+  // grade stays as that first answer left it. Any other final state shows the accepted set.
+  const revealed = gradeIsFinal(card);
   const answer = revealed ? answerOf(policy) : null;
   return {
     outcome: grade.outcome,
@@ -478,7 +348,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
     } else if (kind === "reveal") {
       if (
         card.state === "unanswered" &&
-        !stillCurrent(session.repertoireId, card.positionKey, policy)
+        !stillCurrent(cardRepertoireId(session, card), card.positionKey, policy)
       ) {
         // No grade against a changed decision: the card is skipped, the frozen answer still shown.
         persist(false, null);
@@ -488,7 +358,9 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
         const outcome = firstAnswerOutcome([...history.map(historyAction), { kind: "reveal" }]);
         persist(true, outcome);
         card.state = "revealed";
-        if (applySchedule(session, card, outcome, now)) rescheduled = session.repertoireId;
+        if (applySchedule(session, card, outcome, now)) {
+          rescheduled = cardRepertoireId(session, card);
+        }
         session.cursor = nextCursor(session.cards, index);
       } else if (card.state === "answered-wrong") {
         persist(false, null);
@@ -526,10 +398,15 @@ export function resumePractice(sessionId: string): PracticeSessionSnapshot {
       session.snapshotRevision = record.revision;
       session.updatedAt = now;
       sessionRepository.save(session);
-    } else if (record.revision !== session.snapshotRevision) {
+    } else if (record.revision !== session.snapshotRevision || session.scope.repertoireIds) {
+      // A set's other repertoires may have changed too: each card is checked against its own.
       session.cards = session.cards.map((card) =>
         card.state === "unanswered" &&
-        !stillCurrent(record.id, card.positionKey, session.policies[card.queueItemId])
+        !stillCurrent(
+          cardRepertoireId(session, card),
+          card.positionKey,
+          session.policies[card.queueItemId]
+        )
           ? { ...card, state: "skipped" }
           : card
       );
@@ -568,6 +445,7 @@ export function endPractice(sessionId: string): PracticeSummary {
       chapters: session.rehearsal
         ? [session.rehearsal.chapterId]
         : [...new Set(session.cards.map((card) => card.chapterId))],
+      ...(countOf("seen") ? { seen: countOf("seen") } : {}),
       missedPositionKeys: [
         ...new Set(
           finals

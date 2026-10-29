@@ -1,6 +1,6 @@
-// Repertoire authoring journeys (pausing a decision, wrong-move feedback, promoting a variation
-// with undo / redo, or from its move's menu) through the built app; how to run them:
-// playwright.config.ts.
+// Repertoire authoring journeys (staging moves and adding them, pausing a decision, wrong-move
+// feedback, promoting a variation with undo / redo, or from its move's menu) through the built
+// app; how to run them: playwright.config.ts.
 import type { ElectronApplication, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import { clickSquare, expect, sidebar, skipWelcome, test } from "./app";
@@ -59,6 +59,30 @@ function storedFirstMoves(page: Page, { repertoireId, chapterId }: Seeded) {
   );
 }
 
+/** How many moves the stored chapter has. */
+function storedMoveCount(page: Page, ids: Seeded) {
+  return page.evaluate(async (ids) => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
+    return (await api.getChapter(ids)).tree.length - 1;
+  }, ids);
+}
+
+/** Answers the app's next questions (window.confirm) with `answer`, keeping the last one asked. */
+function answerConfirm(page: Page, answer: boolean) {
+  return page.evaluate((answer) => {
+    const asked = window as unknown as { lastConfirm?: string };
+    window.confirm = (message?: string) => {
+      asked.lastConfirm = message;
+      return answer;
+    };
+  }, answer);
+}
+
+/** The last question window.confirm asked (see answerConfirm). */
+function lastConfirm(page: Page) {
+  return page.evaluate(() => (window as unknown as { lastConfirm?: string }).lastConfirm);
+}
+
 /**
  * Makes the main process refuse `channel` with `message` until the returned restore runs (the
  * service's own handler is put back as it was).
@@ -106,6 +130,17 @@ async function practise(page: Page) {
   await studyPanel(page).getByRole("button", { name: "Practice", exact: true }).click();
   await expect(practicePanel(page)).toBeVisible();
   await expect(page.getByText("Play your move on the board")).toBeVisible();
+}
+
+/** The New moves card (staged moves). */
+const newMoves = (page: Page) => studyPanel(page).getByRole("status", { name: "New moves" });
+
+/** The New moves card's Add: the staged moves join the open chapter as one edit. */
+async function addStagedMoves(page: Page, count = 1) {
+  await newMoves(page)
+    .getByRole("button", { name: `Add ${count} move${count === 1 ? "" : "s"}`, exact: true })
+    .click();
+  await expect(newMoves(page)).toHaveCount(0);
 }
 
 /** The selected move's ⋯ (`san`; "Starting position" at the start). */
@@ -247,9 +282,10 @@ test("a variation is promoted with P and the promotion undone and redone from th
   const redo = studyPanel(page).getByRole("button", { name: "Redo", exact: true });
   await expect(undo).toBeDisabled();
 
-  // 1. d4 from the start: a variation after the chapter's 1. e4.
+  // 1. d4 from the start, staged then added: a variation after the chapter's 1. e4.
   await clickSquare(page, "d2");
   await clickSquare(page, "d4");
+  await addStagedMoves(page);
   await expect(titlebar(page)).toContainText("Saved");
   await expect.poll(() => storedFirstMoves(page, seeded)).toEqual(["e4", "d4"]);
   expect(await moveMenuOffers(page, "d4", "Promote variation")).toBe(true);
@@ -285,9 +321,10 @@ test("a variation is promoted from its move's menu, opened with a right-click", 
   await openStudy(page);
   const tree = page.getByRole("tree", { name: "Chapter moves" });
 
-  // 1. d4 from the start: a variation row under the chapter's 1. e4.
+  // 1. d4 from the start, staged then added: a variation row under the chapter's 1. e4.
   await clickSquare(page, "d2");
   await clickSquare(page, "d4");
+  await addStagedMoves(page);
   const row = tree.getByRole("group", { name: "Variation: 1. d4" });
   await expect(row).toBeVisible();
   const d4 = row.getByRole("button", { name: "d4", exact: true });
@@ -304,4 +341,60 @@ test("a variation is promoted from its move's menu, opened with a right-click", 
     tree.getByRole("group", { name: "Variation: 1. e4 e5 2. Nf3 Nc6 3. Bc4" })
   ).toBeVisible();
   await expect(tree.getByRole("group", { name: /^Variation: 1\. d4/ })).toHaveCount(0);
+});
+
+test("a board move is staged, explained and added as one undoable edit; leaving with one asks first", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  const seeded = await seedRepertoire(page);
+  await openStudy(page);
+  const tree = page.getByRole("tree", { name: "Chapter moves" });
+
+  // After 1. e4 e5 2. Nf3 Nc6 3. Bc4: 3... Nf6 4. Ng5, both new, staged and selected.
+  await tree.getByRole("button", { name: "Bc4", exact: true }).click();
+  await clickSquare(page, "g8");
+  await clickSquare(page, "f6");
+  await clickSquare(page, "f3");
+  await clickSquare(page, "g5");
+  await expect(tree.getByRole("button", { name: "Ng5", exact: true })).toHaveAttribute(
+    "aria-current",
+    "step"
+  );
+  await expect(newMoves(page)).toContainText("3…Nf6 becomes a reply you prepare for.");
+  await expect(newMoves(page)).toContainText("4.Ng5 becomes your move here.");
+  await expect(newMoves(page)).toContainText("1 new practice move");
+  // Nothing is saved while they are staged.
+  expect(await storedMoveCount(page, seeded)).toBe(5);
+
+  // × drops a move and what follows it.
+  await newMoves(page).getByRole("button", { name: "Drop 4.Ng5", exact: true }).click();
+  await expect(newMoves(page)).toContainText(
+    "3…Nf6 is a reply you'll cover; play your answer to practise it."
+  );
+  await expect(newMoves(page)).toContainText("No new practice moves");
+
+  // Played again and added: both moves in one edit, which one Undo takes back.
+  await clickSquare(page, "f3");
+  await clickSquare(page, "g5");
+  await addStagedMoves(page, 2);
+  await expect(titlebar(page)).toContainText("Saved");
+  await expect.poll(() => storedMoveCount(page, seeded)).toBe(7);
+  await studyPanel(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(titlebar(page)).toContainText("Saved");
+  await expect.poll(() => storedMoveCount(page, seeded)).toBe(5);
+
+  // Leaving Study with a staged move asks first: staying keeps it, discarding leaves.
+  await clickSquare(page, "g8");
+  await clickSquare(page, "f6");
+  await expect(newMoves(page)).toBeVisible();
+  await answerConfirm(page, false);
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
+  expect(await lastConfirm(page)).toBe("Discard 1 unsaved move?");
+  await expect(newMoves(page)).toBeVisible();
+  await answerConfirm(page, true);
+  await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
+  await expect(studyPanel(page)).toHaveCount(0);
+  expect(await storedMoveCount(page, seeded)).toBe(5);
 });

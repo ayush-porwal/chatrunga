@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useId, useMemo, type ReactNode } from "react";
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -25,7 +25,6 @@ import {
   type LibraryView
 } from "../features/game/RecentGames";
 import { mainlineReviewInput, reviewEngineName } from "../features/game-review/review-utils";
-import { ReviewCharts } from "../features/game-review/ReviewCharts";
 import { reviewSideColor, useReviewSide } from "../features/game-review/review-side";
 import { moverOf } from "../features/game-review/review-summary";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
@@ -42,6 +41,13 @@ import { useDisplayedReviewMoves } from "../stores/review-validity";
 import { DESTINATION_ICONS } from "./destination-icons";
 import { availableSideTab, showsEngine, type SideTab } from "./side-tabs";
 import { usePuzzleTabs } from "./use-puzzle-tabs";
+
+// The charts load once a reviewed (or analysed) game shows them, out of the first screen's code.
+const ReviewCharts = lazy(() =>
+  import("../features/game-review/ReviewCharts").then((module) => ({
+    default: module.ReviewCharts
+  }))
+);
 
 /**
  * The game view (free board, Analysis, engine and Lichess games, Puzzle) rendered through the shared board
@@ -242,25 +248,27 @@ function GameFooter() {
   return (
     <>
       {shown ? (
-        <div className="border-b border-line-subtle px-3 pb-1">
-          {/* Its top edge is the charts' splitter, against the panel content above. */}
-          <ReviewCharts
-            moves={moves}
-            variationSelected={!onMainline}
-            selectedNodeId={currentNodeId}
-            onSelectNode={goToNode}
-            reviewedSide={side}
-            evalEngine={evalEngine}
-            totalPlies={running ? mainline.length : undefined}
-            keyMomentIds={momentIds}
-            opening={opening}
-            mainline={mainline}
-            timeControl={timeControl}
-            maia={maia}
-            // No Maia data here hides the strip: reviews (and Maia) live in Game review.
-            maiaPrompt={false}
-          />
-        </div>
+        <Suspense fallback={null}>
+          <div className="border-b border-line-subtle px-3 pb-1">
+            {/* Its top edge is the charts' splitter, against the panel content above. */}
+            <ReviewCharts
+              moves={moves}
+              variationSelected={!onMainline}
+              selectedNodeId={currentNodeId}
+              onSelectNode={goToNode}
+              reviewedSide={side}
+              evalEngine={evalEngine}
+              totalPlies={running ? mainline.length : undefined}
+              keyMomentIds={momentIds}
+              opening={opening}
+              mainline={mainline}
+              timeControl={timeControl}
+              maia={maia}
+              // No Maia data here hides the strip: reviews (and Maia) live in Game review.
+              maiaPrompt={false}
+            />
+          </div>
+        </Suspense>
       ) : null}
       <MoveNavigation />
     </>

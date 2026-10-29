@@ -214,7 +214,7 @@ describe("registerRepertoireIpc", () => {
     for (const [channel, input, method] of valid) {
       expect(await invoke(channel, input)).toBe(method);
     }
-    expect(invoke("getDueSummary")).toBe("getDueSummary");
+    expect(await invoke("getDueSummary")).toBe("getDueSummary");
     // Every write passes the write gate (commitImport takes it inside the service); no read does.
     expect([...gated].sort()).toStrictEqual([
       "archiveRepertoire",
@@ -234,7 +234,7 @@ describe("registerRepertoireIpc", () => {
       "updateMetadata"
     ]);
     await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toBe("previewImport");
-    expect(invoke("list", undefined)).toBe("listRepertoires");
+    expect(await invoke("list", undefined)).toBe("listRepertoires");
     expect(calls.find(([name]) => name === "compareGame")?.[1][0]).toStrictEqual({
       repertoireId: "r1",
       color: "black",
@@ -253,7 +253,7 @@ describe("registerRepertoireIpc", () => {
     });
   });
 
-  it("rejects malformed inputs with Invalid … messages", () => {
+  it("rejects malformed inputs with Invalid … messages", async () => {
     expect(() => invoke("create", { name: "x", color: "red" })).toThrow(
       "Invalid color: expected white or black"
     );
@@ -312,9 +312,9 @@ describe("registerRepertoireIpc", () => {
     expect(() => invoke("previewImport", { path: "/etc/hosts" })).toThrow(/Invalid PGN/);
     expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: "" })).toThrow(/jobId/);
     expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: 7 })).toThrow(/jobId/);
-    invoke("previewImport", { pgn: "1. e4 *", jobId: "job-1" });
+    await invoke("previewImport", { pgn: "1. e4 *", jobId: "job-1" });
     expect(calls.at(-1)).toStrictEqual(["previewImport", [{ pgn: "1. e4 *", jobId: "job-1" }]]);
-    invoke("previewImport", { pgn: "1. e4 *" });
+    await invoke("previewImport", { pgn: "1. e4 *" });
     expect(calls.at(-1)?.[1][0]).toStrictEqual({ pgn: "1. e4 *" });
     expect(() =>
       invoke("commitImport", {
@@ -442,14 +442,16 @@ describe("registerRepertoireIpc", () => {
 
   it("parses backup inputs and never accepts a filesystem path", async () => {
     calls.length = 0;
-    expect(invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe("exportBackup");
-    expect(calls.at(-1)?.[1][0]).toStrictEqual({ repertoireIds: undefined, includeProgress: true });
-    expect(invoke("exportBackup", { repertoireIds: ["r1"], includeProgress: false })).toBe(
+    expect(await invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe(
       "exportBackup"
     );
-    expect(invoke("previewBackupImport", { pickFile: true })).toBe("previewBackupImport");
+    expect(calls.at(-1)?.[1][0]).toStrictEqual({ repertoireIds: undefined, includeProgress: true });
+    expect(await invoke("exportBackup", { repertoireIds: ["r1"], includeProgress: false })).toBe(
+      "exportBackup"
+    );
+    expect(await invoke("previewBackupImport", { pickFile: true })).toBe("previewBackupImport");
     expect(calls.at(-1)?.[1][0]).toStrictEqual({ pickFile: true });
-    expect(invoke("previewBackupImport", { json: "{}" })).toBe("previewBackupImport");
+    expect(await invoke("previewBackupImport", { json: "{}" })).toBe("previewBackupImport");
     const restore = {
       jobId: "j",
       selections: [
@@ -467,14 +469,14 @@ describe("registerRepertoireIpc", () => {
       ]
     });
     expect(gated.has("restoreBackup")).toBe(true);
-    expect(invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
-    expect(invoke("refreshBackupPreview", "j")).toBe("refreshBackupPreview");
+    expect(await invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
+    expect(await invoke("refreshBackupPreview", "j")).toBe("refreshBackupPreview");
     expect(calls.at(-1)?.[1]).toStrictEqual(["j"]);
 
     expect(() => invoke("exportBackup", { includeProgress: "yes" })).toThrow(/includeProgress/);
-    expect(() =>
+    await expect(
       invoke("exportBackup", { path: "/tmp/x.json", includeProgress: true })
-    ).not.toThrow();
+    ).resolves.toBe("exportBackup");
     expect(calls.at(-1)?.[1][0]).not.toHaveProperty("path");
     expect(() => invoke("previewBackupImport", { path: "/etc/hosts" })).toThrow(
       /expected pickFile or json/
