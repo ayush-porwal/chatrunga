@@ -20,11 +20,11 @@ import { HubChapterList } from "./HubChapterList";
 import { COLOR_LABELS, relativeDay, type ResumePracticeTarget } from "./repertoire-chapters";
 
 /**
- * One grid for the header and the rows: the chapters expander, thumbnail, name, chapters, learned,
- * last studied, then the row's actions.
+ * One grid for the header, the colour groups and the rows: thumbnail (flush left), name, chapters,
+ * learned, last studied, then the row's actions (Practice, the chapters expander, ⋯).
  */
 const columns =
-  "grid grid-cols-[1.75rem_5.5rem_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(9.5rem,auto)] gap-x-4 pr-3 [&>*:nth-child(n+4)]:justify-self-start";
+  "grid grid-cols-[5.5rem_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(11rem,auto)] gap-x-4 pr-3 [&>*:nth-child(n+3)]:justify-self-start";
 
 /** A repertoire row's chapters, opened in the hub (Study at a chapter, or practise it). */
 export type HubChapterActions = {
@@ -34,10 +34,10 @@ export type HubChapterActions = {
 
 /**
  * The hub's table (laid out as Play's Recent games), in White and Black groups (a colour without
- * repertoires has none): an expander listing the chapters by opening family, a board thumbnail
- * (the first chapter's starting position, facing the repertoire's side), the name, chapters,
- * learned (stage 1 or more) of your moves, and last studied. The whole row opens Study;
- * Practice (with the due count) and the ⋯ menu sit at its end, always visible. Rows are memoised:
+ * repertoires has none): a board thumbnail (the first chapter's starting position, facing the
+ * repertoire's side), the name, chapters, learned (stage 1 or more) of your moves, and last
+ * studied. The whole row opens Study; Practice (with the due count), the expander listing the
+ * chapters by opening family, and the ⋯ menu sit at its end, always visible. Rows are memoised:
  * give them stable `actionsFor`, `onStudy`, `onPractice` and `chapters`.
  */
 export function RepertoireTable({
@@ -88,8 +88,7 @@ export function RepertoireTable({
         )}
       >
         <span />
-        {/* Over the board and the name: a row's repertoire starts at its board. */}
-        <span className="col-span-2">Repertoire</span>
+        <span>Repertoire</span>
         <span>Chapters</span>
         <span>Learned</span>
         <span>Last studied</span>
@@ -118,17 +117,21 @@ export function RepertoireTable({
             .filter((group) => group.items.length)
             .map((group, index) => (
               <Fragment key={group.color}>
-                {/* The group's heading: text only, not a repertoire of the list. */}
+                {/* The group's heading (text only, not a repertoire of the list), in the names' column. */}
                 <li
                   role="presentation"
                   className={cn(
+                    columns,
                     eyebrow,
-                    "flex h-8 items-center gap-1.5 border-b border-line-subtle bg-surface-sunken px-4",
+                    "h-8 items-center border-b border-line-subtle bg-surface-sunken",
                     index > 0 && "border-t"
                   )}
                 >
-                  {COLOR_LABELS[group.color]}
-                  <span className="tabular-nums text-fg-subtle">{group.items.length}</span>
+                  <span />
+                  <span className="flex items-center gap-1.5">
+                    {COLOR_LABELS[group.color]}
+                    <span className="tabular-nums text-fg-subtle">{group.items.length}</span>
+                  </span>
                 </li>
                 {group.items.map((item) => (
                   <RepertoireRow
@@ -169,7 +172,6 @@ export function RepertoireTableSkeleton({ label }: { label: string }) {
 function SkeletonRow() {
   return (
     <div className={cn(columns, "h-22 items-center border-b border-line-subtle last:border-0")}>
-      <span />
       <Skeleton className="size-full rounded-none" />
       <span className="grid gap-2">
         <Skeleton className="h-3 w-40" />
@@ -222,23 +224,6 @@ const RepertoireRow = memo(function RepertoireRow({
           "group/row relative h-22 items-center transition-colors duration-micro hover:bg-control focus-within:bg-control has-[[aria-haspopup][aria-expanded=true]]:z-20"
         )}
       >
-        <span className="relative z-10 justify-self-end">
-          <IconButton
-            label={expanded ? "Hide chapters" : "Show chapters"}
-            icon={
-              <ChevronRight
-                className={cn(
-                  "text-fg-subtle transition-transform duration-standard ease-enter",
-                  expanded && "rotate-90"
-                )}
-              />
-            }
-            size="icon-xs"
-            aria-expanded={expanded}
-            aria-controls={listId}
-            onClick={() => onToggle(item.id)}
-          />
-        </span>
         <div className="relative h-full overflow-hidden">
           <BoardThumbnail
             fen={item.firstChapterFen ?? START_FEN}
@@ -275,6 +260,21 @@ const RepertoireRow = memo(function RepertoireRow({
               onPractice={onPractice}
             />
           )}
+          <IconButton
+            label={expanded ? "Hide chapters" : "Show chapters"}
+            icon={
+              <ChevronRight
+                className={cn(
+                  "text-fg-subtle transition-transform duration-standard ease-enter",
+                  expanded && "rotate-90"
+                )}
+              />
+            }
+            size="icon-xs"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => onToggle(item.id)}
+          />
           <OverflowMenu label={`${item.name} actions`} size="icon-xs" items={actions} />
         </span>
       </div>
