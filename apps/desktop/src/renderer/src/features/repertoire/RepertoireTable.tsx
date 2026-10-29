@@ -23,9 +23,9 @@ import { COLOR_LABELS, relativeDay, type ResumePracticeTarget } from "./repertoi
  * board · repertoire · chapters · learned · last studied · actions.
  */
 const columns =
-  "grid grid-cols-[5.5rem_minmax(0,2fr)_minmax(0,0.7fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(10rem,auto)] items-center gap-x-4 pr-3";
+  "grid grid-cols-[4rem_minmax(0,2fr)_minmax(0,0.7fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(10rem,auto)] items-center gap-x-4 pr-3 pl-4";
 /** The board and the name: one Study button over both columns, on the same tracks. */
-const studyColumns = "col-span-2 grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-4";
+const studyColumns = "col-span-2 grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-4";
 const cell = "min-w-0 text-[0.8125rem] tabular-nums text-fg-muted";
 
 /** A repertoire row's chapters, opened in the hub (Study at a chapter, or practise it). */
@@ -166,7 +166,7 @@ export function RepertoireTableSkeleton({ label }: { label: string }) {
     <div aria-busy="true" aria-label={label}>
       {[0, 1, 2].map((index) => (
         <div key={index} className={cn(columns, "h-22 border-b border-line-subtle last:border-0")}>
-          <Skeleton className="h-22 w-full rounded-none" />
+          <Skeleton className="size-16 rounded-md" />
           <span className="grid gap-2">
             <Skeleton className="h-3 w-40" />
             <Skeleton className="h-3 w-24" />
@@ -224,13 +224,15 @@ const RepertoireRow = memo(function RepertoireRow({
           aria-label={`Study ${item.name}`}
           className={cn(
             studyColumns,
-            "h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+            "rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           )}
         >
+          {/* Inset in the row with room around it, rounded as boards are elsewhere. */}
           <BoardThumbnail
             fen={item.firstChapterFen ?? START_FEN}
             orientation={item.color}
-            className="h-22 w-22 [&>div]:rounded-none"
+            rounded="md"
+            className="size-16"
           />
           <span className="grid min-w-0 gap-1">
             <span className="flex min-w-0 items-center gap-2">
