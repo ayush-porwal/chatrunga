@@ -364,7 +364,9 @@ const tabScroll = new Map<RepertoireHubTab, number>();
  * Repertoire (docs/repertoire-games-and-practice.md §1): one card whose title bar holds the tabs
  * Repertoires (the library, with how many), Practice (sets and progress, with the due count) and
  * Insights (your games), and at its right end the shown tab's own actions. The window's title bar
- * stays the page's title. Each tab's scroll position is kept for when the hub comes back.
+ * stays the page's title. The card always fills the page: switching tabs changes only what the
+ * panel under the tab bar shows, and the panel scrolls (each tab's position kept for when the hub
+ * comes back).
  */
 export function RepertoireHubPage(props: HubPageProps) {
   const { onStudy, onPracticePreset, onReviewGame } = props;
@@ -399,23 +401,28 @@ export function RepertoireHubPage(props: HubPageProps) {
     if (first) onPracticePreset(first, weakSpotsPreset(target, repertoireIds, tab));
   });
   return (
-    <div ref={scroller} className={pageShell}>
-      <div className="p-6">
-        <h1 className="sr-only">Repertoire</h1>
-        <section aria-label="Repertoire" className={cn(card, "flex flex-col")}>
-          <WorkspaceTabBar<RepertoireHubTab>
-            panelId={REPERTOIRE_HUB_PANEL_ID}
-            ariaLabel="Repertoire"
-            tabs={[
-              { value: "repertoires", label: "Repertoires", count: active },
-              { value: "practice", label: "Practice", count: due },
-              { value: "insights", label: "Insights" }
-            ]}
-            value={tab}
-            onChange={setTab}
-            actions={<span ref={setActionsSlot} className="contents" />}
-          />
-          <div {...tabPanelProps(REPERTOIRE_HUB_PANEL_ID, tab)} className="flex min-w-0 flex-col">
+    <div className="flex h-full min-h-0 w-full flex-col p-6">
+      <h1 className="sr-only">Repertoire</h1>
+      <section aria-label="Repertoire" className={cn(card, "flex min-h-0 flex-1 flex-col")}>
+        <WorkspaceTabBar<RepertoireHubTab>
+          panelId={REPERTOIRE_HUB_PANEL_ID}
+          ariaLabel="Repertoire"
+          tabs={[
+            { value: "repertoires", label: "Repertoires", count: active },
+            { value: "practice", label: "Practice", count: due },
+            { value: "insights", label: "Insights" }
+          ]}
+          value={tab}
+          onChange={setTab}
+          actions={<span ref={setActionsSlot} className="contents" />}
+        />
+        <div
+          ref={scroller}
+          {...tabPanelProps(REPERTOIRE_HUB_PANEL_ID, tab)}
+          className={cn(pageShell, "h-auto min-h-0 flex-1 rounded-b-[11px]")}
+        >
+          {/* The tab's content: its height is what the scroll restore waits on. */}
+          <div className="flex min-h-full min-w-0 flex-col">
             <HubActionsSlot.Provider value={actionsSlot}>
               <Suspense fallback={<HubTabLoading />}>
                 {tab === "repertoires" ? (
@@ -436,8 +443,8 @@ export function RepertoireHubPage(props: HubPageProps) {
               </Suspense>
             </HubActionsSlot.Provider>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

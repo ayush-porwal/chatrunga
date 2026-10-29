@@ -183,8 +183,16 @@ type InsightsGameIssue = {
   ply: number;
   /** "4…Nf6", as the move is written in the game. */
   played: string | null;
+  /** The played move (UCI). */
+  playedUci: string | null;
   /** The repertoire's moves there (SAN), for a forgot game. */
   expected: string[];
+  /** The same moves as UCI (the board's arrows for them). */
+  expectedUcis: string[];
+  /** The position before the move (a forgot or new reply game's): what practice and Study open. */
+  positionKey: string | null;
+  /** Where Study opens that position (forgot and new reply only). */
+  study: InsightsStudyPlace;
 };
 
 export type InsightsGameRow = {

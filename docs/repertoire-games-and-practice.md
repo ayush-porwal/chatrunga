@@ -272,8 +272,15 @@ Sections:
     repertoire", or "No user side".
 - Filters: the report's, plus colour, repertoire, outcome, and "up to move N" (the issue happened
   at or before move N).
-- Clicking a row opens the game in **Game review** at the issue ply. The opening section is
-  already there; nothing about review changes.
+- Clicking a row opens the game in **Game review** at the position where the issue's move was
+  played. A **From your games** band at the top of its panel (analysed or not) says what happened
+  ("You left “Sicilian” here: you played 2.d4, but it has 2.Nf3."; "Your opponent played 3.e5 here,
+  which … doesn't answer yet."; and a line for the other outcomes) and offers the fix: **Practise
+  this position** and **Open in Study** for a forgotten move, **Prepare a reply** for an unprepared
+  one, plus **Show the move**. At that position the board draws the repertoire's move in green and
+  the one played in red (an unprepared reply in yellow).
+- The Opening column falls back to the bundled book's name along the game's moves when the PGN
+  names none (Chess.com games).
 
 ### 5.4 Game misses feed the schedule
 

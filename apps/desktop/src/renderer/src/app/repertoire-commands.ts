@@ -448,10 +448,11 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     await deps.openGameReview(target.gameId, "summary");
     // A newer navigation, or the game couldn't be read: nothing more to show.
     if (currentGame().gameId !== target.gameId) return;
-    useInsightsReturnStore.getState().setGameId(target.gameId);
+    useInsightsReturnStore.getState().setGameId(target.gameId, target.focus);
     if (color) deps.setOpeningSide({ board: currentGame().board, color });
+    // The position where the move was played: the band and the board's arrows are about it.
     const node = target.ply === null ? null : mainlineNodeAtPly(currentGame().moveTree, target.ply);
-    if (node) currentGame().goToNode(node.id);
+    if (node) currentGame().goToNode(node.parentId ?? node.id);
   }
 
   /** Game review's Back to Insights: the Repertoire page (on its Insights tab). */

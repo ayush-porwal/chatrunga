@@ -10,6 +10,7 @@ import type {
   InsightsUnpreparedReply
 } from "@chaturanga/shared/types/repertoire-insights";
 import type { StudyOpenTarget } from "../repertoire-chapters";
+import type { InsightsReviewFocus } from "./insights-return";
 
 /** Game review of a listed game at the move a row is about (Back to Insights returns). */
 export type InsightsReviewTarget = {
@@ -19,6 +20,8 @@ export type InsightsReviewTarget = {
   /** The repertoire and colour to compare with on the review's Opening section. */
   repertoireId: string | null;
   color: Color | null;
+  /** What the review's "From your games" band says and offers (null: nothing to say). */
+  focus: InsightsReviewFocus | null;
 };
 
 /** Weak-spots practice: every forgotten position (null), or one (a row's Practise). */

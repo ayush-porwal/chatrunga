@@ -211,7 +211,8 @@ function GameRow({
       gameId: row.gameId,
       ply: row.issue?.ply ?? null,
       repertoireId: row.repertoireId,
-      color: row.color
+      color: row.color,
+      focus: row
     });
   const result = row.result ? RESULT_PILL[row.result] : null;
   return (

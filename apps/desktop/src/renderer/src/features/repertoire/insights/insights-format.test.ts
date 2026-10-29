@@ -28,21 +28,21 @@ describe("Insights words", () => {
       outcomePill({
         outcome: "forgot",
         color: "black",
-        issue: { ply: 8, played: "Nf6", expected: ["Nc6"] }
+        issue: issueAt(8, "Nf6", ["Nc6"])
       })
     ).toMatchObject({ label: "Forgot 4…Nc6", title: "You played 4…Nf6; your repertoire has Nc6." });
     expect(
       outcomePill({
         outcome: "new-reply",
         color: "black",
-        issue: { ply: 5, played: "e5", expected: [] }
+        issue: issueAt(5, "e5")
       }).label
     ).toBe("New reply 3.e5");
     expect(
       outcomePill({
         outcome: "not-covered",
         color: "white",
-        issue: { ply: 1, played: "e3", expected: [] }
+        issue: issueAt(1, "e3")
       }).label
     ).toBe("Not covered: 1.e3");
     expect(outcomePill({ outcome: "no-repertoire", color: "white", issue: null }).label).toBe(
@@ -95,3 +95,16 @@ describe("Prepare", () => {
     });
   });
 });
+
+/** A game row's issue: the move played at `ply` and the repertoire's moves there. */
+function issueAt(ply: number, played: string, expected: string[] = []) {
+  return {
+    ply,
+    played,
+    playedUci: null,
+    expected,
+    expectedUcis: [],
+    positionKey: null,
+    study: null
+  };
+}

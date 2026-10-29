@@ -438,7 +438,22 @@ function UnpreparedSection({
                     gameId: reply.latestGameId,
                     ply: reply.ply,
                     repertoireId: reply.repertoireId,
-                    color: reply.color
+                    color: reply.color,
+                    focus: {
+                      outcome: "new-reply",
+                      repertoireId: reply.repertoireId,
+                      repertoireName: reply.repertoireName,
+                      color: reply.color,
+                      issue: {
+                        ply: reply.ply,
+                        played: reply.reply.san,
+                        playedUci: reply.reply.uci,
+                        expected: [],
+                        expectedUcis: [],
+                        positionKey: reply.positionKey,
+                        study: reply.study
+                      }
+                    }
                   })
                 }
               >

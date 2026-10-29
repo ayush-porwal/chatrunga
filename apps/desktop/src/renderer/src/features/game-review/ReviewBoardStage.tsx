@@ -15,6 +15,8 @@ import { boardMoveMark } from "../board/move-mark";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { useSavedEngineSide } from "../game/use-saved-engine-side";
 import { useYourSide } from "../profile/YourAvatar";
+import { useInsightsReturnStore } from "../repertoire/insights/insights-return";
+import { insightsDecisionShapes } from "../repertoire/insights/insights-review";
 import { ReviewBoard } from "./ReviewBoard";
 import { uciSquares } from "./review-utils";
 
@@ -46,6 +48,7 @@ export function ReviewBoardStage({
   selectedMove: MoveReview | undefined;
 }) {
   const moveTree = useGameStore((state) => state.moveTree);
+  const gameId = useGameStore((state) => state.gameId);
   const selectedNodeId = useGameStore((state) => state.currentNodeId);
   const boardFen = useGameStore((state) => state.currentFen);
   const orientation = useGameStore((state) => state.orientation);
@@ -61,9 +64,17 @@ export function ReviewBoardStage({
   const bestMoveArrow =
     settings.data?.analysisBestMoveArrow ?? defaultSettings.analysisBestMoveArrow;
   const planArrows = settings.data?.analysisPlanArrows ?? defaultSettings.analysisPlanArrows;
+  // A game opened from Insights: at the position where it left the repertoire, the repertoire's
+  // move and the one played (or the reply it doesn't answer).
+  const insightsFocus = useInsightsReturnStore((state) =>
+    state.gameId !== null && state.gameId === gameId ? state.focus : null
+  );
   const arrows = useMemo(
-    () => reviewMoveShapes(boardMove, { bestMoveArrow, planArrows }),
-    [boardMove, bestMoveArrow, planArrows]
+    () => [
+      ...insightsDecisionShapes(insightsFocus, moveTree, selectedNodeId),
+      ...reviewMoveShapes(boardMove, { bestMoveArrow, planArrows })
+    ],
+    [boardMove, bestMoveArrow, insightsFocus, moveTree, planArrows, selectedNodeId]
   );
   const lastMove = uciSquares(
     bestLine

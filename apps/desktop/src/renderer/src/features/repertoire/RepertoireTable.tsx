@@ -10,18 +10,20 @@ import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { START_FEN } from "@chaturanga/shared/chess/position";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cn } from "@/lib/utils";
+import { BoardThumbnail } from "../settings/board-thumbnail";
 import { colorGroups, learnedText } from "./hub-groups";
 import { HubChapterList } from "./HubChapterList";
 import { COLOR_LABELS, relativeDay, type ResumePracticeTarget } from "./repertoire-chapters";
 
 /**
- * One grid for the header and the rows: the name (after the chapters expander), chapters, learned,
+ * One grid for the header and the rows: the chapters expander, thumbnail, name, chapters, learned,
  * last studied, then the row's actions.
  */
 const columns =
-  "grid grid-cols-[minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(9.5rem,auto)] gap-x-4 pr-3 pl-2 [&>*:nth-child(n+2)]:justify-self-start";
+  "grid grid-cols-[1.75rem_5.5rem_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(9.5rem,auto)] gap-x-4 pr-3 [&>*:nth-child(n+4)]:justify-self-start";
 
 /** A repertoire row's chapters, opened in the hub (Study at a chapter, or practise it). */
 export type HubChapterActions = {
@@ -31,8 +33,9 @@ export type HubChapterActions = {
 
 /**
  * The hub's table (laid out as Play's Recent games), in White and Black groups (a colour without
- * repertoires has none): the name with an expander listing the chapters by opening family,
- * chapters, learned (stage 1 or more) of your moves, and last studied. The whole row opens Study;
+ * repertoires has none): an expander listing the chapters by opening family, a board thumbnail
+ * (the first chapter's starting position, facing the repertoire's side), the name, chapters,
+ * learned (stage 1 or more) of your moves, and last studied. The whole row opens Study;
  * Practice (with the due count) and the ⋯ menu sit at its end, always visible. Rows are memoised:
  * give them stable `actionsFor`, `onStudy`, `onPractice` and `chapters`.
  */
@@ -83,8 +86,9 @@ export function RepertoireTable({
           "h-9 shrink-0 items-center border-b border-line bg-surface-sunken text-xs font-medium text-fg-muted"
         )}
       >
-        {/* Past the expander, over the names. */}
-        <span className="pl-8">Repertoire</span>
+        <span />
+        <span />
+        <span>Repertoire</span>
         <span>Chapters</span>
         <span>Learned</span>
         <span>Last studied</span>
@@ -151,8 +155,10 @@ export function RepertoireTable({
 
 function SkeletonRow() {
   return (
-    <div className={cn(columns, "h-14 items-center border-b border-line-subtle last:border-0")}>
-      <span className="grid gap-2 pl-8">
+    <div className={cn(columns, "h-22 items-center border-b border-line-subtle last:border-0")}>
+      <span />
+      <Skeleton className="size-full rounded-none" />
+      <span className="grid gap-2">
         <Skeleton className="h-3 w-40" />
         <Skeleton className="h-3 w-24" />
       </span>
@@ -200,36 +206,42 @@ const RepertoireRow = memo(function RepertoireRow({
           columns,
           // Hover fills the row edge to edge; the last row's corners are the table's. A row with its
           // ⋯ menu open is lifted over the rows below it.
-          "group/row relative h-14 items-center transition-colors duration-micro hover:bg-control focus-within:bg-control has-[[aria-haspopup][aria-expanded=true]]:z-20"
+          "group/row relative h-22 items-center transition-colors duration-micro hover:bg-control focus-within:bg-control has-[[aria-haspopup][aria-expanded=true]]:z-20"
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="relative z-10 justify-self-end">
           <IconButton
             label={expanded ? "Hide chapters" : "Show chapters"}
             icon={expanded ? <ChevronDown /> : <ChevronRight />}
             size="icon-xs"
-            className="relative z-10 shrink-0"
             aria-expanded={expanded}
             aria-controls={listId}
             onClick={() => onToggle(item.id)}
           />
-          {/* The row's own action: the button covers the whole row (other controls sit above it). */}
-          <button
-            type="button"
-            onClick={() => onStudy(item.id)}
-            aria-label={`Study ${item.name}`}
-            className="grid min-w-0 content-center gap-0.5 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-accent/50"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-sm font-medium text-fg">{item.name}</span>
-              {fromBook ? <Badge>Book</Badge> : null}
-              {archived ? <Badge>Archived</Badge> : null}
-            </span>
-            {item.tags.length ? (
-              <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
-            ) : null}
-          </button>
         </span>
+        <div className="relative h-full overflow-hidden">
+          <BoardThumbnail
+            fen={item.firstChapterFen ?? START_FEN}
+            orientation={item.color}
+            className="h-full w-auto [&>div]:rounded-none"
+          />
+        </div>
+        {/* The row's own action: the button covers the whole row (other controls sit above it). */}
+        <button
+          type="button"
+          onClick={() => onStudy(item.id)}
+          aria-label={`Study ${item.name}`}
+          className="grid min-w-0 content-center gap-1 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-accent/50"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium text-fg">{item.name}</span>
+            {fromBook ? <Badge>Book</Badge> : null}
+            {archived ? <Badge>Archived</Badge> : null}
+          </span>
+          {item.tags.length ? (
+            <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
+          ) : null}
+        </button>
         <span className="text-xs text-fg-secondary tabular-nums">{item.chapterCount}</span>
         <Learned learned={stats?.learned ?? null} total={item.decisionCount} />
         <span className="truncate text-xs text-fg-muted">
@@ -251,6 +263,7 @@ const RepertoireRow = memo(function RepertoireRow({
           <HubChapterList
             repertoireId={item.id}
             name={item.name}
+            chapterCount={item.chapterCount}
             stats={chapterStats}
             onStudyChapter={(chapterId) => chapters.onStudyChapter(item.id, chapterId)}
             onPractiseChapter={(chapterId) => chapters.onPractiseChapter(item.id, chapterId)}

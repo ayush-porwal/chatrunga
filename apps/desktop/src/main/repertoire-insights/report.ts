@@ -5,7 +5,7 @@
  */
 import { openingAt } from "@chaturanga/shared/chess/opening-book";
 import { rootPly } from "@chaturanga/shared/chess/pgn";
-import { fenAfterUci, positionFromFen } from "@chaturanga/shared/chess/position";
+import { fenAfterUci, positionFromFen, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey as repertoirePositionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { makeSanAndPlay } from "chessops/san";
 import { parseUci } from "chessops/util";
@@ -30,6 +30,7 @@ import {
   type InsightsUnpreparedReply
 } from "@chaturanga/shared/types/repertoire-insights";
 import { openingBook } from "../engine/opening-book";
+import { openingOfLine } from "../repertoire/chapter-openings";
 import { positionIndexRepository } from "../repertoire/repository";
 import { gameInfoOf, opponentRatingOf, passesFilters, userResult, type GameInfo } from "./games";
 import { bestRecord, shownOutcome } from "./outcomes";
@@ -394,12 +395,16 @@ function gameRow(game: InsightsGame): InsightsGameRow {
       ? {
           ply: best.ply,
           played: best.moves.at(-1)?.san ?? null,
+          playedUci: best.playedUci,
           expected:
             best.outcome === "forgot"
               ? best.expectedUcis.map((uci) =>
                   sanAt(fenAfter(best.rootFen ?? "", lineOf(best)) ?? "", uci)
                 )
-              : []
+              : [],
+          expectedUcis: best.outcome === "forgot" ? best.expectedUcis : [],
+          positionKey: best.positionKey,
+          study: studyPlaceOf(best)
         }
       : null;
   return {
@@ -411,12 +416,27 @@ function gameRow(game: InsightsGame): InsightsGameRow {
     opponentRating: color ? opponentRatingOf(info.headers, color) : null,
     result: color ? userResult(info.headers, color) : null,
     timeControl: info.timeControl,
-    opening: info.headers.opening ?? null,
+    opening: info.headers.opening ?? bookOpeningOf(best),
     outcome: game.outcome,
     issue,
     repertoireId: best.repertoireId,
     repertoireName: best.repertoireName
   };
+}
+
+/** Where Study opens a forgot or new reply game's position (null for the other outcomes). */
+function studyPlaceOf(best: OutcomeWithGame): InsightsStudyPlace {
+  const fixable = best.outcome === "forgot" || best.outcome === "new-reply";
+  return fixable && best.repertoireId && best.positionKey
+    ? studyPlace(best.repertoireId, best.positionKey)
+    : null;
+}
+
+/** A game's opening from the bundled book, along its stored moves (games whose PGN names none). */
+function bookOpeningOf(best: OutcomeWithGame): string | null {
+  if (!best.moves.length) return null;
+  const moves = best.moves.map((move) => move.uci);
+  return openingOfLine({ rootFen: best.rootFen ?? START_FEN, moves })?.name ?? null;
 }
 
 /** A page of the games list (newest first) under the saved filters and `query`'s own. */

@@ -40,6 +40,7 @@ import { tabPanelProps } from "@/components/ui/segmented-control";
 import { useReviewUsage } from "../../app/useUsageTelemetry";
 import { DESTINATION_ICONS } from "../../app/destination-icons";
 import { ReviewNavigationRow } from "./ReviewNavigationRow";
+import { InsightsReviewNotice } from "../repertoire/insights/InsightsReviewNotice";
 import { ReviewNotices, useReviewNotices } from "./ReviewNotices";
 
 type GameReviewPageProps = {
@@ -346,7 +347,15 @@ function GameReviewPageInner({
           />
         }
         flushBody
-        notices={<ReviewNotices notices={notices} onAnalyze={onAnalyze} />}
+        notices={
+          <>
+            <InsightsReviewNotice
+              onStudy={onOpenRepertoireStudy}
+              onRefreshDecision={onRefreshRepertoireDecision}
+            />
+            <ReviewNotices notices={notices} onAnalyze={onAnalyze} />
+          </>
+        }
         footer={
           <>
             {hasMoves || isRunning ? (
