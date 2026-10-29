@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { annotationTone } from "@/lib/ui";
@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { FigurineSan, usePieceSetClass } from "../analysis/EngineLines";
 import { MoveMarkDisc } from "../board/MoveMarkDisc";
 import { lineMoveNumber } from "../game/move-list-model";
+import { scratchStep } from "./scratch-moves";
+import type { BoardPreview } from "./board-preview";
 import { MoveLink, type GoToLine } from "./MoveLinks";
 import { moveLabel } from "./review-utils";
 
@@ -58,7 +60,8 @@ export function ReviewMoveHeader({ move }: { move: MoveReview }) {
 
 /**
  * A SAN line read from `fen` (`12. ♕b3 ♗c5 13. ♗xf7+`), with move numbers and figurines, each move
- * a link to the position after it (from `startNodeId`). Inside a `usePiecePanel` root.
+ * a link to the position after it (from `startNodeId`); resting on one shows it on the board.
+ * Inside a `usePiecePanel` root.
  */
 export function MoveLine({
   fen,
@@ -74,6 +77,7 @@ export function MoveLine({
   onGoToLine?: GoToLine;
   linkClassName?: string;
 }) {
+  const previews = useMemo(() => linePreviews(fen, sans), [fen, sans]);
   if (!sans.length) return <>No line returned</>;
   return (
     <>
@@ -89,6 +93,7 @@ export function MoveLine({
                 <MoveLink
                   san={san}
                   className={linkClassName}
+                  preview={previews[index]}
                   onActivate={() => onGoToLine({ startNodeId, moves: sans.slice(0, index + 1) })}
                 >
                   <FigurineSan san={san} />
@@ -105,4 +110,15 @@ export function MoveLine({
       })}
     </>
   );
+}
+
+/** Each move of a SAN line from `fen` on the position before it (null from the first that doesn't fit). */
+function linePreviews(fen: string, sans: readonly string[]): (BoardPreview | null)[] {
+  let position: string | null = fen;
+  return sans.map((san) => {
+    const before = position;
+    const step = before ? scratchStep(before, san) : null;
+    position = step?.fenAfter ?? null;
+    return before && step ? { kind: "move", fen: before, uci: step.uci } : null;
+  });
 }

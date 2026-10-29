@@ -8,7 +8,6 @@ import {
 } from "react";
 import { draggedBoardEdge } from "./board-frame";
 import { useBoardEdgeStore } from "./useBoardEdge";
-import "./board.css";
 
 /**
  * Provided by a <BoardWorkspace> while its side panel shows (never in focus mode, where the board

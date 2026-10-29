@@ -11,6 +11,7 @@ import {
   lineMoveNumber,
   lineUnfolded,
   mainlineItems,
+  scratchRowNodeId,
   ENGINE_LINE_PREVIEW,
   previewBoardSize,
   sanPiece,
@@ -179,6 +180,8 @@ describe("mainlineItems", () => {
         return "opening";
       case "best":
         return `best ${item.node.san}`;
+      case "scratch":
+        return "scratch";
       case "variation":
         return `variation ${item.row.depth}: ${variationText(item.row.moves)}`;
       case "comment":
@@ -233,6 +236,30 @@ describe("mainlineItems", () => {
       "variation 0: 2… d6",
       "comment 0 2… d6: [p. 5] Philidor"
     ]);
+  });
+
+  it("puts the scratch line under the pair of the game move it was tried from, after its BEST lines", () => {
+    const { game: branched } = importPgnText("1. e4 e5 2. Nf3 (2. Bc4 Nf6) 2… Nc6 3. Bc4 *");
+    const model = buildTreeModel(branched.moveTree);
+    const node = (san: string): MoveNode => moveBySan(branched.moveTree, san);
+    const items = (from: string) =>
+      mainlineItems(model, {
+        showsBestLine: (item) => item.san === "Nf3",
+        scratchAfterNodeId: scratchRowNodeId(branched.moveTree, from)
+      }).map(describeItem);
+    expect(items(node("Nc6").id)).toStrictEqual([
+      "1: e4 e5",
+      "2: Nf3 Nc6",
+      "best Nf3",
+      "scratch",
+      "variation 0: 2. Bc4 Nf6",
+      "3: Bc4"
+    ]);
+    // From a variation's move: under the pair of the main-line move it hangs off.
+    expect(scratchRowNodeId(branched.moveTree, node("Nf6").id)).toBe(node("e5").id);
+    // From the start (no move yet): first of all.
+    expect(items("root")[0]).toBe("scratch");
+    expect(mainlineItems(model).map(describeItem)).not.toContain("scratch");
   });
 
   it("pairs the moves by number, two to a row", () => {

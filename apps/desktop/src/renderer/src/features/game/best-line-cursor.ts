@@ -7,19 +7,23 @@
 /** One move of a BEST line: its SAN, its UCI (the board's highlight) and the position after it. */
 export type BestLineStep = { san: string; uci: string; fenAfter: string };
 
-/** The BEST line being browsed and the move of it on the board. */
-export type BestLineCursor = {
-  /** The marked error the line answers: the game stays on it while its line is browsed. */
-  markedNodeId: string;
-  /** The game move the line branches from (the error's parent): stepping back before it lands there. */
+/** A line off the game's moves (a BEST line, a scratch line) and the move of it on the board. */
+export type LineCursor = {
+  /** The game move the line branches from: stepping back before its first move lands there. */
   anchorNodeId: string;
   moves: readonly BestLineStep[];
   index: number;
 };
 
+/** The BEST line being browsed and the move of it on the board. */
+export type BestLineCursor = LineCursor & {
+  /** The marked error the line answers (its anchor is the error's parent): the game stays on it while its line is browsed. */
+  markedNodeId: string;
+};
+
 /** Where a step takes the board: another move of the line, or back to the game. */
-export type BestLineStepResult =
-  | { kind: "line"; cursor: BestLineCursor }
+export type LineStepResult<T extends LineCursor> =
+  | { kind: "line"; cursor: T }
   /** Stepped back before the line's first move: the game move it branches from, then `stepsLeft` (≤ 0) more along the game. */
   | { kind: "game"; nodeId: string; stepsLeft: number };
 
@@ -40,10 +44,10 @@ export function openBestLine(
 }
 
 /**
- * `delta` moves along the line (← is -1, → is +1): past its end it stays on the last move; before
+ * `delta` moves along a line (a BEST or scratch line; ← is -1, → is +1): past its end it stays on the last move; before
  * its first move it returns to the game move the line branches from.
  */
-export function stepBestLine(cursor: BestLineCursor, delta: number): BestLineStepResult {
+export function stepBestLine<T extends LineCursor>(cursor: T, delta: number): LineStepResult<T> {
   const target = cursor.index + delta;
   if (target < 0) return { kind: "game", nodeId: cursor.anchorNodeId, stepsLeft: target + 1 };
   return {
@@ -53,7 +57,7 @@ export function stepBestLine(cursor: BestLineCursor, delta: number): BestLineSte
 }
 
 /** The move of the line on the board. */
-export function bestLineStep(cursor: BestLineCursor): BestLineStep {
+export function bestLineStep(cursor: LineCursor): BestLineStep {
   return cursor.moves[cursor.index];
 }
 

@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -68,6 +69,11 @@ type TreeViewProps = {
   activeBestLine?: BestLineCursor | null;
   /** The way the BEST lines' preview boards face (the board's orientation). */
   orientation?: Color;
+  /**
+   * Game review's scratch line (see ScratchLineRow): its row, drawn with the list's column template,
+   * under the pair of the main-line move `afterNodeId` ("root": first of all).
+   */
+  scratchRow?: ExtraLineRow;
   emptyLabel?: ReactNode;
   className?: string;
   ariaLabel?: string;
@@ -91,6 +97,9 @@ type TreeViewProps = {
    */
   bookPages?: BookPageLinks;
 };
+
+/** A line row of the caller's under a main-line pair: `render` draws it with the list's columns. */
+export type ExtraLineRow = { afterNodeId: string; render: (gridClassName: string) => ReactNode };
 
 /** How book page chips read (`label`: "p. 41", `title`: the PDF page) and what they open. */
 export type BookPageLinks = {
@@ -119,6 +128,7 @@ export function TreeView({
   onBrowseLine,
   activeBestLine = null,
   orientation = "white",
+  scratchRow,
   emptyLabel = "No moves yet.",
   className,
   ariaLabel = "Move tree",
@@ -237,6 +247,7 @@ export function TreeView({
   const items = mainlineItems(model, {
     bookEndNodeId,
     showsBestLine,
+    scratchAfterNodeId: scratchRow?.afterNodeId,
     showComments,
     bookPages: Boolean(bookPages)
   });
@@ -304,6 +315,10 @@ export function TreeView({
               ) : null;
             case "best":
               return bestLine(item.node);
+            case "scratch":
+              return scratchRow ? (
+                <Fragment key="scratch">{scratchRow.render(ROW_GRID)}</Fragment>
+              ) : null;
             case "variation":
               return (
                 <VariationLineRow

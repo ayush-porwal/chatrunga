@@ -4,11 +4,18 @@
 // itself, and never for an ordinary move. The game is reviewed on the fake UCI engine's "review"
 // mode (scripted lines for the Blackburne Shilling trap, as move-types.spec.ts). While a review
 // runs (the "review-gated" mode releases it move by move), the board follows the analysis, each
-// finished move showing its mark, until the user navigates. How to run them: playwright.config.ts.
-import { writeFileSync } from "node:fs";
+// finished move showing its mark, until the user navigates. The review board is interactive:
+// arrows drawn last for their position, moves played (and the coach's lines clicked) go into a
+// scratch line the game never gets, searched live, and the coach's moves and squares show on the
+// board while hovered or focused. How to run them: playwright.config.ts.
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
+import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
+import type { GameReview } from "../../../packages/shared/src/types/engine";
+import { trapReviewMoves } from "../../../packages/shared/src/chess/__fixtures__/trap-game";
 import {
+  clickSquare,
   expect,
   importPgnFile,
   registerFakeEngine,
@@ -472,4 +479,220 @@ test("a stopped review says where it got to and offers Analyze again", async ({
   await stopped.getByRole("button", { name: "Analyze again", exact: true }).click();
   await expect(titlebar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await expect(stopped).toHaveCount(0);
+});
+
+/** The coach's text on 4. Nxe5: the game's moves, the engine's better line, and squares. */
+const COACH_PROSE =
+  "Nxe5 walks into the trap: Qg5 hits g2 and the knight on e5 at once. Nxd4 exd4 keeps the balance.";
+
+/**
+ * The trap game saved with its analysis (as the fake engine's review stores it) and the coach's
+ * text on 4. Nxe5, through the preload bridge (set-up, not the journey), then opened in Game review
+ * from Play's Recent games. Returns the game's id.
+ */
+async function openSeededReview(page: Page): Promise<string> {
+  const id = await page.evaluate(
+    async ([pgn, moves, prose]) => {
+      const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+      const { game } = await api.games.importPgn({ pgn });
+      const saved = await api.games.save({ ...game });
+      const byPly = new Map(
+        saved.moveTree.filter((node) => node.san).map((node) => [node.ply, node.id])
+      );
+      const review: GameReview = {
+        reviewId: "seeded-analysis",
+        schemaVersion: 2,
+        engineId: "sf",
+        engineName: "Stockfish",
+        depth: null,
+        moveTimeMs: 250,
+        createdAt: Date.now(),
+        summary: {
+          totalMoves: 14,
+          best: 9,
+          excellent: 0,
+          good: 2,
+          inaccuracies: 0,
+          mistakes: 1,
+          blunders: 2,
+          missedTactics: 0,
+          averageCentipawnLoss: 0
+        },
+        moves: moves.map((move) => ({ ...move, nodeId: byPly.get(move.ply) ?? move.nodeId })),
+        commentary: [
+          {
+            ply: 7,
+            headline: "A knight lost to a trap",
+            prose,
+            generatedAt: 1,
+            providerModel: "test/model"
+          }
+        ]
+      };
+      await api.games.save({ ...game, id: saved.id, review });
+      return saved.id;
+    },
+    [TRAP_PGN, trapReviewMoves(), COACH_PROSE] as const
+  );
+  await page.reload();
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Recent games" })
+    .getByRole("button", { name: /^Open review/ })
+    .first()
+    .click();
+  await expect(reviewTabs(page)).toBeVisible();
+  return id;
+}
+
+const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
+/** What the review board shows besides the game's move (its data attributes). */
+const boardSurface = (page: Page) => board(page).locator("[data-drawings]");
+/** The moves tried on the board, in the Moves tab. */
+const scratchRow = (page: Page) => page.getByRole("group", { name: /^Moves tried, not saved: / });
+
+/** How many moves the saved game has (its root included), read from the library. */
+function savedMoveCount(page: Page, id: string): Promise<number> {
+  return page.evaluate(async (gameId) => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+    return (await api.games.get(gameId)).moveTree.length;
+  }, id);
+}
+
+/** The UCI commands the fake engine received, in order. */
+function engineCommands(log: string): string[] {
+  try {
+    return readFileSync(log, "utf8").split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** The centre of `square` on the visible board (White at the bottom). */
+async function squarePoint(page: Page, square: string) {
+  const box = await board(page).locator("cg-board").boundingBox();
+  if (!box) throw new Error("board not visible");
+  const column = square.charCodeAt(0) - 97;
+  const row = 8 - Number(square[1]);
+  return { x: box.x + ((column + 0.5) * box.width) / 8, y: box.y + ((row + 0.5) * box.height) / 8 };
+}
+
+const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+test("the review board takes drawings for its position and tries moves in a scratch line, searched live, the game unchanged", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const log = join(profile, "uci.log");
+  const { page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "review");
+  const id = await openSeededReview(page);
+  const savedMoves = await savedMoveCount(page, id);
+  await goToPly(page, 6); // 3… Nd4
+
+  // An arrow drawn with the right button stays while its position shows, and goes with it.
+  const from = await squarePoint(page, "e2");
+  const to = await squarePoint(page, "e4");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(to.x, to.y, { steps: 5 });
+  await page.mouse.up({ button: "right" });
+  await expect(boardSurface(page)).toHaveAttribute("data-drawings", "1");
+  await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
+  await expect(boardSurface(page)).toHaveAttribute("data-drawings", "0");
+  await navigation(page).getByRole("button", { name: "Previous move", exact: true }).click();
+  await expect(boardSurface(page)).toHaveAttribute("data-drawings", "0");
+
+  // A move played on the board (4. c3, not the game's 4. Nxe5) starts a scratch line.
+  await expect(boardSurface(page)).not.toHaveAttribute("data-scratch-line");
+  await clickSquare(page, "c2");
+  await clickSquare(page, "c3");
+  await expect(boardSurface(page)).toHaveAttribute("data-scratch-line", "");
+  await clickSquare(page, "d4");
+  await clickSquare(page, "f3");
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(scratchRow(page)).toHaveAccessibleName("Moves tried, not saved: 4. c3 Nxf3+");
+  await expect(
+    scratchRow(page).getByRole("button", { name: "Show 4. c3 Nxf3+ on the board" })
+  ).toHaveAttribute("aria-current", "step");
+  // The move buttons step within the line (← → too, outside the tab bar).
+  await navigation(page).getByRole("button", { name: "Previous move", exact: true }).click();
+  await expect(
+    scratchRow(page).getByRole("button", { name: "Show 4. c3 on the board" })
+  ).toHaveAttribute("aria-current", "step");
+
+  // The Engine tab searches the line's position live (the game's moves, then the line's).
+  await reviewTabs(page).getByRole("tab", { name: "Engine", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Fake UCI" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("switch", { name: "Live analysis" })).toBeChecked();
+  await expect
+    .poll(() => engineCommands(log))
+    .toContain(`position fen ${START_FEN} moves e2e4 e7e5 g1f3 b8c6 f1c4 c6d4 c2c3`);
+  expect(engineCommands(log)).toContain("go infinite");
+  await expect(page.getByText(/^Trying moves from 3… Nd4/)).toBeVisible();
+
+  // Back to game: the board is on the game's move again, and the game never got the moves.
+  await page.getByRole("button", { name: "Back to game", exact: true }).first().click();
+  await expect(boardSurface(page)).not.toHaveAttribute("data-scratch-line");
+  await expect(counter(page)).toHaveText("3 / 7");
+  // Its search stops.
+  await expect
+    .poll(() => {
+      const commands = engineCommands(log);
+      return commands.lastIndexOf("stop") > commands.lastIndexOf("go infinite");
+    })
+    .toBe(true);
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(scratchRow(page)).toHaveCount(0);
+  expect(await savedMoveCount(page, id)).toBe(savedMoves);
+});
+
+test("the coach's moves and squares show on the review board while hovered or focused, and its line plays as a scratch line", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const log = join(profile, "uci.log");
+  const { page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "review");
+  const id = await openSeededReview(page);
+  const savedMoves = await savedMoveCount(page, id);
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await page.getByRole("region", { name: "Game charts" }).locator('circle[data-ply="7"]').click(); // 4. Nxe5
+  const prose = page.getByText(/^Nxe5 walks into the trap/);
+  await expect(prose).toBeVisible();
+
+  // A square the text names rings it on the board, in the position before the move; leaving
+  // puts the board back.
+  await prose.locator('[data-square-ref="e5"]').hover();
+  await expect(boardSurface(page)).toHaveAttribute("data-preview-square", "e5");
+  await page.mouse.move(0, 0);
+  await expect(boardSurface(page)).not.toHaveAttribute("data-preview-square");
+  // Keyboard focus does the same.
+  await prose.locator('[data-square-ref="g2"]').focus();
+  await expect(boardSurface(page)).toHaveAttribute("data-preview-square", "g2");
+  await prose.locator('[data-square-ref="g2"]').blur();
+  await expect(boardSurface(page)).not.toHaveAttribute("data-preview-square");
+
+  // A move the text names shows as its arrow on the position before it.
+  const exd4 = prose.getByRole("button", { name: "Go to exd4 position" });
+  await exd4.hover();
+  await expect(boardSurface(page)).toHaveAttribute("data-preview-move", "e5d4");
+  // Clicked, its line (the engine's 4. Nxd4 exd4) plays as a scratch line; the text stays.
+  await exd4.click();
+  await expect(boardSurface(page)).toHaveAttribute("data-scratch-line", "");
+  await expect(boardSurface(page)).not.toHaveAttribute("data-preview-move");
+  await expect(prose).toBeVisible();
+  await expect(page.getByText(/^Trying moves from 3… Nd4/)).toBeVisible();
+  await expect
+    .poll(() => engineCommands(log))
+    .toContain(`position fen ${START_FEN} moves e2e4 e7e5 g1f3 b8c6 f1c4 c6d4 f3d4 e5d4`);
+  expect(await savedMoveCount(page, id)).toBe(savedMoves);
+
+  await page.getByRole("button", { name: "Back to game", exact: true }).click();
+  await expect(boardSurface(page)).not.toHaveAttribute("data-scratch-line");
+  await expect(counter(page)).toHaveText("4 / 7");
 });

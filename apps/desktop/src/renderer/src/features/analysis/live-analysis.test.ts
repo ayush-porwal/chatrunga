@@ -3,6 +3,7 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
   boardShowsLiveAnalysis,
   engineHolder,
+  liveTopLine,
   liveAnalysisSubject,
   onPausedPosition,
   pausedAnalysisAt,
@@ -170,5 +171,32 @@ describe("paused live analysis", () => {
     expect(
       boardShowsLiveAnalysis(board({ currentNodeId: "b", currentFen: AFTER_E4_E5 }), paused)
     ).toBe(true);
+  });
+
+  it("shows a target's analysis on the board only on the target's position, once its lines are", () => {
+    // Game review's scratch line: a free board whose position is the target's.
+    const shown = board({ mode: "freeplay", currentFen: AFTER_E4 });
+    const target = { fen: AFTER_E4 };
+    expect(boardShowsLiveAnalysis(shown, null, { target, resultFen: AFTER_E4 })).toBe(true);
+    // The lines are still another position's (the search has just moved).
+    expect(boardShowsLiveAnalysis(shown, null, { target, resultFen: START })).toBe(false);
+    // The target is another position (Study's), or none.
+    expect(boardShowsLiveAnalysis(shown, null, { target: { fen: START }, resultFen: START })).toBe(
+      false
+    );
+    expect(boardShowsLiveAnalysis(shown, null, { target: null, resultFen: AFTER_E4 })).toBe(false);
+  });
+});
+
+describe("liveTopLine", () => {
+  it("is the principal line's start, else the best move alone", () => {
+    const topLines = [
+      { multipv: 2, pv: ["d2d4"] },
+      { multipv: 1, pv: ["e2e4", "e7e5", "g1f3"] }
+    ];
+    expect(liveTopLine({ topLines, bestMove: null }, 2)).toBe("e2e4 e7e5");
+    expect(liveTopLine({ topLines, bestMove: null }, 0)).toBe("e2e4");
+    expect(liveTopLine({ topLines: [], bestMove: "c2c4" }, 3)).toBe("c2c4");
+    expect(liveTopLine({ topLines: [], bestMove: null }, 3)).toBe("");
   });
 });

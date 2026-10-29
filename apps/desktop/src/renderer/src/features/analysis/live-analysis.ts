@@ -123,14 +123,38 @@ export function onPausedPosition(
 }
 
 /**
- * The board shows the live analysis's arrows and score: while it runs, and while it is paused on
- * the paused position (elsewhere they would belong to another position).
+ * The board shows the live analysis's arrows and score: while it runs, while it is paused on the
+ * paused position (elsewhere they would belong to another position), and while a target searches
+ * the very position the board shows (Game review's scratch line) once its lines are that
+ * position's (`resultFen`, see the analysis store).
  */
 export function boardShowsLiveAnalysis(
   board: Pick<AnalysisBoard, "mode" | "currentNodeId" | "currentFen">,
-  paused: PausedAnalysis | null
+  paused: PausedAnalysis | null,
+  search: { target: Pick<AnalysisTarget, "fen"> | null; resultFen: string | null } | null = null
 ): boolean {
-  return board.mode === "analysis" || onPausedPosition(paused, board);
+  if (board.mode === "analysis" || onPausedPosition(paused, board)) return true;
+  return Boolean(
+    search?.target &&
+    search.target.fen === board.currentFen &&
+    search.resultFen === board.currentFen
+  );
+}
+
+/**
+ * The start of the live analysis's top line (its best move alone before any line arrives), as
+ * many moves as `plies`, as one string: a board redraws its arrows only when they change.
+ */
+export function liveTopLine(
+  analysis: {
+    topLines: readonly { multipv?: number; pv?: readonly string[] }[];
+    bestMove: string | null;
+  },
+  plies: number
+): string {
+  const pv = analysis.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv;
+  const line = pv?.length ? pv : analysis.bestMove ? [analysis.bestMove] : [];
+  return line.slice(0, Math.max(1, plies)).join(" ");
 }
 
 /**

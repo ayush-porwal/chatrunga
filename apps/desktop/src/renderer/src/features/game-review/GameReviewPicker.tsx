@@ -1,15 +1,18 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Search, Upload } from "lucide-react";
+import { ChevronRight, RefreshCw, Search, Upload } from "lucide-react";
 import { GAME_SEARCH_MAX_LENGTH, type Color } from "@chaturanga/shared/types/chess";
 import { emptyTabCounts } from "@chaturanga/shared/types/library";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { IconButton } from "@/components/ui/icon-button";
+import { Notice } from "@/components/ui/notice";
 import { Eyebrow } from "@/components/ui/page";
 import { gamesOfPages } from "@/lib/game-pages";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
-import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
+import { cn } from "@/lib/utils";
+import { useGameFacetsQuery, useGamePagesQuery, useRefreshGames } from "../../queries/api";
 import { useChesscomStore } from "../../stores/chesscom-store";
 import { useGameStore } from "../../stores/game-store";
 import { useLichessStore } from "../../stores/lichess-store";
@@ -29,7 +32,13 @@ import {
 } from "../game/library-tab";
 import { LoadMoreGamesButton, RecentGamesFilter } from "../play/recent-games-controls";
 import { GAME_SEARCH_DEBOUNCE_MS, savedGameFacts, userSide } from "../play/recent-games";
-import { rememberedSource, savedGamesHidden } from "./game-review-picker";
+import {
+  refreshGamesLabel,
+  rememberedSource,
+  savedGamesHidden,
+  syncAccounts,
+  syncFailures
+} from "./game-review-picker";
 
 type GameReviewPickerProps = {
   onClose: () => void;
@@ -39,11 +48,13 @@ type GameReviewPickerProps = {
 
 /**
  * Game review's Choose a game: the game on the board pinned on top, then the saved games as the
- * Library lists them (search, the source filter with Reviewed, a page at a time), and Import PGN.
+ * Library lists them (search, the source filter with Reviewed, a page at a time, a refresh from the
+ * connected accounts), and Import PGN.
  */
 export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPickerProps) {
   const current = useCurrentGame();
   const list = usePickerList(useGameStore((state) => state.gameId));
+  const sync = useAccountsSync();
   return (
     <Dialog
       title="Choose a game"
@@ -65,7 +76,12 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
-      {list.toolsShown ? <PickerTools list={list} /> : null}
+      {list.toolsShown || sync.accounts.length ? <PickerTools list={list} sync={sync} /> : null}
+      {sync.failures.map((failure) => (
+        <Notice key={failure} tone="danger">
+          {failure}
+        </Notice>
+      ))}
       <div className="scroll-area -mr-1 grid min-h-0 flex-1 content-start gap-4 overflow-y-auto pr-1">
         {current ? (
           <section className="grid gap-1.5">
@@ -159,11 +175,80 @@ function usePickerList(excludeId: string | null) {
 
 type PickerList = ReturnType<typeof usePickerList>;
 
-/** The search box and, beside it, the Library's filter (its sources, then Reviewed). */
-function PickerTools({ list }: { list: PickerList }) {
+/**
+ * Imports new games from the connected accounts, as Settings' Import now does for each: busy while
+ * any of their imports runs (one at launch too), the lists read again once done, and why an
+ * import failed.
+ */
+function useAccountsSync() {
+  // Lichess as Settings' Import now: not while it refuses the access.
+  const lichess = useLichessStore(
+    (state) => state.status.account !== null && !state.status.tokenRejected
+  );
+  const chesscom = useChesscomStore((state) => state.status.account !== null);
+  const lichessRunning = useLichessStore((state) => state.sync.running);
+  const chesscomRunning = useChesscomStore((state) => state.sync.running);
+  const refreshGames = useRefreshGames();
+  const [pending, setPending] = useState(false);
+  const [failures, setFailures] = useState<string[]>([]);
+  const accounts = syncAccounts({ lichess, chesscom });
+  const running = { lichess: lichessRunning, chesscom: chesscomRunning };
+  return {
+    accounts,
+    failures,
+    busy: pending || accounts.some((account) => running[account]),
+    refresh: () => {
+      const bridge = window.chaturanga;
+      if (!bridge) return;
+      setPending(true);
+      setFailures([]);
+      void Promise.allSettled(accounts.map((account) => bridge[account].syncGames())).then(
+        (results) => {
+          setPending(false);
+          setFailures(syncFailures(accounts, results));
+          refreshGames();
+        }
+      );
+    }
+  };
+}
+
+type AccountsSync = ReturnType<typeof useAccountsSync>;
+
+/**
+ * The search box and, beside it, the Library's filter (its sources, then Reviewed), while there are
+ * games to look through; then the refresh, while an account is connected.
+ */
+function PickerTools({ list, sync }: { list: PickerList; sync: AccountsSync }) {
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2">
+      {list.toolsShown ? <PickerSearch list={list} /> : null}
+      {sync.accounts.length ? <RefreshGamesButton sync={sync} /> : null}
+    </div>
+  );
+}
+
+/** The refresh: spins (pressable again once done) while the accounts' games are imported. */
+function RefreshGamesButton({ sync }: { sync: AccountsSync }) {
+  return (
+    <IconButton
+      label={refreshGamesLabel(sync.accounts)}
+      icon={<RefreshCw className={cn(sync.busy && "animate-spin motion-reduce:animate-none")} />}
+      // Stays focusable while busy (focus doesn't drop out of the dialog); the tooltip says why.
+      disabled={sync.busy}
+      disabledReason="Importing new games…"
+      aria-busy={sync.busy}
+      className="size-9 border border-line"
+      onClick={sync.refresh}
+    />
+  );
+}
+
+/** The search box and the Library's filter (its sources, then Reviewed). */
+function PickerSearch({ list }: { list: PickerList }) {
   const { applied } = list;
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <>
       <div className="relative min-w-0 flex-1">
         <Search
           aria-hidden="true"
@@ -197,7 +282,7 @@ function PickerTools({ list }: { list: PickerList }) {
         // The active dot's ring takes the dialog's raised surface.
         className="size-9 border border-line [&>span]:ring-surface-raised"
       />
-    </div>
+    </>
   );
 }
 

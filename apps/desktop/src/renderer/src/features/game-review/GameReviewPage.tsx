@@ -10,6 +10,7 @@ import { mainlineReviewInput, reviewEngineName, type ReviewTab } from "./review-
 import { ReviewBoardStage, reviewPlayers } from "./ReviewBoardStage";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
+import { useReviewScratchLine } from "./ReviewScratchEngine";
 import { ReviewMoveRail } from "./ReviewMoveRail";
 import { RepertoireHeadline, ReviewOpeningPanel } from "./ReviewOpeningPanel";
 import { openReviewSettingsDialog, ReviewSettingsDialog } from "./ReviewSettingsDialog";
@@ -142,6 +143,8 @@ function GameReviewPageInner({
   const { panelMove, panelParentId, variationAnchor, moveContext, goToLine } = useReviewPanelAnchor(
     { moveTree, selectedNodeId, moves, reviewByNodeId, selectNode }
   );
+  // The moves tried on the board: live analysis of them, and the Engine tab's view of it.
+  const scratchEngine = useReviewScratchLine({ running: isRunning, orientation, variationAnchor });
   const commentaryByNodeId = useMemo(() => {
     const commentary = new Map(
       (isRunning ? [] : (review?.commentary ?? [])).map((item) => [item.ply, item])
@@ -312,7 +315,7 @@ function GameReviewPageInner({
         orientation={orientation}
       />
     ),
-    engine: (
+    engine: scratchEngine(
       <ReviewEnginePanel
         move={panelMove}
         hasReview={hasMoves}

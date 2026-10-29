@@ -7,6 +7,7 @@ import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine } from "../game/best-line-cursor";
+import { activeScratchLine } from "../game/scratch-line";
 import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
@@ -127,8 +128,8 @@ function useBoardEval(): BoardEval | null {
       mode: state.mode,
       fen: state.currentFen,
       nodeId: state.currentNodeId,
-      // A BEST line's position isn't a game move: no review evaluation of its own.
-      bestLine: Boolean(activeBestLine(state)),
+      // A BEST or scratch line's position isn't a game move: no review evaluation of its own.
+      offGame: Boolean(activeBestLine(state) || activeScratchLine(state)),
       matchOn:
         (state.mode === "engine" || state.mode === "online") &&
         Boolean(state.engineSide) &&
@@ -138,6 +139,10 @@ function useBoardEval(): BoardEval | null {
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const liveScore = useLiveAnalysisScore();
   const paused = useAnalysisStore((state) => state.paused);
+  // A target's search (Game review's scratch line): its position and the one its lines are for.
+  const search = useAnalysisStore(
+    useShallow((state) => ({ target: state.target, resultFen: state.resultFen }))
+  );
   // A puzzle still being solved: any evaluation would give the answer away.
   const puzzleOpen = usePuzzleStore(
     (state) => Boolean(state.activePuzzle) && state.outcome === "pending"
@@ -148,12 +153,13 @@ function useBoardEval(): BoardEval | null {
   if (
     boardShowsLiveAnalysis(
       { mode: game.mode, currentNodeId: game.nodeId, currentFen: game.fen },
-      paused
+      paused,
+      search
     )
   )
     return liveAnalysisEval(game.fen, liveScore);
 
-  if (!reviewMoves.length || game.bestLine) return null;
+  if (!reviewMoves.length || game.offGame) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
   const evaluation = move ? reviewedMoveEval(move) : null;
   if (evaluation) return evaluation;
@@ -187,7 +193,10 @@ export function reviewedMoveEval(
 /** The game board's eval bar (see useBoardEval). */
 export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Color }) {
   const current = useBoardEval();
-  const live = useGameStore((state) => state.mode === "analysis");
+  // Live analysis: Analyze's, or a scratch line's (Game review searches the moves tried there).
+  const live = useGameStore(
+    (state) => state.mode === "analysis" || Boolean(activeScratchLine(state))
+  );
   return <EvalBarFill orientation={orientation} evaluation={current} live={live} />;
 });
 

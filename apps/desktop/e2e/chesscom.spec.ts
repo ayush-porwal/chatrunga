@@ -1,10 +1,10 @@
 // A chess.com account through the built app: connecting a username imports its games, which the
 // library's filter and Game review's Choose a game list under their own source (with Reviewed on
-// top of it), Play's Recent games lists them, the ratings follow the account, and disconnecting can
+// top of it), Choose a game's refresh imports a game played since, Play's Recent games lists them, the ratings follow the account, and disconnecting can
 // take the games away. Chess.com's API is served from the unit tests' fixtures (the network is off
 // in these runs); how to run them: playwright.config.ts.
 import type { ElectronApplication, Page } from "@playwright/test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import type { GameReview } from "../../../packages/shared/src/types/engine";
@@ -46,6 +46,24 @@ async function serveChesscom(app: ElectronApplication, profile: string): Promise
     [`${API}/games/2026/10`, join(FIXTURES, "archive-2026-10.json")]
   ];
   for (const [url, file] of routes) await routeToFile(app, url, file);
+}
+
+/** October's archive with a game played since the account connected (newest), served from now on. */
+async function serveNewGame(app: ElectronApplication, profile: string): Promise<void> {
+  const october = JSON.parse(readFileSync(join(FIXTURES, "archive-2026-10.json"), "utf8")) as {
+    games: { url: string; pgn: string; end_time: number; white: { username: string } }[];
+  };
+  const [game] = october.games;
+  october.games.push({
+    ...game,
+    url: "https://www.chess.com/game/live/150000099",
+    pgn: game.pgn.replace('[White "rook_n_roll"]', '[White "knight_rider"]'),
+    end_time: game.end_time + 3600,
+    white: { ...game.white, username: "knight_rider" }
+  });
+  const file = join(profile, "chesscom-october-new-game.json");
+  writeFileSync(file, JSON.stringify(october));
+  await routeToFile(app, `${API}/games/2026/10`, file);
 }
 
 const chesscomCard = (page: Page) => page.locator("#settings-chesscom");
@@ -198,6 +216,15 @@ test("a chess.com account imports its games under their own source, in the libra
   const saved = picker.getByRole("list", { name: "Saved games" }).getByRole("listitem");
   await expect(saved).toHaveCount(3);
   await expect(saved.first().getByRole("img", { name: "Chess.com" })).toBeVisible();
+  // The refresh (only chess.com is connected) imports a game played since, newest on top.
+  await serveNewGame(app, profile);
+  const refresh = picker.getByRole("button", { name: "Refresh games from Chess.com", exact: true });
+  await refresh.click();
+  await expect(saved).toHaveCount(4, { timeout: 20_000 });
+  await expect(
+    saved.first().getByRole("button", { name: "knight_rider vs ayush_p64", exact: true })
+  ).toBeVisible();
+  await expect(refresh).toHaveAttribute("aria-busy", "false");
   // Search stays within the source.
   await picker.getByRole("textbox", { name: "Search saved games" }).fill("castle_queen");
   await expect(saved).toHaveCount(1);
