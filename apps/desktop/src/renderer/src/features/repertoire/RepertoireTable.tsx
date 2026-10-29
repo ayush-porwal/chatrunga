@@ -88,8 +88,8 @@ export function RepertoireTable({
         )}
       >
         <span />
-        <span />
-        <span>Repertoire</span>
+        {/* Over the board and the name: a row's repertoire starts at its board. */}
+        <span className="col-span-2">Repertoire</span>
         <span>Chapters</span>
         <span>Learned</span>
         <span>Last studied</span>
