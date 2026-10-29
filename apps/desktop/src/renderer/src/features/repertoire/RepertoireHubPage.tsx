@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -6,14 +15,18 @@ import {
   Copy,
   Download,
   FilePlus2,
+  HeartPulse,
   Library,
+  Loader2,
   Pencil,
   Plus,
   Trash2,
   Upload
 } from "lucide-react";
 import type { BookSummary } from "@chaturanga/shared/types/books";
-import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireColor, RepertoireSummary } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
+import { tabPanelProps } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -26,10 +39,11 @@ import {
   useArchiveRepertoireMutation,
   useDuplicateRepertoireMutation,
   useExportRepertoireMutation,
-  useRemoveChapterMutation,
   useRemoveRepertoireMutation
 } from "../../queries/repertoire";
 import { useBooksQuery } from "../../queries/books";
+import { usePracticeOverviewQuery } from "../../queries/repertoire-practice";
+import { useRepertoireHealthQueueMutation } from "../../queries/repertoire-health";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { useBookImportStore, useBookProgress } from "../books/book-imports";
 import { importingBooks } from "../books/book-model";
@@ -38,17 +52,30 @@ import { BookImportRows } from "../books/BookImportRows";
 import { useOpenSettings } from "../settings/settings-link";
 import { CardTitleBar } from "../play/card-title";
 import { RecentGamesSearch } from "../play/recent-games-controls";
-import { CreateRepertoireDialog, type CreateIntent } from "./CreateRepertoireDialog";
+import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
 import { EditRepertoireDialog } from "./EditRepertoireDialog";
 import { HubNotice, type HubMessage } from "./HubNotice";
 import { ImportPgnDialog } from "./ImportPgnDialog";
+import { createScrollRestore } from "./hub-scroll";
+import { REPERTOIRE_HUB_PANEL_ID, useRepertoireHubTab } from "./hub-tabs";
+import type { InsightsReviewTarget, WeakSpotsTarget } from "./insights/insights-actions";
+import { weakSpotsPreset, type PracticePreset } from "./practice-setup";
 import {
+  COLOR_LABELS,
   plural,
   sortedChapters,
   type ResumePracticeTarget,
+  type StudyOpenTarget,
   type StudyTarget
 } from "./repertoire-chapters";
-import { RepertoireTable } from "./RepertoireTable";
+import { RepertoireTable, type HubChapterActions } from "./RepertoireTable";
+
+const PracticeTab = lazy(() =>
+  import("./practice/PracticeTab").then((module) => ({ default: module.PracticeTab }))
+);
+const InsightsTab = lazy(() =>
+  import("./insights/InsightsTab").then((module) => ({ default: module.InsightsTab }))
+);
 import { useHubFilters, useHubList, useHubResume, useStudyFromHub } from "./useRepertoireHub";
 
 const TITLE_ID = "repertoire-hub-title";
@@ -62,17 +89,12 @@ const TITLE_ID = "repertoire-hub-title";
  * archives and deletes. The title bar searches, shows the archived ones instead, and starts a new
  * repertoire (blank, or from a PGN). Backups live in Settings.
  */
-export function RepertoireHubPage({
+function RepertoiresTab({
   onStudy,
   onPractice,
+  onPracticePreset,
   onResume
-}: {
-  onStudy: (target: StudyTarget) => void;
-  /** Practice: a session starts at once with the repertoire's practice settings. */
-  onPractice: (repertoireId: string) => void;
-  /** The unfinished practice session (e.g. after a restart). */
-  onResume: (target: ResumePracticeTarget) => void;
-}) {
+}: Omit<HubPageProps, "onReviewGame">) {
   const desktop = Boolean(window.chaturanga?.repertoires);
   const filters = useHubFilters();
   // "Last studied" is relative to when the hub opened (render stays pure).
@@ -82,8 +104,9 @@ export function RepertoireHubPage({
   const { mutate: archiveRepertoire } = useArchiveRepertoireMutation();
   const remove = useRemoveRepertoireMutation();
   const exportMutation = useExportRepertoireMutation();
-  const [creating, setCreating] = useState<CreateIntent | null>(null);
-  const [importTarget, setImportTarget] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  /** Import PGN: into a repertoire, or (null) into a new one the import creates. */
+  const [importTarget, setImportTarget] = useState<{ repertoireId: string | null } | null>(null);
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
   const [editing, setEditing] = useState<RepertoireSummary | null>(null);
   const [notice, setNotice] = useState<HubMessage | null>(null);
@@ -92,6 +115,20 @@ export function RepertoireHubPage({
   const books = useHubBooks();
   const { list, view } = useHubList(filters, desktop, books.length);
   const openSettings = useOpenSettings();
+  const overview = usePracticeOverviewQuery({ enabled: desktop });
+  const stats = useMemo(
+    () => new Map(overview.data?.repertoires.map((item) => [item.repertoireId, item])),
+    [overview.data]
+  );
+  const chapterActions = useMemo<HubChapterActions>(
+    () => ({
+      onStudyChapter: (repertoireId, chapterId) =>
+        onStudy({ repertoireId, chapterId, nodeId: null }),
+      onPractiseChapter: (repertoireId, chapterId) =>
+        onPracticePreset(repertoireId, { chapterIds: [chapterId] })
+    }),
+    [onStudy, onPracticePreset]
+  );
 
   const fail = (error: unknown, fallback: string) =>
     setNotice({ tone: "danger", text: ipcErrorMessage(error) || fallback });
@@ -132,13 +169,37 @@ export function RepertoireHubPage({
       { onError: (error) => fail(error, "Couldn't change it.") }
     )
   );
+  // The health check (§6.3): its results show in Study and on the Insights tab.
+  const { mutate: queueHealth } = useRepertoireHealthQueueMutation();
+  const checkHealth = useEventCallback((item: RepertoireSummary) =>
+    queueHealth(
+      { action: "check", repertoireIds: [item.id] },
+      {
+        onSuccess: () =>
+          setNotice({
+            tone: "info",
+            text: `Checking “${item.name}”. Its flags show in Study and on the Insights tab.`
+          }),
+        onError: (error) => fail(error, "Couldn't start the health check.")
+      }
+    )
+  );
 
   /** A row's ⋯ menu: edit, import/export, duplicate, archive, delete (stable, for the rows' memo). */
   const actionsFor = useCallback(
     (item: RepertoireSummary): (MenuItem | false)[] => [
       { label: "Edit repertoire", icon: <Pencil />, onSelect: () => setEditing(item) },
-      { label: "Import PGN", icon: <Upload />, onSelect: () => setImportTarget(item.id) },
+      {
+        label: "Import PGN",
+        icon: <Upload />,
+        onSelect: () => setImportTarget({ repertoireId: item.id })
+      },
       { label: "Export PGN", icon: <Download />, onSelect: () => exportPgn(item) },
+      !item.archivedAt && {
+        label: "Check now",
+        icon: <HeartPulse />,
+        onSelect: () => checkHealth(item)
+      },
       { label: "Duplicate", icon: <Copy />, divided: true, onSelect: () => duplicate(item) },
       {
         label: item.archivedAt ? "Unarchive" : "Archive",
@@ -153,7 +214,7 @@ export function RepertoireHubPage({
         onSelect: () => setDeleting(item)
       }
     ],
-    [exportPgn, duplicate, archive]
+    [exportPgn, duplicate, archive, checkHealth]
   );
   const studyRow = useEventCallback((id: string) => void study(id));
   const practiceRow = useEventCallback((item: RepertoireSummary) => {
@@ -163,8 +224,12 @@ export function RepertoireHubPage({
 
   /** The title bar's New menu: a blank repertoire, one from a PGN, or one from a book's PDF. */
   const newItems: MenuItem[] = [
-    { label: "Blank repertoire", icon: <Plus />, onSelect: () => setCreating("blank") },
-    { label: "Import PGN", icon: <FilePlus2 />, onSelect: () => setCreating("import") },
+    { label: "Blank repertoire", icon: <Plus />, onSelect: () => setCreating(true) },
+    {
+      label: "Import PGN",
+      icon: <FilePlus2 />,
+      onSelect: () => setImportTarget({ repertoireId: null })
+    },
     {
       label: "Import book (PDF)…",
       icon: <BookOpen />,
@@ -191,9 +256,8 @@ export function RepertoireHubPage({
   }
 
   return (
-    <div className={pageShell}>
-      <div className="flex min-h-full flex-col gap-4 p-6">
-        <h1 className="sr-only">Repertoire</h1>
+    <>
+      <div className="flex min-h-full flex-col gap-4">
         {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
         <BookReadyNotices onOpen={(repertoireId) => void study(repertoireId)} />
         {view === "card" ? (
@@ -212,9 +276,16 @@ export function RepertoireHubPage({
               now={now}
               labelledBy={TITLE_ID}
               resume={resume}
+              stats={stats}
               actionsFor={actionsFor}
               onStudy={studyRow}
               onPractice={practiceRow}
+              chapters={chapterActions}
+              emptyColor={
+                filters.unfiltered
+                  ? (color) => <EmptyColorRow color={color} newItems={newItems} />
+                  : null
+              }
               empty={
                 // Book rows above it: the books being imported are what's listed for now.
                 books.length && !filters.archived ? null : (
@@ -264,7 +335,134 @@ export function RepertoireHubPage({
           onConfirm={() => confirmDelete(deleting)}
         />
       ) : null}
+    </>
+  );
+}
+
+type HubPageProps = {
+  onStudy: (target: StudyOpenTarget) => void;
+  /** Practice: a session starts at once with the repertoire's practice settings. */
+  onPractice: (repertoireId: string) => void;
+  /** A session from a preset (a chapter, a Practice tab set, weak spots), started at once. */
+  onPracticePreset: (repertoireId: string, preset: PracticePreset) => void;
+  /** The unfinished practice session (e.g. after a restart). */
+  onResume: (target: ResumePracticeTarget) => void;
+  /** Insights → Game review at a move. */
+  onReviewGame: (target: InsightsReviewTarget) => void;
+};
+
+/** Where each tab was scrolled to, so coming back to the hub (Back) returns there. */
+const tabScroll = new Map<RepertoireHubTab, number>();
+
+/**
+ * Repertoire (docs/repertoire-games-and-practice.md §1): the titlebar's tabs switch this page
+ * between Repertoires (the library), Practice (sets and progress) and Insights (your games).
+ * Each tab's scroll position is kept for when the hub comes back.
+ */
+export function RepertoireHubPage(props: HubPageProps) {
+  const { onStudy, onPracticePreset, onReviewGame } = props;
+  const [tab, setTab] = useRepertoireHubTab();
+  const scroller = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    const content = element?.firstElementChild;
+    if (!element || !content) return;
+    // The tab's content may still be loading: its position comes back once it is tall enough.
+    const restore = createScrollRestore(tabScroll.get(tab) ?? 0);
+    restore.restore(element);
+    const observer = new ResizeObserver(() => restore.restore(element));
+    observer.observe(content);
+    const remember = () => {
+      const top = restore.scrolled(element);
+      if (top !== null) tabScroll.set(tab, top);
+    };
+    element.addEventListener("scroll", remember, { passive: true });
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", remember);
+    };
+  }, [tab]);
+  /** Weak spots over every active repertoire (or one row's position); back leads to this tab. */
+  const practiseWeakSpots = useEventCallback((target: WeakSpotsTarget, repertoireIds: string[]) => {
+    const first = target?.repertoireId ?? repertoireIds[0];
+    if (first) onPracticePreset(first, weakSpotsPreset(target, repertoireIds, tab));
+  });
+  return (
+    <div ref={scroller} className={pageShell}>
+      <div
+        {...tabPanelProps(REPERTOIRE_HUB_PANEL_ID, tab)}
+        className="flex min-h-full flex-col gap-4 p-6"
+      >
+        <h1 className="sr-only">Repertoire</h1>
+        <Suspense fallback={<HubTabLoading />}>
+          {tab === "repertoires" ? (
+            <RepertoiresTab {...props} />
+          ) : tab === "practice" ? (
+            <PracticeTab
+              onPracticePreset={onPracticePreset}
+              onPractiseWeakSpots={practiseWeakSpots}
+              onSeeReport={() => setTab("insights")}
+            />
+          ) : (
+            <InsightsTabWithSets
+              onStudy={onStudy}
+              onReviewGame={onReviewGame}
+              onPractiseWeakSpots={practiseWeakSpots}
+            />
+          )}
+        </Suspense>
+      </div>
     </div>
+  );
+}
+
+/** Insights, its weak-spots practice over every active repertoire (or the one a row names). */
+function InsightsTabWithSets({
+  onStudy,
+  onReviewGame,
+  onPractiseWeakSpots
+}: {
+  onStudy: (target: StudyOpenTarget) => void;
+  onReviewGame: (target: InsightsReviewTarget) => void;
+  onPractiseWeakSpots: (target: WeakSpotsTarget, repertoireIds: string[]) => void;
+}) {
+  const overview = usePracticeOverviewQuery();
+  const ids = overview.data?.repertoires.map((item) => item.repertoireId) ?? [];
+  return (
+    <InsightsTab
+      onStudy={onStudy}
+      onReviewGame={onReviewGame}
+      onPractiseWeakSpots={(target) => onPractiseWeakSpots(target, ids)}
+      // Every repertoire's weak spots need their list (the route names the first one).
+      weakSpotsReady={ids.length > 0}
+    />
+  );
+}
+
+function HubTabLoading() {
+  return (
+    <div className="grid flex-1 place-items-center" role="status" aria-label="Loading">
+      <Loader2 className="size-5 animate-spin text-fg-subtle" />
+    </div>
+  );
+}
+
+/** A colour without repertoires in the list: what to do, with New. */
+function EmptyColorRow({ color, newItems }: { color: RepertoireColor; newItems: MenuItem[] }) {
+  return (
+    // Not a repertoire of the list: what to do instead of one.
+    <li
+      role="presentation"
+      className="flex items-center gap-3 border-b border-line-subtle px-4 py-3 text-xs text-fg-muted"
+    >
+      No {COLOR_LABELS[color]} repertoire yet. Import a PGN (a Lichess study export, say) or start
+      one.
+      <OverflowMenu
+        label={`New ${COLOR_LABELS[color]} repertoire`}
+        trigger={{ text: "New", icon: <Plus />, variant: "outline", compact: true }}
+        items={newItems}
+      />
+    </li>
   );
 }
 
@@ -330,8 +528,8 @@ function HubTitleActions({
 }
 
 /**
- * New repertoire (blank, or from a PGN) and Import PGN: a repertoire created to import into has an
- * empty first chapter, which the import replaces.
+ * New repertoire, and Import PGN: into a repertoire, or into a new one the import creates (named
+ * and coloured from the PGN in its preview).
  */
 function HubCreateImport({
   creating,
@@ -341,32 +539,22 @@ function HubCreateImport({
   onStudy,
   onNotice
 }: {
-  creating: CreateIntent | null;
-  importTarget: string | null;
-  onCreatingChange: (intent: CreateIntent | null) => void;
-  onImportTargetChange: (repertoireId: string | null) => void;
+  creating: boolean;
+  importTarget: { repertoireId: string | null } | null;
+  onCreatingChange: (creating: boolean) => void;
+  onImportTargetChange: (target: { repertoireId: string | null } | null) => void;
   onStudy: (target: StudyTarget) => void;
   onNotice: (notice: HubMessage) => void;
 }) {
-  const removeChapter = useRemoveChapterMutation();
-  /** The empty first chapter of a repertoire created to import into; the import replaces it. */
-  const [placeholder, setPlaceholder] = useState<{
-    repertoireId: string;
-    chapterId: string;
-  } | null>(null);
   return (
     <>
       {creating ? (
         <CreateRepertoireDialog
-          intent={creating}
-          onClose={() => onCreatingChange(null)}
+          onClose={() => onCreatingChange(false)}
           onCreated={(detail, next) => {
-            onCreatingChange(null);
+            onCreatingChange(false);
             const first = sortedChapters(detail.chapters).at(0);
-            if (next === "import") {
-              onImportTargetChange(detail.id);
-              setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);
-            } else if (next === "study" && first) {
+            if (next === "study" && first) {
               onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
             }
             // "add-game": the Add to repertoire dialog is open over the hub.
@@ -375,27 +563,10 @@ function HubCreateImport({
       ) : null}
       {importTarget ? (
         <ImportPgnDialog
-          repertoireId={importTarget}
-          onClose={() => {
-            onImportTargetChange(null);
-            setPlaceholder(null);
-          }}
+          repertoireId={importTarget.repertoireId}
+          onClose={() => onImportTargetChange(null)}
           onImported={(result) => {
             onImportTargetChange(null);
-            setPlaceholder(null);
-            const empty = result.repertoire.chapters.find(
-              (chapter) =>
-                chapter.id === placeholder?.chapterId &&
-                result.repertoire.id === placeholder.repertoireId &&
-                chapter.nodeCount === 0
-            );
-            if (empty && result.chaptersAdded > 0) {
-              removeChapter.mutate({
-                repertoireId: result.repertoire.id,
-                chapterId: empty.id,
-                expectedRevision: result.repertoire.revision
-              });
-            }
             onNotice({
               tone: "success",
               text: `Imported ${plural(result.chaptersAdded, "chapter")} into “${result.repertoire.name}”.`

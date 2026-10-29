@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { Upload } from "lucide-react";
 import type {
   AddFromGameSource,
   RepertoireColor,
@@ -24,8 +23,8 @@ import { nameError } from "./repertoire-metadata";
 
 type StartFrom = "initial" | "fen" | "game";
 
-/** What happens after creating: study it, import a PGN into it, or add the board's game to it. */
-export type CreateNext = "study" | "import" | "add-game";
+/** What happens after creating: study it, or add the board's game to it. */
+export type CreateNext = "study" | "add-game";
 
 const colorOptions = [
   { value: "white" as const, label: "White" },
@@ -38,26 +37,19 @@ const startOptions = [
   { value: "game" as const, label: "Current game" }
 ];
 
-/** The hub's New menu item the dialog was opened from. */
-export type CreateIntent = "blank" | "import";
-
 /**
  * New repertoire (§5.1): name and the side you train. A blank one starts from the initial position
  * or a validated FEN; with a game on the board, "Current game" starts from that game's position
  * and, once created, opens "Add to repertoire" for the whole game into the first chapter (`next`
- * is "add-game"). From a PGN (`intent` "import"), it starts from the initial position and goes
- * straight to the import preview.
+ * is "add-game"). A repertoire from a PGN is made by the import itself (ImportPgnDialog).
  */
 export function CreateRepertoireDialog({
-  intent,
   onClose,
   onCreated
 }: {
-  intent: CreateIntent;
   onClose: () => void;
   onCreated: (detail: RepertoireDetail, next: CreateNext) => void;
 }) {
-  const importing = intent === "import";
   const nameId = useId();
   const create = useCreateRepertoireMutation();
   const [name, setName] = useState("");
@@ -78,7 +70,7 @@ export function CreateRepertoireDialog({
     !capturing &&
     (startFrom !== "game" || fromGame);
 
-  const submit = async (next: "study" | "import") => {
+  const submit = async () => {
     if (!canCreate) return;
     setSaveError(null);
     // The game as it is now (saved first): the dialog that follows adds this snapshot, whatever
@@ -93,13 +85,13 @@ export function CreateRepertoireDialog({
         return;
       }
     }
-    const rootFen = newRepertoireRootFen(startFrom, fen, source?.rootFen ?? null, next);
+    const rootFen = newRepertoireRootFen(startFrom, fen, source?.rootFen ?? null);
     create.mutate(
       { name: name.trim(), color, ...(rootFen ? { rootFen } : {}) },
       {
         onSuccess: (detail) => {
-          if (!source || next === "import") {
-            onCreated(detail, next);
+          if (!source) {
+            onCreated(detail, "study");
             return;
           }
           useAddToRepertoireStore.getState().open({
@@ -120,15 +112,14 @@ export function CreateRepertoireDialog({
   return (
     <Dialog
       size="sm"
-      title={importing ? "New repertoire from PGN" : "New repertoire"}
+      title="New repertoire"
       onClose={onClose}
       footer={
         <CreateFooter
-          importing={importing}
           pending={create.isPending}
           disabled={!canCreate}
           onCancel={onClose}
-          onCreate={() => void submit(importing ? "import" : "study")}
+          onCreate={() => void submit()}
         />
       }
       bodyClassName="grid gap-4"
@@ -137,7 +128,7 @@ export function CreateRepertoireDialog({
         className="grid gap-4"
         onSubmit={(event) => {
           event.preventDefault();
-          void submit(importing ? "import" : "study");
+          void submit();
         }}
       >
         <Field label="Name" htmlFor={nameId}>
@@ -161,16 +152,14 @@ export function CreateRepertoireDialog({
           />
           <p className={fieldHint}>Flipping the board later never changes this.</p>
         </div>
-        {importing ? null : (
-          <StartFromFields
-            value={startFrom}
-            onChange={setStartFrom}
-            boardHasGame={boardHasGame}
-            fen={fen}
-            onFenChange={setFen}
-            invalidFen={invalidFen}
-          />
-        )}
+        <StartFromFields
+          value={startFrom}
+          onChange={setStartFrom}
+          boardHasGame={boardHasGame}
+          fen={fen}
+          onFenChange={setFen}
+          invalidFen={invalidFen}
+        />
         <button type="submit" hidden aria-label="Create repertoire" />
       </form>
       {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
@@ -181,15 +170,13 @@ export function CreateRepertoireDialog({
   );
 }
 
-/** Cancel, and Create ("Create and import PGN" from a PGN). */
+/** Cancel, and Create. */
 function CreateFooter({
-  importing,
   pending,
   disabled,
   onCancel,
   onCreate
 }: {
-  importing: boolean;
   pending: boolean;
   disabled: boolean;
   onCancel: () => void;
@@ -201,8 +188,7 @@ function CreateFooter({
         Cancel
       </Button>
       <Button type="button" variant="primary" size="sm" disabled={disabled} onClick={onCreate}>
-        {importing ? <Upload /> : null}
-        {pending ? "Creating…" : importing ? "Create and import PGN" : "Create"}
+        {pending ? "Creating…" : "Create"}
       </Button>
     </>
   );

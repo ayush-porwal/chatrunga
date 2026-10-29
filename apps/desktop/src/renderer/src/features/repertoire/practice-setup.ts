@@ -6,6 +6,7 @@ import type {
   RepertoireDetail,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import { sortedChapters } from "./repertoire-chapters";
 
 /**
@@ -15,7 +16,6 @@ import { sortedChapters } from "./repertoire-chapters";
  */
 
 export const DEFAULT_CARD_LIMIT = 20;
-const DEFAULT_NEW_CARD_LIMIT = 5;
 /** The main process's validators refuse anything above these. */
 export const MAX_CARD_LIMIT = 500;
 export const MAX_DEPTH_PLIES = 512;
@@ -49,7 +49,63 @@ export type PracticePreset = {
   maxDepthPlies?: number;
   /** Plain Practice from Study: its chapter, which a rehearsal of lines plays. */
   chapterId?: string;
+  /* Practice home presets (docs/repertoire-games-and-practice.md §2, §4). */
+  /** A Practice tab set: the repertoires it queues together (the route names the first). */
+  repertoireIds?: string[];
+  /** Practise these chapters only (the hub's chapter row): due positions first, then new ones. */
+  chapterIds?: string[];
+  /** Review what is due and nothing new (a set's Review; Learn new asks the new ones). */
+  dueOnly?: boolean;
+  /** The Repertoire tab it was started from: the summary offers the way back to it. */
+  returnTab?: RepertoireHubTab;
 };
+
+/** The Repertoire tab a preset's session leads back to (null: none). */
+export function returnTabOf(preset: PracticePreset | null): RepertoireHubTab | null {
+  return preset?.returnTab ?? null;
+}
+
+/**
+ * Weak-spots practice (`weak` mode): every forgotten position across `repertoireIds` (the route
+ * names the first), or the one position a report row names (in its repertoire).
+ */
+export function weakSpotsPreset(
+  target: { repertoireId: string; positionKey: string } | null,
+  repertoireIds: readonly string[],
+  returnTab: RepertoireHubTab
+): PracticePreset {
+  return target
+    ? { mode: "weak", positionKeys: [target.positionKey], returnTab }
+    : { mode: "weak", repertoireIds: [...repertoireIds], returnTab };
+}
+
+/** The modes a preset starts as they are, without the repertoire's practice settings. */
+const OWN_MODES: readonly NonNullable<PracticePreset["mode"]>[] = [
+  "learn-new",
+  "practice-early",
+  "weak"
+];
+
+/**
+ * The start input of a Practice home preset (a set's Review / Practice early / Learn new, weak
+ * spots, one chapter), or null when the preset isn't one.
+ */
+function homePracticeInput(
+  repertoireId: string,
+  preset: PracticePreset | null
+): StartPracticeInput | null {
+  if (!preset) return null;
+  const own = preset.mode !== undefined && OWN_MODES.includes(preset.mode);
+  if (!own && !preset.repertoireIds && !preset.chapterIds && !preset.dueOnly) return null;
+  return {
+    repertoireId,
+    mode: preset.mode ?? "review-due",
+    ...(preset.repertoireIds ? { repertoireIds: [...preset.repertoireIds] } : {}),
+    ...(preset.chapterIds ? { chapterIds: [...preset.chapterIds] } : {}),
+    ...(preset.positionKeys?.length ? { positionKeys: [...new Set(preset.positionKeys)] } : {}),
+    ...(preset.dueOnly ? { newCardLimit: 0 } : {})
+  };
+}
 
 /** The preset that rehearses `target` at once ("Rehearse again", another line's chapter). */
 export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): PracticePreset {
@@ -119,7 +175,7 @@ export function autoStartPracticeInput(
       ...(depth ? { maxDepthPlies: depth } : {})
     };
   }
-  return targetedPracticeInput(repertoireId, preset);
+  return homePracticeInput(repertoireId, preset) ?? targetedPracticeInput(repertoireId, preset);
 }
 
 /**
@@ -145,10 +201,11 @@ export function targetedPracticeInput(
 
 /**
  * The repertoire's practice settings: its saved draft or the defaults. Practice always reviews
- * due positions first, then new ones (an older Learn new draft reads as that), or rehearses lines.
- * Chapter ids that no longer exist, are disabled or are reference chapters are dropped (the key
- * too when none is left, meaning every enabled opening chapter), so a stale draft can't be
- * refused on start; limits are clamped to the main process's bounds.
+ * due positions first, then new ones within the daily new limit (an older Learn new draft reads
+ * as that; an older draft's own new-card count is dropped: one global limit replaced it), or
+ * rehearses lines. Chapter ids that no longer exist, are disabled or are reference chapters are
+ * dropped (the key too when none is left, meaning every enabled opening chapter), so a stale
+ * draft can't be refused on start; limits are clamped to the main process's bounds.
  */
 export function practiceSettings(
   detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">
@@ -157,12 +214,7 @@ export function practiceSettings(
   const base: StartPracticeInput =
     saved && saved.repertoireId === detail.id
       ? saved
-      : {
-          repertoireId: detail.id,
-          mode: "review-due",
-          cardLimit: DEFAULT_CARD_LIMIT,
-          newCardLimit: DEFAULT_NEW_CARD_LIMIT
-        };
+      : { repertoireId: detail.id, mode: "review-due", cardLimit: DEFAULT_CARD_LIMIT };
   const allowed = practicableChapterIds(detail.chapters);
   const kept = (base.chapterIds ?? []).filter((id) => allowed.has(id));
   return {
@@ -219,12 +271,11 @@ export function presetPracticeInput(
 
 /** The limits `input` sets, clamped to the main process's bounds (unset ones stay unset). */
 function withinLimits(
-  input: Pick<StartPracticeInput, "cardLimit" | "newCardLimit" | "maxDepthPlies">
-): Pick<StartPracticeInput, "cardLimit" | "newCardLimit" | "maxDepthPlies"> {
-  const { cardLimit, newCardLimit, maxDepthPlies } = input;
+  input: Pick<StartPracticeInput, "cardLimit" | "maxDepthPlies">
+): Pick<StartPracticeInput, "cardLimit" | "maxDepthPlies"> {
+  const { cardLimit, maxDepthPlies } = input;
   return {
     ...(cardLimit !== undefined ? { cardLimit: clamp(cardLimit, 1, MAX_CARD_LIMIT) } : {}),
-    ...(newCardLimit !== undefined ? { newCardLimit: clamp(newCardLimit, 0, MAX_CARD_LIMIT) } : {}),
     ...(maxDepthPlies !== undefined
       ? { maxDepthPlies: clamp(maxDepthPlies, 1, MAX_DEPTH_PLIES) }
       : {})
@@ -249,7 +300,6 @@ export type PracticeSettingsForm = {
   chapterIds: readonly string[];
   depth: string;
   cards: string;
-  fresh: string;
 };
 
 /** The dialog's fields for the practice settings (unset limits show their defaults). */
@@ -258,8 +308,7 @@ export function practiceSettingsForm(settings: StartPracticeInput): PracticeSett
     lines: settings.mode === "rehearse-lines",
     chapterIds: settings.chapterIds ?? [],
     depth: settings.maxDepthPlies ? String(settings.maxDepthPlies) : "",
-    cards: String(settings.cardLimit ?? DEFAULT_CARD_LIMIT),
-    fresh: String(settings.newCardLimit ?? DEFAULT_NEW_CARD_LIMIT)
+    cards: String(settings.cardLimit ?? DEFAULT_CARD_LIMIT)
   };
 }
 
@@ -273,8 +322,7 @@ export function practiceSettingsFromForm(
     mode: form.lines ? "rehearse-lines" : "review-due",
     ...(form.chapterIds.length ? { chapterIds: [...form.chapterIds] } : {}),
     ...(depth ? { maxDepthPlies: depth } : {}),
-    cardLimit: boundedInt(form.cards, 1, MAX_CARD_LIMIT) ?? DEFAULT_CARD_LIMIT,
-    newCardLimit: boundedInt(form.fresh, 0, MAX_CARD_LIMIT) ?? 0
+    cardLimit: boundedInt(form.cards, 1, MAX_CARD_LIMIT) ?? DEFAULT_CARD_LIMIT
   };
 }
 

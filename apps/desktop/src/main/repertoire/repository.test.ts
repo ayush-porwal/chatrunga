@@ -23,6 +23,7 @@ const {
 const { workspaceRepository } = await import("./workspace-repository");
 const { attemptRepository, sessionRepository } = await import("./practice-repository");
 const { rootNode } = await import("./chapter-validation");
+const { chaptersWithoutOpening } = await import("./chapter-openings");
 const { repertoireDb, setRepertoireConnection, withOwnConnection } = await import("./connection");
 
 const record = {
@@ -49,7 +50,8 @@ const chapter: RepertoireChapter = {
   dueCount: 0,
   headers: { ECO: "B90" },
   tree: [rootNode(START_FEN)],
-  nodeMeta: { root: { edge: "included", trainingStart: true } }
+  nodeMeta: { root: { edge: "included", trainingStart: true } },
+  opening: null
 };
 
 describe("repertoire repository (SQLite)", () => {
@@ -209,6 +211,24 @@ describe("repertoire repository (SQLite)", () => {
     expect(attemptRepository.get("a1")?.resultJson).toBe("{}");
     expect(attemptRepository.lastAt("s1")).toBe(4);
     expect(attemptRepository.list("s1", "q1")).toHaveLength(1);
+  });
+
+  it("keeps a chapter's opening: written when given, kept when not, a typed empty one too", () => {
+    repertoireRepository.insert(record);
+    const opening = { name: "Sicilian Defense: Najdorf Variation", eco: "B90", edited: false };
+    chapterRepository.upsert("r1", { ...chapter, opening }, 5);
+    expect(chapterRepository.get("c1")?.opening).toStrictEqual(opening);
+    const { opening: _kept, ...withoutOpening } = chapter;
+    chapterRepository.upsert("r1", { ...withoutOpening, title: "Renamed" }, 6);
+    expect(chapterRepository.summaries("r1", 6)[0].opening).toStrictEqual(opening);
+    expect(chaptersWithoutOpening()).toStrictEqual([]);
+    // A typed empty opening stays typed: the background detection leaves it alone.
+    const cleared = { name: "", eco: null, edited: true };
+    chapterRepository.upsert("r1", { ...chapter, opening: cleared }, 7);
+    expect(chapterRepository.get("c1")?.opening).toStrictEqual(cleared);
+    expect(chaptersWithoutOpening()).toStrictEqual([]);
+    chapterRepository.upsert("r1", chapter, 8);
+    expect(chaptersWithoutOpening()).toStrictEqual(["c1"]);
   });
 
   it("rolls a failing transaction back", () => {

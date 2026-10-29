@@ -107,3 +107,57 @@ export function practiceWayOn(
   }
   return null;
 }
+
+/* Practice home (docs/repertoire-games-and-practice.md §4 Session). */
+
+/**
+ * The session's counters: due and new cards still to answer, cards done, and the share answered
+ * right (null before any grade). A first sight is neither right nor wrong.
+ */
+export function sessionCounts(cards: readonly PracticeCard[]): {
+  due: number;
+  fresh: number;
+  done: number;
+  right: number | null;
+} {
+  const left = cards.filter((card) => card.state === "unanswered");
+  const graded = cards.filter(
+    (card) =>
+      !card.preview &&
+      (card.state === "answered-correct" ||
+        card.state === "answered-wrong" ||
+        card.state === "revealed")
+  );
+  const right = graded.filter((card) => card.state === "answered-correct").length;
+  return {
+    due: left.filter((card) => card.stage === "review").length,
+    fresh: left.filter((card) => card.stage === "new").length,
+    done: cards.length - left.length,
+    right: graded.length ? Math.round((right / graded.length) * 100) : null
+  };
+}
+
+/**
+ * Above the board: "Review · Caro-Kann (Black) · Advance Variation", or for weak spots "Weak spot
+ * 3 of 12 · seen in 49 games" (then "Lines you meet most" for the rehearsal after them).
+ */
+export function sessionHeading(
+  session: Pick<PracticeSessionSnapshot, "mode" | "cards">,
+  card: PracticeCard,
+  where: { repertoire: string; chapter: string }
+): string {
+  if (session.mode === "weak") {
+    if (card.weakGames === undefined) return `Lines you meet most · ${where.repertoire}`;
+    const spots = session.cards.filter((item) => item.weakGames !== undefined);
+    const games = `seen in ${card.weakGames} game${card.weakGames === 1 ? "" : "s"}`;
+    return `Weak spot ${spots.indexOf(card) + 1} of ${spots.length} · ${games}`;
+  }
+  const kind =
+    card.stage === "new" ? "New" : session.mode === "practice-early" ? "Practice early" : "Review";
+  return `${kind} · ${where.repertoire} · ${where.chapter}`;
+}
+
+/** A first sight's move while the card is still to be answered (null otherwise). */
+export function previewOf(card: Pick<PracticeCard, "preview" | "state">): string | null {
+  return card.preview && card.state === "unanswered" ? card.preview.uci : null;
+}

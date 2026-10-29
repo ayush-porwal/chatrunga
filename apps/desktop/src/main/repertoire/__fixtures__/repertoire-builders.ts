@@ -7,7 +7,25 @@ import type {
   RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
+import type { RepertoirePracticeSettings } from "@chaturanga/shared/types/repertoire-practice";
+import type { DatabaseSync } from "node:sqlite";
 import type * as RepertoireService from "../service";
+
+/**
+ * Stores the global practice settings (the `repertoirePractice` settings row). Grading tests use
+ * `GRADING_SETTINGS`: no daily limit and no first sight, so a new card is asked like any other.
+ */
+export function setPracticeSettings(db: DatabaseSync, settings: RepertoirePracticeSettings): void {
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('repertoirePractice', ?, 0)"
+  ).run(JSON.stringify(settings));
+}
+
+export const GRADING_SETTINGS: RepertoirePracticeSettings = {
+  newPerDay: null,
+  showMoveOnNew: false,
+  sounds: true
+};
 
 /** A chapter tree built from UCI lines (shared prefixes become one path). */
 export function treeOf(rootFen: string, lines: string[][]): MoveNode[] {

@@ -1,5 +1,6 @@
 import { useId } from "react";
-import { BookOpen, RefreshCcw, Route, RotateCcw } from "lucide-react";
+import { ArrowLeft, BookOpen, RefreshCcw, Route, RotateCcw } from "lucide-react";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type {
   PracticeSessionSnapshot,
@@ -35,6 +36,8 @@ export function PracticeSummaryView({
   onAgain,
   onRehearse,
   onSettings,
+  returnTab,
+  onReturnToHub,
   note
 }: {
   detail: RepertoireDetail;
@@ -46,6 +49,9 @@ export function PracticeSummaryView({
   /** A new session from the summary: "Retry missed" or "Rehearse again". */
   onRehearse: (preset: PracticePreset) => void;
   onSettings: () => void;
+  /** The Repertoire tab the session was started from: Back to it (null: none). */
+  returnTab: RepertoireHubTab | null;
+  onReturnToHub: (tab: RepertoireHubTab) => void;
   /** Why the session ended early (its chapter changed). */
   note?: string | null;
 }) {
@@ -81,6 +87,8 @@ export function PracticeSummaryView({
           retry={retryMissed ? () => onRehearse(retryMissed) : undefined}
           onRehearseAgain={rehearseAgain ? () => onRehearse(rehearseAgain) : undefined}
           onAgain={onAgain}
+          onBack={returnTab ? () => onReturnToHub(returnTab) : undefined}
+          backLabel={returnTab === "insights" ? "Back to Insights" : "Back to Practice"}
         />
       }
     >
@@ -241,15 +249,26 @@ function MissedPositionsList({
 function SummaryWaysOn({
   retry,
   onRehearseAgain,
-  onAgain
+  onAgain,
+  onBack,
+  backLabel
 }: {
   /** Retry missed (only when something was missed). */
   retry: (() => void) | undefined;
   onRehearseAgain: (() => void) | undefined;
   onAgain: () => void;
+  /** Back to the Repertoire tab the session came from (beside Practice again). */
+  onBack: (() => void) | undefined;
+  backLabel: string;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2">
+      {onBack ? (
+        <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft />
+          {backLabel}
+        </Button>
+      ) : null}
       {retry ? (
         <Button type="button" variant="primary" size="sm" onClick={retry}>
           <RefreshCcw />

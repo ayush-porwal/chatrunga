@@ -525,7 +525,9 @@ function restoreReplace(
   const { entry } = prepared;
   // Checked again inside the transaction: the repertoire may have changed since it was retained.
   const existing = checkReplace(entry, selection);
-  // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links.
+  // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links
+  // (a set's sessions it holds move to another of the set's repertoires first).
+  sessionRepository.moveSetSessions(existing.id, true);
   repertoireRepository.remove(existing.id);
   const revision = Math.max(existing.revision, entry.repertoire.revision) + 1;
   repertoireRepository.insert({

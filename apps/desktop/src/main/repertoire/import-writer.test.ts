@@ -75,7 +75,8 @@ function job(repertoireId: string, sizes: number[]): ImportCommitJob {
         headers: {},
         tree: nodes,
         excludeNodeIds: [],
-        positionKeys: Object.fromEntries(nodes.map((node) => [node.id, `k-${node.id}`]))
+        positionKeys: Object.fromEntries(nodes.map((node) => [node.id, `k-${node.id}`])),
+        opening: null
       };
     })
   };

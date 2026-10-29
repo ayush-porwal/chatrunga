@@ -39,7 +39,9 @@ import {
   type RepertoireRecord
 } from "./repository";
 import { workspaceRepository } from "./workspace-repository";
+import { sessionRepository } from "./practice-repository";
 import { changed, clock, loadChapter, storedChapter } from "./service-runtime";
+import { withDetectedOpening } from "./chapter-openings";
 
 /** A new repertoire with one chapter at `rootFen` (or the standard start). */
 export function createRepertoire(input: CreateRepertoireInput): RepertoireDetail {
@@ -62,7 +64,7 @@ export function createRepertoire(input: CreateRepertoireInput): RepertoireDetail
     });
     chapterRepository.upsert(
       id,
-      {
+      withDetectedOpening({
         id: nanoid(),
         title: chapterTitle(input.firstChapterTitle, name),
         sortOrder: 0,
@@ -75,7 +77,7 @@ export function createRepertoire(input: CreateRepertoireInput): RepertoireDetail
         headers: {},
         tree: [rootNode(rootFen)],
         nodeMeta: {}
-      },
+      }),
       now
     );
     reindex(requireRepertoire(id), now);
@@ -127,8 +129,15 @@ export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
         `Invalid chapter.revision: chapter changed (stored ${owner.revision}, expected ${input.chapter.revision})`
       );
     }
-    const chapter = sanitizeChapter(input.chapter, (owner?.revision ?? 0) + 1);
-    const before = owner ? storedChapter(chapter.id) : null;
+    const sanitized = sanitizeChapter(input.chapter, (owner?.revision ?? 0) + 1);
+    const before = owner ? storedChapter(sanitized.id) : null;
+    // The opening follows the mainline unless the user typed one (a save without the field
+    // keeps the stored one's choice).
+    const chapter = withDetectedOpening(
+      sanitized.opening === undefined && before
+        ? { ...sanitized, opening: before.opening }
+        : sanitized
+    );
     const next = bump(record, now);
     chapterRepository.upsert(record.id, chapter, now);
     const { decisionsChanged } =
@@ -270,6 +279,7 @@ export function archiveRepertoire(input: ArchiveRepertoireInput): RepertoireChan
   const result = transaction(() => {
     const record = requireRepertoire(input.id);
     checkRevision(record, input.expectedRevision);
+    if (input.archived) sessionRepository.moveSetSessions(record.id, false);
     bump(record, now, { archivedAt: input.archived ? (record.archivedAt ?? now) : null });
     return { repertoire: detail(record.id, now) };
   });
@@ -282,6 +292,7 @@ export function removeRepertoire(input: RemoveRepertoireInput): void {
   const revision = transaction(() => {
     const record = requireRepertoire(input.id);
     checkRevision(record, input.expectedRevision);
+    sessionRepository.moveSetSessions(record.id, true);
     repertoireRepository.remove(record.id);
     return record.revision + 1;
   });

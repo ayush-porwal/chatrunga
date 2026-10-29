@@ -14,6 +14,8 @@ import {
   useResumePracticeMutation
 } from "../../queries/repertoire";
 import { useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
+import { playSound } from "../../sounds/sounds";
+import { usePracticeSettings } from "./hub-tabs";
 import type { PendingAttempt } from "./practice-session-model";
 import type { AdvanceTimer } from "./usePracticePacing";
 
@@ -37,6 +39,7 @@ export function usePracticeSessionCommands(
   advance: AdvanceTimer
 ) {
   const rehearsing = session.mode === "rehearse-lines";
+  const { sounds } = usePracticeSettings();
   const recordAttempt = useRecordAttemptMutation();
   const recordAction = useRecordPracticeActionMutation();
   const endPractice = useEndPracticeMutation();
@@ -98,7 +101,10 @@ export function usePracticeSessionCommands(
       },
       {
         onSuccess: (result) => {
-          practice().applyAttempt(result);
+          practice().applyAttempt(result, attempt.uci);
+          // Right and wrong sounds (Practice settings), on top of the board's move sound.
+          if (sounds && result.outcome === "correct") playSound("correct");
+          if (sounds && result.outcome === "outside-repertoire") playSound("error");
           // A correct move stays on the board; so does another line's choice, until the player
           // follows it or tries again.
           if (result.outcome !== "correct" && result.outcome !== "other-line") setPending(null);

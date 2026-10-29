@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { CircleAlert, GraduationCap, Loader2, Redo2, Settings, Undo2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { stripBookPage } from "@chaturanga/shared/books/book-page";
+import { promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
 import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { BookPages } from "@chaturanga/shared/types/books";
+import type { RepertoireHealthFlag } from "@chaturanga/shared/types/repertoire-health";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
-import {
-  REPERTOIRE_ROOT_NODE_ID,
-  type RepertoireChapter,
-  type RepertoireChapterSummary,
-  type RepertoireDecision,
-  type RepertoireDetail
+import type {
+  RepertoireChapterSummary,
+  RepertoireDecision,
+  RepertoireDetail
 } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -24,9 +23,11 @@ import {
   useRepertoireChapterQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
+import { useRepertoireHealthFlags } from "../../queries/repertoire-health";
 import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { useStudyEngineStore } from "../../stores/study-engine-store";
+import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { DESTINATION_ICONS } from "../../app/destination-icons";
 import { BoardWorkspace } from "../board/BoardWorkspace";
 import { BookChapterReport } from "../books/BookChapterReport";
@@ -40,7 +41,15 @@ import { RepertoireMoveNavigation } from "./RepertoireMoveNavigation";
 import { RepertoireSettingsDialog } from "./RepertoireSettingsDialog";
 import { StudyBoardStage } from "./StudyBoardStage";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
-import { StudyEnginePanel } from "./StudyEnginePanel";
+import {
+  ChoiceMoveMenu,
+  StudyChoicesPanel,
+  useMoveFlags,
+  useRepertoireArrows,
+  useStudyChoices
+} from "./StudyChoicesPanel";
+import { StudyExplorerTab } from "./StudyExplorerTab";
+import { StudyLineStrip } from "./StudyLineStrip";
 import { StudyMoveMenu, usePausedAt } from "./StudyMoveMenu";
 import { StudyCommentDialog, StudyDecisionDialog } from "./StudyNoteDialogs";
 import {
@@ -52,10 +61,12 @@ import {
 } from "./StudyNotices";
 import { StudyPracticeFooter } from "./StudyPracticeFooter";
 import { StudySourcesSection } from "./StudySourcesSection";
-import { StudyTree } from "./StudyTree";
+import { StudyMovesTab } from "./StudyMovesTab";
+import { StudyStagingNotices } from "./StudyStagingNotices";
 import { useChapterAutosave } from "./useChapterAutosave";
 import { useChapterDraftLoad } from "./useChapterDraftLoad";
 import { studyEditShortcutLabels } from "./study-edit-shortcuts";
+import type { StudyFromGames } from "./study-from-games";
 import { useDecisionDraftCommands } from "./useDecisionDraftCommands";
 import { useIncludeInPractice } from "./useIncludeInPractice";
 import { useMissingChapterHandoff } from "./useMissingChapterHandoff";
@@ -64,18 +75,23 @@ import { useStudyCommands } from "./useStudyCommands";
 import { useStudyPosition } from "./useStudyPosition";
 import { useStudyTraining } from "./useStudyTraining";
 
-export type StudyTab = "moves" | "chapters" | "book";
+export type StudyTab = "moves" | "chapters" | "explorer" | "book";
 
-/** The panel's tabs, in order: Moves, Chapters, and Book for a repertoire imported from a book. */
+/**
+ * The panel's tabs, in order: Moves, Chapters, Explorer, and Book for a repertoire imported from
+ * a book.
+ */
 function studyTabs(chapterCount: number, book: boolean): WorkspaceTab<StudyTab>[] {
   return [
     { value: "moves", label: "Moves" },
     { value: "chapters", label: "Chapters", count: chapterCount },
+    { value: "explorer", label: "Explorer" },
     ...(book ? [{ value: "book" as const, label: "Book" }] : [])
   ];
 }
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
+const NO_STAGED: MoveNode[] = [];
 const ExportIcon = DESTINATION_ICONS.exportPgn;
 
 /**
@@ -89,6 +105,12 @@ const ExportIcon = DESTINATION_ICONS.exportPgn;
  * repertoire that no longer exists hands back to the hub (`onMissing`); any other failure to read
  * them keeps the page (and the draft) with the cause and Retry. The footer steps through the
  * moves and starts Practice.
+ *
+ * The overhaul (docs/repertoire-games-and-practice.md §3): the line strip in the summary, the
+ * choices panel above the tree, the repertoire's arrows on the board, and the Explorer tab. A move
+ * the chapter doesn't have (the board, an engine line, the explorer, another screen) is staged:
+ * the New moves card adds it as one undoable edit. Opened from Insights, the From your games
+ * banner says what the user's games did here.
  */
 export function RepertoireStudyPage({
   repertoireId,
@@ -98,8 +120,12 @@ export function RepertoireStudyPage({
   tab,
   stage,
   onStageApplied,
+  fromGames,
+  onPractisePosition,
+  onOpenFlag,
   onTabChange,
   onOpenChapter,
+  onAddToChapter,
   onPractice,
   onMissing,
   onHub,
@@ -116,9 +142,20 @@ export function RepertoireStudyPage({
   stage?: StudyStage | null;
   /** The stage was applied (or couldn't be): App forgets it, so it never applies twice. */
   onStageApplied?: () => void;
+  /** What the user's games did at the position, from Insights (the From your games banner). */
+  fromGames?: StudyFromGames | null;
+  /** Practises one position now (the banner's Practise this position). */
+  onPractisePosition?: (positionKey: string) => void;
+  /** Opens a health flag's position (the Explorer's flags elsewhere), with its banner. */
+  onOpenFlag?: (flag: RepertoireHealthFlag) => void;
   onTabChange: (tab: StudyTab) => void;
   /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
   onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
+  /**
+   * Opens another chapter for "Add to…" (the staged moves go along, so no leave question): true
+   * once it opened, false when it didn't (a failed save, a newer navigation, a Lichess game).
+   */
+  onAddToChapter: (chapterId: string) => Promise<boolean>;
   /** Practice with the repertoire's settings (a rehearsal of lines plays this chapter). */
   onPractice: () => void;
   onMissing: (message: string) => void;
@@ -137,18 +174,20 @@ export function RepertoireStudyPage({
   const chapterQuery = useRepertoireChapterQuery(repertoireId, chapterId);
   useChapterAutosave();
   const commands = useStudyCommands(repertoireId);
-  const { draft, selectedNodeId, orientation, color, loadedId } = useRepertoireWorkspaceStore(
-    useShallow((state) => {
-      const loaded = state.repertoireId === repertoireId && state.chapterId === chapterId;
-      return {
-        draft: loaded ? state.chapter : null,
-        selectedNodeId: state.selectedNodeId,
-        orientation: state.orientation,
-        color: state.color,
-        loadedId: loaded ? state.chapterId : null
-      };
-    })
-  );
+  const { draft, staged, selectedNodeId, orientation, color, loadedId } =
+    useRepertoireWorkspaceStore(
+      useShallow((state) => {
+        const loaded = state.repertoireId === repertoireId && state.chapterId === chapterId;
+        return {
+          draft: loaded ? state.chapter : null,
+          staged: loaded ? state.staged : NO_STAGED,
+          selectedNodeId: state.selectedNodeId,
+          orientation: state.orientation,
+          color: state.color,
+          loadedId: loaded ? state.chapterId : null
+        };
+      })
+    );
   const [localError, setLocalError] = useState<string | null>(null);
   /** The dialog open: the selected move's comment or practice texts, or the settings. */
   const [dialog, setDialog] = useState<StudyDialog | null>(null);
@@ -194,20 +233,41 @@ export function RepertoireStudyPage({
     if (draft) onPositionChanged();
   }, [draft, selectedNodeId, tab, orientation, onPositionChanged]);
 
-  const { lookup, node, positionKey, decision, otherOccurrences, canEditDecision } =
-    useStudyPosition({ repertoireId, chapterId, chapter: draft, selectedNodeId, color });
-  const blocker = useStudyTraining({ chapter: draft, lookup, color });
+  const {
+    shown,
+    lookup,
+    draftLookup,
+    node,
+    positionKey,
+    decision,
+    otherOccurrences,
+    canEditDecision
+  } = useStudyPosition({ repertoireId, chapterId, chapter: draft, staged, selectedNodeId, color });
+  const blocker = useStudyTraining({ chapter: draft, lookup: draftLookup, color });
   const include = useIncludeInPractice({ repertoireId, chapterId, color, setError: setLocalError });
   const { selectNode, deletion, promoteVariation, canPromote } = useMoveTreeEditing({
-    chapter: draft,
+    chapter: shown,
     lookup,
     selectedNodeId
   });
   const kinds = useMemo(
-    () => (draft && lookup ? moveKinds(draft, lookup, color) : new Map<string, MoveKind>()),
-    [draft, lookup, color]
+    () => (shown && lookup ? moveKinds(shown, lookup, color) : new Map<string, MoveKind>()),
+    [shown, lookup, color]
   );
+  const stagedIds = useMemo(() => new Set(staged.map((item) => item.id)), [staged]);
   const paused = usePausedAt(repertoireId, positionKey, decision?.paused ?? false);
+  const flags = useRepertoireHealthFlags(repertoireId);
+  const moveFlags = useMoveFlags(lookup, flags);
+  // Leaving Study drops what is still staged (leaving asked first; see confirmLeavingStaged), and
+  // moves handed to a chapter that never loaded. A Lichess game in progress took the screen
+  // instead (its guard blocked where the user was going): the staged moves stay for the chapter.
+  useEffect(
+    () => () => {
+      if (!selectLiveGameInProgress(useLichessStore.getState())) workspace().discardStaged();
+      workspace().dropPendingAdd();
+    },
+    []
+  );
 
   const chapters: RepertoireChapterSummary[] = useMemo(() => {
     const list = detail.data?.chapters ?? [];
@@ -219,7 +279,8 @@ export function RepertoireStudyPage({
               title: draft.title,
               kind: draft.kind,
               enabled: draft.enabled,
-              sortOrder: draft.sortOrder
+              sortOrder: draft.sortOrder,
+              opening: draft.opening
             }
           : item
       )
@@ -239,6 +300,20 @@ export function RepertoireStudyPage({
     onShowBook: showBook
   });
   const shownTab = book.shownTab;
+  const { side, choices } = useStudyChoices({
+    repertoireId,
+    chapter: shown,
+    lookup,
+    kinds,
+    node,
+    positionKey,
+    decision,
+    otherOccurrences,
+    color,
+    staged: stagedIds,
+    flags
+  });
+  const arrows = useRepertoireArrows(choices);
 
   if (!desktop) {
     return (
@@ -251,39 +326,81 @@ export function RepertoireStudyPage({
     );
   }
 
-  if (!draft || !lookup || !node) {
+  if (!draft || !shown || !lookup || !node) {
     return <ChapterNotOpen loadError={loadError} onRetry={retryLoad} onHub={onHub} />;
   }
 
-  const menu = (
-    <StudyMoveMenu
-      repertoireId={repertoireId}
-      chapter={draft}
-      lookup={lookup}
-      color={color}
-      node={node}
-      kind={kinds.get(node.id)}
-      positionKey={positionKey}
-      paused={paused}
-      canEditDecision={canEditDecision}
-      otherOccurrences={otherOccurrences}
-      canPromote={canPromote}
-      busy={commands.busy}
-      open={menuOpen}
-      onOpenChange={setMenuOpen}
-      onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
-      onPrefer={(key, uci) => {
-        workspace().setNodeMeta(node.id, { edge: "included" });
-        void commands.writeDecision(key, { preferredUci: uci });
+  /**
+   * The move menu of `target`: the selected move's (with its position's own actions), or a move of
+   * the choices panel's (its kind, preference, comment and edits). A staged move has none: it
+   * isn't in the chapter yet (the New moves card handles it).
+   */
+  const moveMenu = (target: MoveNode, open: boolean, onOpenChange: (open: boolean) => void) => {
+    if (stagedIds.has(target.id)) return null;
+    const selected = target.id === node.id;
+    return (
+      <StudyMoveMenu
+        repertoireId={repertoireId}
+        chapter={shown}
+        lookup={lookup}
+        color={color}
+        node={target}
+        kind={kinds.get(target.id)}
+        positionKey={selected ? positionKey : (lookup.positionKeys.get(target.id) ?? null)}
+        paused={selected && paused}
+        canEditDecision={selected && canEditDecision}
+        otherOccurrences={selected ? otherOccurrences : []}
+        canPromote={selected ? canPromote : promotionTarget(shown.tree, target.id) !== null}
+        busy={commands.busy}
+        open={open}
+        onOpenChange={onOpenChange}
+        onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
+        onPrefer={(key, uci) => {
+          workspace().setNodeMeta(target.id, { edge: "included" });
+          void commands.writeDecision(key, { preferredUci: uci });
+        }}
+        onSetPaused={decisionDrafts.setPaused}
+        onEditComment={() => {
+          selectNode(target.id);
+          setDialog("comment");
+        }}
+        onEditDecision={() => setDialog("decision")}
+        onOpenOccurrence={(occurrence) => onOpenChapter(occurrence.chapterId, occurrence.nodeId)}
+        onPromote={() => promoteVariation(target.id)}
+        onDelete={() => deletion.deleteLine(target.id)}
+      />
+    );
+  };
+  const menu = moveMenu(node, menuOpen, setMenuOpen);
+  const choicesPanel = (
+    <StudyChoicesPanel
+      side={side}
+      choices={choices}
+      currentChapterId={chapterId}
+      renderMenu={(choice) => {
+        const target = lookup.nodesById.get(choice.at.nodeId);
+        return target ? (
+          <ChoiceMoveMenu render={(open, setOpen) => moveMenu(target, open, setOpen)} />
+        ) : null;
       }}
-      onSetPaused={decisionDrafts.setPaused}
-      onEditComment={() => setDialog("comment")}
-      onEditDecision={() => setDialog("decision")}
-      onOpenOccurrence={(occurrence) => onOpenChapter(occurrence.chapterId, occurrence.nodeId)}
-      onPromote={() => promoteVariation(node.id)}
-      onDelete={() => deletion.deleteLine(node.id)}
+      onOpen={(choice) =>
+        choice.at.chapterId === chapterId
+          ? selectNode(choice.at.nodeId)
+          : onOpenChapter(choice.at.chapterId, choice.at.nodeId)
+      }
     />
   );
+  /**
+   * Opens `targetId` (another chapter) and hands it the staged moves, added there once it loads;
+   * they stay staged here when it doesn't open.
+   */
+  const addElsewhere = (targetId: string) => {
+    void workspace()
+      .addStagedElsewhere(targetId, () => onAddToChapter(targetId))
+      .catch((error: unknown) =>
+        setLocalError(ipcErrorMessage(error) || "The chapter couldn't be opened.")
+      );
+  };
 
   return (
     <BoardWorkspace
@@ -296,6 +413,8 @@ export function RepertoireStudyPage({
           node={node}
           orientation={orientation}
           engineOpen={engineOpen}
+          staged={stagedIds.has(node.id)}
+          repertoireArrows={arrows}
         />
       }
       tabBar={
@@ -310,8 +429,29 @@ export function RepertoireStudyPage({
         />
       }
       flushBody
+      summary={
+        <StudyLineStrip lookup={lookup} nodeId={node.id} staged={stagedIds} onSelect={selectNode} />
+      }
       notices={
         <div className="grid gap-2 px-3 pt-3 empty:hidden">
+          <StudyStagingNotices
+            repertoireId={repertoireId}
+            fromGames={fromGames}
+            lookup={lookup}
+            node={node}
+            chapter={draft}
+            staged={staged}
+            color={color}
+            chapters={chapters}
+            busy={commands.busy}
+            onPractisePosition={onPractisePosition}
+            onAddElsewhere={addElsewhere}
+            onAddToNewChapter={(title) =>
+              void commands
+                .addChapter(title, draft.rootFen, nextSortOrder(chapters))
+                .then((id) => id && addElsewhere(id))
+            }
+          />
           <ChapterSaveNotice detail={detail} chapterQuery={chapterQuery} />
           <FailedDecisionNotices repertoireId={repertoireId} lookup={lookup} />
           <LoadErrorNotice loadError={loadError} onRetry={retryLoad} />
@@ -329,7 +469,7 @@ export function RepertoireStudyPage({
       footer={
         <>
           <RepertoireMoveNavigation
-            nodes={draft.tree}
+            nodes={shown.tree}
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
@@ -351,6 +491,13 @@ export function RepertoireStudyPage({
     >
       {shownTab === "book" ? (
         <StudyBookTab pages={book.pages} page={book.page} onPage={book.turnTo} />
+      ) : shownTab === "explorer" ? (
+        <StudyExplorerTab
+          repertoireId={repertoireId}
+          fen={node.fenAfter}
+          onStage={(ucis) => void workspace().playLine(node.id, ucis)}
+          onOpenFlag={onOpenFlag}
+        />
       ) : shownTab === "chapters" ? (
         <div className="h-full p-3">
           <StudyChaptersPanel
@@ -359,6 +506,7 @@ export function RepertoireStudyPage({
             busy={commands.busy}
             onOpen={(id) => id !== chapterId && onOpenChapter(id)}
             onRename={(id, title) => void commands.editChapter(id, { title })}
+            onEditOpening={(id, opening) => void commands.editChapter(id, { opening })}
             onSetEnabled={(id, enabled) => void commands.editChapter(id, { enabled })}
             onSetKind={(id, kind) => void commands.editChapter(id, { kind })}
             onSetMany={(ids, patch) => void commands.editChapters(ids, patch)}
@@ -387,11 +535,14 @@ export function RepertoireStudyPage({
         </div>
       ) : (
         <StudyMovesTab
-          chapter={draft}
+          chapter={shown}
           lookup={lookup}
           node={node}
           orientation={orientation}
           kinds={kinds}
+          staged={stagedIds}
+          moveFlags={moveFlags}
+          choices={choicesPanel}
           engineOpen={engineOpen}
           menu={menu}
           bookPages={book.links}
@@ -454,7 +605,7 @@ function StudyDialogs({
     );
   }
   if (dialog === "settings") {
-    return detail ? <RepertoireSettingsDialog detail={detail} onClose={onClose} /> : null;
+    return detail ? <RepertoireSettingsDialog detail={detail} study onClose={onClose} /> : null;
   }
   return positionKey ? (
     <StudyDecisionDialog
@@ -470,130 +621,6 @@ function StudyDialogs({
       onClose={onClose}
     />
   ) : null;
-}
-
-/**
- * The Moves tab: the engine (while Analyze is on) at the top, as Analysis's, then the starting
- * position's row and the tree with its comments, the selected move carrying its menu (`menu`;
- * a right-click on a move opens it too).
- */
-function StudyMovesTab({
-  chapter,
-  lookup,
-  node,
-  orientation,
-  kinds,
-  engineOpen,
-  menu,
-  bookPages,
-  onSelectNode,
-  onOpenMenu,
-  onOpenEngineSettings
-}: {
-  chapter: RepertoireChapter;
-  lookup: ChapterLookup;
-  node: MoveNode;
-  orientation: Color;
-  kinds: ReadonlyMap<string, MoveKind>;
-  engineOpen: boolean;
-  menu: ReactNode;
-  /** The book page chips (a repertoire imported from a book). */
-  bookPages?: BookPageLinks;
-  onSelectNode: (nodeId: string) => void;
-  onOpenMenu: () => void;
-  onOpenEngineSettings?: () => void;
-}) {
-  const atRoot = node.id === REPERTOIRE_ROOT_NODE_ID;
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      {engineOpen ? (
-        <StudyEnginePanel
-          chapter={chapter}
-          node={node}
-          orientation={orientation}
-          onClose={() => useStudyEngineStore.getState().close()}
-          onOpenSettings={onOpenEngineSettings}
-        />
-      ) : null}
-      <StartRow
-        selected={atRoot}
-        comment={stripBookPage(lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.comment)}
-        menu={atRoot ? menu : null}
-        onSelect={() => onSelectNode(REPERTOIRE_ROOT_NODE_ID)}
-        onContextMenu={() => {
-          onSelectNode(REPERTOIRE_ROOT_NODE_ID);
-          onOpenMenu();
-        }}
-      />
-      <StudyTree
-        key={chapter.id}
-        className="flex-1 px-3 pb-3"
-        lookup={lookup}
-        kinds={kinds}
-        selectedNodeId={node.id}
-        onSelectNode={onSelectNode}
-        showComments
-        bookPages={bookPages}
-        selectedActions={atRoot ? undefined : menu}
-        onMoveContextMenu={onOpenMenu}
-        emptyLabel="No moves yet — play the first move on the board."
-        ariaLabel="Chapter moves"
-      />
-    </div>
-  );
-}
-
-/**
- * The tree's first row: the chapter's starting position (selectable, with its menu while selected
- * and its comment under it), as the moves after it are.
- */
-function StartRow({
-  selected,
-  comment,
-  menu,
-  onSelect,
-  onContextMenu
-}: {
-  selected: boolean;
-  comment: string | null;
-  menu: ReactNode;
-  onSelect: () => void;
-  onContextMenu: () => void;
-}) {
-  return (
-    <div className="shrink-0 px-3 pt-2">
-      <div
-        className={
-          selected
-            ? "relative flex h-8 items-center rounded-[0.3125rem] bg-accent-soft"
-            : "relative flex h-8 items-center rounded-[0.3125rem] hover:bg-control"
-        }
-      >
-        <button
-          type="button"
-          aria-current={selected ? "step" : undefined}
-          className={
-            selected
-              ? "flex h-8 flex-1 items-center rounded-[0.3125rem] px-2 text-left text-xs font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              : "flex h-8 flex-1 items-center rounded-[0.3125rem] px-2 text-left text-xs text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-          }
-          onClick={onSelect}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            onContextMenu();
-          }}
-        >
-          Starting position
-        </button>
-        {menu ? <span className="absolute right-0.5 flex">{menu}</span> : null}
-      </div>
-      {comment ? (
-        <p className="px-2 pt-1 text-xs leading-relaxed whitespace-pre-line text-fg-muted">
-          {comment}
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 /**

@@ -139,7 +139,7 @@ function keptInView(list: HTMLElement, tab: HTMLElement): number {
 }
 
 /** The tab a navigation key moves to from `current` (wrapping), or null for any other key. */
-function nextTabIndex(key: string, current: number, count: number): number | null {
+export function nextTabIndex(key: string, current: number, count: number): number | null {
   if (key === "ArrowRight") return (current + 1) % count;
   if (key === "ArrowLeft") return (current - 1 + count) % count;
   if (key === "Home") return 0;

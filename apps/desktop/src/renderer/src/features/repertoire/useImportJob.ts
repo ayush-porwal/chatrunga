@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import type {
+  CreateRepertoireInput,
   ImportPreview,
   ImportProgressEvent,
   ImportResult,
@@ -11,7 +12,10 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import {
   useCancelImportMutation,
   useCommitImportMutation,
-  usePreviewImportMutation
+  useCreateRepertoireMutation,
+  usePreviewImportMutation,
+  useRemoveChapterMutation,
+  useRemoveRepertoireMutation
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { flushDecisionTexts } from "./decision-text-drafts";
@@ -30,7 +34,8 @@ import { flushChapterTree, flushChapterTreeInWrite } from "./useChapterAutosave"
  * The import job of the Import PGN dialog: the PGN is previewed (parsed in a worker, with progress
  * and Cancel), then the selected games are committed in one step. Closing before the commit
  * cancels the pending or running job; the commit itself can't be cancelled once the writer has
- * started.
+ * started. Without `repertoireId` the import makes a new repertoire: it is created at the commit
+ * (its empty first chapter removed after), and removed again when the commit fails.
  */
 export function useImportJob({
   repertoireId,
@@ -38,7 +43,8 @@ export function useImportJob({
   onPreviewed,
   onImported
 }: {
-  repertoireId: string;
+  /** The repertoire imported into; null for a new one, created by the commit. */
+  repertoireId: string | null;
   /** The repertoire's revision as cached, which the commit expects unless a draft save moved it. */
   revision: number | undefined;
   /** A new preview arrived: its games are listed afresh. */
@@ -48,6 +54,9 @@ export function useImportJob({
   const queryClient = useQueryClient();
   const previewMutation = usePreviewImportMutation();
   const commitMutation = useCommitImportMutation();
+  const createMutation = useCreateRepertoireMutation();
+  const removeChapterMutation = useRemoveChapterMutation();
+  const removeRepertoireMutation = useRemoveRepertoireMutation();
   const { mutate: cancelJobMutation } = useCancelImportMutation();
   /**
    * Cancels a pending job. After the dialog closed the hook's mutate may no longer run, so the API
@@ -163,8 +172,58 @@ export function useImportJob({
     setPreview(null);
   }
 
-  async function commit(selections: ImportSelection[]) {
+  /**
+   * Imports into a new repertoire: creates it, commits into it, then removes its empty first
+   * chapter; a failed commit removes the repertoire again (the job is kept for a retry).
+   */
+  async function commitNew(selections: ImportSelection[], create: CreateRepertoireInput) {
+    if (!preview) return;
+    setError(null);
+    const jobId = preview.jobId;
+    pendingJob.current = null;
+    let created;
+    try {
+      created = await createMutation.mutateAsync(create);
+    } catch (cause) {
+      if (open.current) {
+        pendingJob.current = jobId;
+        setError(ipcErrorMessage(cause) || "Couldn't create the repertoire.");
+      } else cancelJob(jobId);
+      return;
+    }
+    const empty = created.chapters.at(0);
+    try {
+      const result = await commitMutation.mutateAsync({
+        jobId,
+        repertoireId: created.id,
+        selections,
+        expectedRevision: created.revision
+      });
+      const removed = empty
+        ? await removeChapterMutation
+            .mutateAsync({
+              repertoireId: created.id,
+              chapterId: empty.id,
+              expectedRevision: result.repertoire.revision
+            })
+            .catch(() => null)
+        : null;
+      if (open.current)
+        onImported(removed ? { ...result, repertoire: removed.repertoire } : result);
+    } catch (cause) {
+      removeRepertoireMutation.mutate({ id: created.id, expectedRevision: created.revision });
+      if (!open.current) return cancelJob(jobId);
+      pendingJob.current = jobId;
+      setError(ipcErrorMessage(cause) || "The import couldn't be saved.");
+    }
+  }
+
+  async function commit(selections: ImportSelection[], create?: CreateRepertoireInput) {
     if (!preview || flushing) return;
+    if (repertoireId === null) {
+      if (create) await commitNew(selections, create);
+      return;
+    }
     setError(null);
     // An import into the repertoire whose draft is open, or whose prompt, hint, feedback or pause
     // change is unsaved, saves those first, so no autosave or decision write runs (or comes due)
@@ -219,7 +278,11 @@ export function useImportJob({
     );
   }
 
-  const committing = flushing || commitMutation.isPending;
+  const committing =
+    flushing ||
+    commitMutation.isPending ||
+    createMutation.isPending ||
+    removeChapterMutation.isPending;
   return {
     preview,
     error,

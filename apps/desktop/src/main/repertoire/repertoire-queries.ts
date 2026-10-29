@@ -188,7 +188,8 @@ export function getDueSummary(): RepertoireDueSummary {
           sessionId: session.id,
           mode: session.mode,
           repertoireName: session.repertoireName,
-          color: session.color
+          color: session.color,
+          ...(session.setLabel ? { setLabel: session.setLabel } : {})
         }
       : null,
     next: top ? nextDue(top, now) : null,

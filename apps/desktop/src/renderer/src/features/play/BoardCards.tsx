@@ -251,7 +251,7 @@ export function RepertoireBoardCard({
         fen={fen ?? START_FEN}
         orientation={resume.color}
         tag={tag}
-        title={repertoireTitle(resume.repertoireName, resume.color)}
+        title={resume.setLabel ?? repertoireTitle(resume.repertoireName, resume.color)}
         action={{
           label: "Resume practice",
           icon: <Play />,

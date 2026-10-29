@@ -19,9 +19,12 @@ import {
   type RepertoireSummary
 } from "@chaturanga/shared/types/repertoire";
 import { repertoireDb } from "./connection";
-import { queriesOn, rollbackIfOpen, sqliteErrcode } from "../db/rows";
-import { asColor, asKind, parseJson, stringArray, stringRecord } from "./columns";
+import { queriesOn } from "../db/rows";
+import { asColor, asKind, chapterOpening, parseJson, stringArray, stringRecord } from "./columns";
 import { parseStoredJson } from "../stored-json";
+
+// Transactions on the repertoire connection live in transaction.ts; most callers import them here.
+export { actionableBusyError, transaction } from "./transaction";
 
 /** A stored chapter whose JSON can't be read. Recoverable: the row is left untouched. */
 export class RepertoireCorruptChapterError extends Error {
@@ -70,6 +73,10 @@ type ChapterSummaryRow = {
   created_at: number;
   updated_at: number;
   due_count?: number;
+  /* Practice home (migration 16). */
+  opening_name: string | null;
+  opening_eco: string | null;
+  opening_edited: number;
 };
 
 type ChapterRow = ChapterSummaryRow & {
@@ -124,49 +131,6 @@ export type PositionIndexRow = {
 
 const { all, get, run } = queriesOn(repertoireDb);
 
-/** How a transaction locks: reads never take the write lock; writes take it up front. */
-export type TransactionMode = "read" | "write";
-
-/** The message a busy database gives the user (the write lock stayed held past the timeout). */
-const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try again.";
-
-/** True for SQLite's BUSY error (any extended code), as node:sqlite reports it. */
-function isBusyError(error: unknown): boolean {
-  const code = sqliteErrcode(error);
-  return code !== undefined && (code & 0xff) === 5;
-}
-
-/** The actionable busy error for a BUSY failure; any other error unchanged. */
-export function actionableBusyError(error: unknown): unknown {
-  return isBusyError(error) ? new Error(REPERTOIRE_BUSY_MESSAGE, { cause: error }) : error;
-}
-
-/**
- * Runs `work` in one transaction (joins an open one), rolling back on any error. A write takes the
- * write lock up front (IMMEDIATE), so it never fails mid-way on a lock held by the import writer;
- * on the main thread every write already waits its turn at the service's write gate, so the short
- * busy timeout is only a safety net. A read uses a plain deferred BEGIN: in WAL mode it sees one
- * consistent snapshot without ever taking the write lock, so it never waits for a writer. A BUSY
- * failure becomes the actionable busy error.
- */
-export function transaction<T>(work: () => T, mode: TransactionMode = "write"): T {
-  const db = repertoireDb();
-  if (db.isTransaction) return work();
-  try {
-    db.exec(mode === "write" ? "BEGIN IMMEDIATE" : "BEGIN");
-  } catch (error) {
-    throw actionableBusyError(error);
-  }
-  try {
-    const result = work();
-    db.exec("COMMIT");
-    return result;
-  } catch (error) {
-    rollbackIfOpen(db);
-    throw actionableBusyError(error);
-  }
-}
-
 function toRecord(row: RepertoireRow): RepertoireRecord {
   return {
     id: row.id,
@@ -204,7 +168,8 @@ function toChapterSummary(row: ChapterSummaryRow): RepertoireChapterSummary {
     rootFen: row.root_fen,
     revision: row.revision,
     nodeCount: row.node_count,
-    dueCount: row.due_count ?? 0
+    dueCount: row.due_count ?? 0,
+    opening: chapterOpening(row.opening_name, row.opening_eco, row.opening_edited)
   };
 }
 
@@ -316,7 +281,8 @@ const SUMMARY_SELECT = `SELECT r.*,
   FROM repertoires r`;
 
 const CHAPTER_SUMMARY_COLUMNS = `c.id, c.repertoire_id, c.title, c.sort_order, c.kind, c.enabled,
-  c.root_fen, c.node_count, c.revision, c.created_at, c.updated_at`;
+  c.root_fen, c.node_count, c.revision, c.created_at, c.updated_at, c.opening_name, c.opening_eco,
+  c.opening_edited`;
 
 /** Escapes LIKE wildcards so a search for `50%` matches the text literally. */
 function likePattern(query: string): string {
@@ -634,16 +600,22 @@ export const chapterRepository = {
     return row?.value ?? -1;
   },
 
+  /** Inserts or replaces a chapter; one without an `opening` field keeps the stored opening. */
   upsert(repertoireId: string, chapter: RepertoireChapter, now: number): void {
+    const opening = chapter.opening;
     run(
       `INSERT INTO repertoire_chapters (id, repertoire_id, title, sort_order, kind, enabled, root_fen,
-        headers_json, tree_json, node_metadata_json, node_count, revision, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        headers_json, tree_json, node_metadata_json, node_count, revision, created_at, updated_at,
+        opening_name, opening_eco, opening_edited)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET title = excluded.title, sort_order = excluded.sort_order,
         kind = excluded.kind, enabled = excluded.enabled, root_fen = excluded.root_fen,
         headers_json = excluded.headers_json, tree_json = excluded.tree_json,
         node_metadata_json = excluded.node_metadata_json, node_count = excluded.node_count,
-        revision = excluded.revision, updated_at = excluded.updated_at`,
+        revision = excluded.revision, updated_at = excluded.updated_at,
+        opening_name = CASE WHEN ? THEN excluded.opening_name ELSE opening_name END,
+        opening_eco = CASE WHEN ? THEN excluded.opening_eco ELSE opening_eco END,
+        opening_edited = CASE WHEN ? THEN excluded.opening_edited ELSE opening_edited END`,
       chapter.id,
       repertoireId,
       chapter.title,
@@ -657,7 +629,11 @@ export const chapterRepository = {
       Math.max(chapter.tree.length - 1, 0),
       chapter.revision,
       now,
-      now
+      now,
+      opening?.name || null,
+      opening?.eco ?? null,
+      opening?.edited ? 1 : 0,
+      ...Array<number>(3).fill(opening === undefined ? 0 : 1)
     );
   },
 

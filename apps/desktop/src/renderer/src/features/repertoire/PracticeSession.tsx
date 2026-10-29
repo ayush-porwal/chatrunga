@@ -7,8 +7,11 @@ import type {
   PracticeAnswer,
   PracticeCard,
   PracticeSessionSnapshot,
-  RepertoireDetail
+  RepertoireDetail,
+  RepertoireSummary
 } from "@chaturanga/shared/types/repertoire";
+import { useRepertoiresQuery } from "../../queries/repertoire";
+import { COLOR_LABELS } from "./repertoire-chapters";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { Stat, StatGroup } from "@/components/ui/stat";
@@ -26,10 +29,14 @@ import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { PracticeTabBar } from "./PracticeTabBar";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { isExtraPractice, rehearsePreset, type PracticePreset } from "./practice-setup";
+import { firstSightText } from "./practice-messages";
 import {
   practiceBoardPosition,
   practiceCardState,
   practiceWayOn,
+  previewOf,
+  sessionCounts,
+  sessionHeading,
   WAY_ON_LABELS,
   type PendingAttempt,
   type PracticeCardState,
@@ -66,11 +73,12 @@ export function PracticeSession({
 }) {
   const panelId = useId();
   const card = currentCard(session)!;
-  const { hintUci, reveal, leadUpIndex, orientation, rehearsal, otherLine, lineEnded } =
+  const { hintUci, reveal, correction, leadUpIndex, orientation, rehearsal, otherLine, lineEnded } =
     useRepertoirePracticeStore(
       useShallow((state) => ({
         hintUci: state.hintUci,
         reveal: state.reveal,
+        correction: state.correction,
         leadUpIndex: state.leadUpIndex,
         orientation: state.orientation,
         rehearsal: state.rehearsal,
@@ -82,18 +90,24 @@ export function PracticeSession({
   const advance = useAdvanceTimer();
   const commands = usePracticeSessionCommands(session, card, advance);
   const { pending, failed, busy, finish, goNext, act } = commands;
-  const color: Color = detail.color;
+  // A set's cards come from several repertoires: each is played as its own colour.
+  const color: Color = card.orientation;
   usePracticePacing({ card, rehearsing, goNext, advance });
 
   const replaying = leadUpIndex !== null;
   const cardState = practiceCardState(session, card, { reveal, rehearsal, otherLine, lineEnded });
   const board = practiceBoardPosition(card, { leadUpIndex, rehearsal, pending });
+  // A first sight shows its move until it is played.
+  const preview = previewOf(card);
   const marks = useMemo(() => {
     if (replaying) return { arrows: [], highlights: [] };
     if (reveal) return { arrows: revealArrows(reveal.ucis, reveal.preferredUci), highlights: [] };
+    if (correction) {
+      return { arrows: revealArrows(correction.ucis, correction.preferredUci), highlights: [] };
+    }
+    if (preview) return { arrows: revealArrows([preview], preview), highlights: [] };
     return hintMarks(card.hintStage, hintUci);
-  }, [replaying, reveal, card.hintStage, hintUci]);
-  const chapterTitles = new Map(detail.chapters.map((chapter) => [chapter.id, chapter.title]));
+  }, [replaying, reveal, correction, preview, card.hintStage, hintUci]);
   const rehearsedChapterId = session.scope.rehearse?.chapterId ?? card.chapterId;
   const wayOn = practiceWayOn({ rehearsing, ...cardState, rehearsal, otherLine, lineEnded });
   const takeWayOn: Record<PracticeWayOn, () => void> = {
@@ -113,14 +127,7 @@ export function PracticeSession({
       panelLabel="Practice"
       board={
         <BoardStage
-          top={
-            <SessionHeading
-              session={session}
-              card={card}
-              chapterTitle={chapterTitles.get(card.chapterId) ?? "Chapter"}
-              color={color}
-            />
-          }
+          top={<SessionHeading session={session} card={card} detail={detail} />}
           bottom={
             <p className="flex h-8 items-center text-xs text-fg-muted">
               {replaying
@@ -175,7 +182,7 @@ export function PracticeSession({
           </section>
         ) : null}
 
-        <CardFeedback card={card} pending={pending} />
+        <CardFeedback card={card} pending={pending} preview={preview} />
 
         {otherLine ? (
           <OtherLineChoice
@@ -244,38 +251,53 @@ function pressesOnKey(target: EventTarget | null): boolean {
   );
 }
 
-/** Above the board: the rehearsed line, or the card's kind and the side to play. */
+/** The repertoires' names and colours by id (a set's cards name their own). */
+function useRepertoireNames(): ReadonlyMap<string, Pick<RepertoireSummary, "name" | "color">> {
+  const list = useRepertoiresQuery({});
+  return useMemo(() => new Map(list.data?.map((item) => [item.id, item])), [list.data]);
+}
+
+/**
+ * Above the board: the rehearsed line, a weak spot ("Weak spot 3 of 12 · seen in 49 games"), or
+ * the card's kind, repertoire and chapter ("Review · Caro-Kann (Black) · Advance Variation"). A
+ * set's card names its own repertoire and chapter.
+ */
 function SessionHeading({
   session,
   card,
-  chapterTitle,
-  color
+  detail
 }: {
   session: PracticeSessionSnapshot;
   card: PracticeCard;
-  chapterTitle: string;
-  color: Color;
+  detail: RepertoireDetail;
 }) {
+  const names = useRepertoireNames();
+  const own = (card.repertoireId && names.get(card.repertoireId)) || detail;
+  const chapterTitle =
+    card.chapterTitle ??
+    detail.chapters.find((chapter) => chapter.id === card.chapterId)?.title ??
+    "Chapter";
+  const repertoire = `${own.name} (${COLOR_LABELS[own.color]})`;
+  const extra = session.scope.ungraded
+    ? "Extra practice, not scheduled · "
+    : isExtraPractice(session.scope) && session.mode !== "weak"
+      ? "Extra practice · "
+      : "";
   return (
     <p className="flex h-8 min-w-0 items-center text-sm text-fg-secondary">
-      {session.mode === "rehearse-lines" ? (
-        <span className="truncate">{rehearsalTitle(chapterTitle, session.cards, card)}</span>
-      ) : (
-        <>
-          {session.scope.ungraded
-            ? "Extra practice, not scheduled · "
-            : isExtraPractice(session.scope)
-              ? "Extra practice · "
-              : ""}
-          {card.stage === "new" ? "New decision" : "Review"} ·{" "}
-          {color === "white" ? "White" : "Black"} to play
-        </>
-      )}
+      <span className="truncate">
+        {session.mode === "rehearse-lines"
+          ? rehearsalTitle(chapterTitle, session.cards, card)
+          : `${extra}${sessionHeading(session, card, { repertoire, chapter: chapterTitle })}`}
+      </span>
     </p>
   );
 }
 
-/** The session's progress: a rehearsal's step and misses, or the card count and cards left. */
+/**
+ * The session's counters: a rehearsal's step and misses; weak spots' cards left, done and right;
+ * else due and new cards left, done, and the share right.
+ */
 function SessionStats({ session, card }: { session: PracticeSessionSnapshot; card: PracticeCard }) {
   if (session.mode === "rehearse-lines") {
     return (
@@ -286,11 +308,23 @@ function SessionStats({ session, card }: { session: PracticeSessionSnapshot; car
       </StatGroup>
     );
   }
+  const counts = sessionCounts(session.cards);
+  const right = counts.right === null ? "–" : `${counts.right}%`;
+  if (session.mode === "weak") {
+    return (
+      <StatGroup className="w-full">
+        <Stat label="Left" value={String(counts.due + counts.fresh)} />
+        <Stat label="Done" value={String(counts.done)} />
+        <Stat label="Right" value={right} />
+      </StatGroup>
+    );
+  }
   return (
     <StatGroup className="w-full">
-      <Stat label="Card" value={`${session.cards.indexOf(card) + 1} of ${session.cards.length}`} />
-      <Stat label="Correct" value={String(session.totals.correct)} />
-      <Stat label="Left" value={String(session.totals.remaining)} />
+      <Stat label="Due" value={String(counts.due)} />
+      <Stat label="New" value={String(counts.fresh)} />
+      <Stat label="Done" value={String(counts.done)} />
+      <Stat label="Right" value={right} />
     </StatGroup>
   );
 }
@@ -336,11 +370,14 @@ function SessionFooter({
  */
 function CardFeedback({
   card,
-  pending
+  pending,
+  preview
 }: {
   card: PracticeCard;
   /** The move being graded (or kept on the board): the answer names it as played. */
   pending: PendingAttempt | null;
+  /** A first sight's move, shown until it is played. */
+  preview: string | null;
 }) {
   const { hint, hintUci, message, reveal, answer, otherLine } = useRepertoirePracticeStore(
     useShallow((state) => ({
@@ -355,6 +392,7 @@ function CardFeedback({
   const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
   return (
     <div aria-live="polite" className="grid gap-2">
+      <FirstSightNotice fen={card.fen} preview={preview} />
       {message ? (
         <Notice
           tone={message.tone === "warn" ? "warn" : message.tone === "success" ? "success" : "info"}
@@ -594,9 +632,16 @@ function CardStatus({ card, retrying }: { card: PracticeCard; retrying: boolean 
       ? `${card.attemptsSoFar} attempt${card.attemptsSoFar === 1 ? "" : "s"} so far`
       : "",
     "answered-correct": card.hintStage ? "Answered with a hint (assisted)." : "Answered unaided.",
-    "answered-wrong": retrying ? "Missed — try again, or reveal the answer." : "Missed.",
+    "answered-wrong": retrying ? "Missed — play the move shown to continue." : "Missed.",
     revealed: "Revealed — counts as missed.",
     skipped: "Skipped."
   };
   return text[card.state] ? <p className="text-xs text-fg-muted">{text[card.state]}</p> : null;
+}
+
+/** First sight: the new position's move, until a move is played (its message replaces it). */
+function FirstSightNotice({ fen, preview }: { fen: string; preview: string | null }) {
+  const answered = useRepertoirePracticeStore((state) => state.message !== null);
+  if (!preview || answered) return null;
+  return <Notice tone="info">{firstSightText(fen, preview)}</Notice>;
 }

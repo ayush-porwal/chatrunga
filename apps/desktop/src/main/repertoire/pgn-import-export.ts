@@ -12,6 +12,7 @@ import {
   type PreviewImportInput
 } from "@chaturanga/shared/types/repertoire";
 import { exportRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import type { BookOpening } from "@chaturanga/shared/types/repertoire-practice";
 import { databasePath } from "../db";
 import { broadcast } from "../ipc/broadcast";
 import {
@@ -25,6 +26,8 @@ import { startImportParse, type ImportRun } from "./import-runner";
 import { runImportCommit } from "./import-writer";
 import { checkRevision, requireRepertoire, type ImportCommitChapter } from "./core";
 import { chapterRepository, transaction } from "./repository";
+import { sanitizeOpening } from "./chapter-validation";
+import { gameExtras, multiMovePositions } from "./import-preview-extras";
 import {
   IMPORT_JOB_TTL_MS,
   MAX_IMPORT_JOBS,
@@ -35,7 +38,12 @@ import {
 
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 
-type ImportJob = { games: ImportedGame[]; expiresAt: number };
+/** A previewed import: its games and the opening detected for each (by game index). */
+type ImportJob = {
+  games: ImportedGame[];
+  openings: Map<number, BookOpening | null>;
+  expiresAt: number;
+};
 /** Previewed imports waiting for a commit, oldest first. */
 const importJobs = new Map<string, ImportJob>();
 /** Imports still being parsed (in the import worker), oldest first. */
@@ -136,7 +144,12 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
   }
   const now = clock();
   pruneImportJobs(now);
-  importJobs.set(jobId, { games, expiresAt: now + IMPORT_JOB_TTL_MS });
+  const extras = new Map(games.map((game) => [game.index, gameExtras(game)]));
+  importJobs.set(jobId, {
+    games,
+    openings: new Map([...extras].map(([index, extra]) => [index, extra.opening])),
+    expiresAt: now + IMPORT_JOB_TTL_MS
+  });
   importProgress(jobId, "ready", {
     ...last,
     bytesRead: last.totalBytes ?? last.bytesRead,
@@ -155,8 +168,10 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       tree: game.invalidBranches.length ? game.tree : [],
       decisions: game.decisions,
       warnings: game.warnings,
-      invalidBranches: game.invalidBranches
-    }))
+      invalidBranches: game.invalidBranches,
+      ...extras.get(game.index)
+    })),
+    multiMovePositions: multiMovePositions(games)
   };
 }
 
@@ -194,9 +209,15 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
         `Invalid selections: game ${selection.gameIndex + 1} can't be imported (${game.rejected})`
       );
     }
+    const detected = job.openings.get(game.index) ?? null;
     return {
       title: selection.title,
       proposedTitle: game.proposedTitle,
+      // As the preview showed it: typed, cleared, or the detected one.
+      opening:
+        selection.opening !== undefined
+          ? (sanitizeOpening(selection.opening) ?? null)
+          : detected && { ...detected, edited: false },
       kind: selection.kind,
       rootFen: game.rootFen,
       headers: game.headers,

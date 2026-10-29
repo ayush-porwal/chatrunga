@@ -298,6 +298,18 @@ function modeEmptyExplanation(mode: PracticeMode): PracticeEmpty {
         detail: "You've practised every decision in this scope (paused ones are left out).",
         offerLearnNew: false
       };
+    case "practice-early":
+      return {
+        title: "Nothing to practise early",
+        detail: "No position you're learning is waiting for a later review.",
+        offerLearnNew: true
+      };
+    case "weak":
+      return {
+        title: "No weak spots to practise",
+        detail: "None of your games left this repertoire at a position you still practise.",
+        offerLearnNew: false
+      };
     case "rehearse-lines":
       return {
         title: "Nothing to rehearse from here",

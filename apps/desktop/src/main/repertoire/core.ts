@@ -16,6 +16,7 @@ import {
   type RepertoireDetail,
   type RepertoireProgress
 } from "@chaturanga/shared/types/repertoire";
+import type { ChapterOpening } from "@chaturanga/shared/types/repertoire-practice";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import {
   acceptanceFingerprint,
@@ -639,6 +640,8 @@ export type ImportCommitChapter = {
   excludeNodeIds: string[];
   /** Position keys the parse worker computed, by node id. */
   positionKeys: Partial<Record<string, string>>;
+  /** The chapter's opening (detected in the preview, or typed there). */
+  opening: ChapterOpening | null;
 };
 
 export type ImportCommitJob = {
@@ -688,7 +691,8 @@ export function commitImportJob(job: ImportCommitJob): ImportResult {
       dueCount: 0,
       headers: sanitizeHeaders(chapter.headers),
       tree,
-      nodeMeta: defaultImportNodeMeta(record.color, tree)
+      nodeMeta: defaultImportNodeMeta(record.color, tree),
+      opening: chapter.opening
     };
   });
   const plan = planReindex(

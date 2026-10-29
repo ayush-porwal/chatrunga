@@ -32,8 +32,18 @@ export function setRepertoireClock(next?: () => number): void {
   now = next ?? (() => Date.now());
 }
 
+/* Main's own listeners to repertoire changes (the explorer's health check re-checks after edits). */
+const changeListeners = new Set<(event: RepertoireChangedEvent) => void>();
+
+/** Calls `listener` after every repertoire change; returns the unsubscribe. */
+export function onRepertoireChanged(listener: (event: RepertoireChangedEvent) => void): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
 export function changed(event: RepertoireChangedEvent): void {
   broadcast("repertoires:changed", event);
+  for (const listener of changeListeners) listener(event);
 }
 
 /**
