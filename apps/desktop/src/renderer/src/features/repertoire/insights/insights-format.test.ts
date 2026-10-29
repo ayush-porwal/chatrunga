@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { START_FEN } from "@chaturanga/shared/chess/position";
-import type { InsightsUnpreparedReply } from "@chaturanga/shared/types/repertoire-insights";
+import {
+  DEFAULT_INSIGHTS_FILTERS,
+  type InsightsUnpreparedReply
+} from "@chaturanga/shared/types/repertoire-insights";
 import { prepareStudyTarget } from "./insights-actions";
 import {
   afterBookText,
+  filtersSummary,
   lineLabels,
   outcomeFilterIndex,
   outcomePill,
@@ -48,6 +52,22 @@ describe("Insights words", () => {
     expect(outcomePill({ outcome: "no-repertoire", color: "white", issue: null }).label).toBe(
       "No White repertoire"
     );
+  });
+
+  it("names only the filters that leave games out", () => {
+    expect(filtersSummary(DEFAULT_INSIGHTS_FILTERS)).toBeNull();
+    expect(
+      filtersSummary({
+        ...DEFAULT_INSIGHTS_FILTERS,
+        period: "3m",
+        timeControls: ["blitz", "rapid"],
+        ratedOnly: true,
+        accounts: ["lichess"]
+      })
+    ).toBe("Last 3 months · Blitz, Rapid · Rated only · Lichess");
+    expect(
+      filtersSummary({ ...DEFAULT_INSIGHTS_FILTERS, period: "since", since: "2026-09-01" })
+    ).toBe("Since 2026-09-01");
   });
 
   it("writes the after-book loss with its sign", () => {

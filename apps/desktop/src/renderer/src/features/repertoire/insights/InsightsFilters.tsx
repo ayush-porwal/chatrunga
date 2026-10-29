@@ -1,34 +1,32 @@
-import { useId } from "react";
+import { useId, useState } from "react";
+import { ListFilter, RotateCcw } from "lucide-react";
 import { ChipButton } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input, Select } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   RATING_MODE_LABELS,
   RATING_MODES,
   type RatingMode
 } from "@chaturanga/shared/types/ratings";
 import {
+  DEFAULT_INSIGHTS_FILTERS,
   INSIGHTS_ACCOUNTS,
   INSIGHTS_PERIODS,
-  type InsightsAccount,
   type InsightsFilters as Filters,
   type InsightsPeriod,
   type InsightsReport
 } from "@chaturanga/shared/types/repertoire-insights";
 import { isOneOf } from "@chaturanga/shared/types/guards";
-import { well } from "@/lib/ui";
 import {
   useInsightsFiltersQuery,
   useSetInsightsFiltersMutation
 } from "../../../queries/repertoire-insights";
-import { PERIOD_LABELS } from "./insights-format";
-
-const ACCOUNT_LABELS: Record<InsightsAccount, string> = {
-  lichess: "Lichess",
-  chesscom: "Chess.com",
-  imported: "Imported"
-};
+import { ActiveDot } from "../../play/recent-games-controls";
+import { ACCOUNT_LABELS, filtersSummary, PERIOD_LABELS } from "./insights-format";
 
 /** Today as the date input writes it (local). */
 function today(): string {
@@ -44,112 +42,166 @@ function toggled<T extends string>(items: readonly T[], item: T, order: readonly
 }
 
 /**
- * Insights' Filters strip (sunken): period, time controls and accounts with their game counts,
- * rated or casual. Saved at once; weak-spots practice and the Study explorer use them too.
+ * Insights' Filters (the funnel at the end of the hub card's tab bar): a dot while they leave
+ * games out, named in its label ("Filters: Last 3 months · Blitz"). It opens the Filters dialog.
  */
-export function InsightsFiltersStrip({ counts }: { counts: InsightsReport | undefined }) {
-  const periodId = useId();
+export function InsightsFiltersButton({ counts }: { counts: InsightsReport | undefined }) {
   const filters = useInsightsFiltersQuery();
+  const [open, setOpen] = useState(false);
+  const summary = filters.data ? filtersSummary(filters.data) : null;
+  return (
+    <>
+      <IconButton
+        label={summary ? `Filters: ${summary}` : "Filters"}
+        icon={
+          <>
+            <ListFilter />
+            {summary ? <ActiveDot /> : null}
+          </>
+        }
+        className="group/dot relative"
+        disabled={!filters.data}
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      />
+      {open && filters.data ? (
+        <InsightsFiltersDialog
+          value={filters.data}
+          counts={counts}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The Filters dialog: period, time controls and accounts with their game counts, rated or
+ * casual. Each change is saved at once (the report behind it follows); Reset counts every game.
+ */
+function InsightsFiltersDialog({
+  value,
+  counts,
+  onClose
+}: {
+  value: Filters;
+  counts: InsightsReport | undefined;
+  onClose: () => void;
+}) {
+  const ids = { period: useId(), since: useId() };
   const save = useSetInsightsFiltersMutation();
-  if (!filters.data) {
-    return (
-      <div className={`${well} flex flex-wrap items-center gap-3 px-4 py-3`} aria-busy="true">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-7 w-72" />
-      </div>
-    );
-  }
-  const value = filters.data;
   const update = (patch: Partial<Filters>) => save.mutate({ ...value, ...patch });
   const setPeriod = (period: InsightsPeriod) =>
     update({ period, since: period === "since" ? (value.since ?? today()) : null });
-
   return (
-    <section aria-label="Filters" className={`${well} grid gap-2 px-4 py-3`}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2">
-          <label htmlFor={periodId} className="sr-only">
-            Period
-          </label>
-          <Select
-            id={periodId}
-            className="h-8 w-auto text-xs"
-            value={value.period}
-            onChange={(event) => {
-              if (isOneOf(INSIGHTS_PERIODS, event.target.value)) setPeriod(event.target.value);
-            }}
+    <Dialog
+      size="sm"
+      title="Filters"
+      description="Saved; weak-spots practice and the Study explorer use them too."
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={filtersSummary(value) === null}
+            onClick={() => save.mutate(DEFAULT_INSIGHTS_FILTERS)}
           >
-            {INSIGHTS_PERIODS.map((period) => (
-              <option key={period} value={period}>
-                {PERIOD_LABELS[period]}
-              </option>
-            ))}
-          </Select>
-          {value.period === "since" ? (
-            <Input
-              type="date"
-              aria-label="Since"
-              className="h-8 w-auto text-xs"
-              value={value.since ?? ""}
-              max={today()}
+            <RotateCcw />
+            Reset
+          </Button>
+          <Button type="button" variant="primary" size="sm" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4">
+        <Field label="Period" htmlFor={ids.period}>
+          <div className="flex flex-wrap gap-2">
+            <Select
+              id={ids.period}
+              className="w-auto"
+              value={value.period}
               onChange={(event) => {
-                if (event.target.value) update({ since: event.target.value });
+                if (isOneOf(INSIGHTS_PERIODS, event.target.value)) setPeriod(event.target.value);
               }}
-            />
-          ) : null}
-        </div>
-        <div
-          className="flex flex-wrap items-center gap-1.5"
-          role="group"
-          aria-label="Time controls"
-        >
-          {RATING_MODES.map((mode: RatingMode) => (
-            <ChipButton
-              key={mode}
-              selected={value.timeControls.includes(mode)}
-              onClick={() =>
-                update({ timeControls: toggled(value.timeControls, mode, RATING_MODES) })
-              }
             >
-              {RATING_MODE_LABELS[mode]}
-              {counts ? (
-                <span className="tabular-nums text-fg-subtle">
-                  {counts.timeControlCounts[mode]}
-                </span>
-              ) : null}
-            </ChipButton>
-          ))}
-        </div>
-        <SegmentedControl
-          ariaLabel="Rated games"
-          size="sm"
-          value={value.ratedOnly ? "rated" : "all"}
-          onChange={(rated) => update({ ratedOnly: rated === "rated" })}
-          options={[
-            { value: "all", label: "Rated + casual" },
-            { value: "rated", label: "Rated only" }
-          ]}
-        />
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Accounts">
-          {INSIGHTS_ACCOUNTS.map((account) => (
-            <ChipButton
-              key={account}
-              selected={value.accounts.includes(account)}
-              onClick={() =>
-                update({ accounts: toggled(value.accounts, account, INSIGHTS_ACCOUNTS) })
-              }
-            >
-              {ACCOUNT_LABELS[account]}
-              {counts ? (
-                <span className="tabular-nums text-fg-subtle">{counts.accountCounts[account]}</span>
-              ) : null}
-            </ChipButton>
-          ))}
-        </div>
+              {INSIGHTS_PERIODS.map((period) => (
+                <option key={period} value={period}>
+                  {PERIOD_LABELS[period]}
+                </option>
+              ))}
+            </Select>
+            {value.period === "since" ? (
+              <Input
+                id={ids.since}
+                type="date"
+                aria-label="Since"
+                className="w-auto"
+                value={value.since ?? ""}
+                max={today()}
+                onChange={(event) => {
+                  if (event.target.value) update({ since: event.target.value });
+                }}
+              />
+            ) : null}
+          </div>
+        </Field>
+        <Field label="Time controls">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Time controls">
+            {RATING_MODES.map((mode: RatingMode) => (
+              <ChipButton
+                key={mode}
+                selected={value.timeControls.includes(mode)}
+                onClick={() =>
+                  update({ timeControls: toggled(value.timeControls, mode, RATING_MODES) })
+                }
+              >
+                {RATING_MODE_LABELS[mode]}
+                {counts ? (
+                  <span className="tabular-nums text-fg-subtle">
+                    {counts.timeControlCounts[mode]}
+                  </span>
+                ) : null}
+              </ChipButton>
+            ))}
+          </div>
+        </Field>
+        <Field label="Games">
+          <SegmentedControl
+            ariaLabel="Rated games"
+            size="sm"
+            value={value.ratedOnly ? "rated" : "all"}
+            onChange={(rated) => update({ ratedOnly: rated === "rated" })}
+            options={[
+              { value: "all", label: "Rated + casual" },
+              { value: "rated", label: "Rated only" }
+            ]}
+          />
+        </Field>
+        <Field label="Accounts">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Accounts">
+            {INSIGHTS_ACCOUNTS.map((account) => (
+              <ChipButton
+                key={account}
+                selected={value.accounts.includes(account)}
+                onClick={() =>
+                  update({ accounts: toggled(value.accounts, account, INSIGHTS_ACCOUNTS) })
+                }
+              >
+                {ACCOUNT_LABELS[account]}
+                {counts ? (
+                  <span className="tabular-nums text-fg-subtle">
+                    {counts.accountCounts[account]}
+                  </span>
+                ) : null}
+              </ChipButton>
+            ))}
+          </div>
+        </Field>
       </div>
-      <p className="text-2xs text-fg-subtle">
-        Saved; also used by weak-spots practice and the Study explorer.
-      </p>
-    </section>
+    </Dialog>
   );
 }

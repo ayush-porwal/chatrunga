@@ -129,7 +129,7 @@ export function InsightsReportCard({
     );
   }
   return (
-    <section aria-labelledby={TITLE_ID} className="border-t border-line-subtle">
+    <section aria-labelledby={TITLE_ID}>
       <CardTitleBar
         id={TITLE_ID}
         title="Report"

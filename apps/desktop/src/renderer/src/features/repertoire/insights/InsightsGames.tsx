@@ -16,15 +16,14 @@ import {
 import { useInsightsGamesQuery } from "../../../queries/repertoire-insights";
 import { CardTitleBar } from "../../play/card-title";
 import type { InsightsReviewTarget } from "./insights-actions";
-import { OUTCOME_FILTERS, outcomeFilterIndex, outcomePill } from "./insights-format";
+import {
+  ACCOUNT_LABELS,
+  OUTCOME_FILTERS,
+  outcomeFilterIndex,
+  outcomePill
+} from "./insights-format";
 
 const TITLE_ID = "insights-games-title";
-
-const ACCOUNT_LABELS: Record<InsightsGameRow["account"], string> = {
-  lichess: "Lichess",
-  chesscom: "Chess.com",
-  imported: "Imported"
-};
 
 const RESULT_PILL: Record<
   NonNullable<InsightsGameRow["result"]>,

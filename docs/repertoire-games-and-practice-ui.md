@@ -24,7 +24,9 @@ Game review), with the shown tab's actions at its right end:
   - Repertoires: search, an `Archived` ghost toggle (only when some are archived, or while it is on),
     `+ New ▾` (Blank repertoire / Import PGN / Import book (PDF)…). No cog: backups live in Settings.
   - Practice: `How it works`, then `Practice settings` (the cog, last).
-  - Insights: none (its filters are a strip in the tab).
+  - Insights: `Filters` (a funnel with a dot while they leave games out; its label names them),
+    opening the Filters dialog: Period, Time controls and Accounts with counts, Rated + casual /
+    Rated only, Reset and Done. Changes save at once.
 - The tab is remembered in settings, so the sidebar's Repertoire and Back return to it, with its scroll.
 - Practice and Insights content sits in the same card as sections under hairlines (no card in a card).
 - Study and sessions stay full board routes with `WorkspaceTitlebar`. A session started from a set
@@ -187,11 +189,13 @@ Progress
 
 ### 2f. Insights tab
 
-Inside the hub card: the filters strip, then three sections under hairlines (no cards, no nested tabs):
+Inside the hub card: three sections under hairlines (no cards, no nested tabs). The filters are
+in a dialog behind the tab bar's funnel (§1), not on the page:
 
-1. **Filters** strip (sunken): period `Select` (All time · 3 months · 12 months · Since…), time
-   controls (`OverflowMenu` multi, with counts), rated/casual `SegmentedControl`, accounts. Line:
-   "Saved; also used by weak-spots practice and the Study explorer."
+1. **Filters** dialog (`Dialog sm`): Period `Select` (All time · Last 3 months · … · Since… with a
+   date), Time controls and Accounts as chips with game counts, Games `SegmentedControl` (Rated +
+   casual / Rated only). Description "Saved; weak-spots practice and the Study explorer use them
+   too." Footer: Reset (counts every game; disabled when nothing is left out), Done.
 2. **Report** (`CardTitleBar`, count = games; action "Practice weak spots" primary xs):
    - 4-segment stacked bar + legend "Forgot a move 71 · Unprepared reply 231 · Stayed in book 0 · Other
      openings 1,399"; segment click sets the Games outcome filter.

@@ -11,10 +11,10 @@ import type {
 } from "@chaturanga/shared/types/repertoire-health";
 import {
   INSIGHTS_ACCOUNTS,
-  type InsightsAccount,
   type InsightsFilters
 } from "@chaturanga/shared/types/repertoire-insights";
 import { RATING_MODES, RATING_MODE_LABELS } from "@chaturanga/shared/types/ratings";
+import { ACCOUNT_LABELS } from "../insights/insights-format";
 
 const PERIODS: Record<Exclude<InsightsFilters["period"], "since">, string> = {
   all: "all time",
@@ -22,12 +22,6 @@ const PERIODS: Record<Exclude<InsightsFilters["period"], "since">, string> = {
   "6m": "last 6 months",
   "1y": "last 12 months",
   "2y": "last 2 years"
-};
-
-const ACCOUNT_LABELS: Record<InsightsAccount, string> = {
-  lichess: "Lichess",
-  chesscom: "Chess.com",
-  imported: "Imported"
 };
 
 /** "Filters: last 12 months · all time controls (set in Insights)". */

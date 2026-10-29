@@ -92,6 +92,21 @@ test("Insights reports a move forgotten in a real game and opens it in Game revi
   await expect(forgot).toContainText("You played 2.Bc4 (1)");
   await expect(forgot).toContainText("100%");
 
+  // The filters live in a dialog behind the tab bar's funnel; the funnel names what they leave out.
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const filters = page.getByRole("dialog", { name: "Filters" });
+  await filters
+    .getByRole("group", { name: "Time controls" })
+    .getByRole("button", { name: /Bullet/ })
+    .click();
+  await filters.getByRole("button", { name: "Done" }).click();
+  const narrowed = page.getByRole("button", { name: /^Filters: .*Blitz/ });
+  await expect(narrowed).toBeVisible();
+  await narrowed.click();
+  await filters.getByRole("button", { name: "Reset" }).click();
+  await filters.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+
   // Its games link filters the Games card to that position.
   await forgot.getByRole("button", { name: "1 game", exact: true }).click();
   const games = page.getByRole("region", { name: "Games" });

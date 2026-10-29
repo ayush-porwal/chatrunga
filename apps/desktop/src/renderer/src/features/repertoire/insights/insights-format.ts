@@ -4,13 +4,17 @@
  */
 import { rootPly } from "@chaturanga/shared/chess/pgn";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type {
-  InsightsAfterBook,
-  InsightsGameRow,
-  InsightsMove,
-  InsightsOutcome,
-  InsightsPeriod,
-  InsightsScore
+import { RATING_MODES, RATING_MODE_LABELS } from "@chaturanga/shared/types/ratings";
+import {
+  INSIGHTS_ACCOUNTS,
+  type InsightsAccount,
+  type InsightsAfterBook,
+  type InsightsFilters,
+  type InsightsGameRow,
+  type InsightsMove,
+  type InsightsOutcome,
+  type InsightsPeriod,
+  type InsightsScore
 } from "@chaturanga/shared/types/repertoire-insights";
 
 const COLOR_NAME: Record<Color, string> = { white: "White", black: "Black" };
@@ -141,6 +145,32 @@ export const PERIOD_LABELS: Record<InsightsPeriod, string> = {
   "2y": "Last 2 years",
   since: "Since…"
 };
+
+export const ACCOUNT_LABELS: Record<InsightsAccount, string> = {
+  lichess: "Lichess",
+  chesscom: "Chess.com",
+  imported: "Imported"
+};
+
+/**
+ * What the filters leave out, as the Filters button names it ("Last 3 months · Blitz, Rapid ·
+ * Rated only"), or null when they count every game.
+ */
+export function filtersSummary(filters: InsightsFilters): string | null {
+  const parts: string[] = [];
+  if (filters.period === "since") parts.push(`Since ${filters.since ?? "a date"}`);
+  else if (filters.period !== "all") parts.push(PERIOD_LABELS[filters.period]);
+  if (filters.timeControls.length < RATING_MODES.length) {
+    const modes = filters.timeControls.map((mode) => RATING_MODE_LABELS[mode]);
+    parts.push(modes.join(", ") || "No time controls");
+  }
+  if (filters.ratedOnly) parts.push("Rated only");
+  if (filters.accounts.length < INSIGHTS_ACCOUNTS.length) {
+    const accounts = filters.accounts.map((account) => ACCOUNT_LABELS[account]);
+    parts.push(accounts.join(", ") || "No accounts");
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
 
 /** The games list's outcome choices (a bar segment may pick two at once). */
 export const OUTCOME_FILTERS: readonly { label: string; outcomes: InsightsOutcome[] | null }[] = [
