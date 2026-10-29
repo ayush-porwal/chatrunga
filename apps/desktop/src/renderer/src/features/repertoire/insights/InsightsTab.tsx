@@ -34,9 +34,9 @@ export type InsightsTabProps = {
 };
 
 /**
- * Repertoire → Insights (docs/repertoire-games-and-practice.md §5; UI §2f): one scrolling page of
- * four cards — the saved filters, the report, the repertoire health check, and the games list. The
- * report's rows and bar segments filter the games list and scroll to it.
+ * Repertoire → Insights (docs/repertoire-games-and-practice.md §5; UI §2f): inside the hub card, the
+ * saved filters, then three sections under hairlines — the report, the repertoire health check, and
+ * the games list. The report's rows and bar segments filter the games list and scroll to it.
  */
 export function InsightsTab({
   onStudy,
@@ -95,8 +95,10 @@ export function InsightsTab({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <InsightsFiltersStrip counts={report.data} />
+    <div className="flex flex-col">
+      <div className="p-4">
+        <InsightsFiltersStrip counts={report.data} />
+      </div>
       <InsightsReportCard
         report={report}
         status={status.data}

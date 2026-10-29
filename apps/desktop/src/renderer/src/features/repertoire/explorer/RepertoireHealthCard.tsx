@@ -26,7 +26,7 @@ export function RepertoireHealthCard({ onOpen }: { onOpen: (repertoireId: string
   return (
     <section
       aria-labelledby="insights-health-title"
-      className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-surface"
+      className="flex min-w-0 flex-col border-t border-line-subtle"
     >
       <CardTitleBar
         id="insights-health-title"

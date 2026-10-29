@@ -572,7 +572,15 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
   // 17: games compared with the repertoires, game misses, and decisions' accepted_at (Insights).
   migrateRepertoireInsights,
   // 18: the games' position index and the repertoire health check (Study's explorer).
-  migrateRepertoireExplorer
+  migrateRepertoireExplorer,
+  // 19: a book's repertoire is marked by its books row; drop the `book` tag older imports gave it.
+  (database) => {
+    database.exec(`UPDATE repertoires
+      SET tags_json = (SELECT json_group_array(value) FROM json_each(repertoires.tags_json)
+        WHERE value <> 'book')
+      WHERE id IN (SELECT repertoire_id FROM books WHERE repertoire_id IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM json_each(repertoires.tags_json) WHERE value = 'book')`);
+  }
 ];
 
 /** A stored game's fingerprint (null when its tree can't be read; the next save sets it). */

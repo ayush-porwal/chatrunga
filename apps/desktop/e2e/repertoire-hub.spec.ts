@@ -476,9 +476,13 @@ test("groups repertoires by colour with what is learned, and lists chapters by o
   });
   await openHub(page);
   const list = page.getByRole("list", { name: "Repertoires" });
-  // Black has one repertoire; White none, and says what to do.
+  // Black has one repertoire; White none, so it has no group.
   await expect(list).toContainText("Black · 1");
-  await expect(list).toContainText("No White repertoire yet.");
+  await expect(list).not.toContainText("White ·");
+  // The tabs sit in the card, not the window's title bar; Repertoires has no settings cog.
+  const hub = page.getByRole("region", { name: "Repertoire" });
+  await expect(hub.getByRole("tablist", { name: "Repertoire" })).toBeVisible();
+  await expect(hub.getByRole("button", { name: "Repertoire settings" })).toHaveCount(0);
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("progressbar", { name: "0 of 4 learned" })).toBeVisible();
 
@@ -495,6 +499,8 @@ test("groups repertoires by colour with what is learned, and lists chapters by o
   await page.getByRole("button", { name: /^Back \(/ }).click();
   await page.getByRole("tab", { name: "Practice", exact: true }).click();
   await expect(page.getByRole("listitem", { name: "Everything" })).toBeVisible();
+  // Practice's own tools sit at the end of the card's tab bar, its settings cog last.
+  await expect(hub.getByRole("button", { name: "Practice settings" })).toBeVisible();
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Practice", exact: true })).toHaveAttribute(
     "aria-selected",

@@ -46,5 +46,6 @@ describe("hub groups", () => {
     expect(openingVariation("Caro-Kann Defense: Advance Variation")).toBe("Advance Variation");
     expect(openingVariation("London System")).toBe("");
     expect(learnedText(4, 118)).toBe("4 of 118 learned");
+    expect(learnedText(1200, 7496)).toBe("1,200 of 7,496 learned");
   });
 });

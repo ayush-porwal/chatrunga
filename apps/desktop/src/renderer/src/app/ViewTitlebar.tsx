@@ -1,4 +1,3 @@
-import { lazy, Suspense } from "react";
 import { hasDesktopApi } from "@/lib/environment";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
@@ -12,16 +11,10 @@ import type { AppView, RepertoireScreen } from "./AppPages";
 import { GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import type { AppCommands } from "./useAppCommands";
 
-// Repertoire's tabs load with its page (lazy too), out of the first screen's code.
-const RepertoireHubTitlebar = lazy(() =>
-  import("../features/repertoire/RepertoireHubTitlebar").then((module) => ({
-    default: module.RepertoireHubTitlebar
-  }))
-);
-
 const pageTitles: Partial<Record<AppView, string>> = {
   settings: "Settings",
   play: "Play",
+  "repertoire-hub": "Repertoire",
   puzzles: "Puzzles",
   databases: "Databases",
   broadcasts: "Broadcasts"
@@ -70,7 +63,6 @@ export function ViewTitlebar({
     | "backToInsights"
     | "showGame"
     | "broadcasts"
-    | "openSettings"
   >;
 }) {
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
@@ -92,17 +84,6 @@ export function ViewTitlebar({
         repertoireId={repertoire.repertoireId}
         onPlayFromHere={hasDesktopApi() ? on.playFromStudy : undefined}
       />
-    );
-  }
-  if (view === "repertoire-hub") {
-    // The live game's button goes among the tab's actions, before the cog (always last).
-    return (
-      <Suspense fallback={<PageTitle>Repertoire</PageTitle>}>
-        <RepertoireHubTitlebar
-          onOpenSettings={on.openSettings}
-          leading={onlineGameLive ? <LiveGameButton onClick={on.showGame} /> : null}
-        />
-      </Suspense>
     );
   }
   if (view === "repertoire-practice" && repertoire) {

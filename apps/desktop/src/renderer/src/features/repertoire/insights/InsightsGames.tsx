@@ -6,7 +6,6 @@ import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
-import { card } from "@/lib/ui";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { RATING_MODE_LABELS } from "@chaturanga/shared/types/ratings";
 import {
@@ -40,7 +39,7 @@ const columns =
   "grid grid-cols-[5.5rem_5rem_1rem_minmax(0,1.2fr)_3.5rem_5.5rem_minmax(0,1.2fr)_minmax(0,1fr)_4.5rem] items-center gap-x-3 px-4";
 
 /**
- * Insights' Games card (§5.3): the compared games, newest first, 50 a page, under the saved filters
+ * Insights' Games section (§5.3): the compared games, newest first, 50 a page, under the saved filters
  * and its own (outcome, up to move, and a report row's position). A row opens Game review at the
  * move the outcome is about.
  */
@@ -97,7 +96,7 @@ export const InsightsGamesCard = forwardRef<
 
   const pages = page ? Math.ceil(page.total / INSIGHTS_GAMES_PAGE_SIZE) : 0;
   return (
-    <section ref={ref} aria-labelledby={TITLE_ID} className={card}>
+    <section ref={ref} aria-labelledby={TITLE_ID} className="border-t border-line-subtle">
       <CardTitleBar
         id={TITLE_ID}
         title="Games"

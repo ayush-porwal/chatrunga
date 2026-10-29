@@ -1,20 +1,21 @@
-import { useState } from "react";
-import { BookOpen, GraduationCap, Plus, RotateCcw, Zap } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
+import { BookOpen, CircleHelp, GraduationCap, Plus, RotateCcw, Settings, Zap } from "lucide-react";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { MasteryCounts, PracticeOverview } from "@chaturanga/shared/types/repertoire-practice";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { card } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { usePracticeOverviewQuery } from "../../../queries/repertoire-practice";
-import { body, cardShell, footer, titleBar } from "../../database/DatabaseCard";
+import { body, footer, titleBar } from "../../database/DatabaseCard";
 import { CardTitleBar } from "../../play/card-title";
 import { BoardThumbnail } from "../../settings/board-thumbnail";
 import { learnedText } from "../hub-groups";
+import { HubTabActions } from "../hub-tab-actions";
 import { WeakSpotsBanner } from "../insights/WeakSpotsBanner";
 import type { WeakSpotsTarget } from "../insights/insights-actions";
 import type { PracticePreset } from "../practice-setup";
@@ -29,10 +30,23 @@ import {
 
 const PROGRESS_ID = "practice-progress-title";
 
+const PracticeSettingsDialog = lazy(() =>
+  import("./PracticeSettingsDialog").then((module) => ({
+    default: module.PracticeSettingsDialog
+  }))
+);
+const HowItWorksDialog = lazy(() =>
+  import("./HowItWorksDialog").then((module) => ({ default: module.HowItWorksDialog }))
+);
+
+/** A set's tile: sunken, inside the hub card (no card within the card). */
+const tile = "flex min-w-0 flex-col rounded-lg bg-surface-sunken leading-[1.43]";
+
 /**
  * Repertoire → Practice (docs/repertoire-games-and-practice.md §4): the weak spots from your games,
- * a card per set (Everything, each colour, each repertoire) with Review / Practice early and Learn
- * new, then Progress: a mastery bar per colour and each repertoire's perfect lines.
+ * a tile per set (Everything, each colour, each repertoire) with Review / Practice early and Learn
+ * new, then Progress: a mastery bar per colour and each repertoire's perfect lines. How it works and
+ * Practice settings (the cog, last) sit at the end of the hub card's tab bar.
  */
 export function PracticeTab({
   onPracticePreset,
@@ -43,31 +57,77 @@ export function PracticeTab({
   onPractiseWeakSpots: (target: WeakSpotsTarget, repertoireIds: string[]) => void;
   onSeeReport: () => void;
 }) {
+  return (
+    <>
+      <PracticeTools />
+      <PracticeContent
+        onPracticePreset={onPracticePreset}
+        onPractiseWeakSpots={onPractiseWeakSpots}
+        onSeeReport={onSeeReport}
+      />
+    </>
+  );
+}
+
+/** How it works, then Practice settings (the cog, last), with their dialogs. */
+function PracticeTools() {
+  const [dialog, setDialog] = useState<"settings" | "help" | null>(null);
+  const close = () => setDialog(null);
+  return (
+    <>
+      <HubTabActions>
+        <IconButton label="How it works" icon={<CircleHelp />} onClick={() => setDialog("help")} />
+        <IconButton
+          label="Practice settings"
+          icon={<Settings />}
+          onClick={() => setDialog("settings")}
+        />
+      </HubTabActions>
+      <Suspense fallback={null}>
+        {dialog === "settings" ? <PracticeSettingsDialog onClose={close} /> : null}
+        {dialog === "help" ? <HowItWorksDialog onClose={close} /> : null}
+      </Suspense>
+    </>
+  );
+}
+
+function PracticeContent({
+  onPracticePreset,
+  onPractiseWeakSpots,
+  onSeeReport
+}: Parameters<typeof PracticeTab>[0]) {
   const overview = usePracticeOverviewQuery();
   // "Next review in 3 days" is relative to when the tab opened (render stays pure).
   const [now] = useState(() => Date.now());
   if (overview.isPending) return <CardsLoading />;
   if (overview.isError) {
     return (
-      <Notice
-        tone="danger"
-        title="Couldn't load your practice"
-        action={
-          <Button type="button" variant="outline" size="xs" onClick={() => void overview.refetch()}>
-            <RotateCcw />
-            Try again
-          </Button>
-        }
-      >
-        {ipcErrorMessage(overview.error)}
-      </Notice>
+      <div className="p-4">
+        <Notice
+          tone="danger"
+          title="Couldn't load your practice"
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void overview.refetch()}
+            >
+              <RotateCcw />
+              Try again
+            </Button>
+          }
+        >
+          {ipcErrorMessage(overview.error)}
+        </Notice>
+      </div>
     );
   }
   const sets = practiceSets(overview.data);
   if (!sets.length) {
     return (
       <EmptyState
-        className="m-auto"
+        className="m-auto py-16"
         icon={<GraduationCap />}
         title="Nothing to practise yet"
         description="Create a repertoire or import a PGN on the Repertoires tab; its moves are practised here."
@@ -79,24 +139,26 @@ export function PracticeTab({
     onPracticePreset(set.repertoireIds[0], setPreset(set, action));
   return (
     <>
-      <WeakSpotsBanner
-        onPractise={() => onPractiseWeakSpots(null, ids)}
-        onSeeReport={onSeeReport}
-      />
-      <ul
-        aria-label="Practice sets"
-        className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4"
-      >
-        {sets.map((set) => (
-          <SetCard
-            key={set.key}
-            set={set}
-            overview={overview.data}
-            now={now}
-            onStart={(action) => start(set, action)}
-          />
-        ))}
-      </ul>
+      <div className="grid gap-4 p-4">
+        <WeakSpotsBanner
+          onPractise={() => onPractiseWeakSpots(null, ids)}
+          onSeeReport={onSeeReport}
+        />
+        <ul
+          aria-label="Practice sets"
+          className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4"
+        >
+          {sets.map((set) => (
+            <SetCard
+              key={set.key}
+              set={set}
+              overview={overview.data}
+              now={now}
+              onStart={(action) => start(set, action)}
+            />
+          ))}
+        </ul>
+      </div>
       <PracticeProgress overview={overview.data} />
     </>
   );
@@ -107,10 +169,10 @@ function CardsLoading() {
     <div
       aria-busy="true"
       aria-label="Loading practice"
-      className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4"
+      className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4 p-4"
     >
       {[0, 1, 2].map((index) => (
-        <div key={index} className={cn(cardShell, "h-56 p-4")}>
+        <div key={index} className={cn(tile, "h-56 p-4")}>
           <Skeleton className="h-3 w-32" />
         </div>
       ))}
@@ -132,7 +194,7 @@ function SetCard({
 }) {
   const actions = setActions(set, overview, now);
   return (
-    <li className={cardShell} aria-label={set.title}>
+    <li className={tile} aria-label={set.title}>
       <div className={titleBar}>
         <h2 className="truncate text-sm font-medium text-fg">{set.title}</h2>
       </div>
@@ -188,7 +250,7 @@ function PracticeProgress({ overview }: { overview: PracticeOverview }) {
     .map((color) => ({ color, mastery: colorMastery(overview, color) }))
     .filter((item) => item.mastery !== null);
   return (
-    <section aria-labelledby={PROGRESS_ID} className={card}>
+    <section aria-labelledby={PROGRESS_ID} className="border-t border-line-subtle">
       <CardTitleBar id={PROGRESS_ID} title="Progress" />
       <div className="grid gap-3 p-4">
         <dl className="grid gap-2">

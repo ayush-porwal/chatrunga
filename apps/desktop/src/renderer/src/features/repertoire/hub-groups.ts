@@ -45,7 +45,7 @@ export function openingVariation(name: string): string {
   return colon < 0 ? "" : name.slice(colon + 1).trim();
 }
 
-/** "4 of 118 learned". */
+/** "4 of 7,496 learned". */
 export function learnedText(learned: number, total: number): string {
-  return `${learned} of ${total} learned`;
+  return `${learned.toLocaleString()} of ${total.toLocaleString()} learned`;
 }

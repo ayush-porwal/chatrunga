@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
-import { card } from "@/lib/ui";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cn } from "@/lib/utils";
@@ -64,7 +63,7 @@ const BAR_SEGMENTS: readonly {
 ];
 
 /**
- * Insights' Report card (§5.2): the games by what happened, the moves forgotten, the replies not
+ * Insights' Report section (§5.2): the games by what happened, the moves forgotten, the replies not
  * prepared, the openings outside the repertoire, and the score by line.
  */
 export function InsightsReportCard({
@@ -130,7 +129,7 @@ export function InsightsReportCard({
     );
   }
   return (
-    <section aria-labelledby={TITLE_ID} className={card}>
+    <section aria-labelledby={TITLE_ID} className="border-t border-line-subtle">
       <CardTitleBar
         id={TITLE_ID}
         title="Report"

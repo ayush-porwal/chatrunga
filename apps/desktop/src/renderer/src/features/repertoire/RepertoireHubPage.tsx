@@ -24,22 +24,24 @@ import {
   Upload
 } from "lucide-react";
 import type { BookSummary } from "@chaturanga/shared/types/books";
-import type { RepertoireColor, RepertoireSummary } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import { tabPanelProps } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { card, pageShell } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
   useArchiveRepertoireMutation,
   useDuplicateRepertoireMutation,
   useExportRepertoireMutation,
-  useRemoveRepertoireMutation
+  useRemoveRepertoireMutation,
+  useRepertoireDueSummaryQuery,
+  useRepertoiresQuery
 } from "../../queries/repertoire";
 import { useBooksQuery } from "../../queries/books";
 import { usePracticeOverviewQuery } from "../../queries/repertoire-practice";
@@ -50,18 +52,18 @@ import { importingBooks } from "../books/book-model";
 import { BookImportDialog } from "../books/BookImportDialog";
 import { BookImportRows } from "../books/BookImportRows";
 import { useOpenSettings } from "../settings/settings-link";
-import { CardTitleBar } from "../play/card-title";
+import { WorkspaceTabBar } from "../board/WorkspaceTabBar";
 import { RecentGamesSearch } from "../play/recent-games-controls";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
 import { EditRepertoireDialog } from "./EditRepertoireDialog";
 import { HubNotice, type HubMessage } from "./HubNotice";
 import { ImportPgnDialog } from "./ImportPgnDialog";
 import { createScrollRestore } from "./hub-scroll";
+import { HubActionsSlot, HubTabActions } from "./hub-tab-actions";
 import { REPERTOIRE_HUB_PANEL_ID, useRepertoireHubTab } from "./hub-tabs";
 import type { InsightsReviewTarget, WeakSpotsTarget } from "./insights/insights-actions";
 import { weakSpotsPreset, type PracticePreset } from "./practice-setup";
 import {
-  COLOR_LABELS,
   plural,
   sortedChapters,
   type ResumePracticeTarget,
@@ -78,16 +80,19 @@ const InsightsTab = lazy(() =>
 );
 import { useHubFilters, useHubList, useHubResume, useStudyFromHub } from "./useRepertoireHub";
 
-const TITLE_ID = "repertoire-hub-title";
+/** The Repertoires tab's id: it names the table. */
+const REPERTOIRES_TAB_ID = `${REPERTOIRE_HUB_PANEL_ID}-tab-repertoires`;
+const ACTIVE_LIST = {};
+const ARCHIVED_LIST = { archived: true };
 
 /**
- * The repertoire hub (§5.1), laid out as Play: one card of the repertoires, as a table. With no
- * repertoire at all (and no book being imported) the page shows its empty state alone, no card
- * (hub-view.ts). A row
- * opens Study at the chapter last studied; Practice starts a session (due positions first, then
- * new ones) or resumes the unfinished one; the ⋯ menu edits, imports and exports, duplicates,
- * archives and deletes. The title bar searches, shows the archived ones instead, and starts a new
- * repertoire (blank, or from a PGN). Backups live in Settings.
+ * The Repertoires tab (§5.1): the repertoires as a table, laid out as Play's Recent games. With no
+ * repertoire at all (and no book being imported) the tab shows its empty state alone, no table
+ * (hub-view.ts). A row opens Study at the chapter last studied; Practice starts a session (due
+ * positions first, then new ones) or resumes the unfinished one; the ⋯ menu edits, imports and
+ * exports, duplicates, archives and deletes. The tab bar's tools search, show the archived ones
+ * instead (only when there are some), and start a new repertoire (blank, from a PGN or a book).
+ * Backups live in Settings.
  */
 function RepertoiresTab({
   onStudy,
@@ -114,6 +119,7 @@ function RepertoiresTab({
   const [bookDialog, setBookDialog] = useState<{ book: BookSummary | null } | null>(null);
   const books = useHubBooks();
   const { list, view } = useHubList(filters, desktop, books.length);
+  const archivedList = useRepertoiresQuery(ARCHIVED_LIST, { enabled: desktop });
   const openSettings = useOpenSettings();
   const overview = usePracticeOverviewQuery({ enabled: desktop });
   const stats = useMemo(
@@ -257,47 +263,47 @@ function RepertoiresTab({
 
   return (
     <>
-      <div className="flex min-h-full flex-col gap-4">
+      {view === "none" ? null : (
+        <HubTabActions>
+          <HubTitleActions
+            filters={filters}
+            newItems={newItems}
+            archivedToggle={filters.archived || Boolean(archivedList.data?.length)}
+          />
+        </HubTabActions>
+      )}
+      <div className="grid gap-2 p-4 empty:hidden">
         {notice ? <HubNotice notice={notice} onChange={setNotice} /> : null}
         <BookReadyNotices onOpen={(repertoireId) => void study(repertoireId)} />
-        {view === "card" ? (
-          <section aria-labelledby={TITLE_ID} className={card}>
-            <CardTitleBar
-              id={TITLE_ID}
-              title={filters.archived ? "Archived repertoires" : "Repertoires"}
-              count={list.isSuccess && !filters.query.trim() ? list.data.length : null}
-              actions={<HubTitleActions filters={filters} newItems={newItems} />}
-            />
-            {filters.archived ? null : (
-              <BookImportRows books={books} onContinue={(book) => setBookDialog({ book })} />
-            )}
-            <RepertoireTable
-              list={list}
-              now={now}
-              labelledBy={TITLE_ID}
-              resume={resume}
-              stats={stats}
-              actionsFor={actionsFor}
-              onStudy={studyRow}
-              onPractice={practiceRow}
-              chapters={chapterActions}
-              emptyColor={
-                filters.unfiltered
-                  ? (color) => <EmptyColorRow color={color} newItems={newItems} />
-                  : null
-              }
-              empty={
-                // Book rows above it: the books being imported are what's listed for now.
-                books.length && !filters.archived ? null : (
-                  <NoMatches archived={filters.archived} query={filters.query.trim()} />
-                )
-              }
-            />
-          </section>
-        ) : view === "none" ? (
-          <HubEmptyState desktop={desktop} newItems={newItems} />
-        ) : null}
       </div>
+      {view === "card" ? (
+        <>
+          {filters.archived ? null : (
+            <BookImportRows books={books} onContinue={(book) => setBookDialog({ book })} />
+          )}
+          <RepertoireTable
+            list={list}
+            now={now}
+            labelledBy={REPERTOIRES_TAB_ID}
+            resume={resume}
+            stats={stats}
+            actionsFor={actionsFor}
+            onStudy={studyRow}
+            onPractice={practiceRow}
+            chapters={chapterActions}
+            empty={
+              // Book rows above it: the books being imported are what's listed for now.
+              books.length && !filters.archived ? null : (
+                <NoMatches archived={filters.archived} query={filters.query.trim()} />
+              )
+            }
+          />
+        </>
+      ) : view === "none" ? (
+        <div className="grid py-16">
+          <HubEmptyState desktop={desktop} newItems={newItems} />
+        </div>
+      ) : null}
 
       <HubCreateImport
         creating={creating}
@@ -355,13 +361,18 @@ type HubPageProps = {
 const tabScroll = new Map<RepertoireHubTab, number>();
 
 /**
- * Repertoire (docs/repertoire-games-and-practice.md §1): the titlebar's tabs switch this page
- * between Repertoires (the library), Practice (sets and progress) and Insights (your games).
- * Each tab's scroll position is kept for when the hub comes back.
+ * Repertoire (docs/repertoire-games-and-practice.md §1): one card whose title bar holds the tabs
+ * Repertoires (the library, with how many), Practice (sets and progress, with the due count) and
+ * Insights (your games), and at its right end the shown tab's own actions. The window's title bar
+ * stays the page's title. Each tab's scroll position is kept for when the hub comes back.
  */
 export function RepertoireHubPage(props: HubPageProps) {
   const { onStudy, onPracticePreset, onReviewGame } = props;
   const [tab, setTab] = useRepertoireHubTab();
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  const desktop = Boolean(window.chaturanga?.repertoires);
+  const active = useRepertoiresQuery(ACTIVE_LIST, { enabled: desktop }).data?.length ?? 0;
+  const due = useRepertoireDueSummaryQuery().data?.dueCount ?? 0;
   const scroller = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = scroller.current;
@@ -389,28 +400,43 @@ export function RepertoireHubPage(props: HubPageProps) {
   });
   return (
     <div ref={scroller} className={pageShell}>
-      <div
-        {...tabPanelProps(REPERTOIRE_HUB_PANEL_ID, tab)}
-        className="flex min-h-full flex-col gap-4 p-6"
-      >
+      <div className="p-6">
         <h1 className="sr-only">Repertoire</h1>
-        <Suspense fallback={<HubTabLoading />}>
-          {tab === "repertoires" ? (
-            <RepertoiresTab {...props} />
-          ) : tab === "practice" ? (
-            <PracticeTab
-              onPracticePreset={onPracticePreset}
-              onPractiseWeakSpots={practiseWeakSpots}
-              onSeeReport={() => setTab("insights")}
-            />
-          ) : (
-            <InsightsTabWithSets
-              onStudy={onStudy}
-              onReviewGame={onReviewGame}
-              onPractiseWeakSpots={practiseWeakSpots}
-            />
-          )}
-        </Suspense>
+        <section aria-label="Repertoire" className={cn(card, "flex flex-col")}>
+          <WorkspaceTabBar<RepertoireHubTab>
+            panelId={REPERTOIRE_HUB_PANEL_ID}
+            ariaLabel="Repertoire"
+            tabs={[
+              { value: "repertoires", label: "Repertoires", count: active },
+              { value: "practice", label: "Practice", count: due },
+              { value: "insights", label: "Insights" }
+            ]}
+            value={tab}
+            onChange={setTab}
+            actions={<span ref={setActionsSlot} className="contents" />}
+          />
+          <div {...tabPanelProps(REPERTOIRE_HUB_PANEL_ID, tab)} className="flex min-w-0 flex-col">
+            <HubActionsSlot.Provider value={actionsSlot}>
+              <Suspense fallback={<HubTabLoading />}>
+                {tab === "repertoires" ? (
+                  <RepertoiresTab {...props} />
+                ) : tab === "practice" ? (
+                  <PracticeTab
+                    onPracticePreset={onPracticePreset}
+                    onPractiseWeakSpots={practiseWeakSpots}
+                    onSeeReport={() => setTab("insights")}
+                  />
+                ) : (
+                  <InsightsTabWithSets
+                    onStudy={onStudy}
+                    onReviewGame={onReviewGame}
+                    onPractiseWeakSpots={practiseWeakSpots}
+                  />
+                )}
+              </Suspense>
+            </HubActionsSlot.Provider>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -441,28 +467,9 @@ function InsightsTabWithSets({
 
 function HubTabLoading() {
   return (
-    <div className="grid flex-1 place-items-center" role="status" aria-label="Loading">
+    <div className="grid place-items-center py-16" role="status" aria-label="Loading">
       <Loader2 className="size-5 animate-spin text-fg-subtle" />
     </div>
-  );
-}
-
-/** A colour without repertoires in the list: what to do, with New. */
-function EmptyColorRow({ color, newItems }: { color: RepertoireColor; newItems: MenuItem[] }) {
-  return (
-    // Not a repertoire of the list: what to do instead of one.
-    <li
-      role="presentation"
-      className="flex items-center gap-3 border-b border-line-subtle px-4 py-3 text-xs text-fg-muted"
-    >
-      No {COLOR_LABELS[color]} repertoire yet. Import a PGN (a Lichess study export, say) or start
-      one.
-      <OverflowMenu
-        label={`New ${COLOR_LABELS[color]} repertoire`}
-        trigger={{ text: "New", icon: <Plus />, variant: "outline", compact: true }}
-        items={newItems}
-      />
-    </li>
   );
 }
 
@@ -496,13 +503,18 @@ function BookReadyNotices({ onOpen }: { onOpen: (repertoireId: string) => void }
   ));
 }
 
-/** The card title bar's tools: search, archived instead of active ones, and New (last). */
+/**
+ * The Repertoires tab's tools: search, Archived (the archived ones instead of the active; only when
+ * there are some, or while it is on), and New (last).
+ */
 function HubTitleActions({
   filters,
-  newItems
+  newItems,
+  archivedToggle
 }: {
   filters: ReturnType<typeof useHubFilters>;
   newItems: MenuItem[];
+  archivedToggle: boolean;
 }) {
   return (
     <>
@@ -511,13 +523,19 @@ function HubTitleActions({
         onQueryChange={filters.setQuery}
         label="Search repertoires"
       />
-      <IconButton
-        label={filters.archived ? "Show active repertoires" : "Show archived"}
-        icon={<Archive />}
-        aria-pressed={filters.archived}
-        className={filters.archived ? "bg-control text-fg" : undefined}
-        onClick={() => filters.setArchived(!filters.archived)}
-      />
+      {archivedToggle ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-pressed={filters.archived}
+          className={filters.archived ? "bg-control text-fg" : undefined}
+          onClick={() => filters.setArchived(!filters.archived)}
+        >
+          <Archive />
+          Archived
+        </Button>
+      ) : null}
       <OverflowMenu
         label="New repertoire"
         trigger={{ text: "New", icon: <Plus />, variant: "primary", compact: true }}

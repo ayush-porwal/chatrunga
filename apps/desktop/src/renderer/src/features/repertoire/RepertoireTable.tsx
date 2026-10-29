@@ -1,8 +1,7 @@
 import { Fragment, memo, useCallback, useId, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, GraduationCap, Play, RotateCcw } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { START_FEN } from "@chaturanga/shared/chess/position";
-import type { RepertoireColor, RepertoireSummary } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireSummary } from "@chaturanga/shared/types/repertoire";
 import type { RepertoirePracticeStats } from "@chaturanga/shared/types/repertoire-practice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,17 +12,16 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cn } from "@/lib/utils";
-import { BoardThumbnail } from "../settings/board-thumbnail";
 import { colorGroups, learnedText } from "./hub-groups";
 import { HubChapterList } from "./HubChapterList";
 import { COLOR_LABELS, relativeDay, type ResumePracticeTarget } from "./repertoire-chapters";
 
 /**
- * One grid for the header and the rows: the chapters expander, thumbnail, name, five facts, then
- * the row's actions.
+ * One grid for the header and the rows: the name (after the chapters expander), chapters, learned,
+ * last studied, then the row's actions.
  */
 const columns =
-  "grid grid-cols-[1.75rem_5.5rem_minmax(0,1.8fr)_repeat(2,minmax(0,0.7fr))_minmax(0,1.3fr)_minmax(0,0.5fr)_minmax(0,1fr)_minmax(9.5rem,auto)] gap-x-4 pr-3 [&>*:nth-child(n+4)]:justify-self-start";
+  "grid grid-cols-[minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(9.5rem,auto)] gap-x-4 pr-3 pl-2 [&>*:nth-child(n+2)]:justify-self-start";
 
 /** A repertoire row's chapters, opened in the hub (Study at a chapter, or practise it). */
 export type HubChapterActions = {
@@ -32,13 +30,11 @@ export type HubChapterActions = {
 };
 
 /**
- * The hub's table (laid out as Play's Recent games), in White and Black groups: an expander
- * listing the chapters by opening family, a board thumbnail (the first chapter's starting
- * position, facing the repertoire's side), the name, chapters, your moves (trainable decisions),
- * learned (stage 1 or more) of them, due count and last studied. The whole row opens Study;
- * Practice (with the due count) and the ⋯ menu sit at its end, always visible. A colour with no
- * repertoire says what to do (`emptyColor`, unfiltered lists only). Rows are memoised: give them
- * stable `actionsFor`, `onStudy`, `onPractice` and `chapters`.
+ * The hub's table (laid out as Play's Recent games), in White and Black groups (a colour without
+ * repertoires has none): the name with an expander listing the chapters by opening family,
+ * chapters, learned (stage 1 or more) of your moves, and last studied. The whole row opens Study;
+ * Practice (with the due count) and the ⋯ menu sit at its end, always visible. Rows are memoised:
+ * give them stable `actionsFor`, `onStudy`, `onPractice` and `chapters`.
  */
 export function RepertoireTable({
   list,
@@ -50,13 +46,12 @@ export function RepertoireTable({
   onStudy,
   onPractice,
   chapters,
-  emptyColor,
   empty
 }: {
   list: UseQueryResult<RepertoireSummary[]>;
   /** When the hub opened: "Last studied" is relative to it. */
   now: number;
-  /** The card title's id (the list is named by it). */
+  /** The id of what names the list (the Repertoires tab). */
   labelledBy: string;
   /** The unfinished session its row's Practice resumes instead of starting a new one. */
   resume: ResumePracticeTarget | null;
@@ -67,8 +62,6 @@ export function RepertoireTable({
   onStudy: (repertoireId: string) => void;
   onPractice: (item: RepertoireSummary) => void;
   chapters: HubChapterActions;
-  /** The row of a colour without repertoires (null: no such rows, e.g. while searching). */
-  emptyColor: ((color: RepertoireColor) => ReactNode) | null;
   empty: ReactNode;
 }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -87,16 +80,13 @@ export function RepertoireTable({
         aria-hidden="true"
         className={cn(
           columns,
-          "h-9 shrink-0 items-center border-y border-b-line border-t-line-subtle bg-surface-sunken text-xs font-medium text-fg-muted"
+          "h-9 shrink-0 items-center border-b border-line bg-surface-sunken text-xs font-medium text-fg-muted"
         )}
       >
-        <span />
-        <span />
-        <span>Repertoire</span>
+        {/* Past the expander, over the names. */}
+        <span className="pl-8">Repertoire</span>
         <span>Chapters</span>
-        <span>Your moves</span>
         <span>Learned</span>
-        <span>Due</span>
         <span>Last studied</span>
         <span />
       </div>
@@ -124,7 +114,7 @@ export function RepertoireTable({
       ) : list.data.length ? (
         <ul aria-labelledby={labelledBy}>
           {colorGroups(list.data).map((group) =>
-            !group.items.length && !emptyColor ? null : (
+            group.items.length ? (
               <Fragment key={group.color}>
                 {/* The group's heading: text only, not a repertoire of the list. */}
                 <li
@@ -133,27 +123,23 @@ export function RepertoireTable({
                 >
                   {COLOR_LABELS[group.color]} · {group.items.length}
                 </li>
-                {group.items.length
-                  ? group.items.map((item) => (
-                      <RepertoireRow
-                        key={item.id}
-                        item={item}
-                        now={now}
-                        stats={stats.get(item.id)}
-                        expanded={expanded.has(item.id)}
-                        resumeDescription={
-                          resume?.repertoireId === item.id ? resume.description : null
-                        }
-                        actionsFor={actionsFor}
-                        onToggle={toggle}
-                        onStudy={onStudy}
-                        onPractice={onPractice}
-                        chapters={chapters}
-                      />
-                    ))
-                  : emptyColor?.(group.color)}
+                {group.items.map((item) => (
+                  <RepertoireRow
+                    key={item.id}
+                    item={item}
+                    now={now}
+                    stats={stats.get(item.id)}
+                    expanded={expanded.has(item.id)}
+                    resumeDescription={resume?.repertoireId === item.id ? resume.description : null}
+                    actionsFor={actionsFor}
+                    onToggle={toggle}
+                    onStudy={onStudy}
+                    onPractice={onPractice}
+                    chapters={chapters}
+                  />
+                ))}
               </Fragment>
-            )
+            ) : null
           )}
         </ul>
       ) : (
@@ -165,10 +151,8 @@ export function RepertoireTable({
 
 function SkeletonRow() {
   return (
-    <div className={cn(columns, "h-22 items-center border-b border-line-subtle last:border-0")}>
-      <span />
-      <Skeleton className="size-full rounded-none" />
-      <span className="grid gap-2">
+    <div className={cn(columns, "h-14 items-center border-b border-line-subtle last:border-0")}>
+      <span className="grid gap-2 pl-8">
         <Skeleton className="h-3 w-40" />
         <Skeleton className="h-3 w-24" />
       </span>
@@ -216,52 +200,38 @@ const RepertoireRow = memo(function RepertoireRow({
           columns,
           // Hover fills the row edge to edge; the last row's corners are the table's. A row with its
           // ⋯ menu open is lifted over the rows below it.
-          "group/row relative h-22 items-center transition-colors duration-micro hover:bg-control focus-within:bg-control has-[[aria-haspopup][aria-expanded=true]]:z-20"
+          "group/row relative h-14 items-center transition-colors duration-micro hover:bg-control focus-within:bg-control has-[[aria-haspopup][aria-expanded=true]]:z-20"
         )}
       >
-        <span className="relative z-10 justify-self-end">
+        <span className="flex min-w-0 items-center gap-2">
           <IconButton
             label={expanded ? "Hide chapters" : "Show chapters"}
             icon={expanded ? <ChevronDown /> : <ChevronRight />}
             size="icon-xs"
+            className="relative z-10 shrink-0"
             aria-expanded={expanded}
             aria-controls={listId}
             onClick={() => onToggle(item.id)}
           />
+          {/* The row's own action: the button covers the whole row (other controls sit above it). */}
+          <button
+            type="button"
+            onClick={() => onStudy(item.id)}
+            aria-label={`Study ${item.name}`}
+            className="grid min-w-0 content-center gap-0.5 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-accent/50"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium text-fg">{item.name}</span>
+              {fromBook ? <Badge>Book</Badge> : null}
+              {archived ? <Badge>Archived</Badge> : null}
+            </span>
+            {item.tags.length ? (
+              <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
+            ) : null}
+          </button>
         </span>
-        <div className="relative h-full overflow-hidden">
-          <BoardThumbnail
-            fen={item.firstChapterFen ?? START_FEN}
-            orientation={item.color}
-            className="h-full w-auto [&>div]:rounded-none"
-          />
-        </div>
-        {/* The row's own action: the button covers the whole row (other controls sit above it). */}
-        <button
-          type="button"
-          onClick={() => onStudy(item.id)}
-          aria-label={`Study ${item.name}`}
-          className="grid min-w-0 content-center gap-1 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-accent/50"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium text-fg">{item.name}</span>
-            {fromBook ? <Badge>Book</Badge> : null}
-            {archived ? <Badge>Archived</Badge> : null}
-          </span>
-          {item.tags.length ? (
-            <span className="truncate text-xs text-fg-subtle">{item.tags.join(" · ")}</span>
-          ) : null}
-        </button>
-        <Fact value={item.chapterCount} />
-        <Fact value={item.decisionCount} />
+        <span className="text-xs text-fg-secondary tabular-nums">{item.chapterCount}</span>
         <Learned learned={stats?.learned ?? null} total={item.decisionCount} />
-        <span className="text-xs tabular-nums">
-          {item.dueCount ? (
-            <span className="font-semibold text-accent">{item.dueCount}</span>
-          ) : (
-            <span className="text-fg-subtle">–</span>
-          )}
-        </span>
         <span className="truncate text-xs text-fg-muted">
           {relativeDay(item.lastStudiedAt, now)}
         </span>
@@ -291,18 +261,14 @@ const RepertoireRow = memo(function RepertoireRow({
   );
 });
 
-function Fact({ value }: { value: number }) {
-  return <span className="text-xs text-fg-secondary tabular-nums">{value}</span>;
-}
-
-/** "Learned": a bar and "4 of 118" (stage 1 or more); a dash until the numbers load. */
+/** "Learned": a bar and "4 of 7,496" (stage 1 or more); a dash until the numbers load. */
 function Learned({ learned, total }: { learned: number | null; total: number }) {
   if (learned === null || !total) return <span className="text-xs text-fg-subtle">–</span>;
   return (
     <span className="grid w-full max-w-36 gap-1" title={learnedText(learned, total)}>
       <Progress value={(learned / total) * 100} aria-label={learnedText(learned, total)} />
       <span className="text-2xs text-fg-muted tabular-nums">
-        {learned} of {total}
+        {learned.toLocaleString()} of {total.toLocaleString()}
       </span>
     </span>
   );

@@ -19,9 +19,10 @@ Decided with the user on 29 October 2026:
 
 ## 1. Where it lives
 
-Repertoire gets title-bar tabs: **Repertoires · Practice · Insights**, with the settings cog last.
-Study, practice sessions and Game review open from these tabs. Back returns to the tab and scroll
-position they came from.
+Repertoire is one card whose title bar holds the tabs **Repertoires · Practice · Insights**, with
+the shown tab's actions at its right end (a cog, when the tab has one, last). The window's title bar
+stays the page's title only. Study, practice sessions and Game review open from these tabs. Back
+returns to the tab and scroll position they came from.
 
 The screens, components and UI strings are in
 [repertoire-games-and-practice-ui.md](repertoire-games-and-practice-ui.md). Where the two
@@ -32,15 +33,15 @@ disagree about behaviour, this page wins.
 - Repertoires are grouped by colour (**White**, **Black**). Within a colour, chapters are grouped
   by opening family: the opening name before the colon, e.g. "Caro-Kann Defense".
 - Each repertoire shows:
-  - "N chapters · M moves · K to practise" (K is the number of the player's trainable decisions);
-  - a **learned** bar, "L of K learned", where learned means stage ≥ 1;
+  - its chapters;
+  - a **learned** bar, "L of K learned", where K is the player's trainable decisions and learned
+    means stage ≥ 1;
   - Study, and Practice (due count, or Resume);
   - the existing ⋯ actions: Edit, Import PGN, Export PGN, Duplicate, Archive, Delete.
 - Each chapter row shows its title, the detected opening (name and ECO), its kind (Opening or
   Reference), and its due count. Its actions are **Practise this chapter** and **Open in Study**.
-- An empty colour says what to do: import a PGN (for example a Lichess study export), or create
-  one.
-- The existing title search and Archived toggle stay.
+- A colour without repertoires isn't shown.
+- The search and the Archived toggle stay; Archived shows only when some repertoires are archived.
 
 ### Opening detection
 
@@ -123,7 +124,7 @@ Opened from Insights, Study shows a dismissible banner at the top of the side pa
 
 ### Sets
 
-One card per set: **Everything**, **White**, **Black**, and each repertoire. Each card shows
+One tile per set: **Everything**, **White**, **Black**, and each repertoire. Each tile shows
 "D due · N new · L learning" and its buttons:
 
 - **Review** when anything is due; **Practice early (L)** when nothing is due but some cards are

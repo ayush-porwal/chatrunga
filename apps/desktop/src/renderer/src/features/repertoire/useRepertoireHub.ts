@@ -22,9 +22,7 @@ export function useHubFilters() {
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
   const filters: RepertoireListFilters = { query: query.trim() || undefined, archived };
-  // The active repertoires, unsearched: a colour without any says what to do.
-  const unfiltered = !archived && !query.trim();
-  return { query, setQuery, archived, setArchived, listFilters: filters, unfiltered };
+  return { query, setQuery, archived, setArchived, listFilters: filters };
 }
 
 /**

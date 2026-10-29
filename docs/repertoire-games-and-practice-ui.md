@@ -6,20 +6,31 @@ those in `components/ui`, `features/board`, `features/repertoire`, `features/dat
 
 ## 1. Information architecture
 
+The window's title bar stays the page's title, `Repertoire` (plus the live game's button), like Play,
+Puzzles and Databases. The tabs live in the hub card's own title bar (`WorkspaceTabBar`, as Analyze and
+Game review), with the shown tab's actions at its right end:
+
 ```
-App titlebar, view "repertoire-hub":
-  Repertoire   [Repertoires] [Practice 12] [Insights 3]        …        (cog)
-  PageTitle    TitlebarTabs (new; WorkspaceTabBar's tab style; pills = due, health flags)
+ Repertoire                                                          ← window title bar: title only
+ ┌───────────────────────────────────────────────────────────────────────────┐
+ │ Repertoires ①   Practice ⑫   Insights            🔍  Archived  [+ New ▾] │ ← the card's tab bar
+ ├───────────────────────────────────────────────────────────────────────────┤
+ │ (the tab's content)                                                       │
+ └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- `repertoire-hub` gets a `tab` param (`repertoires | practice | insights`), remembered in settings, so
-  the sidebar's Repertoire returns to the last tab. `TitlebarTabs` is a new app component (ViewTitlebar),
-  reusable by Analyze/Databases. The cog (last) is per tab: Repertoires → today's settings; Practice →
-  Practice settings dialog (§2d); Insights has none (its filters are a strip on the page).
+- Pills: Repertoires = active repertoires, Practice = due positions (none for 0).
+- Actions at the bar's right end, per tab (`HubTabActions` portals them there from the tab):
+  - Repertoires: search, an `Archived` ghost toggle (only when some are archived, or while it is on),
+    `+ New ▾` (Blank repertoire / Import PGN / Import book (PDF)…). No cog: backups live in Settings.
+  - Practice: `How it works`, then `Practice settings` (the cog, last).
+  - Insights: none (its filters are a strip in the tab).
+- The tab is remembered in settings, so the sidebar's Repertoire and Back return to it, with its scroll.
+- Practice and Insights content sits in the same card as sections under hairlines (no card in a card).
 - Study and sessions stay full board routes with `WorkspaceTitlebar`. A session started from a set
-  card or a weak-spot row gets "Back to Practice" in its summary footer (beside "Practice again").
+  tile or a weak-spot row gets "Back to Practice" in its summary footer (beside "Practice again").
 - Insights → Game review opens at the deviation ply; `RepertoireHandoffActions` gains "Back to
-  Insights". Insights → Study uses `StudyOpenTarget.stage` (exists) plus a new `fromGames` payload for
+  Insights". Insights → Study uses `StudyOpenTarget.stage` (exists) plus a `fromGames` payload for
   the banner (§2c).
 - `ReviewOpeningPanel` keeps its one-game comparison; "Add this response"/"Adopt" now stage into the
   New moves card (one authoring path, no more silent study-only writes).
@@ -28,32 +39,31 @@ App titlebar, view "repertoire-hub":
 
 ### 2a. Repertoires tab (hub)
 
-Keep the table (`RepertoireTable`), not cards: it is Play's Recent games pattern, rows are memoised,
-users compare counts across 1–6 repertoires, and cards would repeat labels per card. Cards go where
-Out of Book's card form earns it: Practice sets.
+A table (`RepertoireTable`, Play's Recent games pattern): rows are memoised and counts compare across
+repertoires.
 
 ```
-Repertoires (3)                                [search] [archived] [New ▾]
-   Repertoire            Chapters  Your moves  Learned         Due  Last studied
+   Repertoire                    Chapters   Learned              Last studied
 White · 2
-▸ ▦ 1.e4 for White          7        238      ███░░░ 4/238    12   Today      [Practice 12] ⋯
-▾ ▦ London System           3         90      █████░ 60/90     –   3 days ago [Practice]    ⋯
+▸ 1.e4 for White                    7       ███░░░ 4 of 238      Today        [Practice 12] ⋯
+▾ London System                     3       █████░ 60 of 90      3 days ago   [Practice]    ⋯
      London System · 3 chapters
        Main line   D02  Queen's Pawn Game: London System   41 moves · 2 due   [Practise]
-       vs …c5      D02  …                                                      [Practise]
 Black · 1
-▸ ▦ Caro-Kann               7        118      █░░░░░ 4/118     0   Yesterday  [Practice]    ⋯
+▸ Caro-Kann                         7       █░░░░░ 4 of 118      Yesterday    [Practice]    ⋯
 ```
 
-- Sunken group rows "White · 2" / "Black · 1"; the Colour column goes (no repeated info). Columns:
-  thumbnail · Repertoire (name, tags, Book/Archived badges) · Chapters · Your moves (`decisionCount`,
-  renamed) · Learned (`Progress` + "4 of 118") · Due · Last studied · actions (unchanged).
-- Expander ▸ (`IconButton` "Show chapters", left of the thumbnail) lists chapters grouped by opening
-  family ("Caro-Kann Defense · 7 chapters" line), each row: title · `Badge` ECO · variation
-  (`text-fg-subtle`, truncated) · "41 moves · 2 due" · `Button xs outline` "Practise" (chapter preset).
-  Title click → Study at that chapter. Rename/opening edit stays in Study's Chapters panel (one place).
-- Empty colour group: row "No Black repertoire yet." + inline "New ▾". All empty: existing
-  `HubEmptyState`. Loading: `SkeletonRow` ×3. Error: existing Notice + Try again.
+- Sunken group rows "White · 2" / "Black · 1"; a colour without repertoires has no group.
+- Columns: Repertoire (expander, name, tags, Book/Archived badges) · Chapters · Learned (`Progress` +
+  "4 of 7,496", stage ≥ 1 of your moves) · Last studied · actions. No board thumbnail (the group gives
+  the colour), no separate "Your moves" (Learned's total) or Due (the Practice button's pill).
+- Rows are compact (`h-14`); numbers use thousands separators.
+- The expander ▸ (`IconButton` "Show chapters", first in the name cell) lists chapters grouped by
+  opening family ("Caro-Kann Defense · 7 chapters"), each: title · `Badge` ECO · variation · "41 moves ·
+  2 due" · "Practise" (chapter preset). Title click → Study at that chapter.
+- No repertoire at all: `HubEmptyState` inside the card (the bar's tools are hidden; its New is the
+  one). Loading: `SkeletonRow` ×3. Error: Notice + Try again.
+- A book's repertoire is marked by its books row (the Book badge), never by a tag.
 
 ### 2b. Import preview (`ImportPgnPreview`)
 
@@ -124,8 +134,8 @@ Panel tabs: **Moves · Chapters · Explorer · Book** (Book for book repertoires
 
 ### 2d. Practice tab
 
-Title-bar row right end: `IconButton` "How it works" (CircleHelp popover), then cog "Practice
-settings" (last).
+At the right end of the hub card's tab bar: `IconButton` "How it works" (CircleHelp), then the cog
+"Practice settings" (last).
 
 ```
 [!] Weak spots from your games: 12 positions where you left your repertoire, then the replies you
@@ -143,7 +153,8 @@ Progress
  Perfect lines  1.e4 for White 3 of 17 · London System 9 of 12 · Caro-Kann 0 of 9
 ```
 
-- Set cards reuse `DatabaseCard`'s `cardShell/titleBar/body/footer` (thumbnail = first chapter).
+- Set tiles reuse `DatabaseCard`'s `titleBar/body/footer` on a sunken, borderless tile (thumbnail = first
+  chapter); Progress is a section under a hairline, not a card.
   "Review N" primary when due > 0, else "Practice early N" (outline, learning > 0); "Learn new"
   (outline; disabled, title "Daily limit reached, 10 of 10"; absent when nothing is new).
 - Weak spots banner: `Notice warn`, only when ≥ 1 forgotten position. No accounts: "Connect Lichess or
@@ -176,7 +187,7 @@ Progress
 
 ### 2f. Insights tab
 
-One scrolling page, four cards, no nested tabs:
+Inside the hub card: the filters strip, then three sections under hairlines (no cards, no nested tabs):
 
 1. **Filters** strip (sunken): period `Select` (All time · 3 months · 12 months · Since…), time
    controls (`OverflowMenu` multi, with counts), rated/casual `SegmentedControl`, accounts. Line:
@@ -225,5 +236,5 @@ One scrolling page, four cards, no nested tabs:
 4. The Study explorer follows the Insights filters and shows them as a line (no own control).
 5. The health check runs on demand ("Run check") and after edits to checked repertoires; it waits while
    the puzzle queue is running a game (one engine-heavy queue at a time).
-6. Title-bar page tabs are the agreed pattern (the user's Analyze/Databases preference); build
-   `TitlebarTabs` for reuse.
+6. The tabs sit in the hub card's title bar (`WorkspaceTabBar`), never in the window's title bar, which
+   keeps only the page's title.
