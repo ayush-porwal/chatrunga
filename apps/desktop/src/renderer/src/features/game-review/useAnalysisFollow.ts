@@ -5,12 +5,18 @@ import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 import { markRapidNavigation } from "../board/board-motion";
 import { activeBestLine } from "../game/best-line-cursor";
+import { activeScratchLine } from "../game/scratch-line";
 import {
   createAnalysisFollower,
   followTargetIndex,
   runEnding,
   type AnalysisFollower
 } from "./analysis-follow";
+
+/** The board shows a line off the game's moves (a BEST or scratch line). */
+function offGameLine(state: ReturnType<typeof useGameStore.getState>): boolean {
+  return Boolean(activeBestLine(state) || activeScratchLine(state));
+}
 
 /**
  * While a review runs on this page, the board follows its analysis (analysis-follow.ts): `line`
@@ -30,7 +36,7 @@ export function useAnalysisFollow(
     if (!runId) return;
     const game = useGameStore.getState();
     const follower = createAnalysisFollower({
-      board: activeBestLine(game) ? null : game.currentNodeId,
+      board: offGameLine(game) ? null : game.currentNodeId,
       show: ({ nodeId, quiet }) => {
         const goTo = () => useGameStore.getState().goToNode(nodeId);
         if (!quiet) return goTo();
@@ -47,7 +53,7 @@ export function useAnalysisFollow(
         state.currentFen === previous.currentFen
       )
         return;
-      follower.noteBoard(state.currentNodeId, Boolean(activeBestLine(state)));
+      follower.noteBoard(state.currentNodeId, offGameLine(state));
     });
     // The run finished (its own result, not a stop or a detach): the board ends on its last move.
     const unsubscribeReview = useReviewStore.subscribe((state, previous) => {

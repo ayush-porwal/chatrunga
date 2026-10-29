@@ -84,6 +84,29 @@ export function bestLineText(moves: readonly BestLineMove[]): string {
   return moves.map((move) => (move.number ? `${move.number} ${move.san}` : move.san)).join(" ");
 }
 
+/**
+ * The main-line move whose pair a scratch line's row goes under: the move it was started from, or
+ * the main-line move that one's variation hangs off ("root" before the first move).
+ */
+export function scratchRowNodeId(nodes: readonly MoveNode[], originNodeId: string): string {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const mainline = new Set<string>();
+  const root = nodes.find((node) => node.parentId === null);
+  for (
+    let cursor = root;
+    cursor && !mainline.has(cursor.id);
+    cursor = byId.get(cursor.children[0] ?? "")
+  )
+    mainline.add(cursor.id);
+  const seen = new Set<string>();
+  let cursor = byId.get(originNodeId);
+  while (cursor && !mainline.has(cursor.id) && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+  return cursor?.id ?? "root";
+}
+
 /** The BEST-line preview board's edge bounds (CSS px). */
 export const PREVIEW_BOARD_MIN = 200;
 const PREVIEW_BOARD_MAX = 340;
@@ -151,6 +174,8 @@ export type MoveListItem =
   | { kind: "opening"; afterNodeId: string }
   /** The BEST line under a marked error (only while it is unfolded). */
   | { kind: "best"; node: MoveNode }
+  /** The scratch line on the board (Game review's moves tried, never saved). */
+  | { kind: "scratch" }
   /** A variation's line row (one per line; nested lines follow their parent, one deeper). */
   | { kind: "variation"; row: VariationRow }
   /**
@@ -171,20 +196,24 @@ export type MoveListItem =
 /**
  * The main line's rows: each move pair (then its moves' comments, with `showComments`), then the
  * opening row when the pair holds the last book move, then the unfolded BEST lines of its moves
- * (White's, Black's), then the variations played instead of its moves (White's, Black's), each
- * followed by its comments and the variations nested in it.
+ * (White's, Black's), then the scratch line when it was started from one of them, then the
+ * variations played instead of its moves (White's, Black's), each followed by its comments and the
+ * variations nested in it. A scratch line started from no main-line move comes first.
  */
 export function mainlineItems(
   model: TreeModel,
   {
     bookEndNodeId = null,
     showsBestLine = () => false,
+    scratchAfterNodeId = null,
     showComments = false,
     bookPages = false
   }: {
     bookEndNodeId?: string | null;
     /** Whether the move's BEST line is drawn (it has one and it is unfolded). */
     showsBestLine?: (node: MoveNode) => boolean;
+    /** The main-line move the scratch line's row follows (see scratchRowNodeId); none: not shown. */
+    scratchAfterNodeId?: string | null;
     /** Each move's comment under the row holding the move. */
     showComments?: boolean;
     /** With `showComments`: a move that starts a book page (`[%page N]`) gets a row for its page. */
@@ -193,19 +222,50 @@ export function mainlineItems(
 ): MoveListItem[] {
   const items: MoveListItem[] = [];
   const noteOf = (node: MoveNode | undefined) => commentNote(node, bookPages);
+  const lines = { showsBestLine, scratchAfterNodeId, comments: showComments ? noteOf : null };
+  if (scratchAfterNodeId && !inMainline(model, scratchAfterNodeId)) items.push({ kind: "scratch" });
   for (const row of model.mainline) {
     items.push({ kind: "moves", number: row.number, white: row.white, black: row.black });
     const moves = [row.white, row.black].filter((node): node is MoveNode => Boolean(node));
     if (showComments) items.push(...pairComments(row.number, row.white, row.black, noteOf));
     const bookEnd = moves.find((node) => node.id === bookEndNodeId);
     if (bookEnd) items.push({ kind: "opening", afterNodeId: bookEnd.id });
-    for (const node of moves) if (showsBestLine(node)) items.push({ kind: "best", node });
-    for (const node of moves)
-      for (const variation of model.variationsByMove.get(node.id) ?? []) {
-        items.push({ kind: "variation", row: variation });
-        if (showComments) items.push(...variationComments(variation, noteOf));
-      }
+    items.push(...linesUnderPair(model, moves, lines));
   }
+  return items;
+}
+
+/** Whether `nodeId` is one of the main line's moves. */
+function inMainline(model: TreeModel, nodeId: string): boolean {
+  return model.mainline.some((row) => row.white?.id === nodeId || row.black?.id === nodeId);
+}
+
+/**
+ * The line rows under a main-line pair: its moves' unfolded BEST lines, the scratch line when it
+ * was tried from one of them, then the variations played instead of them (each followed by its
+ * comments, with `comments`).
+ */
+function linesUnderPair(
+  model: TreeModel,
+  moves: readonly MoveNode[],
+  {
+    showsBestLine,
+    scratchAfterNodeId,
+    comments
+  }: {
+    showsBestLine: (node: MoveNode) => boolean;
+    scratchAfterNodeId: string | null;
+    comments: ((node: MoveNode | undefined) => CommentNote | null) | null;
+  }
+): MoveListItem[] {
+  const items: MoveListItem[] = [];
+  for (const node of moves) if (showsBestLine(node)) items.push({ kind: "best", node });
+  if (moves.some((node) => node.id === scratchAfterNodeId)) items.push({ kind: "scratch" });
+  for (const node of moves)
+    for (const variation of model.variationsByMove.get(node.id) ?? []) {
+      items.push({ kind: "variation", row: variation });
+      if (comments) items.push(...variationComments(variation, comments));
+    }
   return items;
 }
 

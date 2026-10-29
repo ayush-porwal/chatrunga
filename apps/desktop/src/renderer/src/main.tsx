@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@lichess-org/chessground/assets/chessground.base.css";
 import "@lichess-org/chessground/assets/chessground.brown.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
+// Right after Chessground's CSS, from the entry, so it comes later in every build (imported by the
+// board components, a build put it in a chunk linked before Chessground's, whose rules then won).
+import "./features/board/board.css";
 import "./styles/app.css";
 import { loadPieceDrawings } from "./styles/generated-piece-themes";
 import { TooltipProvider } from "./components/ui/tooltip";

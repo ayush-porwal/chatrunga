@@ -14,7 +14,6 @@ import {
   isRapidNavigation,
   usePrefersReducedMotion
 } from "../board/board-motion";
-import "../board/board.css";
 import { isSquare } from "@chaturanga/shared/chess/square";
 
 type ReviewBoardProps = {
@@ -28,6 +27,10 @@ type ReviewBoardProps = {
 
 const NO_SHAPES: DrawShape[] = [];
 
+/**
+ * A small view-only board for a position looked at beside the main board (an engine line's
+ * preview). Game review's own board is the interactive one (ReviewBoardStage, ControlledBoard).
+ */
 export function ReviewBoard({
   fen,
   orientation,
@@ -113,9 +116,12 @@ export function ReviewBoard({
       className={cn(
         "cg-wrap board-surface min-h-0 min-w-0 overflow-hidden rounded-lg",
         pieceClassName,
+        // Chessground's own class, kept in className so React never strips it (the coordinates'
+        // colours follow it).
+        orientation === "white" ? "orientation-white" : "orientation-black",
         className
       )}
-      aria-label="Review board"
+      aria-label="Preview board"
     />
   );
 }

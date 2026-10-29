@@ -28,7 +28,7 @@ import { EvalBar } from "./EvalBar";
 import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
-import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
+import { boardShowsLiveAnalysis, liveTopLine } from "../analysis/live-analysis";
 import { BoardStage } from "./BoardWorkspace";
 import { useBroadcastStore } from "../../stores/broadcast-store";
 import { BroadcastClock } from "../broadcasts/BroadcastLivePanel";
@@ -53,7 +53,6 @@ import {
   isSingleStep,
   usePrefersReducedMotion
 } from "./board-motion";
-import "./board.css";
 import { uciSquares } from "@chaturanga/shared/chess/square";
 import { isMaiaEngine } from "../play/engine-game";
 import { userSide } from "../analysis/post-game";
@@ -147,9 +146,7 @@ export function BoardView() {
   const planArrows = appearance.analysisPlanArrows;
   const liveLine = useAnalysisStore((state) => {
     if (!boardShowsLiveAnalysis({ mode, currentNodeId, currentFen }, state.paused)) return "";
-    const pv = state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv;
-    const line = pv?.length ? pv : state.bestMove ? [state.bestMove] : [];
-    return line.slice(0, Math.max(1, planArrows)).join(" ");
+    return liveTopLine(state, planArrows);
   });
   const liveShapes = useMemo(
     () =>

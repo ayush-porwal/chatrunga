@@ -2,9 +2,16 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { BoardArrow, BoardHighlight, Color, UserMove } from "@chaturanga/shared/types/chess";
+import type {
+  BoardArrow,
+  BoardHighlight,
+  Color,
+  Square,
+  UserMove
+} from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEventCallback } from "@/lib/use-event-callback";
@@ -27,7 +34,6 @@ import {
   type BoardMovable
 } from "./board-shapes";
 import { resolveBoardMove, type ResolvedMove } from "./board-move-input";
-import "./board.css";
 import { isSquare } from "@chaturanga/shared/chess/square";
 
 export type ControlledBoardProps = {
@@ -40,6 +46,13 @@ export type ControlledBoardProps = {
   highlights?: readonly BoardHighlight[];
   /** Enables right-click drawing; called with every change. Omit to disable drawing. */
   onShapesChange?: (arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
+  /** Shapes the app draws (engine arrows, a previewed move), apart from the user's drawings. */
+  autoShapes?: readonly DrawShape[];
+  /**
+   * Plays a move's sound when the board steps one move forward (default). Off where the game
+   * store's own steps already sound (see useMoveSounds).
+   */
+  stepSound?: boolean;
   /**
    * Called with a legal move (full UCI with any promotion letter, castling as `e1g1`), its SAN and
    * the FEN after it. The move is not applied: the parent updates `fen`. Returning `false` refuses
@@ -57,6 +70,7 @@ type PendingPromotion = { from: Key; to: Key };
 
 const NO_ARROWS: readonly BoardArrow[] = [];
 const NO_HIGHLIGHTS: readonly BoardHighlight[] = [];
+const NO_SHAPES: readonly DrawShape[] = [];
 
 const PROMOTION_PIECES = [
   ["queen", "Queen"],
@@ -79,6 +93,8 @@ export function ControlledBoard({
   arrows = NO_ARROWS,
   highlights = NO_HIGHLIGHTS,
   onShapesChange,
+  autoShapes = NO_SHAPES,
+  stepSound = true,
   onMove,
   allowMove,
   check,
@@ -94,9 +110,8 @@ export function ControlledBoard({
   const status = useMemo(() => safeStatus(fen), [fen]);
   const dests = useMemo(() => movableDests(fen, movable), [fen, movable]);
   // Only real squares reach Chessground (a stored move could be anything).
-  const lastFrom = lastMove && isSquare(lastMove[0]) ? lastMove[0] : undefined;
-  const lastTo = lastMove && isSquare(lastMove[1]) ? lastMove[1] : undefined;
-  useBoardStepSound(fen, lastMove);
+  const [lastFrom, lastTo] = lastMoveSquares(lastMove);
+  useBoardStepSound(fen, lastMove, stepSound);
   const shapes = useMemo(() => shapesFromAnnotations(arrows, highlights), [arrows, highlights]);
   const drawingEnabled = Boolean(onShapesChange);
   const interactive = movable !== "none";
@@ -262,10 +277,11 @@ export function ControlledBoard({
         visible: true,
         defaultSnapToValidMove: true,
         shapes,
+        autoShapes: [...autoShapes],
         onChange: handleShapesChange
       }
     });
-  }, [drawingEnabled, handleShapesChange, shapes]);
+  }, [autoShapes, drawingEnabled, handleShapesChange, shapes]);
 
   return (
     <div className={cn("relative h-full w-full min-h-0 min-w-0", className)}>
@@ -337,6 +353,17 @@ function PromotionPicker({
       </div>
     </div>
   );
+}
+
+/** The last move's squares, each only when it is a real square (a stored move could be anything). */
+function lastMoveSquares(
+  lastMove: readonly [string, string] | null
+): [Square | undefined, Square | undefined] {
+  if (!lastMove) return [undefined, undefined];
+  return [
+    isSquare(lastMove[0]) ? lastMove[0] : undefined,
+    isSquare(lastMove[1]) ? lastMove[1] : undefined
+  ];
 }
 
 /** The position's status, or a neutral one (white to move, no check) for an unreadable FEN. */

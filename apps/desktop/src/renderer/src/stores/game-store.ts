@@ -26,6 +26,8 @@ import {
   bestLineStep,
   type BestLineCursor
 } from "../features/game/best-line-cursor";
+import type { ScratchLine } from "../features/game/scratch-line";
+import { createScratchLineActions, type ScratchLineActions } from "./scratch-line-actions";
 import {
   buildEngineGoClock,
   clockAfterMove,
@@ -55,7 +57,7 @@ export type GameOutcome = {
   termination: string;
 };
 
-type GameStore = {
+type GameStore = ScratchLineActions & {
   gameId: string | null;
   /**
    * Where the game came from (its library tab): a Lichess, Chess.com or imported game keeps its
@@ -89,6 +91,11 @@ type GameStore = {
    * positions while the game stays on the error, and the move tree is unchanged.
    */
   bestLine: BestLineCursor | null;
+  /**
+   * Moves tried on Game review's board (see scratch-line.ts): the board shows one of its positions
+   * while the game stays on its origin, and the move tree is unchanged. Never saved.
+   */
+  scratchLine: ScratchLine | null;
   /**
    * Counts moves `makeMove` refused. The board has already drawn the piece on its new square;
    * it puts the position back when this changes (the stored position didn't change).
@@ -280,6 +287,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClockLive: null,
     gameOutcome: null,
     bestLine: null,
+    scratchLine: null,
     rejectedMoves: 0,
     board: 0,
 
@@ -308,7 +316,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         matchFeedback: null,
         engineClock: null,
         engineClockLive: null,
-        gameOutcome: null
+        gameOutcome: null,
+        scratchLine: null
       }));
     },
 
@@ -379,6 +388,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       return move ? get().makeMove(move, atNodeId) : false;
     },
 
+    ...createScratchLineActions(set, get),
+
     goToNode: (nodeId) => {
       const node = get().moveTree.find((item) => item.id === nodeId);
       // A promotion being chosen belongs to the position it started from.
@@ -387,7 +398,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           currentNodeId: node.id,
           currentFen: node.fenAfter,
           pendingPromotion: null,
-          bestLine: null
+          bestLine: null,
+          scratchLine: null
         });
     },
 
@@ -395,6 +407,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (!get().moveTree.some((node) => node.id === cursor.markedNodeId)) return;
       set({
         bestLine: cursor,
+        scratchLine: null,
         currentNodeId: cursor.markedNodeId,
         currentFen: bestLineStep(cursor).fenAfter,
         pendingPromotion: null
@@ -481,6 +494,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         currentNodeId: node.id,
         currentFen: node.fenAfter,
         lastError: null,
+        // The tree changed under a scratch line: it goes (its anchor may be gone).
+        scratchLine: null,
         ...(moved ? { pendingPromotion: null, bestLine: null } : {})
       });
     },
@@ -496,11 +511,13 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     undo: () => {
+      if (get().stepScratchLine(-1)) return;
       const node = get().moveTree.find((item) => item.id === get().currentNodeId);
       if (node?.parentId) get().goToNode(node.parentId);
     },
 
     redo: () => {
+      if (get().stepScratchLine(1)) return;
       const node = get().moveTree.find((item) => item.id === get().currentNodeId);
       if (node?.children[0]) get().goToNode(node.children[0]);
     },
@@ -524,7 +541,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         matchFeedback: null,
         engineClock: null,
         engineClockLive: null,
-        gameOutcome: null
+        gameOutcome: null,
+        scratchLine: null
       }));
     },
 

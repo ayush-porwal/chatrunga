@@ -4,11 +4,13 @@ import { applySan } from "@chaturanga/shared/chess/position";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { AnalysisLine, MoveReview } from "@chaturanga/shared/types/engine";
 import {
+  bareSquareOf,
   resolveCommentaryMoves,
   reviewAnchorFor,
   tokenizeCommentary,
   type CommentaryMoveContext,
-  type CommentaryMoveToken
+  type CommentaryMoveToken,
+  type CommentarySquareToken
 } from "./commentary-moves";
 
 // Blackburne Shilling trap; the commented move is 4.Nxe5 (ply 7).
@@ -122,17 +124,53 @@ describe("tokenizeCommentary", () => {
     );
   });
 
-  it("does not match inside words or bare squares used as squares", () => {
-    const moves = tokenizeCommentary(
+  it("does not match inside words, and reads bare squares used as squares as squares", () => {
+    const segments = tokenizeCommentary(
       "The knight on d5 eyes the e4 pawn; abc4 and Qa1s stay text, but c3 is a move."
-    )
-      .filter((segment) => segment.kind === "move")
-      .map((segment) => segment.text);
-    expect(moves).toStrictEqual(["c3"]);
+    );
+    const of = (kind: string) =>
+      segments.filter((segment) => segment.kind === kind).map((segment) => segment.text);
+    expect(of("move")).toStrictEqual(["c3"]);
+    expect(of("square")).toStrictEqual(["d5", "e4"]);
+  });
+
+  it("tells the squares a coach names from the moves it names", () => {
+    const prose =
+      "Rab1 gets the rook off a1, but it ignores Bg5, which pins the bishop on f6 against the king on d8 and threatens to win material. After Rab1, Bf5 hits your queen on d3";
+    const segments = tokenizeCommentary(prose);
+    expect(
+      segments.filter((segment) => segment.kind === "move").map((segment) => segment.san)
+    ).toStrictEqual(["Rab1", "Bg5", "Rab1", "Bf5"]);
+    expect(
+      segments
+        .filter((segment): segment is CommentarySquareToken => segment.kind === "square")
+        .map((segment) => segment.square)
+    ).toStrictEqual(["a1", "f6", "d8", "d3"]);
+    // Nothing is lost: the segments put back together are the prose.
+    expect(segments.map((segment) => segment.text).join("")).toBe(prose);
+  });
+
+  it("keeps a bare square after other words a move token (a pawn move when it resolves)", () => {
+    const segments = tokenizeCommentary("Instead of h3, play d4 to free the e-file.");
+    const moves = segments.filter(
+      (segment): segment is CommentaryMoveToken => segment.kind === "move"
+    );
+    expect(moves.map((token) => token.san)).toStrictEqual(["h3", "d4"]);
+    expect(moves.map((token) => bareSquareOf(token))).toStrictEqual(["h3", "d4"]);
+    expect(bareSquareOf({ san: "Nf3", plyHint: null })).toBeNull();
+    expect(bareSquareOf({ san: "e4", plyHint: 1 })).toBeNull();
   });
 });
 
 describe("resolveCommentaryMoves", () => {
+  it("never resolves a square reference, and a square splits a run of moves", () => {
+    const { ctx } = setup();
+    const segments = tokenizeCommentary("Qg5 hits g2 and the knight on e5.");
+    expect(segments.filter((segment) => segment.kind === "square")).toHaveLength(2);
+    const resolved = resolveCommentaryMoves(segments, ctx);
+    expect([...resolved.values()].map((target) => target.san)).toStrictEqual(["Qg5"]);
+  });
+
   it("resolves the played move to its own node through the main line", () => {
     const { ctx, nodes } = setup();
     const [played] = resolveProse("Nxe5 grabs a pawn.", ctx);
@@ -243,24 +281,5 @@ describe("reviewAnchorFor", () => {
     });
     expect(reviewAnchorFor(tree1, at(nodes, 6).id, new Map())).toBeNull();
     expect(reviewAnchorFor(tree1, "root", reviews)).toBeNull();
-  });
-
-  it("keeps the move a link was clicked from as the anchor for lines from its parent", () => {
-    const { tree, moves, nodes } = setup();
-    const reviews = new Map(moves.map((move) => [move.nodeId, move]));
-    const played = at(nodes, 6);
-    // A best-line variation replacing ply 7: it hangs off ply 6's node.
-    const parentId = at(nodes, 5).id;
-    const sibling: MoveNode = { ...played, id: "alt1", parentId, children: [] };
-    const tree1 = withVariation(tree, parentId, sibling);
-    expect(reviewAnchorFor(tree1, "alt1", reviews, played.id)).toMatchObject({
-      move: { ply: 7 },
-      variation: true
-    });
-    // An unrelated preference (a later move) does not apply.
-    expect(reviewAnchorFor(tree1, "alt1", reviews, at(nodes, 10).id)).toMatchObject({
-      move: { ply: 6 },
-      variation: true
-    });
   });
 });

@@ -1,11 +1,12 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGameStore } from "../../stores/game-store";
-import type { CommentaryMoveContext } from "./commentary-moves";
-import { CommentaryProse } from "./MoveLinks";
+import type { CommentaryMoveContext, MoveNavigationTarget } from "./commentary-moves";
+import { CommentaryProse } from "./CommentaryProse";
+import { playCoachLine } from "./useReviewPanelAnchor";
 import type { CommentaryDetail } from "./review-utils";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 
@@ -30,7 +31,8 @@ export function useCardCommentary(): CardCommentaryOptions | null {
 
 /**
  * A card's expanded body: the same commentary the Commentary tab shows for `move`, from the same
- * source and per-ply cache (asked for once when it isn't cached yet).
+ * source and per-ply cache (asked for once when it isn't cached yet). Its links play their line
+ * as the Commentary tab's do: a scratch line, the game staying on the moment's move.
  */
 export function MomentCommentary({
   move,
@@ -48,9 +50,10 @@ export function MomentCommentary({
     () => ({ move, moves, moveTree }),
     [move, moveTree, moves]
   );
-  const goToLine = useGameStore((state) => state.goToLine);
-  const onGoToLine = (target: { startNodeId: string; moves: string[] }) =>
-    goToLine(target.startNodeId, target.moves);
+  const onGoToLine = useCallback(
+    (target: MoveNavigationTarget) => playCoachLine(move.nodeId, target),
+    [move.nodeId]
+  );
 
   if (result.status === "ready" && result.commentary) {
     const { headline, prose } = result.commentary;

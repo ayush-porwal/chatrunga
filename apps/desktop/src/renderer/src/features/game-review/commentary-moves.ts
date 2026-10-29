@@ -1,5 +1,6 @@
 import { applySan, fenAfterUci } from "@chaturanga/shared/chess/position";
-import type { MoveNode } from "@chaturanga/shared/types/chess";
+import { isSquare } from "@chaturanga/shared/chess/square";
+import type { MoveNode, Square } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { uciToSan } from "./review-utils";
 
@@ -9,9 +10,10 @@ import { uciToSan } from "./review-utils";
  * AI commentary only names SAN tokens that come from grounded data: the
  * played move, the engine's best line and alternatives (from `fenBefore`), the reply line after the
  * played move (from `fenAfter`) and the game's recent history. This module splits
- * prose into text and SAN tokens, then maps each token back to one of those lines so a click can
- * land on the exact position (see `useGameStore().goToLine`). Every line is replayed with chessops
- * from its start FEN, so a token only becomes a link when the move is legal where it is played.
+ * prose into text, SAN tokens and square references ("the bishop on f6"), then maps each SAN token
+ * back to one of those lines so a click can land on the exact position. Every line is replayed with
+ * chessops from its start FEN, so a token only becomes a link when the move is legal where it is
+ * played.
  */
 
 export type CommentaryMoveToken = {
@@ -26,7 +28,13 @@ export type CommentaryMoveToken = {
   index: number;
 };
 
-export type CommentarySegment = { kind: "text"; text: string } | CommentaryMoveToken;
+/** A square the prose names as a square ("the knight on d5", "off a1", "the e4 pawn"). */
+export type CommentarySquareToken = { kind: "square"; text: string; square: Square };
+
+export type CommentarySegment =
+  | { kind: "text"; text: string }
+  | CommentaryMoveToken
+  | CommentarySquareToken;
 
 /** Where a clickable move leads: play `moves` from `startNodeId` (existing nodes are reused). */
 export type MoveNavigationTarget = {
@@ -74,20 +82,23 @@ type SearchPass = {
 // optional move-number prefix and check/mate suffix on castling.
 const TOKEN_REGEX =
   /(?:\b(\d{1,3})\s?(\.\.\.|…|\.)\s?)?(?<![A-Za-z0-9=])(O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)([+#]{1,2})?(?![A-Za-z0-9])/g;
-const BARE_SQUARE = /^[a-h][1-8]$/;
-/** Words around a bare square that make it a square reference ("the knight on d5", "the e4 pawn"). */
+/**
+ * Words before a bare square that make it a square reference ("the knight on d5", "off a1", "hits
+ * your queen on d3"). Not "of": "instead of h3" names a pawn move (an unresolved bare square still
+ * reads as a square, see CommentaryProse).
+ */
 const SQUARE_WORD_BEFORE = new Set([
   "on",
   "to",
   "from",
   "at",
+  "off",
   "onto",
   "into",
   "toward",
   "towards",
   "square",
   "squares",
-  "of",
   "via",
   "over",
   "near",
@@ -96,7 +107,21 @@ const SQUARE_WORD_BEFORE = new Set([
   "controls",
   "control",
   "covers",
-  "covering"
+  "covering",
+  "hits",
+  "hitting",
+  "attacks",
+  "attacking",
+  "targets",
+  "targeting",
+  "eyes",
+  "eyeing",
+  "guards",
+  "guarding",
+  "defends",
+  "defending",
+  "protects",
+  "protecting"
 ]);
 const SQUARE_WORD_AFTER = new Set([
   "pawn",
@@ -115,7 +140,11 @@ const SQUARE_WORD_AFTER = new Set([
 const HISTORY_BEFORE = 6;
 const HISTORY_AFTER = 2;
 
-/** Split prose into plain text and SAN move tokens. Adjacent text is merged. */
+/**
+ * Split prose into plain text, SAN move tokens and square references. A bare square ("f6") is a
+ * square when a square word comes before it or a piece word after it; otherwise it is a move token
+ * (a pawn move, when it resolves). Adjacent text is merged.
+ */
 export function tokenizeCommentary(prose: string): CommentarySegment[] {
   const segments: CommentarySegment[] = [];
   let cursor = 0;
@@ -133,21 +162,30 @@ export function tokenizeCommentary(prose: string): CommentarySegment[] {
     const start = match.index;
     if (!body) continue;
     const plyHint = number ? Number(number) * 2 - (dots === "." ? 1 : 0) : null;
+    pushText(prose.slice(cursor, start));
+    cursor = start + full.length;
     if (
       !number &&
-      BARE_SQUARE.test(body) &&
       !suffix &&
+      isSquare(body) &&
       looksLikeSquareReference(prose, start, start + full.length)
     ) {
+      segments.push({ kind: "square", text: full, square: body });
       continue;
     }
-    pushText(prose.slice(cursor, start));
     segments.push({ kind: "move", text: full, san: body + suffix, plyHint, index });
     index += 1;
-    cursor = start + full.length;
   }
   pushText(prose.slice(cursor));
   return segments;
+}
+
+/**
+ * The square a move token names when it is a bare square ("c3": no number, piece or suffix): a
+ * pawn move if it resolves to one, else the square itself. Null for any other move.
+ */
+export function bareSquareOf(token: Pick<CommentaryMoveToken, "san" | "plyHint">): Square | null {
+  return token.plyHint === null && isSquare(token.san) ? token.san : null;
 }
 
 function looksLikeSquareReference(prose: string, start: number, end: number): boolean {
@@ -488,7 +526,7 @@ export function resolveCommentaryMoves(
   };
   for (const segment of segments) {
     if (segment.kind === "move") run.push(segment);
-    else if (!/^\s*$/.test(segment.text)) flush();
+    else if (segment.kind === "square" || !/^\s*$/.test(segment.text)) flush();
   }
   flush();
   return out;
@@ -496,28 +534,19 @@ export function resolveCommentaryMoves(
 
 /**
  * The reviewed move commentary should anchor to for `nodeId`: the node's own review, or — on an
- * unreviewed variation — a reviewed move it hangs off. `variation` is true in the latter case.
- *
- * `preferredNodeId` is the move whose commentary a move link was clicked from. Its best line and
- * alternatives branch from its *parent*, so the nearest reviewed ancestor of such a variation is
- * the previous ply; the preferred move keeps the anchor while `nodeId` lies below it or below its
- * parent. Otherwise the nearest reviewed ancestor is used.
+ * unreviewed variation — the nearest reviewed move it hangs off. `variation` is true in the latter
+ * case. (A coach's line clicked is a scratch line: the game stays on the move it was clicked from.)
  */
 export function reviewAnchorFor(
   moveTree: readonly MoveNode[],
   nodeId: string,
-  reviewByNodeId: ReadonlyMap<string, MoveReview>,
-  preferredNodeId: string | null = null
+  reviewByNodeId: ReadonlyMap<string, MoveReview>
 ): { move: MoveReview; variation: boolean } | null {
   const own = reviewByNodeId.get(nodeId);
   if (own) return { move: own, variation: false };
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   if (mainlineIds(moveTree, byId).has(nodeId)) return null;
-  const ancestors = ancestorIds(byId, nodeId);
-  const preferred = preferredNodeId ? reviewByNodeId.get(preferredNodeId) : undefined;
-  if (preferred && preferredNodeId && hangsOff(ancestors, preferredNodeId, byId))
-    return { move: preferred, variation: true };
-  for (const ancestorId of ancestors) {
+  for (const ancestorId of ancestorIds(byId, nodeId)) {
     const review = reviewByNodeId.get(ancestorId);
     if (review) return { move: review, variation: true };
   }
@@ -553,14 +582,4 @@ function ancestorIds(byId: ReadonlyMap<string, MoveNode>, nodeId: string): strin
     ancestors.push(cursor.parentId);
   }
   return ancestors;
-}
-
-/** Whether a node with these `ancestors` lies below `moveId`, or below its parent. */
-function hangsOff(
-  ancestors: readonly string[],
-  moveId: string,
-  byId: ReadonlyMap<string, MoveNode>
-): boolean {
-  const parentId = byId.get(moveId)?.parentId ?? null;
-  return ancestors.includes(moveId) || (parentId !== null && ancestors.includes(parentId));
 }

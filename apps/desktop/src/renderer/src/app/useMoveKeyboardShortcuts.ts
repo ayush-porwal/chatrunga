@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { markRapidNavigation } from "../features/board/board-motion";
 import { useGameStore } from "../stores/game-store";
 import { activeBestLine, stepBestLine } from "../features/game/best-line-cursor";
+import { activeScratchLine } from "../features/game/scratch-line";
 import { alternativeTarget } from "../features/game/move-alternatives";
 import { bestLineMoves } from "../features/game/move-list-model";
 import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "../stores/review-store";
@@ -105,6 +106,8 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
     if (!enabled) return;
     const steps = createStepScheduler((delta) => {
       const game = useGameStore.getState();
+      // On a scratch line (Game review), the steps follow it the same way.
+      if (game.stepScratchLine(delta)) return;
       // On a BEST line, the steps follow the line (back before it: the game move it leaves from).
       const line = activeBestLine(game);
       if (line) {
@@ -136,6 +139,12 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
           break;
         case "End": {
           steps.cancel();
+          // A scratch line's end: its last move.
+          const scratch = activeScratchLine(game);
+          if (scratch) {
+            game.showScratchLine({ ...scratch, index: scratch.moves.length - 1 });
+            break;
+          }
           const lineEnd = lastNodeOfLine(game.moveTree, game.currentNodeId);
           if (lineEnd !== game.currentNodeId) game.goToNode(lineEnd);
           break;

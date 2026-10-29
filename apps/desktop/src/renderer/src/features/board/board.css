@@ -1,6 +1,7 @@
 /*
  * Chessground finishing for every board (game board, review board, graph tooltip board).
- * Loaded after chessground's own CSS (unlayered, like it), so equal-specificity rules here win.
+ * Loaded after chessground's own CSS (unlayered, like it; main.tsx imports it right after), so
+ * equal-specificity rules here win.
  * Square colours come from the board theme as --cg-sq-light / --cg-sq-dark (set on .cg-wrap by
  * useCgBoardBackground), so highlights and coordinates stay legible on every theme.
  */

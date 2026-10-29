@@ -298,7 +298,8 @@ function PuzzleProse({ text, line }: { text: string; line: PuzzleProseLine | nul
   return (
     <>
       {segments.map((segment, position) => {
-        if (segment.kind === "text") return <Fragment key={position}>{segment.text}</Fragment>;
+        // Squares stay text: the puzzle board has no previews.
+        if (segment.kind !== "move") return <Fragment key={position}>{segment.text}</Fragment>;
         const index = line ? solutionIndexForToken(segment, line) : null;
         if (!line || index === null) return <Fragment key={position}>{segment.text}</Fragment>;
         const moves = line.solutionSan.slice(0, index + 1);
