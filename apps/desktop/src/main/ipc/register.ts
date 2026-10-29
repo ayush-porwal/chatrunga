@@ -81,6 +81,11 @@ import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
 import { registerGamePuzzleIpc } from "./game-puzzles-handler";
 import { gamePuzzleEnginesChanged, noteReviewedGame, startGamePuzzleQueue } from "../game-puzzles";
+import { startRepertoireExplorer } from "../repertoire-explorer";
+import { registerRepertoireExplorerIpc } from "./repertoire-explorer-handler";
+// Repertoire Insights: the background game comparer and its report.
+import { insightsGamesChanged, startRepertoireInsights } from "../repertoire-insights";
+import { registerRepertoireInsightsIpc } from "./repertoire-insights-handler";
 import { engineImages, registerEngineCrudIpc } from "./engine-handler";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import { RASTER_PICTURE_FILE_EXTENSIONS } from "@chaturanga/shared/types/pictures";
@@ -162,6 +167,13 @@ export function registerIpc(engineManager: EngineManager): void {
   registerPuzzleIpc();
   // Resumes a queue persisted from the last run.
   registerGamePuzzleIpc(startGamePuzzleQueue(engineManager));
+  // Study's explorer and the repertoire health check (it waits for the puzzle queue's games); it
+  // loads in the background.
+  startRepertoireExplorer(engineManager, startGamePuzzleQueue(engineManager));
+  registerRepertoireExplorerIpc();
+  // Insights compares the user's games with their repertoires in the background (loaded alike).
+  startRepertoireInsights();
+  registerRepertoireInsightsIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).
@@ -393,22 +405,29 @@ function registerLibraryIpc(): void {
     const game = asId(gameId, "game id");
     const review = asId(reviewId, "review id");
     await retryOnceIfBusy(() => gameRepository.removeReview(game, review));
+    insightsGamesChanged();
   });
   ipcMain.handle("games:removeReviews", async (_event, gameId: unknown) => {
     const game = asId(gameId, "game id");
     await retryOnceIfBusy(() => gameRepository.removeReviews(game));
+    insightsGamesChanged();
   });
-  ipcMain.handle("games:save", (_event, value: unknown) => {
+  ipcMain.handle("games:save", async (_event, value: unknown) => {
+    const input = parseSaveGameInput(value);
     // A save landing while the import writer or a backup restore holds the write lock gets one
     // more try.
-    return saveGameRetrying(parseSaveGameInput(value), (gameId) =>
+    const saved = await saveGameRetrying(input, (gameId) =>
       wasRecentlyDeleted(gameId) ? new Error(SAVE_SUPPRESSED_AFTER_DELETE) : null
     );
+    // An imported or synced game (its moves, players or analyses) is compared again.
+    insightsGamesChanged(input.source);
+    return saved;
   });
   ipcMain.handle("games:remove", async (_event, value: unknown) => {
     const id = asId(value, "game id");
     recentlyDeletedGames.set(id, Date.now());
     await retryOnceIfBusy(() => gameRepository.remove(id));
+    insightsGamesChanged();
   });
   ipcMain.handle("games:importPgn", (_event, input: unknown): ImportedGame => {
     const imported = importPgnText(parsePgnText(input));

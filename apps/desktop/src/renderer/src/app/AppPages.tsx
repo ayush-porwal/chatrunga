@@ -6,6 +6,8 @@ import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
+import type { StudyFromGames } from "../features/repertoire/study-from-games";
+import type { InsightsReviewTarget } from "../features/repertoire/insights/insights-actions";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/navigation";
 import type { ReviewTab } from "../features/game-review/review-utils";
@@ -16,6 +18,7 @@ import { OpenSettingsContext } from "../features/settings/settings-link";
 import { GameWorkspace } from "./GameWorkspace";
 import type { SideTab } from "./side-tabs";
 import { PlayPage } from "../features/play/PlayPage";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 
 // Pages and panels load when first opened, so starting the app (Play, the board) doesn't parse the
 // review charts, settings, puzzles, databases or the welcome.
@@ -100,6 +103,8 @@ export type RepertoireScreen =
       tab: StudyTab;
       /** A move to stage once the chapter loads (applied once; see repertoireStageApplied). */
       stage: StudyStage | null;
+      /** Insights' From your games banner (see RepertoireExtras). */
+      fromGames: StudyFromGames | null;
     }
   | {
       view: "repertoire-practice";
@@ -142,7 +147,11 @@ export type PageCommands = {
   /** The board's game (with its analysis) as a .pgn file. */
   exportPgn: () => void;
   repertoireHub: () => void;
+  /** The hub on a tab (a practice summary's way back to Practice or Insights). */
+  repertoireHubTab: (tab: RepertoireHubTab) => void;
   openRepertoireStudy: (target: StudyOpenTarget) => void;
+  /** Study's "Add to…" another chapter: opens it without the leave question (true: it opened). */
+  openChapterForStaged: (target: StudyOpenTarget) => Promise<boolean>;
   refreshRepertoireDecision: (repertoireId: string, positionKey: string) => void;
   repertoireStageApplied: () => void;
   /** Practice: a session starts at once with the repertoire's practice settings. */
@@ -157,6 +166,8 @@ export type PageCommands = {
   repertoireTabChange: (tab: StudyTab) => void;
   repertoirePositionChanged: () => void;
   openGameAtNode: (gameId: string, nodeId: string | null) => void;
+  /** Insights' Review game: Game review at the move (its titlebar offers Back to Insights). */
+  reviewGameFromInsights: (target: InsightsReviewTarget) => void;
   repertoirePracticeStarted: (sessionId: string) => void;
   /** "Practice again" / "Start a new session". */
   repertoirePracticeAgain: () => void;
@@ -240,7 +251,9 @@ export function AppPages({
           <RepertoireHubPage
             onStudy={on.openRepertoireStudy}
             onPractice={on.openRepertoirePractice}
+            onPracticePreset={on.rehearseRepertoire}
             onResume={on.resumeRepertoirePractice}
+            onReviewGame={on.reviewGameFromInsights}
           />
         ) : view === "repertoire-study" || view === "repertoire-practice" ? (
           <RepertoireScreenPage view={view} repertoire={repertoire} on={on} />
@@ -323,10 +336,29 @@ function RepertoireScreenPage({
         initialOrientation={repertoire.orientation}
         tab={repertoire.tab}
         stage={repertoire.stage}
+        fromGames={repertoire.fromGames}
+        onPractisePosition={(positionKey) =>
+          on.refreshRepertoireDecision(repertoire.repertoireId, positionKey)
+        }
+        onOpenFlag={(flag) =>
+          on.openRepertoireStudy({
+            repertoireId: repertoire.repertoireId,
+            chapterId: flag.chapterId,
+            nodeId: flag.nodeId,
+            fromGames: { kind: "health", positionKey: flag.positionKey, flag }
+          })
+        }
         onStageApplied={on.repertoireStageApplied}
         onTabChange={on.repertoireTabChange}
         onOpenChapter={(chapterId, nodeId = null) =>
           on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+        }
+        onAddToChapter={(chapterId) =>
+          on.openChapterForStaged({
+            repertoireId: repertoire.repertoireId,
+            chapterId,
+            nodeId: null
+          })
         }
         onPractice={() => on.practiceFromStudy(repertoire.repertoireId, repertoire.chapterId)}
         onMissing={on.repertoireMissing}
@@ -348,6 +380,7 @@ function RepertoireScreenPage({
         on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
       }
       onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
+      onReturnToHub={on.repertoireHubTab}
     />
   );
 }

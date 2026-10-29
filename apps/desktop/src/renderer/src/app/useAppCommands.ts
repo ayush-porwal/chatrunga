@@ -12,6 +12,7 @@ import type { BroadcastScreen, TournamentTarget } from "../features/broadcasts/n
 import { isLichessMode } from "../features/play/play-layout";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { PracticePreset } from "../features/repertoire/practice-setup";
+import type { InsightsReviewTarget } from "../features/repertoire/insights/insights-actions";
 import type { StudyOpenTarget } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
@@ -20,7 +21,10 @@ import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
-import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
+import {
+  confirmLeavingStaged,
+  useRepertoireWorkspaceStore
+} from "../stores/repertoire-workspace-store";
 import { currentGame, type AppNavigation } from "./app-navigation";
 import type { BoardCommands } from "./board-commands";
 import type { BroadcastCommands } from "./broadcast-commands";
@@ -28,6 +32,7 @@ import type { PuzzleCommands } from "./puzzle-commands";
 import type { RepertoireCommands } from "./repertoire-commands";
 import type { RepertoireExtras } from "./useRepertoireRoute";
 import { cancelActiveReview } from "./useReviewRunner";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 
 /** The shell's commands, and the state its own commands (layout, dialogs, Back / Forward) change. */
 type AppCommandSources = {
@@ -75,14 +80,40 @@ export function useAppCommands({
     // Replaced once the commands below exist, before any notice can offer Retry.
   });
 
+  /**
+   * Leaving Study with staged moves (never saved) asks first: `run` goes ahead only when nothing
+   * is staged or the user agrees to discard them (they go once the screen changes, so a navigation
+   * that doesn't happen keeps them). `keepsChapter`: it stays in the open chapter (no question).
+   */
+  const leavingStudy =
+    <A extends unknown[]>(run: (...args: A) => void, keepsChapter?: (...args: A) => boolean) =>
+    (...args: A) => {
+      if (nav.view === "repertoire-study" && !keepsChapter?.(...args) && !confirmLeavingStaged())
+        return;
+      run(...args);
+    };
+
   // Before the rest: "Added to repertoire"'s notice opens the chapter through it.
-  const openRepertoireStudy = useEventCallback((target: StudyOpenTarget) =>
-    unlessRepertoireBlocked(
-      target.stage ? "stage-response" : "open-study",
-      () => void repertoire.openRepertoireStudy(target)
+  const openRepertoireStudy = useEventCallback(
+    leavingStudy(
+      (target: StudyOpenTarget) =>
+        unlessRepertoireBlocked(
+          target.stage ? "stage-response" : "open-study",
+          () => void repertoire.openRepertoireStudy(target)
+        ),
+      (target) => target.chapterId === useRepertoireWorkspaceStore.getState().chapterId
     )
   );
   const on = {
+    // "Add to…" another chapter (Study): the staged moves go along, so it opens without the leave
+    // question; whether it opened (a failed save or a Lichess game in progress keeps Study).
+    openChapterForStaged: useEventCallback((target: StudyOpenTarget) => {
+      let opened = Promise.resolve(false);
+      unlessRepertoireBlocked("open-study", () => {
+        opened = repertoire.openRepertoireStudy(target);
+      });
+      return opened;
+    }),
     // "Show sidebar" while focused brings the whole frame back (sidebar and panel).
     toggleSidebar: useEventCallback(() => {
       if (focused) {
@@ -90,30 +121,34 @@ export function useAppCommands({
         setActionRailOpen(true);
       } else setActionRailOpen((open) => !open);
     }),
-    settings: useEventCallback(() => nav.openSettings(null)),
-    commentarySettings: useEventCallback(() => nav.openSettings("ai")),
-    openSettings: useEventCallback((section: SettingsSectionId) => nav.openSettings(section)),
-    engineSettings: useEventCallback(() => nav.openSettings("engines")),
-    back: useEventCallback(() => void history.go(-1)),
-    forward: useEventCallback(() => void history.go(1)),
+    settings: useEventCallback(leavingStudy(() => nav.openSettings(null))),
+    commentarySettings: useEventCallback(leavingStudy(() => nav.openSettings("ai"))),
+    openSettings: useEventCallback(
+      leavingStudy((section: SettingsSectionId) => nav.openSettings(section))
+    ),
+    engineSettings: useEventCallback(leavingStudy(() => nav.openSettings("engines"))),
+    back: useEventCallback(leavingStudy(() => void history.go(-1))),
+    forward: useEventCallback(leavingStudy(() => void history.go(1))),
     settingsSectionViewed: useEventCallback((section: SettingsSectionId) =>
       nav.settingsSectionViewed(section)
     ),
-    importedGame: useEventCallback((imported: ImportedGame) =>
-      unlessOnlineGame(() => board.loadImportedGame(imported))
+    importedGame: useEventCallback(
+      leavingStudy((imported: ImportedGame) =>
+        unlessOnlineGame(() => board.loadImportedGame(imported))
+      )
     ),
     beforePlayStart: useEventCallback(board.beforeEngineGame),
-    play: useEventCallback(() => nav.openFreshPlayPage()),
-    freeBoard: useEventCallback(() => unlessOnlineGame(board.startFreeBoard)),
-    liveAnalysis: useEventCallback(() => unlessOnlineGame(board.startLiveAnalysis)),
+    play: useEventCallback(leavingStudy(() => nav.openFreshPlayPage())),
+    freeBoard: useEventCallback(leavingStudy(() => unlessOnlineGame(board.startFreeBoard))),
+    liveAnalysis: useEventCallback(leavingStudy(() => unlessOnlineGame(board.startLiveAnalysis))),
     stopLiveAnalysis: useEventCallback(board.stopLiveAnalysis),
     analyzePosition: useEventCallback(board.analyzeCurrentPosition),
     openReviewPicker: useEventCallback(() => unlessOnlineGame(() => setGameReviewPickerOpen(true))),
     closeReviewPicker: useEventCallback(() => setGameReviewPickerOpen(false)),
     openImportDialog: useEventCallback(() => setImportOpen(true)),
     closeImportDialog: useEventCallback(() => setImportOpen(false)),
-    reviewGame: useEventCallback((id: string) =>
-      unlessOnlineGame(() => void board.openSelectedGameReview(id))
+    reviewGame: useEventCallback(
+      leavingStudy((id: string) => unlessOnlineGame(() => void board.openSelectedGameReview(id)))
     ),
     // After a Lichess game: Play, in the Lichess mode it was played in (else Quick pairing).
     playLichess: useEventCallback(() => {
@@ -122,9 +157,9 @@ export function useAppCommands({
       lichess.setPlayOpponent(mode && isLichessMode(mode) ? mode : "pool");
       nav.openFreshPlayPage();
     }),
-    puzzles: useEventCallback(() => unlessOnlineGame(() => nav.openPuzzlesPage())),
-    databases: useEventCallback(() => nav.openDatabasesPage()),
-    broadcasts: useEventCallback(() => nav.openBroadcastsPage()),
+    puzzles: useEventCallback(leavingStudy(() => unlessOnlineGame(() => nav.openPuzzlesPage()))),
+    databases: useEventCallback(leavingStudy(() => nav.openDatabasesPage())),
+    broadcasts: useEventCallback(leavingStudy(() => nav.openBroadcastsPage())),
     openBroadcastTournament: useEventCallback((target: TournamentTarget) =>
       nav.openBroadcastTournament(target)
     ),
@@ -143,7 +178,9 @@ export function useAppCommands({
         nav.openPuzzlesPage();
       })
     ),
-    importPgn: useEventCallback(() => unlessOnlineGame(() => void board.importPgnFile())),
+    importPgn: useEventCallback(
+      leavingStudy(() => unlessOnlineGame(() => void board.importPgnFile()))
+    ),
     exportPgn: useEventCallback(() => void board.exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
     exitFocus: useEventCallback(() => setFocusMode(false)),
@@ -180,17 +217,23 @@ export function useAppCommands({
     playEngineFromPuzzle: useEventCallback(puzzles.playEngineFromCurrentPuzzlePosition),
     reviewCurrentGame: useEventCallback(() => void board.openSelectedGameReview("current")),
     reviewEngineGame: useEventCallback(() => void board.reviewFinishedEngineGame()),
-    repertoireHub: useEventCallback(() => repertoire.openRepertoireHub()),
+    repertoireHub: useEventCallback(leavingStudy(() => repertoire.openRepertoireHub())),
+    // A practice summary's Back to Practice / Back to Insights: the hub on that tab.
+    repertoireHubTab: useEventCallback((tab: RepertoireHubTab) =>
+      repertoire.openRepertoireHub("push", tab)
+    ),
     openRepertoireStudy,
     // "Refresh this decision" (a game's opening comparison): a targeted queue that starts at once.
     // Back returns to the review left (its tab and move are committed first).
-    refreshRepertoireDecision: useEventCallback((repertoireId: string, positionKey: string) =>
-      unlessRepertoireBlocked(
-        "refresh-decision",
-        () =>
-          void repertoire.openRepertoirePractice(repertoireId, {
-            preset: { mode: "review-due", positionKeys: [positionKey] }
-          })
+    refreshRepertoireDecision: useEventCallback(
+      leavingStudy((repertoireId: string, positionKey: string) =>
+        unlessRepertoireBlocked(
+          "refresh-decision",
+          () =>
+            void repertoire.openRepertoirePractice(repertoireId, {
+              preset: { mode: "review-due", positionKeys: [positionKey] }
+            })
+        )
       )
     ),
     repertoireStageApplied: useEventCallback(() =>
@@ -211,10 +254,12 @@ export function useAppCommands({
         )
     ),
     // Study's Practice: the practice settings, a rehearsal of lines playing the open chapter.
-    practiceFromStudy: useEventCallback((repertoireId: string, chapterId: string) =>
-      unlessRepertoireBlocked(
-        "open-practice",
-        () => void repertoire.openRepertoirePractice(repertoireId, { preset: { chapterId } })
+    practiceFromStudy: useEventCallback(
+      leavingStudy((repertoireId: string, chapterId: string) =>
+        unlessRepertoireBlocked(
+          "open-practice",
+          () => void repertoire.openRepertoirePractice(repertoireId, { preset: { chapterId } })
+        )
       )
     ),
     // "Rehearse again", "Retry missed" (a summary) and another line's chapter: the session starts
@@ -241,8 +286,10 @@ export function useAppCommands({
     }),
     // A repertoire source link: the saved game on the board at the linked move (no move: the
     // game's start, even when the game is already open at a later move).
-    openGameAtNode: useEventCallback((gameId: string, nodeId: string | null) =>
-      unlessOnlineGame(() => void board.openSavedGameById(gameId, nodeId ?? "root"))
+    openGameAtNode: useEventCallback(
+      leavingStudy((gameId: string, nodeId: string | null) =>
+        unlessOnlineGame(() => void board.openSavedGameById(gameId, nodeId ?? "root"))
+      )
     ),
     closeAddToRepertoire: useEventCallback(closeAddToRepertoire),
     // Added: the dialog closes and the notice offers the chapter (Back returns here).
@@ -264,18 +311,25 @@ export function useAppCommands({
     repertoirePracticeAgain: useEventCallback(() =>
       unlessRepertoireBlocked("open-practice", repertoire.practiceAgain)
     ),
-    playFromStudy: useEventCallback(() =>
+    // Only Study offers it: staged moves are asked about first.
+    playFromStudy: useEventCallback(() => {
+      if (!confirmLeavingStaged()) return;
       unlessRepertoireBlocked(
         "play-from-here",
         () => void repertoire.playFromStudy(() => retryPlayFromStudy.current())
-      )
-    ),
+      );
+    }),
     returnToRepertoire: useEventCallback(() =>
       unlessRepertoireBlocked("return-to-repertoire", repertoire.returnToRepertoire)
     ),
     reviewHandoffOpening: useEventCallback(() =>
       unlessRepertoireBlocked("review-opening", () => void repertoire.reviewHandoffOpening())
-    )
+    ),
+    // Insights' Review game (a Lichess game being played keeps the board), and Back to Insights.
+    reviewGameFromInsights: useEventCallback((target: InsightsReviewTarget) =>
+      unlessOnlineGame(() => void repertoire.reviewFromInsights(target))
+    ),
+    backToInsights: useEventCallback(() => repertoire.backToInsights())
   };
   useLayoutEffect(() => {
     retryPlayFromStudy.current = on.playFromStudy;

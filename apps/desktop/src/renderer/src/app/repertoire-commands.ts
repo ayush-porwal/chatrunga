@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
+import type { RepertoireHubTab } from "@chaturanga/shared/types/repertoire-practice";
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type RepertoireDetail
@@ -17,6 +18,11 @@ import {
   type RepertoireCommand
 } from "../features/repertoire/handoffs";
 import { practiceAutoStarts } from "../features/repertoire/practice-start";
+import type { InsightsReviewTarget } from "../features/repertoire/insights/insights-actions";
+import {
+  mainlineNodeAtPly,
+  useInsightsReturnStore
+} from "../features/repertoire/insights/insights-return";
 import type { StudyOpenTarget } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import {
@@ -41,6 +47,30 @@ import type { HistoryMode } from "./history-navigation";
 import { saveStudyDraftFirst } from "./navigation-coordinator";
 import { flushGameAutosave } from "./useGameAutosave";
 import type { RepertoireExtras } from "./useRepertoireRoute";
+
+/**
+ * What App keeps for a study screen opened at `target`. A staged move is applied once by the
+ * study page; history entries never carry it (nor the From your games banner). A reply the
+ * user's games show unprepared is staged at its node.
+ */
+function studyExtras(
+  target: Omit<StudyOpenTarget, "tab"> & { orientation?: Color | null },
+  tab: StudyTab
+): RepertoireExtras {
+  const fromGames = target.fromGames ?? null;
+  const unprepared =
+    fromGames?.kind === "unprepared" && target.nodeId
+      ? { nodeId: target.nodeId, uci: fromGames.reply.uci }
+      : null;
+  return {
+    nodeId: target.nodeId,
+    orientation: target.orientation ?? null,
+    tab,
+    preset: null,
+    stage: target.stage ?? unprepared,
+    fromGames
+  };
+}
 
 /** What the repertoire commands need from the shell besides its navigation. */
 type RepertoireCommandDeps = {
@@ -80,7 +110,9 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     nav.setView(view, () => void nav.navigate(path, { replace: true }));
   }
 
-  function openRepertoireHub(history: HistoryMode = "push") {
+  /** The hub, on `tab` when given (it becomes the remembered tab), else the one last shown. */
+  function openRepertoireHub(history: HistoryMode = "push", tab?: RepertoireHubTab) {
+    if (tab) deps.updateSetting({ key: "repertoireHubTab", value: tab });
     if (history === "push") commitCurrent();
     latestNavigation.current += 1;
     showRepertoireView("repertoire-hub", "/repertoires");
@@ -117,20 +149,15 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     });
     if (!leftSaved) return false;
     // Restoring the chapter already open: put its node (no node is the root) and orientation
-    // back directly.
+    // back directly. Back / Forward asked about the staged moves first (confirmLeavingStaged):
+    // they go now that the restore goes ahead.
     if (draft.repertoireId === target.repertoireId && draft.chapterId === target.chapterId) {
+      if (history !== "push") draft.discardStaged();
       draft.selectNode(target.nodeId ?? REPERTOIRE_ROOT_NODE_ID);
       if (target.orientation) draft.setOrientation(target.orientation);
     }
     const tab = target.tab ?? deps.extras.tab;
-    // A staged move is applied once by the study page; history entries never carry it.
-    deps.setExtras({
-      nodeId: target.nodeId,
-      orientation: target.orientation ?? null,
-      tab,
-      preset: null,
-      stage: target.stage ?? null
-    });
+    deps.setExtras(studyExtras(target, tab));
     showRepertoireView(
       "repertoire-study",
       `/repertoires/${encodeURIComponent(target.repertoireId)}/chapters/${encodeURIComponent(target.chapterId)}`
@@ -402,6 +429,37 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     await deps.openGameReview("current", "summary");
   }
 
+  // ---- Insights → Game review, and back ---------------------------------------------------------
+
+  /**
+   * Insights' Review game: Game review of a library game at the move a report row or listed game is
+   * about, comparing with its repertoire on the Opening section; the titlebar offers Back to
+   * Insights while that game is shown.
+   */
+  async function reviewFromInsights(target: InsightsReviewTarget) {
+    const { repertoireId, color } = target;
+    if (repertoireId && color) {
+      deps.updateSetting({
+        key: color === "white" ? "repertoireCompareWhite" : "repertoireCompareBlack",
+        value: repertoireId
+      });
+    }
+    rememberCollapsibleOpen("review-summary:repertoire", true);
+    await deps.openGameReview(target.gameId, "summary");
+    // A newer navigation, or the game couldn't be read: nothing more to show.
+    if (currentGame().gameId !== target.gameId) return;
+    useInsightsReturnStore.getState().setGameId(target.gameId);
+    if (color) deps.setOpeningSide({ board: currentGame().board, color });
+    const node = target.ply === null ? null : mainlineNodeAtPly(currentGame().moveTree, target.ply);
+    if (node) currentGame().goToNode(node.id);
+  }
+
+  /** Game review's Back to Insights: the Repertoire page (on its Insights tab). */
+  function backToInsights() {
+    useInsightsReturnStore.getState().setGameId(null);
+    openRepertoireHub("push", "insights");
+  }
+
   return {
     openRepertoireHub,
     openRepertoireStudy,
@@ -411,7 +469,9 @@ export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireComman
     unlessRepertoireBlocked,
     playFromStudy,
     returnToRepertoire,
-    reviewHandoffOpening
+    reviewHandoffOpening,
+    reviewFromInsights,
+    backToInsights
   };
 }
 

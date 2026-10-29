@@ -356,4 +356,19 @@ describe("runMigrations", () => {
       title_chosen: 1
     });
   });
+
+  it("17: a stored decision was accepted no later than its last update", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE games (id TEXT PRIMARY KEY)");
+    db.exec("CREATE TABLE repertoires (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL)");
+    db.exec(`CREATE TABLE repertoire_decisions (repertoire_id TEXT NOT NULL, position_key TEXT NOT NULL,
+      acceptance_fingerprint TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)`);
+    db.exec("INSERT INTO repertoires VALUES ('r', 100)");
+    db.exec("INSERT INTO repertoire_decisions VALUES ('r', 'k', 'e2e4', 500)");
+    db.exec("PRAGMA user_version = 16");
+    runMigrations(db, MIGRATIONS.slice(0, 17));
+    expect({ ...db.prepare("SELECT accepted_at FROM repertoire_decisions").get() }).toStrictEqual({
+      accepted_at: 500
+    });
+  });
 });

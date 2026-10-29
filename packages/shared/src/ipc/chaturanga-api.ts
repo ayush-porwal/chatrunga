@@ -95,6 +95,19 @@ import type {
   GamePuzzleSettings,
   GamePuzzleSummary
 } from "../types/game-puzzles";
+// Study's explorer and the health check.
+import type {
+  ExplorerGames,
+  ExplorerMaiaInput,
+  ExplorerMaiaMoves,
+  ExplorerPositionInput
+} from "../types/repertoire-explorer";
+import type {
+  RepertoireHealthEvent,
+  RepertoireHealthFlag,
+  RepertoireHealthQueueStatus,
+  RepertoireHealthSummary
+} from "../types/repertoire-health";
 import type {
   FailedPuzzle,
   PuzzleAttemptResult,
@@ -156,6 +169,17 @@ import type {
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "../types/repertoire";
+import type { BookOpening, OpeningOfInput, PracticeOverview } from "../types/repertoire-practice";
+// Repertoire Insights.
+import type {
+  InsightsComparerStatus,
+  InsightsFilters,
+  InsightsGamesPage,
+  InsightsGamesQuery,
+  InsightsReport,
+  InsightsReportQuery,
+  InsightsWeakSpotSummary
+} from "../types/repertoire-insights";
 
 export type Unsubscribe = () => void;
 
@@ -379,6 +403,49 @@ export type ChaturangaApi = {
     lastSettings(): Promise<GamePuzzleSettings>;
     /** Every change of the queue: progress, pause / resume, and each game it finishes. */
     onGenerationProgress(callback: (event: GamePuzzleGenerationEvent) => void): Unsubscribe;
+  };
+  /**
+   * Study's explorer and the repertoire health check (main/repertoire-explorer,
+   * docs/repertoire-games-and-practice.md §6): the user's games and Maia 3 at a position, and the
+   * health queue with its flags.
+   */
+  repertoireExplorer: {
+    /** The moves of the user's games at a position, under the Insights filters. */
+    games(input: ExplorerPositionInput): Promise<ExplorerGames>;
+    /** Maia 3's likely moves at a position (`installed: false` without the model). */
+    maiaMoves(input: ExplorerMaiaInput): Promise<ExplorerMaiaMoves>;
+    /** A repertoire's latest health flags, at positions it still has. */
+    healthFlags(repertoireId: string): Promise<RepertoireHealthFlag[]>;
+    /** Insights' Repertoire health card: each repertoire's flag counts and last check. */
+    healthSummaries(): Promise<RepertoireHealthSummary[]>;
+    healthStatus(): Promise<RepertoireHealthQueueStatus>;
+    /** Run check: the no-answer flags now, the engine pass queued (a paused queue resumes). */
+    checkHealth(repertoireIds: string[]): Promise<RepertoireHealthQueueStatus>;
+    /** Stops after the current search; the paused state survives a restart. */
+    pauseHealth(): Promise<RepertoireHealthQueueStatus>;
+    resumeHealth(): Promise<RepertoireHealthQueueStatus>;
+    /** Empties the queue (flags already found stay). */
+    cancelHealth(): Promise<RepertoireHealthQueueStatus>;
+    /** Every change of the queue, and each repertoire whose flags were rewritten. */
+    onHealthProgress(callback: (event: RepertoireHealthEvent) => void): Unsubscribe;
+  };
+  /**
+   * Repertoire Insights (main/repertoire-insights, docs/repertoire-games-and-practice.md §5): the
+   * user's games compared with their repertoires in the background, under the saved filters.
+   */
+  repertoireInsights: {
+    /** The report, with score by line at `lineMove`. */
+    report(query: InsightsReportQuery): Promise<InsightsReport>;
+    /** A page of the games list (newest first). */
+    games(query: InsightsGamesQuery): Promise<InsightsGamesPage>;
+    filters(): Promise<InsightsFilters>;
+    /** Saves the filters (the report, weak-spots practice and the Study explorer use them). */
+    setFilters(filters: InsightsFilters): Promise<InsightsFilters>;
+    status(): Promise<InsightsComparerStatus>;
+    /** The Practice tab's banner: forgotten positions under the filters. */
+    weakSpots(): Promise<InsightsWeakSpotSummary>;
+    /** The comparer's progress through a pass (and its end). */
+    onProgress(callback: (status: InsightsComparerStatus) => void): Unsubscribe;
   };
   files: {
     openPgnFile(): Promise<{ path: string; contents: string } | null>;
@@ -636,6 +703,13 @@ export type ChaturangaApi = {
     saveWorkspace(input: SaveWorkspaceInput): Promise<void>;
     /** Due decisions across active repertoires, and where to continue studying (Home card). */
     getDueSummary(): Promise<RepertoireDueSummary>;
+    /* Practice home (docs/repertoire-games-and-practice.md §2, §4). */
+    /** The opening the bundled book names at the deepest position of a line; null: none. */
+    openingOf(input: OpeningOfInput): Promise<BookOpening | null>;
+    /** Every named opening of the bundled book, by name (Opening fields' suggestions). */
+    bookOpenings(): Promise<BookOpening[]>;
+    /** The Practice tab's numbers: each active repertoire's standing and today's new positions. */
+    practiceOverview(): Promise<PracticeOverview>;
     onChanged(callback: (event: RepertoireChangedEvent) => void): Unsubscribe;
     /** Progress of `previewImport` jobs; the preview itself still resolves with the result. */
     onImportProgress(callback: (event: ImportProgressEvent) => void): Unsubscribe;

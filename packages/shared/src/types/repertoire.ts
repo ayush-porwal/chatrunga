@@ -6,6 +6,7 @@
  * carrying `expectedRevision` are refused when the stored revision moved on (a stale draft).
  */
 import type { MoveNode } from "./chess";
+import type { BookOpening, ChapterOpening } from "./repertoire-practice";
 
 /** Version prefix of `positionKey` (chess/repertoire-position.ts); bump when the key changes. */
 export const REPERTOIRE_POSITION_KEY_VERSION = 1;
@@ -56,6 +57,11 @@ export type RepertoireChapterSummary = {
   nodeCount: number;
   /** Due decisions supported by this chapter; chapter totals can overlap (transpositions). */
   dueCount: number;
+  /**
+   * The chapter's opening (detected along its mainline, or typed). Null when none was found;
+   * absent from a chapter that isn't stored yet (a save detects it).
+   */
+  opening?: ChapterOpening | null;
 };
 
 export type RepertoireDetail = RepertoireSummary & {
@@ -145,7 +151,14 @@ export type RepertoireProgress = {
  * moves, the main process supplies the authored opponent replies with deterministic rotation, and
  * nothing is scheduled (session results only, design §5.3).
  */
-export type PracticeMode = "review-due" | "learn-new" | "rehearse-lines";
+export type PracticeMode =
+  | "review-due"
+  | "learn-new"
+  | "rehearse-lines"
+  /** Learning decisions not due yet, without waiting (answers schedule as usual). */
+  | "practice-early"
+  /** Weak spots from the user's games: forgotten positions, then the lines met most (B's data). */
+  | "weak";
 
 export type PracticeScope = {
   repertoireId: string;
@@ -169,6 +182,11 @@ export type PracticeScope = {
   ungraded?: boolean;
   /** Rehearse-lines only: the chapter to rehearse, from its root or from `fromNodeId`. */
   rehearse?: { chapterId: string; fromNodeId?: string };
+  /**
+   * A Practice tab set over several repertoires (Everything, one colour): the session queues
+   * their decisions together and each card names its repertoire. `repertoireId` is the first.
+   */
+  repertoireIds?: string[];
 };
 
 export type StartPracticeInput = PracticeScope & { mode: PracticeMode };
@@ -202,6 +220,17 @@ export type PracticeCard = {
    * `lineNumber` is the line's number in the session (lines are numbered by first appearance).
    */
   rehearsal?: { lineId: string; stepIndex: number; lineNumber?: number };
+  /** A set's card (several repertoires): the repertoire it comes from. */
+  repertoireId?: string;
+  /** The chapter's title when the card was queued (headings across repertoires). */
+  chapterTitle?: string;
+  /**
+   * First sight (Show the move on new positions): the move to play, shown before it is asked;
+   * answering it schedules the position as learning with no success credit.
+   */
+  preview?: { uci: string };
+  /** Weak spots: how many of the user's games left the repertoire here (forgotten positions). */
+  weakGames?: number;
 };
 
 export type PracticeTotals = {
@@ -252,6 +281,8 @@ export type PracticeShown = {
   hintUci: string | null;
   /** The answer, for a revealed card. */
   revealed: PracticeAnswer | null;
+  /** After a wrong answer: the move to play to continue (the grade stays as the answer left it). */
+  correction?: PracticeAnswer;
 };
 
 export type PracticeAction =
@@ -338,6 +369,8 @@ export type PracticeSummary = {
   missedPositionKeys: string[];
   /** Rehearse-lines only. */
   rehearsal?: { linesStarted: number; linesCompleted: number; otherLineAnswers: number };
+  /** New positions shown with their move first (first sight). */
+  seen?: number;
 };
 
 /* ------------------------------------------------------------------ import / export */
@@ -374,11 +407,29 @@ export type ImportPreviewGame = {
   decisions: Record<RepertoireColor, number>;
   warnings: string[];
   invalidBranches: ImportInvalidBranch[];
+  /* Practice home additions (docs/repertoire-games-and-practice.md §2). */
+  /** The deepest position along the mainline the opening book names (null: none). */
+  opening?: BookOpening | null;
+  /** The first moves of the mainline, "1. e4 c6 2. d4 d5 …". */
+  firstMoves?: string;
+  /** Lines (leaves) in the game's tree. */
+  lineCount?: number;
+  /** Positions with each side to move that have more than one move (colour inference). */
+  branching?: Record<RepertoireColor, number>;
+};
+
+/** A position where the PGN gives the player more than one move (by transposition too). */
+export type ImportMultiMovePosition = {
+  positionKey: string;
+  /** Each move there, and the games (indexes) that play it. */
+  moves: { uci: string; san: string; games: number[] }[];
 };
 
 export type ImportPreview = {
   jobId: string;
   games: ImportPreviewGame[];
+  /** Positions with several of the player's moves across all games, for a repertoire of each colour. */
+  multiMovePositions?: Record<RepertoireColor, ImportMultiMovePosition[]>;
 };
 
 export type ImportSelection = {
@@ -388,6 +439,8 @@ export type ImportSelection = {
   include: boolean;
   /** Preview node ids to drop, each with its subtree. */
   excludeNodeIds?: string[];
+  /** The chapter's opening as the preview shows it (edited: typed by the user). */
+  opening?: ChapterOpening | null;
 };
 
 export type ImportCommitInput = {
@@ -571,6 +624,11 @@ export type RepertoireDueSummary = {
     mode: PracticeMode;
     repertoireName: string;
     color: RepertoireColor;
+    /**
+     * A Practice tab set's session (several repertoires): the set's name ("Everything", "All
+     * White"); `repertoireId` is one of its active repertoires. Absent for one repertoire's.
+     */
+    setLabel?: string;
   } | null;
   /**
    * The next due position of the repertoire with the most due decisions (Play's Repertoire card):

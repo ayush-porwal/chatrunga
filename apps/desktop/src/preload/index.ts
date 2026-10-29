@@ -6,6 +6,8 @@ import type {
 } from "@chaturanga/shared/ipc/chaturanga-api";
 import type { BookProgressEvent } from "@chaturanga/shared/types/books";
 import type { GamePuzzleGenerationEvent } from "@chaturanga/shared/types/game-puzzles";
+import type { RepertoireHealthEvent } from "@chaturanga/shared/types/repertoire-health";
+import type { InsightsComparerStatus } from "@chaturanga/shared/types/repertoire-insights";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   IMPORT_CANCELLED_MESSAGE,
@@ -151,6 +153,31 @@ const api: ChaturangaApi = {
     recordAttempt: (input) => ipcRenderer.invoke("gamePuzzles:recordAttempt", input),
     lastSettings: () => ipcRenderer.invoke("gamePuzzles:lastSettings"),
     onGenerationProgress: subscribe<GamePuzzleGenerationEvent>("gamePuzzles:progress")
+  },
+  // Study's explorer and the repertoire health check.
+  repertoireExplorer: {
+    games: (input) => ipcRenderer.invoke("repertoireExplorer:games", input),
+    maiaMoves: (input) => ipcRenderer.invoke("repertoireExplorer:maiaMoves", input),
+    healthFlags: (repertoireId) =>
+      ipcRenderer.invoke("repertoireExplorer:healthFlags", repertoireId),
+    healthSummaries: () => ipcRenderer.invoke("repertoireExplorer:healthSummaries"),
+    healthStatus: () => ipcRenderer.invoke("repertoireExplorer:healthStatus"),
+    checkHealth: (repertoireIds) =>
+      ipcRenderer.invoke("repertoireExplorer:checkHealth", repertoireIds),
+    pauseHealth: () => ipcRenderer.invoke("repertoireExplorer:pauseHealth"),
+    resumeHealth: () => ipcRenderer.invoke("repertoireExplorer:resumeHealth"),
+    cancelHealth: () => ipcRenderer.invoke("repertoireExplorer:cancelHealth"),
+    onHealthProgress: subscribe<RepertoireHealthEvent>("repertoireExplorer:healthProgress")
+  },
+  // Repertoire Insights.
+  repertoireInsights: {
+    report: (query) => ipcRenderer.invoke("repertoireInsights:report", query),
+    games: (query) => ipcRenderer.invoke("repertoireInsights:games", query),
+    filters: () => ipcRenderer.invoke("repertoireInsights:filters"),
+    setFilters: (filters) => ipcRenderer.invoke("repertoireInsights:setFilters", filters),
+    status: () => ipcRenderer.invoke("repertoireInsights:status"),
+    weakSpots: () => ipcRenderer.invoke("repertoireInsights:weakSpots"),
+    onProgress: subscribe<InsightsComparerStatus>("repertoireInsights:progress")
   },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),
@@ -304,6 +331,10 @@ const api: ChaturangaApi = {
     endPractice: (sessionId) => ipcRenderer.invoke("repertoires:endPractice", sessionId),
     saveWorkspace: (input) => ipcRenderer.invoke("repertoires:saveWorkspace", input),
     getDueSummary: () => ipcRenderer.invoke("repertoires:getDueSummary"),
+    // Practice home.
+    openingOf: (input) => ipcRenderer.invoke("repertoires:openingOf", input),
+    bookOpenings: () => ipcRenderer.invoke("repertoires:bookOpenings"),
+    practiceOverview: () => ipcRenderer.invoke("repertoires:practiceOverview"),
     onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed"),
     onImportProgress: subscribe<ImportProgressEvent>("repertoires:importProgress")
   },
